@@ -3,8 +3,9 @@ import multer from 'multer';
 import path from 'path';
 import fs from 'fs';
 import prisma from '../config/prisma';
-import { authenticate, authorize } from '../middleware/auth';
+import { authenticate, AuthRequest, authorize } from '../middleware/auth';
 import { broadcast } from '../services/messagingGateway';
+import { asyncHandler } from '../shared/middleware';
 
 const router = Router();
 
@@ -143,53 +144,49 @@ router.get('/batches', async (req: Request, res: Response) => {
   res.json(batches);
 });
 
-router.post('/batches', async (req: Request, res: Response) => {
-  try {
-    const b = req.body;
-    const batch = await prisma.fermentationBatch.create({
-      data: {
-        batchNo: parseInt(b.batchNo) || 0,
-        fermenterNo: parseInt(b.fermenterNo) || 1,
-        phase: b.phase || 'PF_TRANSFER',
-        pfTransferTime: b.pfTransferTime ? new Date(b.pfTransferTime) : new Date(),
-        fillingStartTime: b.fillingStartTime ? new Date(b.fillingStartTime) : null,
-        fermLevel: b.fermLevel ? parseFloat(b.fermLevel) : null,
-        volume: b.fermLevel ? parseFloat((parseFloat(b.fermLevel) / 100 * 2300 * 1000).toFixed(0)) : (b.volume ? parseFloat(b.volume) : null),
-        setupGravity: b.setupGravity ? parseFloat(b.setupGravity) : null,
-        remarks: b.remarks || null,
-        userId: (req as any).user?.id || 'unknown'
-      },
-      include: { dosings: true }
-    });
-    res.status(201).json(batch);
-  } catch (err: any) { res.status(400).json({ error: err.message }); }
-});
+router.post('/batches', asyncHandler(async (req: AuthRequest, res: Response) => {
+  const b = req.body;
+  const batch = await prisma.fermentationBatch.create({
+    data: {
+      batchNo: parseInt(b.batchNo) || 0,
+      fermenterNo: parseInt(b.fermenterNo) || 1,
+      phase: b.phase || 'PF_TRANSFER',
+      pfTransferTime: b.pfTransferTime ? new Date(b.pfTransferTime) : new Date(),
+      fillingStartTime: b.fillingStartTime ? new Date(b.fillingStartTime) : null,
+      fermLevel: b.fermLevel ? parseFloat(b.fermLevel) : null,
+      volume: b.fermLevel ? parseFloat((parseFloat(b.fermLevel) / 100 * 2300 * 1000).toFixed(0)) : (b.volume ? parseFloat(b.volume) : null),
+      setupGravity: b.setupGravity ? parseFloat(b.setupGravity) : null,
+      remarks: b.remarks || null,
+      userId: req.user?.id || 'unknown'
+    },
+    include: { dosings: true }
+  });
+  res.status(201).json(batch);
+}));
 
-router.patch('/batches/:id', async (req: Request, res: Response) => {
-  try {
-    const data: any = {};
-    const b = req.body;
-    if (b.phase) data.phase = b.phase;
-    for (const f of ['pfTransferTime', 'fillingStartTime', 'fillingEndTime', 'setupEndTime', 'reactionStartTime', 'retentionStartTime', 'transferTime', 'cipStartTime', 'cipEndTime']) {
-      if (b[f] !== undefined) data[f] = b[f] ? new Date(b[f]) : null;
-    }
-    for (const f of ['volume', 'fermLevel', 'transferVolume', 'setupGravity', 'setupRs', 'setupRst', 'finalRsGravity', 'totalHours', 'finalAlcohol']) {
-      if (b[f] !== undefined) data[f] = b[f] ? parseFloat(b[f]) : null;
-    }
-    for (const f of ['remarks', 'yeast', 'enzyme', 'formolin', 'booster', 'urea', 'setupTime']) {
-      if (b[f] !== undefined) data[f] = b[f] || null;
-    }
-    if (b.beerWellNo !== undefined) data.beerWellNo = b.beerWellNo ? parseInt(b.beerWellNo) : null;
-    if (b.setupDate !== undefined) data.setupDate = b.setupDate ? new Date(b.setupDate) : null;
-    if (b.finalDate !== undefined) data.finalDate = b.finalDate ? new Date(b.finalDate) : null;
+router.patch('/batches/:id', asyncHandler(async (req: AuthRequest, res: Response) => {
+  const data: any = {};
+  const b = req.body;
+  if (b.phase) data.phase = b.phase;
+  for (const f of ['pfTransferTime', 'fillingStartTime', 'fillingEndTime', 'setupEndTime', 'reactionStartTime', 'retentionStartTime', 'transferTime', 'cipStartTime', 'cipEndTime']) {
+    if (b[f] !== undefined) data[f] = b[f] ? new Date(b[f]) : null;
+  }
+  for (const f of ['volume', 'fermLevel', 'transferVolume', 'setupGravity', 'setupRs', 'setupRst', 'finalRsGravity', 'totalHours', 'finalAlcohol']) {
+    if (b[f] !== undefined) data[f] = b[f] ? parseFloat(b[f]) : null;
+  }
+  for (const f of ['remarks', 'yeast', 'enzyme', 'formolin', 'booster', 'urea', 'setupTime']) {
+    if (b[f] !== undefined) data[f] = b[f] || null;
+  }
+  if (b.beerWellNo !== undefined) data.beerWellNo = b.beerWellNo ? parseInt(b.beerWellNo) : null;
+  if (b.setupDate !== undefined) data.setupDate = b.setupDate ? new Date(b.setupDate) : null;
+  if (b.finalDate !== undefined) data.finalDate = b.finalDate ? new Date(b.finalDate) : null;
 
-    const batch = await prisma.fermentationBatch.update({
-      where: { id: req.params.id }, data,
-      include: { dosings: true }
-    });
-    res.json(batch);
-  } catch (err: any) { res.status(400).json({ error: err.message }); }
-});
+  const batch = await prisma.fermentationBatch.update({
+    where: { id: req.params.id }, data,
+    include: { dosings: true }
+  });
+  res.json(batch);
+}));
 
 router.delete('/batches/:id', authorize('ADMIN') as any, async (req: Request, res: Response) => {
   await prisma.fermentationBatch.delete({ where: { id: req.params.id } });
@@ -200,96 +197,88 @@ router.delete('/batches/:id', authorize('ADMIN') as any, async (req: Request, re
 // One endpoint: transfers PF batch to a fermenter
 // - Sets PF to CIP
 // - Creates new FermentationBatch in FILLING phase with same batch #
-router.post('/transfer-pf', async (req: Request, res: Response) => {
-  try {
-    const { pfBatchId, fermenterNo } = req.body;
-    if (!pfBatchId || !fermenterNo) return res.status(400).json({ error: 'pfBatchId and fermenterNo required' });
+router.post('/transfer-pf', asyncHandler(async (req: AuthRequest, res: Response) => {
+  const { pfBatchId, fermenterNo } = req.body;
+  if (!pfBatchId || !fermenterNo) return res.status(400).json({ error: 'pfBatchId and fermenterNo required' });
 
-    const pfBatch = await prisma.pFBatch.findUnique({
-      where: { id: pfBatchId },
-      include: { labReadings: { orderBy: { createdAt: 'desc' }, take: 1 } },
-    });
-    if (!pfBatch) return res.status(404).json({ error: 'PF batch not found' });
-    if (['DONE', 'CIP', 'TRANSFER'].includes(pfBatch.phase)) return res.status(400).json({ error: `PF batch already in ${pfBatch.phase} phase` });
+  const pfBatch = await prisma.pFBatch.findUnique({
+    where: { id: pfBatchId },
+    include: { labReadings: { orderBy: { createdAt: 'desc' }, take: 1 } },
+  });
+  if (!pfBatch) return res.status(404).json({ error: 'PF batch not found' });
+  if (['DONE', 'CIP', 'TRANSFER'].includes(pfBatch.phase)) return res.status(400).json({ error: `PF batch already in ${pfBatch.phase} phase` });
 
-    // Check fermenter is free
-    const existing = await prisma.fermentationBatch.findFirst({
-      where: { fermenterNo: parseInt(String(fermenterNo)), phase: { not: 'DONE' } },
-    });
-    if (existing) return res.status(400).json({ error: `Fermenter ${fermenterNo} is occupied by batch #${existing.batchNo}` });
+  // Check fermenter is free
+  const existing = await prisma.fermentationBatch.findFirst({
+    where: { fermenterNo: parseInt(String(fermenterNo)), phase: { not: 'DONE' } },
+  });
+  if (existing) return res.status(400).json({ error: `Fermenter ${fermenterNo} is occupied by batch #${existing.batchNo}` });
 
-    const now = new Date();
+  const now = new Date();
 
-    // Update PF → TRANSFER then CIP
-    await prisma.pFBatch.update({
-      where: { id: pfBatchId },
-      data: { phase: 'CIP', transferTime: now, transferVolume: pfBatch.slurryVolume },
-    });
+  // Update PF → TRANSFER then CIP
+  await prisma.pFBatch.update({
+    where: { id: pfBatchId },
+    data: { phase: 'CIP', transferTime: now, transferVolume: pfBatch.slurryVolume },
+  });
 
-    // Create fermenter batch — setupGravity will be set from first fermenter lab reading
-    const fermBatch = await prisma.fermentationBatch.create({
-      data: {
-        batchNo: pfBatch.batchNo,
-        fermenterNo: parseInt(String(fermenterNo)),
-        phase: 'FILLING',
-        pfTransferTime: now,
-        fillingStartTime: now,
-        remarks: `From PF-${pfBatch.fermenterNo}`,
-        userId: (req as any).user?.id || 'unknown',
-      },
-      include: { dosings: true },
-    });
+  // Create fermenter batch — setupGravity will be set from first fermenter lab reading
+  const fermBatch = await prisma.fermentationBatch.create({
+    data: {
+      batchNo: pfBatch.batchNo,
+      fermenterNo: parseInt(String(fermenterNo)),
+      phase: 'FILLING',
+      pfTransferTime: now,
+      fillingStartTime: now,
+      remarks: `From PF-${pfBatch.fermenterNo}`,
+      userId: req.user?.id || 'unknown',
+    },
+    include: { dosings: true },
+  });
 
-    res.json({ pfBatch: { id: pfBatchId, phase: 'CIP' }, fermBatch });
-  } catch (err: any) { res.status(500).json({ error: err.message }); }
-});
+  res.json({ pfBatch: { id: pfBatchId, phase: 'CIP' }, fermBatch });
+}));
 
 /* ═══════ CREATE FROM PF TRANSFER (legacy) ═══════ */
-router.post('/batches/from-pf', async (req: Request, res: Response) => {
-  try {
-    const b = req.body;
-    const now = new Date();
-    const batch = await prisma.fermentationBatch.create({
-      data: {
-        batchNo: parseInt(b.batchNo) || 0,
-        fermenterNo: parseInt(b.fermenterNo) || 1,
-        phase: 'FILLING',
-        pfTransferTime: b.pfTransferTime ? new Date(b.pfTransferTime) : now,
-        fillingStartTime: b.pfTransferTime ? new Date(b.pfTransferTime) : now,
-        fermLevel: b.fermLevel ? parseFloat(b.fermLevel) : null,
-        volume: b.fermLevel ? parseFloat((parseFloat(b.fermLevel) / 100 * 2300 * 1000).toFixed(0)) : null,
-        setupGravity: b.setupGravity ? parseFloat(b.setupGravity) : null,
-        remarks: b.remarks ? String(b.remarks) : (b.pfBatchId ? `From PF${b.pfNo || ''} batch` : null),
-        userId: (req as any).user?.id || 'unknown'
-      },
-      include: { dosings: true }
-    });
-    res.status(201).json(batch);
-  } catch (err: any) { res.status(400).json({ error: err.message }); }
-});
+router.post('/batches/from-pf', asyncHandler(async (req: AuthRequest, res: Response) => {
+  const b = req.body;
+  const now = new Date();
+  const batch = await prisma.fermentationBatch.create({
+    data: {
+      batchNo: parseInt(b.batchNo) || 0,
+      fermenterNo: parseInt(b.fermenterNo) || 1,
+      phase: 'FILLING',
+      pfTransferTime: b.pfTransferTime ? new Date(b.pfTransferTime) : now,
+      fillingStartTime: b.pfTransferTime ? new Date(b.pfTransferTime) : now,
+      fermLevel: b.fermLevel ? parseFloat(b.fermLevel) : null,
+      volume: b.fermLevel ? parseFloat((parseFloat(b.fermLevel) / 100 * 2300 * 1000).toFixed(0)) : null,
+      setupGravity: b.setupGravity ? parseFloat(b.setupGravity) : null,
+      remarks: b.remarks ? String(b.remarks) : (b.pfBatchId ? `From PF${b.pfNo || ''} batch` : null),
+      userId: req.user?.id || 'unknown'
+    },
+    include: { dosings: true }
+  });
+  res.status(201).json(batch);
+}));
 
 /* ═══════ DOSING ═══════ */
-router.post('/batches/:id/dosing', async (req: Request, res: Response) => {
-  try {
-    const { chemicalName, quantity, unit, level } = req.body;
-    await prisma.fermDosing.create({
-      data: { batchId: req.params.id, chemicalName, quantity: parseFloat(quantity) || 0, unit: unit || 'kg', level: level ? parseFloat(level) : null }
-    });
-    const updated = await prisma.fermentationBatch.findUnique({ where: { id: req.params.id }, include: { dosings: true } });
-    res.status(201).json(updated);
-  } catch (err: any) { res.status(400).json({ error: err.message }); }
-});
+router.post('/batches/:id/dosing', asyncHandler(async (req: AuthRequest, res: Response) => {
+  const { chemicalName, quantity, unit, level } = req.body;
+  await prisma.fermDosing.create({
+    data: { batchId: req.params.id, chemicalName, quantity: parseFloat(quantity) || 0, unit: unit || 'kg', level: level ? parseFloat(level) : null }
+  });
+  const updated = await prisma.fermentationBatch.findUnique({ where: { id: req.params.id }, include: { dosings: true } });
+  res.status(201).json(updated);
+}));
 
-router.patch('/dosing/:id', async (req: Request, res: Response) => {
-  try {
-    const { quantity, unit } = req.body;
-    const data: any = {};
-    if (quantity !== undefined) data.quantity = parseFloat(quantity);
-    if (unit !== undefined) data.unit = unit;
-    const dosing = await prisma.fermDosing.update({ where: { id: req.params.id }, data });
-    res.json(dosing);
-  } catch (err: any) { res.status(500).json({ error: err.message }); }
-});
+router.patch('/dosing/:id', asyncHandler(async (req: AuthRequest, res: Response) => {
+  const { quantity, unit } = req.body;
+  const data: any = {};
+  if (quantity !== undefined) data.quantity = parseFloat(quantity);
+  if (unit !== undefined) data.unit = unit;
+  const dosing = await prisma.fermDosing.update({ where: { id: req.params.id }, data });
+  res.json(dosing);
+}));
 
 router.delete('/dosing/:id', authorize('ADMIN') as any, async (req: Request, res: Response) => {
   await prisma.fermDosing.delete({ where: { id: req.params.id } });
@@ -329,11 +318,10 @@ router.get('/batch/:batchNo', async (req: Request, res: Response) => {
 });
 
 /* ═══════ FIELD INPUT — level/temp/gravity from field users ═══════ */
-router.post('/field-reading', async (req: Request, res: Response) => {
-  try {
-    const { fermenterNo, level, temp, spGravity } = req.body;
-    const vesselNo = parseInt(String(fermenterNo));
-    const userId = (req as any).user?.id || 'unknown';
+router.post('/field-reading', asyncHandler(async (req: AuthRequest, res: Response) => {
+  const { fermenterNo, level, temp, spGravity } = req.body;
+  const vesselNo = parseInt(String(fermenterNo));
+  const userId = req.user?.id || 'unknown';
 
     const fermBatch = await prisma.fermentationBatch.findFirst({
       where: { fermenterNo: vesselNo, phase: { not: 'DONE' } },
@@ -376,19 +364,17 @@ router.post('/field-reading', async (req: Request, res: Response) => {
     }
 
     res.status(201).json({ entry, batchNo: fermBatch.batchNo, fermentationFinished });
-  } catch (err: any) { res.status(500).json({ error: err.message }); }
-});
+}));
 
 /* ═══════ LAB QUICK-ADD — simplified for lab tab ═══════ */
 // POST /fermentation/lab-reading
 // Lab person just picks vessel type + number, enters readings
 // Auto-finds active batch, auto-stamps time
-router.post('/lab-reading', async (req: Request, res: Response) => {
-  try {
-    const b = req.body;
-    const vesselType = b.vesselType; // 'PF' or 'FERM'
-    const vesselNo = parseInt(b.vesselNo);
-    const userId = (req as any).user?.id || 'unknown';
+router.post('/lab-reading', asyncHandler(async (req: AuthRequest, res: Response) => {
+  const b = req.body;
+  const vesselType = b.vesselType; // 'PF' or 'FERM'
+  const vesselNo = parseInt(b.vesselNo);
+  const userId = req.user?.id || 'unknown';
 
     if (vesselType === 'PF') {
       // Find active PF batch for this vessel
@@ -522,11 +508,10 @@ router.post('/lab-reading', async (req: Request, res: Response) => {
       broadcast('fermentation', fLines).catch(() => {});
 
     }
-  } catch (err: any) { res.status(500).json({ error: err.message }); }
-});
+}));
 
 // POST traditional lab entry (kept for backward compat)
-router.post('/', upload.single('spentLossPhoto'), async (req: Request, res: Response) => {
+router.post('/', upload.single('spentLossPhoto'), async (req: AuthRequest, res: Response) => {
   const b = req.body;
   const batchNo = parseInt(b.batchNo) || 0;
   const fermenterNo = parseInt(b.fermenterNo) || 1;
@@ -546,7 +531,7 @@ router.post('/', upload.single('spentLossPhoto'), async (req: Request, res: Resp
       spentLoss: b.spentLoss ? parseFloat(b.spentLoss) : null,
       spentLossPhotoUrl: req.file ? `/uploads/spent-loss/${req.file.filename}` : null,
       status: b.status || 'U/F',
-      remarks: b.remarks || null, userId: (req as any).user?.id || 'unknown'
+      remarks: b.remarks || null, userId: req.user?.id || 'unknown'
     }
   });
 
@@ -568,23 +553,21 @@ router.post('/', upload.single('spentLossPhoto'), async (req: Request, res: Resp
 });
 
 // PUT /:id — Update individual lab reading
-router.put('/:id', async (req: Request, res: Response) => {
-  try {
-    const b = req.body;
-    const data: any = {};
-    if (b.level !== undefined) data.level = b.level !== null && b.level !== '' ? parseFloat(b.level) : null;
-    if (b.spGravity !== undefined) data.spGravity = b.spGravity !== null && b.spGravity !== '' ? parseFloat(b.spGravity) : null;
-    if (b.ph !== undefined) data.ph = b.ph !== null && b.ph !== '' ? parseFloat(b.ph) : null;
-    if (b.rs !== undefined) data.rs = b.rs !== null && b.rs !== '' ? parseFloat(b.rs) : null;
-    if (b.alcohol !== undefined) data.alcohol = b.alcohol !== null && b.alcohol !== '' ? parseFloat(b.alcohol) : null;
-    if (b.temp !== undefined) data.temp = b.temp !== null && b.temp !== '' ? parseFloat(b.temp) : null;
-    if (b.ds !== undefined) data.ds = b.ds !== null && b.ds !== '' ? parseFloat(b.ds) : null;
-    if (b.vfaPpa !== undefined) data.vfaPpa = b.vfaPpa !== null && b.vfaPpa !== '' ? parseFloat(b.vfaPpa) : null;
-    if (b.remarks !== undefined) data.remarks = b.remarks || null;
-    const entry = await prisma.fermentationEntry.update({ where: { id: req.params.id }, data });
-    res.json(entry);
-  } catch (err: any) { res.status(500).json({ error: err.message }); }
-});
+router.put('/:id', asyncHandler(async (req: AuthRequest, res: Response) => {
+  const b = req.body;
+  const data: any = {};
+  if (b.level !== undefined) data.level = b.level !== null && b.level !== '' ? parseFloat(b.level) : null;
+  if (b.spGravity !== undefined) data.spGravity = b.spGravity !== null && b.spGravity !== '' ? parseFloat(b.spGravity) : null;
+  if (b.ph !== undefined) data.ph = b.ph !== null && b.ph !== '' ? parseFloat(b.ph) : null;
+  if (b.rs !== undefined) data.rs = b.rs !== null && b.rs !== '' ? parseFloat(b.rs) : null;
+  if (b.alcohol !== undefined) data.alcohol = b.alcohol !== null && b.alcohol !== '' ? parseFloat(b.alcohol) : null;
+  if (b.temp !== undefined) data.temp = b.temp !== null && b.temp !== '' ? parseFloat(b.temp) : null;
+  if (b.ds !== undefined) data.ds = b.ds !== null && b.ds !== '' ? parseFloat(b.ds) : null;
+  if (b.vfaPpa !== undefined) data.vfaPpa = b.vfaPpa !== null && b.vfaPpa !== '' ? parseFloat(b.vfaPpa) : null;
+  if (b.remarks !== undefined) data.remarks = b.remarks || null;
+  const entry = await prisma.fermentationEntry.update({ where: { id: req.params.id }, data });
+  res.json(entry);
+}));
 
 router.delete('/:id', authorize('ADMIN') as any, async (req: Request, res: Response) => {
   const entry = await prisma.fermentationEntry.findUnique({ where: { id: req.params.id } });
@@ -658,107 +641,95 @@ router.get('/anomaly/:fermenterNo', async (req: Request, res: Response) => {
 /* ═══════ BEER WELL ═══════ */
 
 // GET latest beer well readings (last 20)
-router.get('/beer-well', async (_req: Request, res: Response) => {
-  try {
-    const readings = await prisma.beerWellReading.findMany({
-      orderBy: { createdAt: 'desc' },
-      take: 20,
-    });
-    // Also get batches recently transferred to beer well (DONE phase, last 5)
-    const recentBatches = await prisma.fermentationBatch.findMany({
-      where: { phase: 'DONE', beerWellNo: { not: null } },
-      orderBy: { transferTime: 'desc' },
-      take: 5,
-      select: { batchNo: true, fermenterNo: true, beerWellNo: true, transferTime: true, finalAlcohol: true, transferVolume: true },
-    });
-    res.json({ readings, recentBatches });
-  } catch (err: any) { res.status(500).json({ error: err.message }); }
-});
+router.get('/beer-well', asyncHandler(async (_req: AuthRequest, res: Response) => {
+  const readings = await prisma.beerWellReading.findMany({
+    orderBy: { createdAt: 'desc' },
+    take: 20,
+  });
+  // Also get batches recently transferred to beer well (DONE phase, last 5)
+  const recentBatches = await prisma.fermentationBatch.findMany({
+    where: { phase: 'DONE', beerWellNo: { not: null } },
+    orderBy: { transferTime: 'desc' },
+    take: 5,
+    select: { batchNo: true, fermenterNo: true, beerWellNo: true, transferTime: true, finalAlcohol: true, transferVolume: true },
+  });
+  res.json({ readings, recentBatches });
+}));
 
 // POST beer well reading
-router.post('/beer-well', async (req: Request, res: Response) => {
-  try {
-    const { wellNo, level, spGravity, ph, alcohol, temp, remarks, batchNo } = req.body;
-    const reading = await prisma.beerWellReading.create({
-      data: {
-        wellNo: wellNo ? parseInt(wellNo) : 1,
-        level: level ? parseFloat(level) : null,
-        spGravity: spGravity ? parseFloat(spGravity) : null,
-        ph: ph ? parseFloat(ph) : null,
-        alcohol: alcohol ? parseFloat(alcohol) : null,
-        temp: temp ? parseFloat(temp) : null,
-        remarks: remarks || null,
-        batchNo: batchNo ? parseInt(batchNo) : null,
-      },
-    });
-    res.status(201).json(reading);
-  } catch (err: any) { res.status(500).json({ error: err.message }); }
-});
+router.post('/beer-well', asyncHandler(async (req: AuthRequest, res: Response) => {
+  const { wellNo, level, spGravity, ph, alcohol, temp, remarks, batchNo } = req.body;
+  const reading = await prisma.beerWellReading.create({
+    data: {
+      wellNo: wellNo ? parseInt(wellNo) : 1,
+      level: level ? parseFloat(level) : null,
+      spGravity: spGravity ? parseFloat(spGravity) : null,
+      ph: ph ? parseFloat(ph) : null,
+      alcohol: alcohol ? parseFloat(alcohol) : null,
+      temp: temp ? parseFloat(temp) : null,
+      remarks: remarks || null,
+      batchNo: batchNo ? parseInt(batchNo) : null,
+    },
+  });
+  res.status(201).json(reading);
+}));
 
 // PUT beer well reading (edit)
-router.put('/beer-well/:id', async (req: Request, res: Response) => {
-  try {
-    const { level, spGravity, ph, alcohol, temp, remarks } = req.body;
-    const reading = await prisma.beerWellReading.update({
-      where: { id: req.params.id },
-      data: {
-        level: level !== undefined ? (level !== null ? parseFloat(level) : null) : undefined,
-        spGravity: spGravity !== undefined ? (spGravity !== null ? parseFloat(spGravity) : null) : undefined,
-        ph: ph !== undefined ? (ph !== null ? parseFloat(ph) : null) : undefined,
-        alcohol: alcohol !== undefined ? (alcohol !== null ? parseFloat(alcohol) : null) : undefined,
-        temp: temp !== undefined ? (temp !== null ? parseFloat(temp) : null) : undefined,
-        remarks: remarks !== undefined ? (remarks || null) : undefined,
-      },
-    });
-    res.json(reading);
-  } catch (err: any) { res.status(500).json({ error: err.message }); }
-});
+router.put('/beer-well/:id', asyncHandler(async (req: AuthRequest, res: Response) => {
+  const { level, spGravity, ph, alcohol, temp, remarks } = req.body;
+  const reading = await prisma.beerWellReading.update({
+    where: { id: req.params.id },
+    data: {
+      level: level !== undefined ? (level !== null ? parseFloat(level) : null) : undefined,
+      spGravity: spGravity !== undefined ? (spGravity !== null ? parseFloat(spGravity) : null) : undefined,
+      ph: ph !== undefined ? (ph !== null ? parseFloat(ph) : null) : undefined,
+      alcohol: alcohol !== undefined ? (alcohol !== null ? parseFloat(alcohol) : null) : undefined,
+      temp: temp !== undefined ? (temp !== null ? parseFloat(temp) : null) : undefined,
+      remarks: remarks !== undefined ? (remarks || null) : undefined,
+    },
+  });
+  res.json(reading);
+}));
 
 // DELETE beer well reading
-router.delete('/beer-well/:id', async (req: Request, res: Response) => {
-  try {
-    await prisma.beerWellReading.delete({ where: { id: req.params.id } });
-    res.json({ success: true });
-  } catch (err: any) { res.status(500).json({ error: err.message }); }
-});
+router.delete('/beer-well/:id', asyncHandler(async (req: AuthRequest, res: Response) => {
+  await prisma.beerWellReading.delete({ where: { id: req.params.id } });
+  res.json({ success: true });
+}));
 
 /* ═══════ BATCH HISTORY — all completed PF + Ferm batches ═══════ */
-router.get('/history', async (req: Request, res: Response) => {
-  try {
-    const limit = Math.min(parseInt(req.query.limit as string) || 50, 200);
+router.get('/history', asyncHandler(async (req: AuthRequest, res: Response) => {
+  const limit = Math.min(parseInt(req.query.limit as string) || 50, 200);
 
-    const [pfHistory, fermHistory] = await Promise.all([
-      prisma.pFBatch.findMany({
-        orderBy: { createdAt: 'desc' },
-        take: limit,
-        include: {
-          dosings: { orderBy: { addedAt: 'desc' } },
-          labReadings: { orderBy: { createdAt: 'asc' } },
-        },
-      }),
-      prisma.fermentationBatch.findMany({
-        orderBy: { createdAt: 'desc' },
-        take: limit,
-        include: {
-          dosings: { orderBy: { addedAt: 'desc' } },
-        },
-      }),
-    ]);
+  const [pfHistory, fermHistory] = await Promise.all([
+    prisma.pFBatch.findMany({
+      orderBy: { createdAt: 'desc' },
+      take: limit,
+      include: {
+        dosings: { orderBy: { addedAt: 'desc' } },
+        labReadings: { orderBy: { createdAt: 'asc' } },
+      },
+    }),
+    prisma.fermentationBatch.findMany({
+      orderBy: { createdAt: 'desc' },
+      take: limit,
+      include: {
+        dosings: { orderBy: { addedAt: 'desc' } },
+      },
+    }),
+  ]);
 
-    // For ferm batches, also load lab entries
-    const fermWithLab = await Promise.all(fermHistory.map(async (fb: any) => {
-      const entries = await prisma.fermentationEntry.findMany({
-        where: { batchNo: fb.batchNo, fermenterNo: fb.fermenterNo },
-        orderBy: { createdAt: 'asc' },
-        select: { id: true, analysisTime: true, level: true, spGravity: true, ph: true, alcohol: true, temp: true, rs: true, rst: true, createdAt: true },
-      });
-      return { ...fb, labReadings: entries };
-    }));
+  // For ferm batches, also load lab entries
+  const fermWithLab = await Promise.all(fermHistory.map(async (fb: any) => {
+    const entries = await prisma.fermentationEntry.findMany({
+      where: { batchNo: fb.batchNo, fermenterNo: fb.fermenterNo },
+      orderBy: { createdAt: 'asc' },
+      select: { id: true, analysisTime: true, level: true, spGravity: true, ph: true, alcohol: true, temp: true, rs: true, rst: true, createdAt: true },
+    });
+    return { ...fb, labReadings: entries };
+  }));
 
-    res.json({ pfHistory, fermHistory: fermWithLab });
-  } catch (err: any) {
-    res.status(500).json({ error: err.message });
-  }
-});
+  res.json({ pfHistory, fermHistory: fermWithLab });
+}));
 
 export default router;

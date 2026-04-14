@@ -1,6 +1,7 @@
-import { Router, Request, Response } from 'express';
+import { Router, Response } from 'express';
 import prisma from '../config/prisma';
-import { authenticate, authorize } from '../middleware/auth';
+import { authenticate, AuthRequest, authorize } from '../middleware/auth';
+import { asyncHandler } from '../shared/middleware';
 
 const router = Router();
 
@@ -20,36 +21,30 @@ function parseBody(b: any) {
 }
 
 // GET / — history
-router.get('/', async (_req: Request, res: Response) => {
-  try {
-    const entries = await prisma.decanterEntry.findMany({ orderBy: { createdAt: 'desc' }, take: 200 });
-    res.json(entries);
-  } catch (err: any) { res.status(500).json({ error: err.message }); }
-});
+router.get('/', asyncHandler(async (_req: AuthRequest, res: Response) => {
+  const entries = await prisma.decanterEntry.findMany({ orderBy: { createdAt: 'desc' }, take: 200 });
+  res.json(entries);
+}));
 
 // POST /
-router.post('/', async (req: Request, res: Response) => {
-  try {
-    const b = req.body;
-    const entry = await prisma.decanterEntry.create({
-      data: {
-        date: new Date(b.date),
-        entryTime: b.entryTime || '',
-        ...parseBody(b),
-        remark: b.remark || null,
-        userId: (req as any).user.id,
-      }
-    });
-    res.status(201).json(entry);
-  } catch (err: any) { res.status(500).json({ error: err.message }); }
-});
+router.post('/', asyncHandler(async (req: AuthRequest, res: Response) => {
+  const b = req.body;
+  const entry = await prisma.decanterEntry.create({
+    data: {
+      date: new Date(b.date),
+      entryTime: b.entryTime || '',
+      ...parseBody(b),
+      remark: b.remark || null,
+      userId: req.user!.id,
+    }
+  });
+  res.status(201).json(entry);
+}));
 
 // DELETE /:id — ADMIN only
-router.delete('/:id', authorize('ADMIN') as any, async (req: Request, res: Response) => {
-  try {
-    await prisma.decanterEntry.delete({ where: { id: req.params.id } });
-    res.json({ ok: true });
-  } catch (err: any) { res.status(500).json({ error: err.message }); }
-});
+router.delete('/:id', authorize('ADMIN') as any, asyncHandler(async (req: AuthRequest, res: Response) => {
+  await prisma.decanterEntry.delete({ where: { id: req.params.id } });
+  res.json({ ok: true });
+}));
 
 export default router;

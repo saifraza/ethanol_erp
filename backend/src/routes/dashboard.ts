@@ -1,12 +1,12 @@
-import { Router, Request, Response } from 'express';
+import { Router, Response } from 'express';
 import prisma from '../config/prisma';
 import { authenticate, AuthRequest, getCompanyFilter } from '../middleware/auth';
+import { asyncHandler } from '../shared/middleware';
 
 const router = Router();
 
 // ─── Comprehensive analytics endpoint ───
-router.get('/analytics', authenticate, async (req: AuthRequest, res: Response) => {
-  try {
+router.get('/analytics', authenticate, asyncHandler(async (req: AuthRequest, res: Response) => {
     // Validate and cap days parameter
     const days = Math.max(1, Math.min(Number(req.query.days) || 30, 365));
     const now = new Date();
@@ -290,14 +290,10 @@ router.get('/analytics', authenticate, async (req: AuthRequest, res: Response) =
         dispatchByParty,
       },
     });
-  } catch (err: any) {
-    res.status(500).json({ error: err.message });
-  }
-});
+}));
 
 // ─── Deep fermentation analytics ───
-router.get('/fermentation-deep', authenticate, async (req: AuthRequest, res: Response) => {
-  try {
+router.get('/fermentation-deep', authenticate, asyncHandler(async (req: AuthRequest, res: Response) => {
     // Validate and cap days parameter
     const days = Math.max(1, Math.min(Number(req.query.days) || 90, 365));
     const now = new Date();
@@ -649,14 +645,10 @@ router.get('/fermentation-deep', authenticate, async (req: AuthRequest, res: Res
       pipeline,
       fermActivity,
     });
-  } catch (err: any) {
-    res.status(500).json({ error: err.message });
-  }
-});
+}));
 
 // Keep the old endpoint for backward compat
-router.get('/', authenticate, async (req: AuthRequest, res: Response) => {
-  try {
+router.get('/', authenticate, asyncHandler(async (req: AuthRequest, res: Response) => {
     const today = new Date();
     today.setHours(0, 0, 0, 0);
     const todayEntry = await prisma.dailyEntry.findFirst({
@@ -679,9 +671,6 @@ router.get('/', authenticate, async (req: AuthRequest, res: Response) => {
         production: last7.map(e => ({ date: e.date, production: (e.syrup1Flow || 0) + (e.syrup2Flow || 0) + (e.syrup3Flow || 0) })),
       },
     });
-  } catch (err: any) {
-    res.status(500).json({ error: err.message });
-  }
-});
+}));
 
 export default router;

@@ -1,6 +1,7 @@
 import { Router, Response } from 'express';
 import prisma from '../config/prisma';
 import { authenticate, authorize, AuthRequest, getCompanyFilter, getActiveCompanyId } from '../middleware/auth';
+import { asyncHandler } from '../shared/middleware';
 import { generateEwayBill, MSPIL } from '../services/ewayBill';
 import { renderDocumentPdf } from '../services/documentRenderer';
 
@@ -33,8 +34,7 @@ const SUGAR_HSN = '1701';
 const SUGAR_GST = 5;
 
 // GET /summary?date=YYYY-MM-DD
-router.get('/summary', async (req: AuthRequest, res: Response) => {
-  try {
+router.get('/summary', asyncHandler(async (req: AuthRequest, res: Response) => {
     const dateStr = req.query.date as string;
     if (!dateStr) { res.json({ totalNet: 0, truckCount: 0, totalBags: 0 }); return; }
     const dayStart = new Date(dateStr + 'T00:00:00.000Z');
@@ -47,12 +47,10 @@ router.get('/summary', async (req: AuthRequest, res: Response) => {
     const totalNet = trucks.reduce((s, t) => s + t.weightNet, 0);
     const totalBags = trucks.reduce((s, t) => s + t.bags, 0);
     res.json({ totalNet, truckCount: trucks.length, totalBags });
-  } catch (err: any) { res.status(500).json({ error: err.message }); }
-});
+}));
 
 // GET ?date=YYYY-MM-DD
-router.get('/', async (req: AuthRequest, res: Response) => {
-  try {
+router.get('/', asyncHandler(async (req: AuthRequest, res: Response) => {
     const dateStr = req.query.date as string;
     let where: any = { ...getCompanyFilter(req) };
     if (dateStr) {
@@ -66,12 +64,10 @@ router.get('/', async (req: AuthRequest, res: Response) => {
       take: 200,
     });
     res.json({ trucks });
-  } catch (err: any) { res.status(500).json({ error: err.message }); }
-});
+}));
 
 // GET /history — past dispatches grouped by date
-router.get('/history', async (req: AuthRequest, res: Response) => {
-  try {
+router.get('/history', asyncHandler(async (req: AuthRequest, res: Response) => {
     const trucks = await prisma.sugarDispatchTruck.findMany({
       where: { ...getCompanyFilter(req) },
       orderBy: { date: 'desc' },
@@ -92,12 +88,10 @@ router.get('/history', async (req: AuthRequest, res: Response) => {
     const today = new Date().toISOString().split('T')[0];
     delete history[today];
     res.json({ history });
-  } catch (err: any) { res.status(500).json({ error: err.message }); }
-});
+}));
 
 // POST / — Gate In
-router.post('/', async (req: AuthRequest, res: Response) => {
-  try {
+router.post('/', asyncHandler(async (req: AuthRequest, res: Response) => {
     const b = req.body;
     const bags = parseInt(b.bags) || 0;
     const weightPerBag = parseFloat(b.weightPerBag) || 50;
@@ -132,12 +126,10 @@ router.post('/', async (req: AuthRequest, res: Response) => {
       },
     });
     res.status(201).json(truck);
-  } catch (err: any) { res.status(500).json({ error: err.message }); }
-});
+}));
 
 // PUT /:id — Update truck (status guard: cannot edit BILLED/RELEASED via free PUT)
-router.put('/:id', async (req: AuthRequest, res: Response) => {
-  try {
+router.put('/:id', asyncHandler(async (req: AuthRequest, res: Response) => {
     const existing = await prisma.sugarDispatchTruck.findUnique({ where: { id: req.params.id } });
     if (!existing) { res.status(404).json({ error: 'Not found' }); return; }
     if (existing.status === 'BILLED' || existing.status === 'RELEASED') {
@@ -162,12 +154,10 @@ router.put('/:id', async (req: AuthRequest, res: Response) => {
     }
     const truck = await prisma.sugarDispatchTruck.update({ where: { id: req.params.id }, data });
     res.json(truck);
-  } catch (err: any) { res.status(500).json({ error: err.message }); }
-});
+}));
 
 // POST /:id/weigh
-router.post('/:id/weigh', async (req: AuthRequest, res: Response) => {
-  try {
+router.post('/:id/weigh', asyncHandler(async (req: AuthRequest, res: Response) => {
     const { type, weight } = req.body;
     const w = parseFloat(weight);
     if (!w || !['tare', 'gross'].includes(type)) { res.status(400).json({ error: 'Invalid' }); return; }
@@ -187,12 +177,10 @@ router.post('/:id/weigh', async (req: AuthRequest, res: Response) => {
     }
     const updated = await prisma.sugarDispatchTruck.update({ where: { id: req.params.id }, data });
     res.json(updated);
-  } catch (err: any) { res.status(500).json({ error: err.message }); }
-});
+}));
 
 // POST /:id/generate-bill
-router.post('/:id/generate-bill', async (req: AuthRequest, res: Response) => {
-  try {
+router.post('/:id/generate-bill', asyncHandler(async (req: AuthRequest, res: Response) => {
     const truck = await prisma.sugarDispatchTruck.findUnique({ where: { id: req.params.id } });
     if (!truck) { res.status(404).json({ error: 'Not found' }); return; }
     if (truck.status === 'BILLED' || truck.status === 'RELEASED') {
@@ -218,23 +206,19 @@ router.post('/:id/generate-bill', async (req: AuthRequest, res: Response) => {
       },
     });
     res.json(updated);
-  } catch (err: any) { res.status(500).json({ error: err.message }); }
-});
+}));
 
 // POST /:id/release
-router.post('/:id/release', async (req: AuthRequest, res: Response) => {
-  try {
+router.post('/:id/release', asyncHandler(async (req: AuthRequest, res: Response) => {
     const updated = await prisma.sugarDispatchTruck.update({
       where: { id: req.params.id },
       data: { status: 'RELEASED', releaseTime: new Date() },
     });
     res.json(updated);
-  } catch (err: any) { res.status(500).json({ error: err.message }); }
-});
+}));
 
 // GET /:id/invoice-pdf
-router.get('/:id/invoice-pdf', async (req: AuthRequest, res: Response) => {
-  try {
+router.get('/:id/invoice-pdf', asyncHandler(async (req: AuthRequest, res: Response) => {
     const truck = await prisma.sugarDispatchTruck.findUnique({ where: { id: req.params.id } });
     if (!truck) { res.status(404).json({ error: 'Not found' }); return; }
 
@@ -271,12 +255,10 @@ router.get('/:id/invoice-pdf', async (req: AuthRequest, res: Response) => {
     res.setHeader('Content-Type', 'application/pdf');
     res.setHeader('Content-Disposition', `inline; filename=Invoice-${truck.invoiceNo || truck.id.slice(0, 8)}.pdf`);
     res.send(pdfBuffer);
-  } catch (err: any) { res.status(500).json({ error: err.message }); }
-});
+}));
 
 // GET /:id/gate-pass-pdf
-router.get('/:id/gate-pass-pdf', async (req: AuthRequest, res: Response) => {
-  try {
+router.get('/:id/gate-pass-pdf', asyncHandler(async (req: AuthRequest, res: Response) => {
     const truck = await prisma.sugarDispatchTruck.findUnique({ where: { id: req.params.id } });
     if (!truck) { res.status(404).json({ error: 'Not found' }); return; }
 
@@ -313,12 +295,10 @@ router.get('/:id/gate-pass-pdf', async (req: AuthRequest, res: Response) => {
     res.setHeader('Content-Type', 'application/pdf');
     res.setHeader('Content-Disposition', `inline; filename=GatePass-${truck.vehicleNo.replace(/\s/g, '')}.pdf`);
     res.send(pdfBuffer);
-  } catch (err: any) { res.status(500).json({ error: err.message }); }
-});
+}));
 
 // POST /:id/eway-bill
-router.post('/:id/eway-bill', async (req: AuthRequest, res: Response) => {
-  try {
+router.post('/:id/eway-bill', asyncHandler(async (req: AuthRequest, res: Response) => {
     const truck = await prisma.sugarDispatchTruck.findUnique({ where: { id: req.params.id } });
     if (!truck) { res.status(404).json({ error: 'Not found' }); return; }
     if (truck.ewayBillNo) { res.status(400).json({ error: `E-Way Bill already exists: ${truck.ewayBillNo}` }); return; }
@@ -371,12 +351,10 @@ router.post('/:id/eway-bill', async (req: AuthRequest, res: Response) => {
       });
     }
     res.json(result);
-  } catch (err: any) { res.status(500).json({ error: err.message }); }
-});
+}));
 
 // DELETE /:id
-router.delete('/:id', authorize('ADMIN') as any, async (req: AuthRequest, res: Response) => {
-  try {
+router.delete('/:id', authorize('ADMIN') as any, asyncHandler(async (req: AuthRequest, res: Response) => {
     const truck = await prisma.sugarDispatchTruck.findUnique({ where: { id: req.params.id } });
     if (!truck) { res.status(404).json({ error: 'Not found' }); return; }
     if (truck.status === 'BILLED' || truck.status === 'RELEASED') {
@@ -385,7 +363,6 @@ router.delete('/:id', authorize('ADMIN') as any, async (req: AuthRequest, res: R
     }
     await prisma.sugarDispatchTruck.delete({ where: { id: req.params.id } });
     res.json({ ok: true });
-  } catch (err: any) { res.status(500).json({ error: err.message }); }
-});
+}));
 
 export default router;

@@ -1,6 +1,7 @@
 import { Router, Response } from 'express';
 import prisma from '../config/prisma';
 import { authenticate, AuthRequest, authorize } from '../middleware/auth';
+import { asyncHandler } from '../shared/middleware';
 
 const router = Router();
 
@@ -133,85 +134,77 @@ function calcKLPD(productionBL: number, prevDate: Date | null, curDate: Date): n
 
 // GET /api/ethanol-product/latest — returns latest entry as "previous" + defaults
 // ?beforeId=xxx — get the entry before this one (for edit mode)
-router.get('/latest', authenticate, async (req: AuthRequest, res: Response) => {
-  try {
-    const yearStart = new Date().getFullYear();
-    const beforeId = req.query.beforeId as string | undefined;
+router.get('/latest', authenticate, asyncHandler(async (req: AuthRequest, res: Response) => {
+  const yearStart = new Date().getFullYear();
+  const beforeId = req.query.beforeId as string | undefined;
 
-    let latest: any = null;
+  let latest: any = null;
 
-    if (beforeId) {
-      // Edit mode: find the entry being edited, then get the one before it by date
-      const editing = await prisma.ethanolProductEntry.findUnique({ where: { id: beforeId } });
-      if (editing) {
-        latest = await prisma.ethanolProductEntry.findFirst({
-          where: { yearStart: editing.yearStart, date: { lt: editing.date } },
-          orderBy: { date: 'desc' },
-        });
-      }
-    } else {
-      // New entry mode: get the most recent by date
+  if (beforeId) {
+    // Edit mode: find the entry being edited, then get the one before it by date
+    const editing = await prisma.ethanolProductEntry.findUnique({ where: { id: beforeId } });
+    if (editing) {
       latest = await prisma.ethanolProductEntry.findFirst({
-        where: { yearStart },
+        where: { yearStart: editing.yearStart, date: { lt: editing.date } },
         orderBy: { date: 'desc' },
       });
     }
-
-    // Build previous tank data for display
-    const previous = latest ? {
-      ...Object.fromEntries(TANK_FIELDS.map(f => [f, (latest as any)[f]])),
-      rsLevel: latest.rsLevel,
-      hfoLevel: latest.hfoLevel,
-      lfoLevel: latest.lfoLevel,
-      totalStock: latest.totalStock,
-      avgStrength: latest.avgStrength,
-      totalDispatch: latest.totalDispatch,
-      productionBL: latest.productionBL,
-      productionAL: latest.productionAL,
-      klpd: latest.klpd,
-      date: latest.date,
-      createdAt: latest.createdAt,
-    } : null;
-
-    res.json({ previous });
-  } catch (err: any) { res.status(500).json({ error: err.message }); }
-});
-
-router.get('/total-production', authenticate, async (req: AuthRequest, res: Response) => {
-  try {
-    // Sum all daily production values
-    const totalProduction = await prisma.ethanolProductEntry.aggregate({
-      _sum: {
-        productionBL: true,
-      },
+  } else {
+    // New entry mode: get the most recent by date
+    latest = await prisma.ethanolProductEntry.findFirst({
+      where: { yearStart },
+      orderBy: { date: 'desc' },
     });
-    const sumProd = totalProduction._sum.productionBL || 0;
-
-    // Add the opening stock from the FIRST entry (base stock when ERP started)
-    // The first entry's totalStock represents all ethanol in tanks when tracking began
-    const firstEntry = await prisma.ethanolProductEntry.findFirst({
-      orderBy: { date: 'asc' },
-      select: { totalStock: true, productionBL: true },
-    });
-    const openingStock = firstEntry?.totalStock || 0;
-
-    res.json({ totalProduced: sumProd + openingStock });
-  } catch (err: any) {
-    res.status(500).json({ error: err.message });
   }
-});
+
+  // Build previous tank data for display
+  const previous = latest ? {
+    ...Object.fromEntries(TANK_FIELDS.map(f => [f, (latest as any)[f]])),
+    rsLevel: latest.rsLevel,
+    hfoLevel: latest.hfoLevel,
+    lfoLevel: latest.lfoLevel,
+    totalStock: latest.totalStock,
+    avgStrength: latest.avgStrength,
+    totalDispatch: latest.totalDispatch,
+    productionBL: latest.productionBL,
+    productionAL: latest.productionAL,
+    klpd: latest.klpd,
+    date: latest.date,
+    createdAt: latest.createdAt,
+  } : null;
+
+  res.json({ previous });
+}));
+
+router.get('/total-production', authenticate, asyncHandler(async (req: AuthRequest, res: Response) => {
+  // Sum all daily production values
+  const totalProduction = await prisma.ethanolProductEntry.aggregate({
+    _sum: {
+      productionBL: true,
+    },
+  });
+  const sumProd = totalProduction._sum.productionBL || 0;
+
+  // Add the opening stock from the FIRST entry (base stock when ERP started)
+  // The first entry's totalStock represents all ethanol in tanks when tracking began
+  const firstEntry = await prisma.ethanolProductEntry.findFirst({
+    orderBy: { date: 'asc' },
+    select: { totalStock: true, productionBL: true },
+  });
+  const openingStock = firstEntry?.totalStock || 0;
+
+  res.json({ totalProduced: sumProd + openingStock });
+}));
 
 // GET /api/ethanol-product — history
-router.get('/', authenticate, async (req: AuthRequest, res: Response) => {
-  try {
-    const entries = await prisma.ethanolProductEntry.findMany({
-      orderBy: { date: 'desc' },
-      take: 30,
-      include: { trucks: true },
-    });
-    res.json({ entries });
-  } catch (err: any) { res.status(500).json({ error: err.message }); }
-});
+router.get('/', authenticate, asyncHandler(async (req: AuthRequest, res: Response) => {
+  const entries = await prisma.ethanolProductEntry.findMany({
+    orderBy: { date: 'desc' },
+    take: 30,
+    include: { trucks: true },
+  });
+  res.json({ entries });
+}));
 
 // Helper: get ethanol dispatch total between two readings using Weighment mirror.
 // Uses actual weighment time (secondWeightAt) — not DispatchTruck.createdAt or date,
@@ -236,156 +229,150 @@ async function getStandaloneDispatch(afterDate: Date | null, upToDate: Date): Pr
 }
 
 // POST /api/ethanol-product
-router.post('/', authenticate, async (req: AuthRequest, res: Response) => {
-  try {
-    const { date, trucks, remarks, plantNotRunning } = req.body;
-    // Frontend sends full ISO datetime (already timezone-correct)
-    const entryDate = new Date(date);
-    const yearStart = entryDate.getFullYear();
+router.post('/', authenticate, asyncHandler(async (req: AuthRequest, res: Response) => {
+  const { date, trucks, remarks, plantNotRunning } = req.body;
+  // Frontend sends full ISO datetime (already timezone-correct)
+  const entryDate = new Date(date);
+  const yearStart = entryDate.getFullYear();
 
-    const tankData = parseTankData(req.body);
+  const tankData = parseTankData(req.body);
 
-    // Get previous entry for production calculation (by date, not createdAt)
-    const prevEntry = await prisma.ethanolProductEntry.findFirst({
-      where: { yearStart },
-      orderBy: { date: 'desc' },
-    });
+  // Get previous entry for production calculation (by date, not createdAt)
+  const prevEntry = await prisma.ethanolProductEntry.findFirst({
+    where: { yearStart },
+    orderBy: { date: 'desc' },
+  });
 
-    // Sum dispatch from trucks array + standalone dispatches since prev entry
-    const truckList: any[] = trucks || [];
-    const linkedDispatch = truckList.reduce((s: number, t: any) => s + (parseFloat(t.quantityBL) || 0), 0);
-    const standaloneDispatch = await getStandaloneDispatch(
-      prevEntry?.date || null, entryDate
-    );
-    const totalDispatch = linkedDispatch + standaloneDispatch;
+  // Sum dispatch from trucks array + standalone dispatches since prev entry
+  const truckList: any[] = trucks || [];
+  const linkedDispatch = truckList.reduce((s: number, t: any) => s + (parseFloat(t.quantityBL) || 0), 0);
+  const standaloneDispatch = await getStandaloneDispatch(
+    prevEntry?.date || null, entryDate
+  );
+  const totalDispatch = linkedDispatch + standaloneDispatch;
 
-    const summary = calcSummary(tankData, prevEntry, totalDispatch);
+  const summary = calcSummary(tankData, prevEntry, totalDispatch);
 
-    // Clamp negative production to 0 (can happen when dispatch exceeds measured production)
-    if (plantNotRunning || summary.productionBL < 0) {
-      summary.productionBL = 0;
-      summary.productionAL = 0;
-    }
-    const klpd = calcKLPD(summary.productionBL, prevEntry?.date || null, entryDate);
+  // Clamp negative production to 0 (can happen when dispatch exceeds measured production)
+  if (plantNotRunning || summary.productionBL < 0) {
+    summary.productionBL = 0;
+    summary.productionAL = 0;
+  }
+  const klpd = calcKLPD(summary.productionBL, prevEntry?.date || null, entryDate);
 
-    // Snapshot OPC wash between prev dip and now
-    const wash = await snapshotWashKL(prevEntry?.createdAt || null, new Date(), prevEntry?.washTotalizer);
-    let washData: any = {};
-    if (wash) {
-      const yieldVal = wash.grainConsumedMT && wash.grainConsumedMT > 0 && summary.productionAL > 0
-        ? Math.round((summary.productionAL / wash.grainConsumedMT) * 100) / 100
-        : null;
-      washData = { washTotalizer: wash.washTotalizer, washKL: wash.washKL, grainConsumedMT: wash.grainConsumedMT, grainPctUsed: wash.grainPctUsed, yieldALperMT: yieldVal };
-    }
+  // Snapshot OPC wash between prev dip and now
+  const wash = await snapshotWashKL(prevEntry?.createdAt || null, new Date(), prevEntry?.washTotalizer);
+  let washData: any = {};
+  if (wash) {
+    const yieldVal = wash.grainConsumedMT && wash.grainConsumedMT > 0 && summary.productionAL > 0
+      ? Math.round((summary.productionAL / wash.grainConsumedMT) * 100) / 100
+      : null;
+    washData = { washTotalizer: wash.washTotalizer, washKL: wash.washKL, grainConsumedMT: wash.grainConsumedMT, grainPctUsed: wash.grainPctUsed, yieldALperMT: yieldVal };
+  }
 
-    const entry = await prisma.ethanolProductEntry.create({
-      data: {
-        date: entryDate,
-        yearStart,
-        ...tankData,
-        ...summary,
-        klpd,
-        ...washData,
-        remarks: remarks || null,
-        userId: req.user!.id,
-        trucks: {
-          create: truckList.map(t => ({
-            vehicleNo: t.vehicleNo || '',
-            partyName: t.partyName || '',
-            destination: t.destination || '',
-            quantityBL: parseFloat(t.quantityBL) || 0,
-            strength: t.strength != null ? parseFloat(t.strength) : null,
-            remarks: t.remarks || null,
-          })),
-        },
+  const entry = await prisma.ethanolProductEntry.create({
+    data: {
+      date: entryDate,
+      yearStart,
+      ...tankData,
+      ...summary,
+      klpd,
+      ...washData,
+      remarks: remarks || null,
+      userId: req.user!.id,
+      trucks: {
+        create: truckList.map(t => ({
+          vehicleNo: t.vehicleNo || '',
+          partyName: t.partyName || '',
+          destination: t.destination || '',
+          quantityBL: parseFloat(t.quantityBL) || 0,
+          strength: t.strength != null ? parseFloat(t.strength) : null,
+          remarks: t.remarks || null,
+        })),
       },
-      include: { trucks: true },
-    });
+    },
+    include: { trucks: true },
+  });
 
-    res.status(201).json(entry);
-  } catch (err: any) { res.status(500).json({ error: err.message }); }
-});
+  res.status(201).json(entry);
+}));
 
 // PUT /api/ethanol-product/:id
-router.put('/:id', authenticate, async (req: AuthRequest, res: Response) => {
-  try {
-    const existing = await prisma.ethanolProductEntry.findUnique({ where: { id: req.params.id } });
-    if (!existing) return res.status(404).json({ error: 'Entry not found' });
+router.put('/:id', authenticate, asyncHandler(async (req: AuthRequest, res: Response) => {
+  const existing = await prisma.ethanolProductEntry.findUnique({ where: { id: req.params.id } });
+  if (!existing) return res.status(404).json({ error: 'Entry not found' });
 
-    const { trucks, remarks, date: newDate, plantNotRunning: pnr } = req.body;
-    const tankData = parseTankData(req.body);
+  const { trucks, remarks, date: newDate, plantNotRunning: pnr } = req.body;
+  const tankData = parseTankData(req.body);
 
-    // Frontend sends full ISO datetime (already timezone-correct)
-    const entryDate = newDate ? new Date(newDate) : existing.date;
+  // Frontend sends full ISO datetime (already timezone-correct)
+  const entryDate = newDate ? new Date(newDate) : existing.date;
 
-    // Get previous entry (before this one by date, not createdAt)
-    const prevEntry = await prisma.ethanolProductEntry.findFirst({
-      where: { yearStart: existing.yearStart, date: { lt: existing.date } },
-      orderBy: { date: 'desc' },
-    });
+  // Get previous entry (before this one by date, not createdAt)
+  const prevEntry = await prisma.ethanolProductEntry.findFirst({
+    where: { yearStart: existing.yearStart, date: { lt: existing.date } },
+    orderBy: { date: 'desc' },
+  });
 
-    const truckList: any[] = trucks || [];
-    const linkedDispatch = truckList.reduce((s: number, t: any) => s + (parseFloat(t.quantityBL) || 0), 0);
-    const standaloneDispatch = await getStandaloneDispatch(
-      prevEntry?.date || null, entryDate
-    );
-    const totalDispatch = linkedDispatch + standaloneDispatch;
-    const summary = calcSummary(tankData, prevEntry, totalDispatch);
+  const truckList: any[] = trucks || [];
+  const linkedDispatch = truckList.reduce((s: number, t: any) => s + (parseFloat(t.quantityBL) || 0), 0);
+  const standaloneDispatch = await getStandaloneDispatch(
+    prevEntry?.date || null, entryDate
+  );
+  const totalDispatch = linkedDispatch + standaloneDispatch;
+  const summary = calcSummary(tankData, prevEntry, totalDispatch);
 
-    // Clamp negative production to 0
-    if (pnr || summary.productionBL < 0) {
-      summary.productionBL = 0;
-      summary.productionAL = 0;
-    }
-    const klpd = calcKLPD(summary.productionBL, prevEntry?.date || null, entryDate);
+  // Clamp negative production to 0
+  if (pnr || summary.productionBL < 0) {
+    summary.productionBL = 0;
+    summary.productionAL = 0;
+  }
+  const klpd = calcKLPD(summary.productionBL, prevEntry?.date || null, entryDate);
 
-    // Re-snapshot OPC wash
-    const wash = await snapshotWashKL(prevEntry?.createdAt || null, existing.createdAt, prevEntry?.washTotalizer);
-    let washData: any = {};
-    if (wash) {
-      const yieldVal = wash.grainConsumedMT && wash.grainConsumedMT > 0 && summary.productionAL > 0
-        ? Math.round((summary.productionAL / wash.grainConsumedMT) * 100) / 100
-        : null;
-      washData = { washTotalizer: wash.washTotalizer, washKL: wash.washKL, grainConsumedMT: wash.grainConsumedMT, grainPctUsed: wash.grainPctUsed, yieldALperMT: yieldVal };
-    }
+  // Re-snapshot OPC wash
+  const wash = await snapshotWashKL(prevEntry?.createdAt || null, existing.createdAt, prevEntry?.washTotalizer);
+  let washData: any = {};
+  if (wash) {
+    const yieldVal = wash.grainConsumedMT && wash.grainConsumedMT > 0 && summary.productionAL > 0
+      ? Math.round((summary.productionAL / wash.grainConsumedMT) * 100) / 100
+      : null;
+    washData = { washTotalizer: wash.washTotalizer, washKL: wash.washKL, grainConsumedMT: wash.grainConsumedMT, grainPctUsed: wash.grainPctUsed, yieldALperMT: yieldVal };
+  }
 
-    // Delete old trucks, recreate
-    await prisma.dispatchTruck.deleteMany({ where: { entryId: req.params.id } });
+  // Delete old trucks, recreate
+  await prisma.dispatchTruck.deleteMany({ where: { entryId: req.params.id } });
 
-    const entry = await prisma.ethanolProductEntry.update({
-      where: { id: req.params.id },
-      data: {
-        date: entryDate,
-        ...tankData,
-        ...summary,
-        klpd,
-        ...washData,
-        remarks: remarks || null,
-        trucks: {
-          create: truckList.map(t => ({
-            vehicleNo: t.vehicleNo || '',
-            partyName: t.partyName || '',
-            destination: t.destination || '',
-            quantityBL: parseFloat(t.quantityBL) || 0,
-            strength: t.strength != null ? parseFloat(t.strength) : null,
-            remarks: t.remarks || null,
-          })),
-        },
+  const entry = await prisma.ethanolProductEntry.update({
+    where: { id: req.params.id },
+    data: {
+      date: entryDate,
+      ...tankData,
+      ...summary,
+      klpd,
+      ...washData,
+      remarks: remarks || null,
+      trucks: {
+        create: truckList.map(t => ({
+          vehicleNo: t.vehicleNo || '',
+          partyName: t.partyName || '',
+          destination: t.destination || '',
+          quantityBL: parseFloat(t.quantityBL) || 0,
+          strength: t.strength != null ? parseFloat(t.strength) : null,
+          remarks: t.remarks || null,
+        })),
       },
-      include: { trucks: true },
-    });
+    },
+    include: { trucks: true },
+  });
 
-    res.json(entry);
-  } catch (err: any) { res.status(500).json({ error: err.message }); }
-});
+  res.json(entry);
+}));
 
 // DELETE /api/ethanol-product/:id — ADMIN only
-router.delete('/:id', authenticate, authorize('ADMIN'), async (req: AuthRequest, res: Response) => {
-  try {
-    await prisma.ethanolProductEntry.delete({ where: { id: req.params.id } });
-    res.json({ message: 'Deleted' });
-  } catch (err: any) { res.status(500).json({ error: err.message }); }
-});
+router.delete('/:id', authenticate, authorize('ADMIN'), asyncHandler(async (req: AuthRequest, res: Response) => {
+  await prisma.ethanolProductEntry.delete({ where: { id: req.params.id } });
+  res.json({ message: 'Deleted' });
+}));
 
 // ─────────────────────────────────────────────────────────────
 // Backfill helper: recompute an ethanol entry's totals.

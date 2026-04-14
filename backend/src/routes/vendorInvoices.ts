@@ -1,7 +1,8 @@
 import { Router, Request, Response } from 'express';
 import prisma from '../config/prisma';
 import { authenticate, authorize, AuthRequest, getCompanyFilter, getActiveCompanyId } from '../middleware/auth';
-import { asyncHandler } from '../shared/middleware';
+import { asyncHandler, validate } from '../shared/middleware';
+import { z } from 'zod';
 import PDFDocument from 'pdfkit';
 import { sendEmail } from '../services/messaging';
 import { drawLetterhead } from '../utils/letterhead';
@@ -15,6 +16,56 @@ import axios from 'axios';
 // RAG indexing removed — only compliance docs go to RAG
 import { generateVaultNote } from '../services/vaultWriter';
 import { recomputeGrnPaidStateForPO } from '../services/grnPaidState';
+
+// ── Zod schemas ──
+const createVendorInvoiceSchema = z.object({
+  vendorId: z.string().min(1),
+  poId: z.string().optional().nullable(),
+  grnId: z.string().optional().nullable(),
+  vendorInvNo: z.string().optional().default(''),
+  vendorInvDate: z.string().optional(),
+  invoiceDate: z.string().optional(),
+  dueDate: z.string().optional().nullable(),
+  productName: z.string().optional().default(''),
+  quantity: z.coerce.number().default(0),
+  unit: z.string().optional().default('kg'),
+  rate: z.coerce.number().default(0),
+  supplyType: z.enum(['INTRA_STATE', 'INTER_STATE']).optional().default('INTRA_STATE'),
+  gstPercent: z.coerce.number().default(0),
+  isRCM: z.boolean().optional().default(false),
+  freightCharge: z.coerce.number().optional().default(0),
+  loadingCharge: z.coerce.number().optional().default(0),
+  otherCharges: z.coerce.number().optional().default(0),
+  roundOff: z.coerce.number().optional().default(0),
+  tdsSection: z.string().optional().nullable(),
+  tdsPercent: z.coerce.number().optional().default(0),
+  status: z.string().optional().default('PENDING'),
+  filePath: z.string().optional().nullable(),
+  remarks: z.string().optional().nullable(),
+});
+
+const updateVendorInvoiceSchema = z.object({
+  vendorInvNo: z.string().optional(),
+  vendorInvDate: z.string().optional(),
+  invoiceDate: z.string().optional(),
+  dueDate: z.string().optional().nullable(),
+  productName: z.string().optional(),
+  quantity: z.coerce.number().optional(),
+  unit: z.string().optional(),
+  rate: z.coerce.number().optional(),
+  supplyType: z.enum(['INTRA_STATE', 'INTER_STATE']).optional(),
+  gstPercent: z.coerce.number().optional(),
+  isRCM: z.boolean().optional(),
+  freightCharge: z.coerce.number().optional(),
+  loadingCharge: z.coerce.number().optional(),
+  otherCharges: z.coerce.number().optional(),
+  roundOff: z.coerce.number().optional(),
+  tdsSection: z.string().optional().nullable(),
+  tdsPercent: z.coerce.number().optional(),
+  remarks: z.string().optional().nullable(),
+  poId: z.string().optional().nullable(),
+  grnId: z.string().optional().nullable(),
+});
 
 const router = Router();
 router.use(authenticate as any);
@@ -107,8 +158,7 @@ If a field is not found, use null for strings and 0 for numbers. Return ONLY the
 }));
 
 // GET / — list with filters (vendorId, status)
-router.get('/', async (req: AuthRequest, res: Response) => {
-  try {
+router.get('/', asyncHandler(async (req: AuthRequest, res: Response) => {
     const vendorId = req.query.vendorId as string | undefined;
     const status = req.query.status as string | undefined;
 
@@ -127,15 +177,13 @@ router.get('/', async (req: AuthRequest, res: Response) => {
     });
 
     res.json({ invoices });
-  } catch (err: any) { res.status(500).json({ error: err.message }); }
-});
+}));
 
 // GET /outstanding — outstanding vendor invoices grouped by vendor
-router.get('/outstanding', async (req: Request, res: Response) => {
-  try {
+router.get('/outstanding', asyncHandler(async (req: AuthRequest, res: Response) => {
     const invoices = await prisma.vendorInvoice.findMany({
       where: {
-        ...getCompanyFilter(req as AuthRequest),
+        ...getCompanyFilter(req),
         balanceAmount: {
           gt: 0,
         },
@@ -161,15 +209,13 @@ router.get('/outstanding', async (req: Request, res: Response) => {
     }
 
     res.json({ outstanding: Object.values(grouped) });
-  } catch (err: any) { res.status(500).json({ error: err.message }); }
-});
+}));
 
 // GET /itc-report — ITC report
-router.get('/itc-report', async (req: Request, res: Response) => {
-  try {
+router.get('/itc-report', asyncHandler(async (req: AuthRequest, res: Response) => {
     const invoices = await prisma.vendorInvoice.findMany({
       where: {
-        ...getCompanyFilter(req as AuthRequest),
+        ...getCompanyFilter(req),
         status: { in: ['VERIFIED', 'APPROVED', 'PAID'] },
       },
       include: {
@@ -187,12 +233,10 @@ router.get('/itc-report', async (req: Request, res: Response) => {
     }));
 
     res.json({ report });
-  } catch (err: any) { res.status(500).json({ error: err.message }); }
-});
+}));
 
 // GET /:id — single with vendor, po, grn, payments
-router.get('/:id', async (req: Request, res: Response) => {
-  try {
+router.get('/:id', asyncHandler(async (req: AuthRequest, res: Response) => {
     const invoice = await prisma.vendorInvoice.findUnique({
       where: { id: req.params.id },
       include: {
@@ -204,12 +248,10 @@ router.get('/:id', async (req: Request, res: Response) => {
     });
     if (!invoice) return res.status(404).json({ error: 'Invoice not found' });
     res.json(invoice);
-  } catch (err: any) { res.status(500).json({ error: err.message }); }
-});
+}));
 
 // POST / — create vendor invoice
-router.post('/', async (req: AuthRequest, res: Response) => {
-  try {
+router.post('/', validate(createVendorInvoiceSchema), asyncHandler(async (req: AuthRequest, res: Response) => {
     const b = req.body;
 
     const quantity = parseFloat(b.quantity) || 0;
@@ -321,12 +363,10 @@ router.post('/', async (req: AuthRequest, res: Response) => {
 
     if (invoice.poId) recomputeGrnPaidStateForPO(invoice.poId).catch(() => {});
     res.status(201).json(invoice);
-  } catch (err: any) { res.status(500).json({ error: err.message }); }
-});
+}));
 
 // PUT /:id — edit vendor invoice (only PENDING status)
-router.put('/:id', async (req: Request, res: Response) => {
-  try {
+router.put('/:id', validate(updateVendorInvoiceSchema), asyncHandler(async (req: AuthRequest, res: Response) => {
     const existing = await prisma.vendorInvoice.findUnique({ where: { id: req.params.id } });
     if (!existing) return res.status(404).json({ error: 'Invoice not found' });
     if (existing.status !== 'PENDING') {
@@ -380,12 +420,10 @@ router.put('/:id', async (req: Request, res: Response) => {
       },
     });
     res.json(invoice);
-  } catch (err: any) { res.status(500).json({ error: err.message }); }
-});
+}));
 
 // PUT /:id/status — status transitions
-router.put('/:id/status', async (req: Request, res: Response) => {
-  try {
+router.put('/:id/status', asyncHandler(async (req: AuthRequest, res: Response) => {
     const { newStatus } = req.body;
     const invoice = await prisma.vendorInvoice.findUnique({
       where: { id: req.params.id },
@@ -410,12 +448,10 @@ router.put('/:id/status', async (req: Request, res: Response) => {
     });
 
     res.json(updated);
-  } catch (err: any) { res.status(500).json({ error: err.message }); }
-});
+}));
 
 // PUT /:id/itc — update ITC status
-router.put('/:id/itc', async (req: Request, res: Response) => {
-  try {
+router.put('/:id/itc', asyncHandler(async (req: AuthRequest, res: Response) => {
     const { itcClaimed, itcClaimedDate, itcReversed, itcReversalReason } = req.body;
     const invoice = await prisma.vendorInvoice.update({
       where: { id: req.params.id },
@@ -427,12 +463,10 @@ router.put('/:id/itc', async (req: Request, res: Response) => {
       },
     });
     res.json(invoice);
-  } catch (err: any) { res.status(500).json({ error: err.message }); }
-});
+}));
 
 // GET /:id/pdf — Generate Vendor Invoice PDF
-router.get('/:id/pdf', async (req: Request, res: Response) => {
-  try {
+router.get('/:id/pdf', asyncHandler(async (req: AuthRequest, res: Response) => {
     const inv = await prisma.vendorInvoice.findUnique({
       where: { id: req.params.id },
       include: { vendor: true },
@@ -464,12 +498,10 @@ router.get('/:id/pdf', async (req: Request, res: Response) => {
     res.setHeader('Content-Type', 'application/pdf');
     res.setHeader('Content-Disposition', `inline; filename="VI-${inv.invoiceNo || inv.id.slice(0, 8)}.pdf"`);
     res.send(pdfBuffer);
-  } catch (err: any) { res.status(500).json({ error: err.message }); }
-});
+}));
 
 // POST /:id/send-email — Send Vendor Invoice via email
-router.post('/:id/send-email', async (req: Request, res: Response) => {
-  try {
+router.post('/:id/send-email', asyncHandler(async (req: AuthRequest, res: Response) => {
     const inv = await prisma.vendorInvoice.findUnique({
       where: { id: req.params.id },
       include: { vendor: true },
@@ -514,7 +546,6 @@ router.post('/:id/send-email', async (req: Request, res: Response) => {
     } else {
       res.status(500).json({ error: result.error || 'Email send failed' });
     }
-  } catch (err: any) { res.status(500).json({ error: err.message }); }
-});
+}));
 
 export default router;

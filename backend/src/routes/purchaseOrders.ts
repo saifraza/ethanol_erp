@@ -1,7 +1,57 @@
 import { Router, Response } from 'express';
 import prisma from '../config/prisma';
 import { authenticate, AuthRequest, authorize, getCompanyFilter, getActiveCompanyId } from '../middleware/auth';
-import { asyncHandler } from '../shared/middleware';
+import { asyncHandler, validate } from '../shared/middleware';
+import { z } from 'zod';
+
+const poLineSchema = z.object({
+  inventoryItemId: z.string().optional().nullable(),
+  materialId: z.string().optional().nullable(),
+  description: z.string().optional().default(''),
+  hsnCode: z.string().optional().default(''),
+  quantity: z.coerce.number().nonnegative(),
+  unit: z.string().optional().default('KG'),
+  rate: z.coerce.number().nonnegative(),
+  discountPercent: z.coerce.number().nonnegative().optional().default(0),
+  gstPercent: z.coerce.number().nonnegative().optional(),
+  isRCM: z.boolean().optional().default(false),
+});
+
+const createPOSchema = z.object({
+  vendorId: z.string().min(1),
+  poDate: z.string().optional(),
+  deliveryDate: z.string().optional().nullable(),
+  supplyType: z.enum(['INTRA_STATE', 'INTER_STATE']).optional().default('INTRA_STATE'),
+  placeOfSupply: z.string().optional().default(''),
+  paymentTerms: z.string().optional().default(''),
+  creditDays: z.coerce.number().int().nonnegative().optional().default(0),
+  deliveryAddress: z.string().optional().default(''),
+  transportMode: z.string().optional().default(''),
+  transportBy: z.string().optional().default(''),
+  remarks: z.string().optional().default(''),
+  freightCharge: z.coerce.number().nonnegative().optional().default(0),
+  otherCharges: z.coerce.number().nonnegative().optional().default(0),
+  roundOff: z.coerce.number().optional().default(0),
+  lines: z.array(poLineSchema).min(1),
+});
+
+const updatePOSchema = z.object({
+  vendorId: z.string().optional(),
+  poDate: z.string().optional(),
+  deliveryDate: z.string().optional().nullable(),
+  supplyType: z.enum(['INTRA_STATE', 'INTER_STATE']).optional(),
+  placeOfSupply: z.string().optional(),
+  paymentTerms: z.string().optional(),
+  creditDays: z.coerce.number().int().nonnegative().optional(),
+  deliveryAddress: z.string().optional(),
+  transportMode: z.string().optional(),
+  transportBy: z.string().optional(),
+  remarks: z.string().optional(),
+  freightCharge: z.coerce.number().nonnegative().optional(),
+  otherCharges: z.coerce.number().nonnegative().optional(),
+  roundOff: z.coerce.number().optional(),
+  lines: z.array(poLineSchema).optional(),
+});
 import { generatePOPdf } from '../utils/pdfGenerator';
 // RAG indexing removed — only compliance docs go to RAG
 import { renderDocumentPdf } from '../services/documentRenderer';
@@ -169,7 +219,7 @@ router.get('/:id', asyncHandler(async (req: AuthRequest, res: Response) => {
 }));
 
 // POST / — create PO with lines in a transaction
-router.post('/', asyncHandler(async (req: AuthRequest, res: Response) => {
+router.post('/', validate(createPOSchema), asyncHandler(async (req: AuthRequest, res: Response) => {
     const b = req.body;
 
     // Validate every line has an inventory item linked
@@ -367,7 +417,7 @@ router.patch('/:id/payment-terms', asyncHandler(async (req: AuthRequest, res: Re
     res.json(updated);
 }));
 
-router.put('/:id', asyncHandler(async (req: AuthRequest, res: Response) => {
+router.put('/:id', validate(updatePOSchema), asyncHandler(async (req: AuthRequest, res: Response) => {
     const po = await prisma.purchaseOrder.findUnique({
       where: { id: req.params.id },
       include: { lines: true },

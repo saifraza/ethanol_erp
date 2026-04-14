@@ -1,6 +1,39 @@
 import { Router, Request, Response } from 'express';
 import prisma from '../config/prisma';
 import { authenticate, authorize, AuthRequest, getCompanyFilter, getActiveCompanyId } from '../middleware/auth';
+import { asyncHandler, validate } from '../shared/middleware';
+import { z } from 'zod';
+
+const createInvoiceSchema = z.object({
+  customerId: z.string().min(1),
+  orderId: z.string().optional().nullable(),
+  shipmentId: z.string().optional().nullable(),
+  invoiceDate: z.string().optional(),
+  dueDate: z.string().optional().nullable(),
+  productName: z.string().optional().default(''),
+  quantity: z.coerce.number().nonnegative().default(0),
+  unit: z.string().optional().default('KL'),
+  rate: z.coerce.number().nonnegative().default(0),
+  gstPercent: z.coerce.number().nonnegative().default(0),
+  freightCharge: z.coerce.number().nonnegative().default(0),
+  challanNo: z.string().optional().nullable(),
+  ewayBill: z.string().optional().nullable(),
+  remarks: z.string().optional().nullable(),
+});
+
+const updateInvoiceSchema = z.object({
+  quantity: z.coerce.number().nonnegative().optional(),
+  rate: z.coerce.number().nonnegative().optional(),
+  gstPercent: z.coerce.number().nonnegative().optional(),
+  freightCharge: z.coerce.number().nonnegative().optional(),
+  productName: z.string().optional(),
+  unit: z.string().optional(),
+  remarks: z.string().optional().nullable(),
+  challanNo: z.string().optional().nullable(),
+  ewayBill: z.string().optional().nullable(),
+  invoiceDate: z.string().optional(),
+  dueDate: z.string().optional().nullable(),
+});
 import { generateInvoicePdf } from '../utils/pdfGenerator';
 import { renderDocumentPdf } from '../services/documentRenderer';
 import { nextDocNo } from '../utils/docSequence';
@@ -27,8 +60,7 @@ function calcGstSplit(amount: number, gstPercent: number, customerState: string 
 router.use(authenticate as any);
 
 // GET / — List invoices with filters
-router.get('/', async (req: Request, res: Response) => {
-  try {
+router.get('/', asyncHandler(async (req: AuthRequest, res: Response) => {
     const customerId = req.query.customerId as string;
     const status = req.query.status as string;
     const from = req.query.from as string;
@@ -36,7 +68,7 @@ router.get('/', async (req: Request, res: Response) => {
     const page = parseInt(req.query.page as string) || 1;
     const limit = parseInt(req.query.limit as string) || 50;
 
-    let where: any = { ...getCompanyFilter(req as AuthRequest) };
+    let where: any = { ...getCompanyFilter(req) };
 
     if (customerId) where.customerId = customerId;
     if (status) where.status = status;
@@ -65,17 +97,15 @@ router.get('/', async (req: Request, res: Response) => {
     const total = await prisma.invoice.count({ where });
 
     res.json({ invoices, total, page, limit });
-  } catch (err: any) { res.status(500).json({ error: err.message }); }
-});
+}));
 
 // GET /outstanding — Outstanding invoices summary
-router.get('/outstanding', async (req: Request, res: Response) => {
-  try {
+router.get('/outstanding', asyncHandler(async (req: AuthRequest, res: Response) => {
     // Cap limit to prevent unbounded queries
     const limit = Math.min(parseInt((req.query.limit as string) || '200'), 1000);
     const outstanding = await prisma.invoice.findMany({
       where: {
-        ...getCompanyFilter(req as AuthRequest),
+        ...getCompanyFilter(req),
         status: { in: ['UNPAID', 'PARTIAL'] },
       },
       include: {
@@ -104,12 +134,10 @@ router.get('/outstanding', async (req: Request, res: Response) => {
     });
 
     res.json(Object.values(grouped));
-  } catch (err: any) { res.status(500).json({ error: err.message }); }
-});
+}));
 
 // GET /:id — Single invoice with customer, order, payments
-router.get('/:id', async (req: Request, res: Response) => {
-  try {
+router.get('/:id', asyncHandler(async (req: AuthRequest, res: Response) => {
     const invoice = await prisma.invoice.findUnique({
       where: { id: req.params.id },
       include: {
@@ -120,12 +148,10 @@ router.get('/:id', async (req: Request, res: Response) => {
     });
     if (!invoice) { res.status(404).json({ error: 'Invoice not found' }); return; }
     res.json(invoice);
-  } catch (err: any) { res.status(500).json({ error: err.message }); }
-});
+}));
 
 // POST / — Create invoice
-router.post('/', async (req: Request, res: Response) => {
-  try {
+router.post('/', validate(createInvoiceSchema), asyncHandler(async (req: AuthRequest, res: Response) => {
     const b = req.body;
     const quantity = parseFloat(b.quantity) || 0;
     const rate = parseFloat(b.rate) || 0;
@@ -137,7 +163,7 @@ router.post('/', async (req: Request, res: Response) => {
     const gst = calcGstSplit(amount, gstPercent, cust?.state);
     const totalAmount = amount + gst.gstAmount + freightCharge;
 
-    const companyId = getActiveCompanyId(req as AuthRequest);
+    const companyId = getActiveCompanyId(req);
     const invoiceNo = await nextDocNo('Invoice', 'invoiceNo', companyId);
 
     const invoice = await prisma.invoice.create({
@@ -154,7 +180,7 @@ router.post('/', async (req: Request, res: Response) => {
         igstPercent: gst.igstPercent, igstAmount: gst.igstAmount,
         freightCharge, totalAmount, paidAmount: 0, balanceAmount: totalAmount, status: 'UNPAID',
         challanNo: b.challanNo || null, ewayBill: b.ewayBill || null, remarks: b.remarks || null,
-        userId: (req as AuthRequest).user!.id,
+        userId: req.user!.id,
       },
       include: { customer: { select: { id: true, name: true, shortName: true, state: true } }, payments: true },
     });
@@ -166,16 +192,14 @@ router.post('/', async (req: Request, res: Response) => {
       igstAmount: invoice.igstAmount, supplyType: invoice.supplyType,
       freightCharge: invoice.freightCharge,
       productName: invoice.productName, customerId: b.customerId,
-      userId: (req as AuthRequest).user!.id, invoiceDate: invoice.invoiceDate,
+      userId: req.user!.id, invoiceDate: invoice.invoiceDate,
     }).catch(() => {});
 
     res.status(201).json(invoice);
-  } catch (err: any) { res.status(500).json({ error: err.message }); }
-});
+}));
 
 // POST /from-shipment/:shipmentId — Auto-create invoice from a completed shipment
-router.post('/from-shipment/:shipmentId', async (req: Request, res: Response) => {
-  try {
+router.post('/from-shipment/:shipmentId', asyncHandler(async (req: AuthRequest, res: Response) => {
     const shipmentId = req.params.shipmentId;
 
     // Read the shipment
@@ -219,7 +243,7 @@ router.post('/from-shipment/:shipmentId', async (req: Request, res: Response) =>
     const gst2 = calcGstSplit(amount, gstPercent, cust2?.state);
     const totalAmount = amount + gst2.gstAmount + freightCharge;
 
-    const companyId2 = getActiveCompanyId(req as AuthRequest);
+    const companyId2 = getActiveCompanyId(req);
     const invoiceNo2 = await nextDocNo('Invoice', 'invoiceNo', companyId2);
 
     const invoice = await prisma.invoice.create({
@@ -236,7 +260,7 @@ router.post('/from-shipment/:shipmentId', async (req: Request, res: Response) =>
         igstPercent: gst2.igstPercent, igstAmount: gst2.igstAmount,
         freightCharge, totalAmount, paidAmount: 0, balanceAmount: totalAmount, status: 'UNPAID',
         challanNo: shipment.challanNo || null, ewayBill: shipment.ewayBill || null, remarks: null,
-        userId: (req as AuthRequest).user!.id,
+        userId: req.user!.id,
       },
       include: { customer: { select: { id: true, name: true, shortName: true, state: true } }, payments: true },
     });
@@ -249,16 +273,14 @@ router.post('/from-shipment/:shipmentId', async (req: Request, res: Response) =>
       cgstAmount: invoice.cgstAmount, sgstAmount: invoice.sgstAmount,
       igstAmount: invoice.igstAmount, supplyType: invoice.supplyType,
       productName: invoice.productName, customerId: order.customerId,
-      userId: (req as AuthRequest).user!.id, invoiceDate: invoice.invoiceDate,
+      userId: req.user!.id, invoiceDate: invoice.invoiceDate,
     }).catch(() => {});
 
     res.status(201).json(invoice);
-  } catch (err: any) { res.status(500).json({ error: err.message }); }
-});
+}));
 
 // PUT /:id — Update invoice (only if UNPAID)
-router.put('/:id', async (req: Request, res: Response) => {
-  try {
+router.put('/:id', validate(updateInvoiceSchema), asyncHandler(async (req: AuthRequest, res: Response) => {
     const b = req.body;
 
     const invoice = await prisma.invoice.findUnique({
@@ -321,12 +343,10 @@ router.put('/:id', async (req: Request, res: Response) => {
       },
     });
     res.json(updated);
-  } catch (err: any) { res.status(500).json({ error: err.message }); }
-});
+}));
 
 // GET /:id/pdf — Generate Invoice PDF with letterhead
-router.get('/:id/pdf', async (req: Request, res: Response) => {
-  try {
+router.get('/:id/pdf', asyncHandler(async (req: AuthRequest, res: Response) => {
     const invoice = await prisma.invoice.findUnique({
       where: { id: req.params.id },
       include: {
@@ -511,12 +531,10 @@ router.get('/:id/pdf', async (req: Request, res: Response) => {
     const invLabel = customInvNo ? customInvNo.replace(/\//g, '-') : `INV-${invoice.invoiceNo}`;
     res.setHeader('Content-Disposition', `inline; filename="${invLabel}.pdf"`);
     res.send(pdfBuffer);
-  } catch (err: any) { res.status(500).json({ error: err.message }); }
-});
+}));
 
 // POST /:id/e-invoice — Generate IRN for invoice
-router.post('/:id/e-invoice', async (req: Request, res: Response) => {
-  try {
+router.post('/:id/e-invoice', asyncHandler(async (req: AuthRequest, res: Response) => {
     const invoice = await prisma.invoice.findUnique({
       where: { id: req.params.id },
       include: { customer: true },
@@ -614,12 +632,10 @@ router.post('/:id/e-invoice', async (req: Request, res: Response) => {
       message: 'e-Invoice generated successfully',
       invoice: updated,
     });
-  } catch (err: any) { res.status(500).json({ error: err.message }); }
-});
+}));
 
 // POST /:id/e-invoice/cancel — Cancel IRN
-router.post('/:id/e-invoice/cancel', async (req: Request, res: Response) => {
-  try {
+router.post('/:id/e-invoice/cancel', asyncHandler(async (req: AuthRequest, res: Response) => {
     const invoice = await prisma.invoice.findUnique({
       where: { id: req.params.id },
     });
@@ -668,12 +684,10 @@ router.post('/:id/e-invoice/cancel', async (req: Request, res: Response) => {
       message: 'IRN cancelled successfully',
       invoice: updated,
     });
-  } catch (err: any) { res.status(500).json({ error: err.message }); }
-});
+}));
 
 // GET /:id/e-invoice/details — Get IRN details
-router.get('/:id/e-invoice/details', async (req: Request, res: Response) => {
-  try {
+router.get('/:id/e-invoice/details', asyncHandler(async (req: AuthRequest, res: Response) => {
     const invoice = await prisma.invoice.findUnique({
       where: { id: req.params.id },
     });
@@ -684,8 +698,6 @@ router.get('/:id/e-invoice/details', async (req: Request, res: Response) => {
     if (!irn) {
       return res.status(400).json({ error: 'Invoice does not have an IRN' });
     }
-
-    console.log(`[Invoice] Fetching IRN details for ${irn}`);
 
     const result = await getIRNDetails(irn);
 
@@ -698,12 +710,10 @@ router.get('/:id/e-invoice/details', async (req: Request, res: Response) => {
       irn,
       details: result.data,
     });
-  } catch (err: any) { res.status(500).json({ error: err.message }); }
-});
+}));
 
 // GET /:id/ewb-pdf — Serve uploaded E-Way Bill PDF
-router.get('/:id/ewb-pdf', async (req: Request, res: Response) => {
-  try {
+router.get('/:id/ewb-pdf', asyncHandler(async (req: AuthRequest, res: Response) => {
     const invoice = await prisma.invoice.findUnique({
       where: { id: req.params.id },
       select: { ewbPdfData: true, ewbNo: true },
@@ -713,12 +723,10 @@ router.get('/:id/ewb-pdf', async (req: Request, res: Response) => {
     res.setHeader('Content-Type', 'application/pdf');
     res.setHeader('Content-Disposition', `inline; filename="EWB-${invoice.ewbNo || 'unknown'}.pdf"`);
     res.send(invoice.ewbPdfData);
-  } catch (err: any) { res.status(500).json({ error: err.message }); }
-});
+}));
 
 // POST /:id/send-email — Send Invoice PDF to customer via email
-router.post('/:id/send-email', async (req: Request, res: Response) => {
-  try {
+router.post('/:id/send-email', asyncHandler(async (req: AuthRequest, res: Response) => {
     const invoice = await prisma.invoice.findUnique({
       where: { id: req.params.id },
       include: { customer: true },
@@ -754,7 +762,6 @@ router.post('/:id/send-email', async (req: Request, res: Response) => {
     } else {
       res.status(500).json({ error: result.error || 'Email send failed' });
     }
-  } catch (err: any) { res.status(500).json({ error: err.message }); }
-});
+}));
 
 export default router;

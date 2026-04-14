@@ -4,6 +4,7 @@ import path from 'path';
 import fs from 'fs';
 import prisma from '../config/prisma';
 import { authenticate, AuthRequest, getCompanyFilter, getActiveCompanyId } from '../middleware/auth';
+import { asyncHandler } from '../shared/middleware';
 import { recomputeEthanolEntryByDate } from './ethanolProduct';
 
 const router = Router();
@@ -19,8 +20,7 @@ const storage = multer.diskStorage({
 const upload = multer({ storage, limits: { fileSize: 10 * 1024 * 1024 } }); // 10MB max
 
 // GET /api/dispatch/active-contracts — active ethanol contracts for party dropdown
-router.get('/active-contracts', authenticate, async (req: AuthRequest, res: Response) => {
-  try {
+router.get('/active-contracts', authenticate, asyncHandler(async (req: AuthRequest, res: Response) => {
     const contracts = await prisma.ethanolContract.findMany({
       where: { status: 'ACTIVE', ...getCompanyFilter(req) },
       select: {
@@ -31,14 +31,12 @@ router.get('/active-contracts', authenticate, async (req: AuthRequest, res: Resp
       orderBy: { buyerName: 'asc' },
     });
     res.json({ contracts });
-  } catch (err: any) { res.status(500).json({ error: err.message }); }
-});
+}));
 
 // GET /api/dispatch — list standalone dispatches
 // ?date=YYYY-MM-DD  — single date (default: today)
 // ?from=ISO&to=ISO   — date range (for production calc: dispatches since last entry)
-router.get('/', authenticate, async (req: AuthRequest, res: Response) => {
-  try {
+router.get('/', authenticate, asyncHandler(async (req: AuthRequest, res: Response) => {
     let start: Date, end: Date;
     if (req.query.from) {
       start = new Date(req.query.from as string);
@@ -93,14 +91,12 @@ router.get('/', authenticate, async (req: AuthRequest, res: Response) => {
       orderBy: { createdAt: 'desc' },
     });
     res.json({ dispatches });
-  } catch (err: any) { res.status(500).json({ error: err.message }); }
-});
+}));
 
 // GET /api/dispatch/totals — all-time dispatch sum
 // Uses EthanolProductEntry.totalDispatch as the source of truth (includes seeded historical data)
 // DispatchTruck table only has individual truck records entered after ERP went live
-router.get('/totals', authenticate, async (req: AuthRequest, res: Response) => {
-  try {
+router.get('/totals', authenticate, asyncHandler(async (req: AuthRequest, res: Response) => {
     // Total dispatch from ethanol product entries (includes historical seeded data)
     const epTotal = await prisma.ethanolProductEntry.aggregate({
       _sum: { totalDispatch: true },
@@ -140,12 +136,10 @@ router.get('/totals', authenticate, async (req: AuthRequest, res: Response) => {
       totalDispatched: totalFromEntries + standaloneExtra,
       count: truckCount + standaloneCount,
     });
-  } catch (err: any) { res.status(500).json({ error: err.message }); }
-});
+}));
 
 // GET /api/dispatch/history — past dispatches grouped by date (before today 9AM cutoff)
-router.get('/history', authenticate, async (req: AuthRequest, res: Response) => {
-  try {
+router.get('/history', authenticate, asyncHandler(async (req: AuthRequest, res: Response) => {
     // History = everything before today
     const today = new Date();
     today.setHours(0, 0, 0, 0);
@@ -165,12 +159,10 @@ router.get('/history', authenticate, async (req: AuthRequest, res: Response) => 
     }
 
     res.json({ history: grouped });
-  } catch (err: any) { res.status(500).json({ error: err.message }); }
-});
+}));
 
 // GET /api/dispatch/report — reporting endpoint (all dispatches, date range, aggregates)
-router.get('/report', authenticate, async (req: AuthRequest, res: Response) => {
-  try {
+router.get('/report', authenticate, asyncHandler(async (req: AuthRequest, res: Response) => {
     const fromStr = req.query.from as string;
     const toStr = req.query.to as string;
     const status = req.query.status as string;
@@ -219,12 +211,10 @@ router.get('/report', authenticate, async (req: AuthRequest, res: Response) => {
         releasedCount,
       },
     });
-  } catch (err: any) { res.status(500).json({ error: err.message }); }
-});
+}));
 
 // POST /api/dispatch — create a dispatch entry with optional photo + optional lifting
-router.post('/', authenticate, upload.single('photo'), async (req: AuthRequest, res: Response) => {
-  try {
+router.post('/', authenticate, upload.single('photo'), asyncHandler(async (req: AuthRequest, res: Response) => {
     const { vehicleNo, partyName, destination, quantityBL, strength, remarks, date, batchNo,
             contractId, driverName, driverPhone, driverLicense, transporterName, distanceKm,
             rstNo, sealNo, pesoDate } = req.body;
@@ -388,12 +378,10 @@ router.post('/', authenticate, upload.single('photo'), async (req: AuthRequest, 
     }
 
     res.status(201).json({ ...dispatch, lifting, contractNo: lifting ? 'linked' : null });
-  } catch (err: any) { res.status(500).json({ error: err.message }); }
-});
+}));
 
 // DELETE /api/dispatch/:id
-router.delete('/:id', authenticate, async (req: AuthRequest, res: Response) => {
-  try {
+router.delete('/:id', authenticate, asyncHandler(async (req: AuthRequest, res: Response) => {
     const d = await prisma.dispatchTruck.findFirst({ where: { id: req.params.id, ...getCompanyFilter(req) } });
     if (d?.photoUrl) {
       const filename = path.basename(d.photoUrl.replace(/^\//, ''));
@@ -408,8 +396,7 @@ router.delete('/:id', authenticate, async (req: AuthRequest, res: Response) => {
       }
     }
     res.json({ success: true });
-  } catch (err: any) { res.status(500).json({ error: err.message }); }
-});
+}));
 
 // Serve uploaded photos
 router.get('/photo/:filename', (req, res) => {

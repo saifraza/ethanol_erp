@@ -1,7 +1,52 @@
 import { Router, Response } from 'express';
+import { z } from 'zod';
 import prisma from '../config/prisma';
 import { AuthRequest, authenticate, getCompanyFilter, getActiveCompanyId } from '../middleware/auth';
-import { asyncHandler } from '../shared/middleware';
+import { asyncHandler, validate } from '../shared/middleware';
+
+// ── Zod Schemas ─────────────────────────────────────────────
+
+const createPDCSchema = z.object({
+  direction: z.enum(['INCOMING', 'OUTGOING']).default('OUTGOING'),
+  chequeNumber: z.string().min(1, 'Cheque number is required'),
+  chequeDate: z.coerce.date(),
+  maturityDate: z.coerce.date(),
+  amount: z.coerce.number().positive('Amount must be positive'),
+  bankName: z.string().default(''),
+  branchName: z.string().nullish(),
+  accountNo: z.string().nullish(),
+  partyType: z.enum(['VENDOR', 'CUSTOMER']).default('VENDOR'),
+  partyId: z.string().min(1, 'Party is required'),
+  partyName: z.string().min(1, 'Party name is required'),
+  purpose: z.string().nullish(),
+  linkedInvoiceId: z.string().nullish(),
+  linkedPoId: z.string().nullish(),
+  remarks: z.string().nullish(),
+});
+
+const updatePDCSchema = z.object({
+  chequeNumber: z.string().min(1).optional(),
+  chequeDate: z.coerce.date().optional(),
+  maturityDate: z.coerce.date().optional(),
+  amount: z.coerce.number().positive().optional(),
+  bankName: z.string().optional(),
+  branchName: z.string().nullish(),
+  accountNo: z.string().nullish(),
+  purpose: z.string().nullish(),
+  remarks: z.string().nullish(),
+});
+
+const depositSchema = z.object({
+  depositDate: z.coerce.date().optional(),
+});
+
+const clearSchema = z.object({
+  clearDate: z.coerce.date().optional(),
+});
+
+const dishonourSchema = z.object({
+  reason: z.string().default('Insufficient funds'),
+});
 
 const router = Router();
 router.use(authenticate as any);
@@ -88,26 +133,26 @@ router.get('/summary', asyncHandler(async (req: AuthRequest, res: Response) => {
 // ═══════════════════════════════════════════════
 // POST / — Create PDC
 // ═══════════════════════════════════════════════
-router.post('/', asyncHandler(async (req: AuthRequest, res: Response) => {
+router.post('/', validate(createPDCSchema), asyncHandler(async (req: AuthRequest, res: Response) => {
   const b = req.body;
 
   const pdc = await prisma.postDatedCheque.create({
     data: {
-      direction: b.direction || 'OUTGOING',
+      direction: b.direction,
       chequeNumber: b.chequeNumber,
-      chequeDate: new Date(b.chequeDate),
-      maturityDate: new Date(b.maturityDate),
-      amount: parseFloat(b.amount) || 0,
-      bankName: b.bankName || '',
-      branchName: b.branchName || null,
-      accountNo: b.accountNo || null,
-      partyType: b.partyType || 'VENDOR',
+      chequeDate: b.chequeDate,
+      maturityDate: b.maturityDate,
+      amount: b.amount,
+      bankName: b.bankName,
+      branchName: b.branchName ?? null,
+      accountNo: b.accountNo ?? null,
+      partyType: b.partyType,
       partyId: b.partyId,
       partyName: b.partyName,
-      purpose: b.purpose || null,
-      linkedInvoiceId: b.linkedInvoiceId || null,
-      linkedPoId: b.linkedPoId || null,
-      remarks: b.remarks || null,
+      purpose: b.purpose ?? null,
+      linkedInvoiceId: b.linkedInvoiceId ?? null,
+      linkedPoId: b.linkedPoId ?? null,
+      remarks: b.remarks ?? null,
       userId: req.user!.id,
       companyId: getActiveCompanyId(req),
     },
@@ -119,7 +164,7 @@ router.post('/', asyncHandler(async (req: AuthRequest, res: Response) => {
 // ═══════════════════════════════════════════════
 // PUT /:id — Update (only ISSUED)
 // ═══════════════════════════════════════════════
-router.put('/:id', asyncHandler(async (req: AuthRequest, res: Response) => {
+router.put('/:id', validate(updatePDCSchema), asyncHandler(async (req: AuthRequest, res: Response) => {
   const existing = await prisma.postDatedCheque.findUnique({ where: { id: req.params.id } });
   if (!existing) { res.status(404).json({ error: 'PDC not found' }); return; }
   if (existing.status !== 'ISSUED') { res.status(400).json({ error: 'Can only edit cheques in ISSUED status' }); return; }
@@ -129,9 +174,9 @@ router.put('/:id', asyncHandler(async (req: AuthRequest, res: Response) => {
     where: { id: req.params.id },
     data: {
       chequeNumber: b.chequeNumber ?? existing.chequeNumber,
-      chequeDate: b.chequeDate ? new Date(b.chequeDate) : existing.chequeDate,
-      maturityDate: b.maturityDate ? new Date(b.maturityDate) : existing.maturityDate,
-      amount: b.amount !== undefined ? parseFloat(b.amount) : existing.amount,
+      chequeDate: b.chequeDate ?? existing.chequeDate,
+      maturityDate: b.maturityDate ?? existing.maturityDate,
+      amount: b.amount ?? existing.amount,
       bankName: b.bankName ?? existing.bankName,
       branchName: b.branchName ?? existing.branchName,
       accountNo: b.accountNo ?? existing.accountNo,
@@ -146,7 +191,7 @@ router.put('/:id', asyncHandler(async (req: AuthRequest, res: Response) => {
 // ═══════════════════════════════════════════════
 // PUT /:id/deposit — Mark as deposited
 // ═══════════════════════════════════════════════
-router.put('/:id/deposit', asyncHandler(async (req: AuthRequest, res: Response) => {
+router.put('/:id/deposit', validate(depositSchema), asyncHandler(async (req: AuthRequest, res: Response) => {
   const existing = await prisma.postDatedCheque.findUnique({ where: { id: req.params.id } });
   if (!existing) { res.status(404).json({ error: 'PDC not found' }); return; }
   if (existing.status !== 'ISSUED') { res.status(400).json({ error: 'Can only deposit cheques in ISSUED status' }); return; }
@@ -155,7 +200,7 @@ router.put('/:id/deposit', asyncHandler(async (req: AuthRequest, res: Response) 
     where: { id: req.params.id },
     data: {
       status: 'DEPOSITED',
-      depositDate: req.body.depositDate ? new Date(req.body.depositDate) : new Date(),
+      depositDate: req.body.depositDate ?? new Date(),
     },
   });
 
@@ -165,7 +210,7 @@ router.put('/:id/deposit', asyncHandler(async (req: AuthRequest, res: Response) 
 // ═══════════════════════════════════════════════
 // PUT /:id/clear — Mark as cleared + create payment
 // ═══════════════════════════════════════════════
-router.put('/:id/clear', asyncHandler(async (req: AuthRequest, res: Response) => {
+router.put('/:id/clear', validate(clearSchema), asyncHandler(async (req: AuthRequest, res: Response) => {
   const existing = await prisma.postDatedCheque.findUnique({ where: { id: req.params.id } });
   if (!existing) { res.status(404).json({ error: 'PDC not found' }); return; }
   if (!['ISSUED', 'DEPOSITED'].includes(existing.status)) { res.status(400).json({ error: 'Can only clear cheques in ISSUED or DEPOSITED status' }); return; }
@@ -174,7 +219,7 @@ router.put('/:id/clear', asyncHandler(async (req: AuthRequest, res: Response) =>
     where: { id: req.params.id },
     data: {
       status: 'CLEARED',
-      clearDate: req.body.clearDate ? new Date(req.body.clearDate) : new Date(),
+      clearDate: req.body.clearDate ?? new Date(),
       depositDate: existing.depositDate || new Date(),
     },
   });
@@ -249,7 +294,7 @@ router.put('/:id/clear', asyncHandler(async (req: AuthRequest, res: Response) =>
 // ═══════════════════════════════════════════════
 // PUT /:id/dishonour — Mark as dishonoured
 // ═══════════════════════════════════════════════
-router.put('/:id/dishonour', asyncHandler(async (req: AuthRequest, res: Response) => {
+router.put('/:id/dishonour', validate(dishonourSchema), asyncHandler(async (req: AuthRequest, res: Response) => {
   const existing = await prisma.postDatedCheque.findUnique({ where: { id: req.params.id } });
   if (!existing) { res.status(404).json({ error: 'PDC not found' }); return; }
   if (!['ISSUED', 'DEPOSITED'].includes(existing.status)) { res.status(400).json({ error: 'Cannot dishonour a cheque that is already cleared or cancelled' }); return; }
@@ -259,7 +304,7 @@ router.put('/:id/dishonour', asyncHandler(async (req: AuthRequest, res: Response
     data: {
       status: 'DISHONOURED',
       dishonourDate: new Date(),
-      dishonourReason: req.body.reason || 'Insufficient funds',
+      dishonourReason: req.body.reason,
     },
   });
 

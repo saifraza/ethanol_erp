@@ -1,6 +1,7 @@
-import { Router, Request, Response } from 'express';
+import { Router, Response } from 'express';
 import prisma from '../config/prisma';
 import { authenticate, AuthRequest, getCompanyFilter, getActiveCompanyId } from '../middleware/auth';
+import { asyncHandler } from '../shared/middleware';
 import PDFDocument from 'pdfkit';
 import path from 'path';
 import fs from 'fs';
@@ -12,10 +13,9 @@ const router = Router();
 router.use(authenticate as any);
 
 // GET / — List freight inquiries
-router.get('/', async (req: Request, res: Response) => {
-  try {
+router.get('/', asyncHandler(async (req: AuthRequest, res: Response) => {
     const status = req.query.status as string | undefined;
-    const where: any = { ...getCompanyFilter(req as AuthRequest) };
+    const where: any = { ...getCompanyFilter(req) };
     if (status) where.status = status;
 
     const inquiries = await prisma.freightInquiry.findMany({
@@ -29,24 +29,20 @@ router.get('/', async (req: Request, res: Response) => {
       orderBy: { createdAt: 'desc' },
     });
     res.json({ inquiries });
-  } catch (err: any) { res.status(500).json({ error: err.message }); }
-});
+}));
 
 // GET /:id — Single inquiry with quotations
-router.get('/:id', async (req: Request, res: Response) => {
-  try {
+router.get('/:id', asyncHandler(async (req: AuthRequest, res: Response) => {
     const inquiry = await prisma.freightInquiry.findUnique({
       where: { id: req.params.id },
       include: { quotations: true },
     });
     if (!inquiry) { res.status(404).json({ error: 'Not found' }); return; }
     res.json(inquiry);
-  } catch (err: any) { res.status(500).json({ error: err.message }); }
-});
+}));
 
 // POST / — Create freight inquiry
-router.post('/', async (req: Request, res: Response) => {
-  try {
+router.post('/', asyncHandler(async (req: AuthRequest, res: Response) => {
     const b = req.body;
     const inquiry = await prisma.freightInquiry.create({
       data: {
@@ -63,18 +59,16 @@ router.post('/', async (req: Request, res: Response) => {
         loadingDate: b.loadingDate ? new Date(b.loadingDate) : null,
         validTill: b.validTill ? new Date(b.validTill) : null,
         remarks: b.remarks || null,
-        userId: (req as any).user.id,
-        companyId: getActiveCompanyId(req as AuthRequest),
+        userId: req.user!.id,
+        companyId: getActiveCompanyId(req),
       },
       include: { quotations: true },
     });
     res.status(201).json(inquiry);
-  } catch (err: any) { res.status(500).json({ error: err.message }); }
-});
+}));
 
 // PUT /:id — Update inquiry
-router.put('/:id', async (req: Request, res: Response) => {
-  try {
+router.put('/:id', asyncHandler(async (req: AuthRequest, res: Response) => {
     const b = req.body;
     const data: any = {};
     if (b.destination !== undefined) data.destination = b.destination;
@@ -93,12 +87,10 @@ router.put('/:id', async (req: Request, res: Response) => {
       include: { quotations: true },
     });
     res.json(inquiry);
-  } catch (err: any) { res.status(500).json({ error: err.message }); }
-});
+}));
 
 // POST /:id/quotations — Add quotation to inquiry
-router.post('/:id/quotations', async (req: Request, res: Response) => {
-  try {
+router.post('/:id/quotations', asyncHandler(async (req: AuthRequest, res: Response) => {
     const b = req.body;
     const quotation = await prisma.freightQuotation.create({
       data: {
@@ -123,12 +115,10 @@ router.post('/:id/quotations', async (req: Request, res: Response) => {
     });
 
     res.status(201).json(quotation);
-  } catch (err: any) { res.status(500).json({ error: err.message }); }
-});
+}));
 
 // PUT /quotations/:qid/accept — Accept a quotation
-router.put('/quotations/:qid/accept', async (req: Request, res: Response) => {
-  try {
+router.put('/quotations/:qid/accept', asyncHandler(async (req: AuthRequest, res: Response) => {
     const quotation = await prisma.freightQuotation.update({
       where: { id: req.params.qid },
       data: { status: 'ACCEPTED' },
@@ -147,12 +137,10 @@ router.put('/quotations/:qid/accept', async (req: Request, res: Response) => {
     });
 
     res.json(quotation);
-  } catch (err: any) { res.status(500).json({ error: err.message }); }
-});
+}));
 
 // GET /:id/pdf — Generate Freight Inquiry PDF (MSPIL generated document)
-router.get('/:id/pdf', async (req: Request, res: Response) => {
-  try {
+router.get('/:id/pdf', asyncHandler(async (req: AuthRequest, res: Response) => {
     const inquiry = await prisma.freightInquiry.findUnique({
       where: { id: req.params.id },
       include: { quotations: true },
@@ -178,16 +166,13 @@ router.get('/:id/pdf', async (req: Request, res: Response) => {
     res.setHeader('Content-Type', 'application/pdf');
     res.setHeader('Content-Disposition', `inline; filename=Inquiry-${inquiry.inquiryNo}.pdf`);
     res.send(pdfBuffer);
-  } catch (err: any) { res.status(500).json({ error: err.message }); }
-});
+}));
 
 // DELETE /:id
-router.delete('/:id', async (req: Request, res: Response) => {
-  try {
+router.delete('/:id', asyncHandler(async (req: AuthRequest, res: Response) => {
     await prisma.freightQuotation.deleteMany({ where: { inquiryId: req.params.id } });
     await prisma.freightInquiry.delete({ where: { id: req.params.id } });
     res.json({ ok: true });
-  } catch (err: any) { res.status(500).json({ error: err.message }); }
-});
+}));
 
 export default router;

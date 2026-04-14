@@ -4,6 +4,7 @@ import path from 'path';
 import fs from 'fs';
 import prisma from '../config/prisma';
 import { authenticate, authorize, AuthRequest, getCompanyFilter, getActiveCompanyId } from '../middleware/auth';
+import { asyncHandler } from '../shared/middleware';
 
 const router = Router();
 
@@ -95,8 +96,7 @@ function summarizeTrucks(trucks: any[]) {
 }
 
 // GET /api/grain-truck — shift trucks (9AM to 9AM)
-router.get('/', authenticate, async (req: AuthRequest, res: Response) => {
-  try {
+router.get('/', authenticate, asyncHandler(async (req: AuthRequest, res: Response) => {
     const dateStr = req.query.date as string || currentShiftDate();
     const { start, end } = shiftWindow(dateStr);
 
@@ -114,12 +114,10 @@ router.get('/', authenticate, async (req: AuthRequest, res: Response) => {
     const quarantineNet = trucks.reduce((s, t) => s + (t.quarantineWeight || 0), 0);
 
     res.json({ trucks, totalNet, quarantineNet, count: trucks.length });
-  } catch (err: any) { res.status(500).json({ error: err.message }); }
-});
+}));
 
 // GET /api/grain-truck/summary — shift totals (9AM to 9AM) for grain stock page
-router.get('/summary', authenticate, async (req: AuthRequest, res: Response) => {
-  try {
+router.get('/summary', authenticate, asyncHandler(async (req: AuthRequest, res: Response) => {
     const dateStr = req.query.date as string || currentShiftDate();
     const { start, end } = shiftWindow(dateStr);
 
@@ -138,12 +136,10 @@ router.get('/summary', authenticate, async (req: AuthRequest, res: Response) => 
     const truckCount = trucks.length;
 
     res.json({ totalNet, quarantineNet, totalReceived, truckCount });
-  } catch (err: any) { res.status(500).json({ error: err.message }); }
-});
+}));
 
 // GET /api/grain-truck/report — baseline-to-date received report with filters
-router.get('/report', authenticate, async (req: AuthRequest, res: Response) => {
-  try {
+router.get('/report', authenticate, asyncHandler(async (req: AuthRequest, res: Response) => {
     const yearStart = Number(req.query.year) || new Date().getFullYear();
     const baseline = await prisma.grainEntry.findFirst({
       where: { yearStart },
@@ -259,12 +255,10 @@ router.get('/report', authenticate, async (req: AuthRequest, res: Response) => {
       totalRows: filtered.length,
       allRows: trucks.length,
     });
-  } catch (err: any) { res.status(500).json({ error: err.message }); }
-});
+}));
 
 // GET /api/grain-truck/history — past trucks grouped by date
-router.get('/history', authenticate, async (req: AuthRequest, res: Response) => {
-  try {
+router.get('/history', authenticate, asyncHandler(async (req: AuthRequest, res: Response) => {
     // Use IST midnight (= previous day 18:30 UTC)
     const ist = nowIST();
     const todayStr = ist.toISOString().split('T')[0];
@@ -286,13 +280,11 @@ router.get('/history', authenticate, async (req: AuthRequest, res: Response) => 
     }
 
     res.json({ history: grouped });
-  } catch (err: any) { res.status(500).json({ error: err.message }); }
-});
+}));
 
 // GET /api/grain-truck/by-po/:poId — unified weighbridge drilldown: GRN-based rows
 // enriched with GrainTruck (weighbridge) + GateEntry (entry/exit time) where available
-router.get('/by-po/:poId', authenticate, async (req: AuthRequest, res: Response) => {
-  try {
+router.get('/by-po/:poId', authenticate, asyncHandler(async (req: AuthRequest, res: Response) => {
     const poId = req.params.poId;
 
     // 1. All GRNs for this PO (excludes cancelled)
@@ -426,12 +418,10 @@ router.get('/by-po/:poId', authenticate, async (req: AuthRequest, res: Response)
       accepted: rows.reduce((s, r) => s + ((r.weightNet || 0) - (r.quarantineWeight || 0)), 0),
     };
     res.json({ trucks: rows, totals });
-  } catch (err: any) { res.status(500).json({ error: err.message }); }
-});
+}));
 
 // POST /api/grain-truck — create truck entry with optional photo
-router.post('/', authenticate, upload.single('photo'), async (req: AuthRequest, res: Response) => {
-  try {
+router.post('/', authenticate, upload.single('photo'), asyncHandler(async (req: AuthRequest, res: Response) => {
     const { vehicleNo, supplier, weightGross, weightTare, moisture, starchPercent,
       damagedPercent, foreignMatter, quarantine, quarantineWeight, quarantineReason,
       remarks, date, uidRst, bags } = req.body;
@@ -520,12 +510,10 @@ router.post('/', authenticate, upload.single('photo'), async (req: AuthRequest, 
       });
     });
     res.status(201).json(truck);
-  } catch (err: any) { res.status(500).json({ error: err.message }); }
-});
+}));
 
 // PUT /api/grain-truck/:id — ADMIN only
-router.put('/:id', authenticate, authorize('ADMIN'), async (req: AuthRequest, res: Response) => {
-  try {
+router.put('/:id', authenticate, authorize('ADMIN'), asyncHandler(async (req: AuthRequest, res: Response) => {
     const { quarantine, quarantineReason, quarantineWeight, uidRst } = req.body;
     const existing = await prisma.grainTruck.findUnique({ where: { id: req.params.id } });
     if (!existing) {
@@ -554,12 +542,10 @@ router.put('/:id', authenticate, authorize('ADMIN'), async (req: AuthRequest, re
     if (uidRst !== undefined) data.uidRst = uidRst || '';
     const truck = await prisma.grainTruck.update({ where: { id: req.params.id }, data });
     res.json(truck);
-  } catch (err: any) { res.status(500).json({ error: err.message }); }
-});
+}));
 
 // DELETE /api/grain-truck/:id — ADMIN only
-router.delete('/:id', authenticate, authorize('ADMIN'), async (req: AuthRequest, res: Response) => {
-  try {
+router.delete('/:id', authenticate, authorize('ADMIN'), asyncHandler(async (req: AuthRequest, res: Response) => {
     const t = await prisma.grainTruck.findUnique({ where: { id: req.params.id } });
     if (t?.photoUrl) {
       // photoUrl is like "/uploads/grain-truck/xxx.jpg" — strip leading slash and validate with basename
@@ -569,7 +555,6 @@ router.delete('/:id', authenticate, authorize('ADMIN'), async (req: AuthRequest,
     }
     await prisma.grainTruck.delete({ where: { id: req.params.id } });
     res.json({ success: true });
-  } catch (err: any) { res.status(500).json({ error: err.message }); }
-});
+}));
 
 export default router;

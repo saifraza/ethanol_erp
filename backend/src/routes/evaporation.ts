@@ -1,7 +1,8 @@
-import { Router, Request, Response } from 'express';
+import { Router, Response } from 'express';
 import prisma from '../config/prisma';
-import { authenticate, authorize } from '../middleware/auth';
+import { authenticate, AuthRequest, authorize } from '../middleware/auth';
 import { broadcast } from '../services/messagingGateway';
+import { asyncHandler } from '../shared/middleware';
 
 const router = Router();
 
@@ -26,65 +27,56 @@ function parseBody(b: any) {
 }
 
 // GET / — history
-router.get('/', async (_req: Request, res: Response) => {
-  try {
-    const entries = await prisma.evaporationEntry.findMany({ orderBy: { createdAt: 'desc' }, take: 200 });
-    res.json(entries);
-  } catch (err: any) { res.status(500).json({ error: err.message }); }
-});
+router.get('/', asyncHandler(async (_req: AuthRequest, res: Response) => {
+  const entries = await prisma.evaporationEntry.findMany({ orderBy: { createdAt: 'desc' }, take: 200 });
+  res.json(entries);
+}));
 
 // POST /
-router.post('/', async (req: Request, res: Response) => {
-  try {
-    const b = req.body;
-    const entry = await prisma.evaporationEntry.create({
-      data: {
-        date: new Date(b.date),
-        analysisTime: b.analysisTime || '',
-        ...parseBody(b),
-        remark: b.remark || null,
-        userId: (req as any).user.id,
-      }
-    });
-    res.status(201).json(entry);
+router.post('/', asyncHandler(async (req: AuthRequest, res: Response) => {
+  const b = req.body;
+  const entry = await prisma.evaporationEntry.create({
+    data: {
+      date: new Date(b.date),
+      analysisTime: b.analysisTime || '',
+      ...parseBody(b),
+      remark: b.remark || null,
+      userId: req.user!.id,
+    }
+  });
+  res.status(201).json(entry);
 
-    // Telegram notify
-    const lines = [
-      `🧪 *Evaporation Lab Entry*`,
-      b.analysisTime ? `Time: ${b.analysisTime}` : '',
-      entry.syrupConcentration != null ? `Syrup: ${entry.syrupConcentration}%` : '',
-      entry.thinSlopGravity != null ? `Thin Slop SG: ${entry.thinSlopGravity}` : '',
-      entry.spentWashGravity != null ? `Spent Wash SG: ${entry.spentWashGravity}` : '',
-      entry.vacuum != null ? `Vacuum: ${entry.vacuum}` : '',
-      entry.remark ? `Remark: ${entry.remark}` : '',
-    ].filter(Boolean).join('\n');
-    broadcast('evaporation', lines).catch(() => {});
-
-  } catch (err: any) { res.status(500).json({ error: err.message }); }
-});
+  // Telegram notify
+  const lines = [
+    `🧪 *Evaporation Lab Entry*`,
+    b.analysisTime ? `Time: ${b.analysisTime}` : '',
+    entry.syrupConcentration != null ? `Syrup: ${entry.syrupConcentration}%` : '',
+    entry.thinSlopGravity != null ? `Thin Slop SG: ${entry.thinSlopGravity}` : '',
+    entry.spentWashGravity != null ? `Spent Wash SG: ${entry.spentWashGravity}` : '',
+    entry.vacuum != null ? `Vacuum: ${entry.vacuum}` : '',
+    entry.remark ? `Remark: ${entry.remark}` : '',
+  ].filter(Boolean).join('\n');
+  broadcast('evaporation', lines).catch(() => {});
+}));
 
 // PUT /:id
-router.put('/:id', async (req: Request, res: Response) => {
-  try {
-    const b = req.body;
-    const entry = await prisma.evaporationEntry.update({
-      where: { id: req.params.id },
-      data: {
-        analysisTime: b.analysisTime || '',
-        ...parseBody(b),
-        remark: b.remark || null,
-      }
-    });
-    res.json(entry);
-  } catch (err: any) { res.status(500).json({ error: err.message }); }
-});
+router.put('/:id', asyncHandler(async (req: AuthRequest, res: Response) => {
+  const b = req.body;
+  const entry = await prisma.evaporationEntry.update({
+    where: { id: req.params.id },
+    data: {
+      analysisTime: b.analysisTime || '',
+      ...parseBody(b),
+      remark: b.remark || null,
+    }
+  });
+  res.json(entry);
+}));
 
 // DELETE /:id — ADMIN only
-router.delete('/:id', authorize('ADMIN') as any, async (req: Request, res: Response) => {
-  try {
-    await prisma.evaporationEntry.delete({ where: { id: req.params.id } });
-    res.json({ ok: true });
-  } catch (err: any) { res.status(500).json({ error: err.message }); }
-});
+router.delete('/:id', authorize('ADMIN') as any, asyncHandler(async (req: AuthRequest, res: Response) => {
+  await prisma.evaporationEntry.delete({ where: { id: req.params.id } });
+  res.json({ ok: true });
+}));
 
 export default router;

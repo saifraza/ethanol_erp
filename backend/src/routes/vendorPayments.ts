@@ -1,7 +1,8 @@
 import { Router, Response } from 'express';
 import prisma from '../config/prisma';
 import { authenticate, AuthRequest, authorize, getCompanyFilter, getActiveCompanyId } from '../middleware/auth';
-import { asyncHandler } from '../shared/middleware';
+import { asyncHandler, validate } from '../shared/middleware';
+import { z } from 'zod';
 import { onVendorPaymentMade } from '../services/autoJournal';
 import { recomputeGrnPaidStateForPO } from '../services/grnPaidState';
 import { renderDocumentPdf } from '../services/documentRenderer';
@@ -9,6 +10,36 @@ import { nextDocNo } from '../utils/docSequence';
 import { getCompanyForPdf } from '../utils/pdfCompanyHelper';
 import PDFDocument from 'pdfkit';
 import { sendEmail } from '../services/messaging';
+
+// ── Zod schemas ──
+const createVendorPaymentSchema = z.object({
+  vendorId: z.string().min(1),
+  invoiceId: z.string().optional().nullable(),
+  amount: z.coerce.number().positive(),
+  mode: z.string().optional().default('BANK_TRANSFER'),
+  reference: z.string().optional().default(''),
+  tdsDeducted: z.coerce.number().optional().default(0),
+  tdsSection: z.string().optional().nullable(),
+  tdsLedgerId: z.string().optional().nullable(),
+  isAdvance: z.boolean().optional().default(false),
+  remarks: z.string().optional().nullable(),
+  paymentDate: z.string().optional(),
+});
+
+const splitPaymentSchema = z.object({
+  vendorId: z.string().min(1),
+  invoiceId: z.string().optional().nullable(),
+  splits: z.array(z.object({
+    mode: z.string().min(1),
+    amount: z.coerce.number().positive(),
+    reference: z.string().optional(),
+    remarks: z.string().optional(),
+  })).min(1),
+  tdsDeducted: z.coerce.number().optional().default(0),
+  tdsSection: z.string().optional().nullable(),
+  paymentDate: z.string().optional(),
+  poNo: z.coerce.number().optional(),
+});
 
 const router = Router();
 router.use(authenticate as any);
@@ -271,7 +302,7 @@ router.get('/outstanding', asyncHandler(async (req: AuthRequest, res: Response) 
 }));
 
 // POST / — create payment
-router.post('/', asyncHandler(async (req: AuthRequest, res: Response) => {
+router.post('/', validate(createVendorPaymentSchema), asyncHandler(async (req: AuthRequest, res: Response) => {
     const b = req.body;
     const amount = parseFloat(b.amount) || 0;
     const tdsDeducted = parseFloat(b.tdsDeducted) || 0;
@@ -354,7 +385,7 @@ router.post('/', asyncHandler(async (req: AuthRequest, res: Response) => {
 
 // POST /split-payment — Record split payment (cash + bank in parallel)
 // Creates VendorPayment for bank splits and CashVoucher for cash splits atomically
-router.post('/split-payment', asyncHandler(async (req: AuthRequest, res: Response) => {
+router.post('/split-payment', validate(splitPaymentSchema), asyncHandler(async (req: AuthRequest, res: Response) => {
     const b = req.body;
     const splits = b.splits as Array<{ mode: string; amount: number; reference?: string; remarks?: string }>;
     if (!splits || !Array.isArray(splits) || splits.length === 0) {

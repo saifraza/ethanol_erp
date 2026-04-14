@@ -1,7 +1,19 @@
 import { Router, Response } from 'express';
 import prisma from '../config/prisma';
 import { authenticate, AuthRequest, authorize, getCompanyFilter, getActiveCompanyId } from '../middleware/auth';
-import { asyncHandler } from '../shared/middleware';
+import { asyncHandler, validate } from '../shared/middleware';
+import { z } from 'zod';
+
+const createPaymentSchema = z.object({
+  customerId: z.string().min(1),
+  invoiceId: z.string().optional().nullable(),
+  paymentDate: z.string().optional(),
+  amount: z.coerce.number().positive(),
+  mode: z.string().optional().default('BANK_TRANSFER'),
+  reference: z.string().optional().default(''),
+  confirmedBy: z.string().optional().default(''),
+  remarks: z.string().optional().nullable(),
+});
 import { onSalePaymentReceived } from '../services/autoJournal';
 
 const router = Router();
@@ -162,7 +174,7 @@ router.get('/aging', asyncHandler(async (req: AuthRequest, res: Response) => {
 }));
 
 // POST / — Record payment
-router.post('/', asyncHandler(async (req: AuthRequest, res: Response) => {
+router.post('/', validate(createPaymentSchema), asyncHandler(async (req: AuthRequest, res: Response) => {
   const b = req.body;
   const amount = parseFloat(b.amount) || 0;
 

@@ -1,7 +1,8 @@
-import { Router, Request, Response } from 'express';
+import { Router, Response } from 'express';
 import prisma from '../config/prisma';
-import { authenticate, authorize } from '../middleware/auth';
+import { authenticate, AuthRequest, authorize } from '../middleware/auth';
 import { renderPreviewHtml, renderPreviewPdf } from '../services/documentRenderer';
+import { asyncHandler } from '../shared/middleware';
 
 const router = Router();
 router.use(authenticate as any);
@@ -63,138 +64,120 @@ const DEFAULTS: Record<string, { title: string; terms: string[]; footer: string;
 };
 
 // GET / — List all templates (with defaults merged)
-router.get('/', async (_req: Request, res: Response) => {
-  try {
-    const saved = await prisma.documentTemplate.findMany();
-    const savedMap = new Map(saved.map(t => [t.docType, t]));
+router.get('/', asyncHandler(async (_req: AuthRequest, res: Response) => {
+  const saved = await prisma.documentTemplate.findMany();
+  const savedMap = new Map(saved.map(t => [t.docType, t]));
 
-    const templates = Object.entries(DEFAULTS).map(([docType, defaults]) => {
-      const existing = savedMap.get(docType);
-      if (existing) {
-        return {
-          ...existing,
-          terms: existing.terms ? JSON.parse(existing.terms) : defaults.terms,
-          companyInfo: existing.companyInfo ? JSON.parse(existing.companyInfo) : null,
-        };
-      }
+  const templates = Object.entries(DEFAULTS).map(([docType, defaults]) => {
+    const existing = savedMap.get(docType);
+    if (existing) {
       return {
-        id: null,
-        docType,
-        title: defaults.title,
-        terms: defaults.terms,
-        footer: defaults.footer,
-        bankDetails: defaults.bankDetails || null,
-        companyInfo: null,
-        remarks: null,
+        ...existing,
+        terms: existing.terms ? JSON.parse(existing.terms) : defaults.terms,
+        companyInfo: existing.companyInfo ? JSON.parse(existing.companyInfo) : null,
       };
-    });
+    }
+    return {
+      id: null,
+      docType,
+      title: defaults.title,
+      terms: defaults.terms,
+      footer: defaults.footer,
+      bankDetails: defaults.bankDetails || null,
+      companyInfo: null,
+      remarks: null,
+    };
+  });
 
-    res.json({ templates });
-  } catch (err: any) { res.status(500).json({ error: err.message }); }
-});
+  res.json({ templates });
+}));
 
 // GET /:docType — Get single template
-router.get('/:docType', async (req: Request, res: Response) => {
-  try {
-    const docType = req.params.docType.toUpperCase();
-    const existing = await prisma.documentTemplate.findUnique({ where: { docType } });
-    const defaults = DEFAULTS[docType];
+router.get('/:docType', asyncHandler(async (req: AuthRequest, res: Response) => {
+  const docType = req.params.docType.toUpperCase();
+  const existing = await prisma.documentTemplate.findUnique({ where: { docType } });
+  const defaults = DEFAULTS[docType];
 
-    if (existing) {
-      res.json({
-        ...existing,
-        terms: existing.terms ? JSON.parse(existing.terms) : defaults?.terms || [],
-        companyInfo: existing.companyInfo ? JSON.parse(existing.companyInfo) : null,
-      });
-    } else if (defaults) {
-      res.json({
-        id: null, docType,
-        title: defaults.title,
-        terms: defaults.terms,
-        footer: defaults.footer,
-        bankDetails: defaults.bankDetails || null,
-        companyInfo: null,
-        remarks: null,
-      });
-    } else {
-      res.status(404).json({ error: 'Template not found' });
-    }
-  } catch (err: any) { res.status(500).json({ error: err.message }); }
-});
+  if (existing) {
+    res.json({
+      ...existing,
+      terms: existing.terms ? JSON.parse(existing.terms) : defaults?.terms || [],
+      companyInfo: existing.companyInfo ? JSON.parse(existing.companyInfo) : null,
+    });
+  } else if (defaults) {
+    res.json({
+      id: null, docType,
+      title: defaults.title,
+      terms: defaults.terms,
+      footer: defaults.footer,
+      bankDetails: defaults.bankDetails || null,
+      companyInfo: null,
+      remarks: null,
+    });
+  } else {
+    res.status(404).json({ error: 'Template not found' });
+  }
+}));
 
 // PUT /:docType — Create or update template
-router.put('/:docType', authorize('ADMIN') as any, async (req: Request, res: Response) => {
-  try {
-    const docType = req.params.docType.toUpperCase();
-    const { title, terms, footer, bankDetails, companyInfo, remarks } = req.body;
+router.put('/:docType', authorize('ADMIN') as any, asyncHandler(async (req: AuthRequest, res: Response) => {
+  const docType = req.params.docType.toUpperCase();
+  const { title, terms, footer, bankDetails, companyInfo, remarks } = req.body;
 
-    const data = {
-      docType,
-      title: title || null,
-      terms: Array.isArray(terms) ? JSON.stringify(terms) : null,
-      footer: footer || null,
-      bankDetails: bankDetails || null,
-      companyInfo: companyInfo ? JSON.stringify(companyInfo) : null,
-      remarks: remarks || null,
-    };
+  const data = {
+    docType,
+    title: title || null,
+    terms: Array.isArray(terms) ? JSON.stringify(terms) : null,
+    footer: footer || null,
+    bankDetails: bankDetails || null,
+    companyInfo: companyInfo ? JSON.stringify(companyInfo) : null,
+    remarks: remarks || null,
+  };
 
-    const template = await prisma.documentTemplate.upsert({
-      where: { docType },
-      create: data,
-      update: data,
-    });
+  const template = await prisma.documentTemplate.upsert({
+    where: { docType },
+    create: data,
+    update: data,
+  });
 
-    res.json({
-      ...template,
-      terms: template.terms ? JSON.parse(template.terms) : [],
-      companyInfo: template.companyInfo ? JSON.parse(template.companyInfo) : null,
-    });
-  } catch (err: any) { res.status(500).json({ error: err.message }); }
-});
+  res.json({
+    ...template,
+    terms: template.terms ? JSON.parse(template.terms) : [],
+    companyInfo: template.companyInfo ? JSON.parse(template.companyInfo) : null,
+  });
+}));
 
 // ── Preview Endpoints ──
 
 // GET /:docType/preview — Preview with saved template data
-router.get('/:docType/preview', async (req: Request, res: Response) => {
-  try {
-    const docType = req.params.docType.toUpperCase();
-    const html = await renderPreviewHtml(docType);
-    res.setHeader('Content-Type', 'text/html');
-    res.send(html);
-  } catch (err: any) {
-    res.status(500).json({ error: err.message });
-  }
-});
+router.get('/:docType/preview', asyncHandler(async (req: AuthRequest, res: Response) => {
+  const docType = req.params.docType.toUpperCase();
+  const html = await renderPreviewHtml(docType);
+  res.setHeader('Content-Type', 'text/html');
+  res.send(html);
+}));
 
 // POST /:docType/preview — Preview with unsaved/custom template data
-router.post('/:docType/preview', async (req: Request, res: Response) => {
-  try {
-    const docType = req.params.docType.toUpperCase();
-    const { terms, footer, bankDetails } = req.body;
-    const overrides = {
-      terms: Array.isArray(terms) ? terms : undefined,
-      footer: footer || undefined,
-      bankDetails: bankDetails || undefined,
-    };
-    const html = await renderPreviewHtml(docType, overrides);
-    res.setHeader('Content-Type', 'text/html');
-    res.send(html);
-  } catch (err: any) {
-    res.status(500).json({ error: err.message });
-  }
-});
+router.post('/:docType/preview', asyncHandler(async (req: AuthRequest, res: Response) => {
+  const docType = req.params.docType.toUpperCase();
+  const { terms, footer, bankDetails } = req.body;
+  const overrides = {
+    terms: Array.isArray(terms) ? terms : undefined,
+    footer: footer || undefined,
+    bankDetails: bankDetails || undefined,
+  };
+  const html = await renderPreviewHtml(docType, overrides);
+  res.setHeader('Content-Type', 'text/html');
+  res.send(html);
+}));
 
 // GET /:docType/preview-pdf — Download sample PDF
-router.get('/:docType/preview-pdf', async (req: Request, res: Response) => {
-  try {
-    const docType = req.params.docType.toUpperCase();
-    const pdfBuffer = await renderPreviewPdf(docType);
-    res.setHeader('Content-Type', 'application/pdf');
-    res.setHeader('Content-Disposition', `inline; filename="${docType.toLowerCase()}-preview.pdf"`);
-    res.send(pdfBuffer);
-  } catch (err: any) {
-    res.status(500).json({ error: err.message });
-  }
-});
+router.get('/:docType/preview-pdf', asyncHandler(async (req: AuthRequest, res: Response) => {
+  const docType = req.params.docType.toUpperCase();
+  const pdfBuffer = await renderPreviewPdf(docType);
+  res.setHeader('Content-Type', 'application/pdf');
+  res.setHeader('Content-Disposition', `inline; filename="${docType.toLowerCase()}-preview.pdf"`);
+  res.send(pdfBuffer);
+}));
 
 export default router;

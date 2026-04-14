@@ -1,6 +1,7 @@
 import { Router, Response } from 'express';
 import prisma from '../config/prisma';
 import { authenticate, AuthRequest, authorize, getActiveCompanyId, getCompanyFilter } from '../middleware/auth';
+import { asyncHandler } from '../shared/middleware';
 
 const router = Router();
 const DEFAULT_SILO = 0;
@@ -161,8 +162,7 @@ async function getLiveSiloEstimate(yearStart: number, companyFilter: { companyId
 }
 
 // GET /api/grain
-router.get('/', authenticate, async (req: AuthRequest, res: Response) => {
-  try {
+router.get('/', authenticate, asyncHandler(async (req: AuthRequest, res: Response) => {
     const { year, limit = '30', offset = '0' } = req.query as any;
     const yearStart = year ? parseInt(year) : getCurrentYearStart();
     const entries = await prisma.grainEntry.findMany({
@@ -174,12 +174,10 @@ router.get('/', authenticate, async (req: AuthRequest, res: Response) => {
     });
     const total = await prisma.grainEntry.count({ where: { yearStart } });
     res.json({ entries, total, yearStart });
-  } catch (err: any) { res.status(500).json({ error: err.message }); }
-});
+}));
 
 // GET /api/grain/latest
-router.get('/latest', authenticate, async (req: AuthRequest, res: Response) => {
-  try {
+router.get('/latest', authenticate, asyncHandler(async (req: AuthRequest, res: Response) => {
     const yearStart = getCurrentYearStart();
     const beforeId = req.query.beforeId as string | undefined;
     let beforeDate: Date | undefined;
@@ -227,12 +225,10 @@ router.get('/latest', authenticate, async (req: AuthRequest, res: Response) => {
         createdAt: latest.createdAt,
       } : null,
     });
-  } catch (err: any) { res.status(500).json({ error: err.message }); }
-});
+}));
 
 // PATCH /api/grain/latest-levels — update just level fields on latest entry
-router.patch('/latest-levels', authenticate, async (req: AuthRequest, res: Response) => {
-  try {
+router.patch('/latest-levels', authenticate, asyncHandler(async (req: AuthRequest, res: Response) => {
     const yearStart = getCurrentYearStart();
     const latest = await getLastEntry(yearStart);
     if (!latest) return res.status(404).json({ error: 'No grain entry found' });
@@ -243,12 +239,10 @@ router.patch('/latest-levels', authenticate, async (req: AuthRequest, res: Respo
     }
     const updated = await prisma.grainEntry.update({ where: { id: latest.id }, data });
     res.json(updated);
-  } catch (err: any) { res.status(500).json({ error: err.message }); }
-});
+}));
 
 // GET /api/grain/summary
-router.get('/summary', authenticate, async (req: AuthRequest, res: Response) => {
-  try {
+router.get('/summary', authenticate, asyncHandler(async (req: AuthRequest, res: Response) => {
     const yearStart = getCurrentYearStart();
     const latest = await getLastEntry(yearStart);
     const cf = getCompanyFilter(req);
@@ -276,12 +270,10 @@ router.get('/summary', authenticate, async (req: AuthRequest, res: Response) => 
       recentTrend: recentEntries.reverse(),
       yearStart,
     });
-  } catch (err: any) { res.status(500).json({ error: err.message }); }
-});
+}));
 
 // POST /api/grain
-router.post('/', authenticate, async (req: AuthRequest, res: Response) => {
-  try {
+router.post('/', authenticate, asyncHandler(async (req: AuthRequest, res: Response) => {
     const { date, grainUnloaded, totalReceived, washConsumed, washConsumedAt, fermentationVolumeAt,
       f1Level, f2Level, f3Level, f4Level, beerWellLevel, pf1Level, pf2Level, iltLevel, fltLevel,
       quarantineStock, flourSilo1Level, flourSilo2Level,
@@ -407,12 +399,10 @@ router.post('/', authenticate, async (req: AuthRequest, res: Response) => {
     }
 
     res.status(201).json(entry);
-  } catch (err: any) { res.status(500).json({ error: err.message }); }
-});
+}));
 
 // PUT /api/grain/:id — ADMIN only
-router.put('/:id', authenticate, authorize('ADMIN'), async (req: AuthRequest, res: Response) => {
-  try {
+router.put('/:id', authenticate, authorize('ADMIN'), asyncHandler(async (req: AuthRequest, res: Response) => {
     const { grainUnloaded, totalReceived, washConsumed, washConsumedAt, fermentationVolumeAt,
       f1Level, f2Level, f3Level, f4Level, beerWellLevel, pf1Level, pf2Level, iltLevel, fltLevel,
       quarantineStock, flourSilo1Level, flourSilo2Level,
@@ -526,12 +516,10 @@ router.put('/:id', authenticate, authorize('ADMIN'), async (req: AuthRequest, re
     }
 
     res.json(entry);
-  } catch (err: any) { res.status(500).json({ error: err.message }); }
-});
+}));
 
 // POST /api/grain/seed-baseline — ONE-TIME: wipe test data, create real baseline
-router.post('/seed-baseline', authenticate, authorize('ADMIN'), async (req: AuthRequest, res: Response) => {
-  try {
+router.post('/seed-baseline', authenticate, authorize('ADMIN'), asyncHandler(async (req: AuthRequest, res: Response) => {
     // 1. Delete ALL grain entries
     const deleted = await prisma.grainEntry.deleteMany();
 
@@ -590,17 +578,14 @@ router.post('/seed-baseline', authenticate, authorize('ADMIN'), async (req: Auth
     });
 
     res.json({ message: `Deleted ${deleted.count} test entries. Baseline created.`, entry });
-  } catch (err: any) { res.status(500).json({ error: err.message }); }
-});
+}));
 
 // DELETE /api/grain/:id
-router.delete('/:id', authenticate, authorize('ADMIN'), async (req: AuthRequest, res: Response) => {
-  try {
+router.delete('/:id', authenticate, authorize('ADMIN'), asyncHandler(async (req: AuthRequest, res: Response) => {
     const existing = await prisma.grainEntry.findUnique({ where: { id: req.params.id } });
     if (!existing) return res.status(404).json({ error: 'Entry not found' });
     await prisma.grainEntry.delete({ where: { id: req.params.id } });
     res.json({ message: 'Deleted' });
-  } catch (err: any) { res.status(500).json({ error: err.message }); }
-});
+}));
 
 export default router;
