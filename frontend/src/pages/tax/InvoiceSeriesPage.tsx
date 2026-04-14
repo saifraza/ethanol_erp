@@ -46,6 +46,22 @@ const fmtDate = (s: string) => {
   return `${String(d.getDate()).padStart(2, '0')}-${['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'][d.getMonth()]}-${d.getFullYear()}`;
 };
 
+// Sales-invoice display labels — money is RECEIVED from customer, not paid.
+// DB values stay the same ("PAID", "UNPAID") so API filters don't break.
+const STATUS_LABEL: Record<Invoice['status'], string> = {
+  UNPAID: 'PENDING',
+  PARTIAL: 'PARTIAL',
+  PAID: 'RECEIVED',
+  CANCELLED: 'CANCELLED',
+};
+const TAB_LABEL: Record<StatusTab, string> = {
+  ALL: 'ALL',
+  UNPAID: 'PENDING',
+  PARTIAL: 'PARTIAL',
+  PAID: 'RECEIVED',
+  CANCELLED: 'CANCELLED',
+};
+
 export default function InvoiceSeriesPage() {
   const [invoices, setInvoices] = useState<Invoice[]>([]);
   const [loading, setLoading] = useState(true);
@@ -203,7 +219,7 @@ export default function InvoiceSeriesPage() {
               className={`px-3 py-1 text-[10px] font-bold uppercase tracking-widest whitespace-nowrap border border-slate-300 mr-1 transition ${
                 statusFilter === tab ? 'bg-slate-800 text-white border-slate-800' : 'bg-white text-slate-500 hover:bg-slate-50'
               }`}
-            >{tab}</button>
+            >{TAB_LABEL[tab]}</button>
           ))}
         </div>
       </div>
@@ -222,7 +238,7 @@ export default function InvoiceSeriesPage() {
               <th className="px-2 py-1.5 text-right font-bold uppercase tracking-widest">GST</th>
               <th className="px-2 py-1.5 text-right font-bold uppercase tracking-widest">TCS</th>
               <th className="px-2 py-1.5 text-right font-bold uppercase tracking-widest">Total</th>
-              <th className="px-2 py-1.5 text-right font-bold uppercase tracking-widest">Paid</th>
+              <th className="px-2 py-1.5 text-right font-bold uppercase tracking-widest">Received</th>
               <th className="px-2 py-1.5 text-center font-bold uppercase tracking-widest">Status</th>
               <th className="px-2 py-1.5 text-center font-bold uppercase tracking-widest">IRN</th>
               <th className="px-2 py-1.5 text-center font-bold uppercase tracking-widest sticky right-0 bg-slate-100 border-l-2 border-slate-300 shadow-[-4px_0_6px_-4px_rgba(0,0,0,0.1)]">Actions</th>
@@ -264,7 +280,7 @@ export default function InvoiceSeriesPage() {
                     : inv.status === 'PARTIAL' ? 'bg-amber-50 border-amber-400 text-amber-700'
                     : inv.status === 'CANCELLED' ? 'bg-slate-100 border-slate-400 text-slate-500'
                     : 'bg-red-50 border-red-400 text-red-700'
-                  }`}>{inv.status}</span>
+                  }`}>{STATUS_LABEL[inv.status]}</span>
                 </td>
                 <td className="px-2 py-1 text-center">
                   {inv.irn ? (
