@@ -267,7 +267,7 @@ async function fullSyncFromCloud(cloudTs?: string | null): Promise<boolean> {
                 "principalName", rate, "processingChargePerMT", "gstPercent", "contractQtyMT", "totalSuppliedMT",
                 "startDate", "endDate", "companyId"
          FROM "DDGSContract"
-         WHERE status = 'ACTIVE' AND "endDate" >= NOW() AND "startDate" <= NOW()
+         WHERE status = 'ACTIVE'
          ORDER BY "contractNo" LIMIT 50`
       );
       ddgsContracts = rows.map(r => ({
