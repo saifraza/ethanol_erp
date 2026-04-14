@@ -1,281 +1,272 @@
-import React, { useState, useEffect, useCallback } from 'react';
+/**
+ * Sell Invoices — read-only listing of every final sales invoice issued by
+ * the plant (ethanol / DDGS / sugar / exports). Replaces the old invoice-
+ * series numbering config page (numbering is atomic and invisible to users).
+ *
+ * Route: /admin/tax/invoice-series (kept for sidebar compat)
+ */
+import { useEffect, useMemo, useState } from 'react';
+import { FileText, Loader2, Printer, Search } from 'lucide-react';
 import api from '../../services/api';
 
-interface FiscalYear {
+interface Invoice {
   id: string;
-  code: string;
-  isCurrent: boolean;
+  invoiceNo: number;
+  invoiceDate: string;
+  customer: { id: string; name: string; shortName?: string };
+  productName: string;
+  quantity: number;
+  unit: string;
+  rate: number;
+  amount: number;        // taxable (qty × rate)
+  gstPercent: number;
+  gstAmount: number;
+  cgstAmount?: number;
+  sgstAmount?: number;
+  igstAmount?: number;
+  tcsAmount?: number;
+  tcsPercent?: number;
+  tcsSection?: string | null;
+  freightCharge?: number;
+  totalAmount: number;
+  paidAmount: number;
+  balanceAmount: number;
+  status: 'UNPAID' | 'PARTIAL' | 'PAID' | 'CANCELLED';
+  irn?: string | null;
+  irnStatus?: string | null;
+  ewbNo?: string | null;
 }
 
-interface InvoiceSeries {
-  id: string;
-  fyId: string;
-  docType: string;
-  prefix: string;
-  nextNumber: number;
-  width: number;
-  isActive: boolean;
-}
+type StatusTab = 'ALL' | 'UNPAID' | 'PARTIAL' | 'PAID' | 'CANCELLED';
 
-const DOC_TYPES = [
-  'TAX_INVOICE',
-  'CREDIT_NOTE',
-  'DEBIT_NOTE',
-  'DELIVERY_CHALLAN',
-  'EXPORT_INVOICE',
-  'RCM_INVOICE',
-];
-
-function formatSample(series: InvoiceSeries): string {
-  return series.prefix + String(series.nextNumber).padStart(series.width, '0');
-}
+const fmt = (n?: number | null) => (n == null ? '--' : n.toLocaleString('en-IN', { maximumFractionDigits: 2 }));
+const fmtDate = (s: string) => {
+  if (!s) return '--';
+  const d = new Date(s);
+  return `${String(d.getDate()).padStart(2, '0')}-${['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'][d.getMonth()]}-${d.getFullYear()}`;
+};
 
 export default function InvoiceSeriesPage() {
-  const [years, setYears] = useState<FiscalYear[]>([]);
-  const [fyId, setFyId] = useState<string>('');
-  const [series, setSeries] = useState<InvoiceSeries[]>([]);
+  const [invoices, setInvoices] = useState<Invoice[]>([]);
   const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
-  const [message, setMessage] = useState<string | null>(null);
-  const [showNew, setShowNew] = useState(false);
-  const [editing, setEditing] = useState<InvoiceSeries | null>(null);
-  const [busy, setBusy] = useState(false);
-  const [form, setForm] = useState<{ docType: string; prefix: string; width: number; isActive: boolean; nextNumber: number }>({
-    docType: 'TAX_INVOICE',
-    prefix: '',
-    width: 5,
-    isActive: true,
-    nextNumber: 1,
-  });
+  const [error, setError] = useState('');
+  const [statusFilter, setStatusFilter] = useState<StatusTab>('ALL');
+  const [search, setSearch] = useState('');
+  const [from, setFrom] = useState('');
+  const [to, setTo] = useState('');
+  const [page, setPage] = useState(1);
+  const [total, setTotal] = useState(0);
+  const limit = 50;
 
-  const fetchYears = useCallback(async () => {
+  const fetchData = async () => {
+    setLoading(true);
+    setError('');
     try {
-      const res = await api.get<FiscalYear[]>('/tax/fiscal-years');
-      setYears(res.data || []);
-      const current = (res.data || []).find(y => y.isCurrent);
-      if (current) setFyId(current.id);
-      else if (res.data && res.data.length > 0) setFyId(res.data[0].id);
-    } catch (err: unknown) {
-      console.error('Failed to fetch fiscal years:', err);
-      setError('Failed to load fiscal years');
-    }
-  }, []);
-
-  const fetchSeries = useCallback(async (id: string) => {
-    if (!id) return;
-    try {
-      setLoading(true);
-      const res = await api.get<InvoiceSeries[]>(`/tax/invoice-series?fyId=${id}`);
-      setSeries(res.data || []);
-    } catch (err: unknown) {
-      console.error('Failed to fetch invoice series:', err);
-      setError('Failed to load invoice series');
+      const params = new URLSearchParams({ page: String(page), limit: String(limit) });
+      if (statusFilter !== 'ALL') params.set('status', statusFilter);
+      if (from) params.set('from', from);
+      if (to) params.set('to', to);
+      const res = await api.get(`/invoices?${params.toString()}`);
+      setInvoices(res.data.invoices || []);
+      setTotal(res.data.total || 0);
+    } catch (e: unknown) {
+      const msg = (e as { response?: { data?: { error?: string } } })?.response?.data?.error || 'Failed to load invoices';
+      setError(msg);
     } finally {
       setLoading(false);
     }
-  }, []);
-
-  useEffect(() => { fetchYears(); }, [fetchYears]);
-  useEffect(() => { if (fyId) fetchSeries(fyId); }, [fyId, fetchSeries]);
-
-  const openNew = () => {
-    setEditing(null);
-    setForm({ docType: 'TAX_INVOICE', prefix: '', width: 5, isActive: true, nextNumber: 1 });
-    setShowNew(true);
   };
 
-  const openEdit = (s: InvoiceSeries) => {
-    setEditing(s);
-    setForm({ docType: s.docType, prefix: s.prefix, width: s.width, isActive: s.isActive, nextNumber: s.nextNumber });
-    setShowNew(true);
-  };
+  useEffect(() => {
+    fetchData();
+  }, [statusFilter, from, to, page]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  const handleSave = async () => {
-    setBusy(true);
-    setError(null);
+  const filtered = useMemo(() => {
+    if (!search.trim()) return invoices;
+    const q = search.trim().toLowerCase();
+    return invoices.filter((i) =>
+      String(i.invoiceNo).includes(q) ||
+      i.customer?.name?.toLowerCase().includes(q) ||
+      i.productName?.toLowerCase().includes(q) ||
+      i.irn?.toLowerCase().includes(q),
+    );
+  }, [invoices, search]);
+
+  const totalPages = Math.max(1, Math.ceil(total / limit));
+
+  const summary = useMemo(() => {
+    const s = { taxable: 0, gst: 0, tcs: 0, total: 0, paid: 0, balance: 0 };
+    for (const i of filtered) {
+      s.taxable += i.amount || 0;
+      s.gst += i.gstAmount || 0;
+      s.tcs += i.tcsAmount || 0;
+      s.total += i.totalAmount || 0;
+      s.paid += i.paidAmount || 0;
+      s.balance += i.balanceAmount || 0;
+    }
+    return s;
+  }, [filtered]);
+
+  const openPdf = async (id: string) => {
     try {
-      if (editing) {
-        await api.put(`/tax/invoice-series/${editing.id}`, {
-          prefix: form.prefix,
-          width: form.width,
-          isActive: form.isActive,
-        });
-      } else {
-        await api.post('/tax/invoice-series', {
-          fyId,
-          docType: form.docType,
-          prefix: form.prefix,
-          width: form.width,
-          isActive: form.isActive,
-          nextNumber: form.nextNumber,
-        });
-      }
-      setShowNew(false);
-      fetchSeries(fyId);
-    } catch (err: unknown) {
-      console.error('Save failed:', err);
-      setError('Failed to save invoice series');
-    } finally {
-      setBusy(false);
+      const res = await api.get(`/invoices/${id}/pdf`, { responseType: 'blob' });
+      const blob = new Blob([res.data], { type: 'application/pdf' });
+      const url = URL.createObjectURL(blob);
+      window.open(url, '_blank');
+      setTimeout(() => URL.revokeObjectURL(url), 60_000);
+    } catch {
+      setError('Failed to open PDF');
     }
   };
-
-  const handleReserveTest = async (s: InvoiceSeries) => {
-    if (!window.confirm(`This will RESERVE (burn) the next number from ${s.docType}. Continue?`)) return;
-    setBusy(true);
-    try {
-      const res = await api.post<{ formatted: string; number: number }>(`/tax/invoice-series/${s.id}/reserve`);
-      setMessage(`Reserved: ${res.data.formatted} (number ${res.data.number})`);
-      setTimeout(() => setMessage(null), 5000);
-      fetchSeries(fyId);
-    } catch (err: unknown) {
-      console.error('Reserve failed:', err);
-      setError('Failed to reserve number');
-    } finally {
-      setBusy(false);
-    }
-  };
-
-  const inputCls = 'border border-slate-300 px-2.5 py-1.5 text-xs focus:outline-none focus:ring-1 focus:ring-slate-400 bg-white w-full';
-  const labelCls = 'text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-0.5 block';
 
   return (
-    <div className="min-h-screen bg-slate-50">
-      <div className="p-3 md:p-6 space-y-0">
-        {/* Toolbar */}
-        <div className="bg-slate-800 text-white px-4 py-2.5 -mx-3 md:-mx-6 -mt-3 md:-mt-6 flex items-center justify-between">
-          <div className="flex items-center gap-3">
-            <h1 className="text-sm font-bold tracking-wide uppercase">Invoice Series</h1>
-            <span className="text-[10px] text-slate-400">|</span>
-            <span className="text-[10px] text-slate-400">Atomic document numbering per FY</span>
-          </div>
-          <button onClick={openNew}
-            className="px-3 py-1 bg-blue-600 text-white text-[11px] font-medium hover:bg-blue-700">
-            + New Series
-          </button>
+    <div className="p-4 md:p-6">
+      <div className="bg-slate-800 text-white px-4 py-3 flex items-center justify-between">
+        <div>
+          <h1 className="text-sm font-bold uppercase tracking-widest flex items-center gap-2">
+            <FileText className="w-4 h-4" /> Sell Invoices
+          </h1>
+          <p className="text-[10px] text-slate-300 mt-0.5">Every final sales invoice issued by the plant</p>
         </div>
-
-        {/* Filter toolbar */}
-        <div className="bg-slate-100 border-x border-b border-slate-300 px-4 py-2 -mx-3 md:-mx-6 flex items-center gap-3">
-          <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">Fiscal Year</label>
-          <select className="border border-slate-300 px-2.5 py-1 text-xs bg-white" value={fyId} onChange={e => setFyId(e.target.value)}>
-            {years.map(y => (
-              <option key={y.id} value={y.id}>{y.code}{y.isCurrent ? ' (Current)' : ''}</option>
-            ))}
-          </select>
-          {message && <span className="ml-auto text-[11px] font-bold text-green-700 uppercase tracking-widest">{message}</span>}
-          {error && <span className="ml-auto text-[11px] font-bold text-red-700 uppercase tracking-widest">{error}</span>}
-        </div>
-
-        {/* Warning banner */}
-        <div className="bg-amber-50 border-x border-b border-amber-300 px-4 py-2 -mx-3 md:-mx-6">
-          <span className="text-[10px] font-bold uppercase tracking-widest text-amber-700">
-            Note: Next number is managed atomically by the system and cannot be edited manually.
-          </span>
-        </div>
-
-        {/* Table */}
-        <div className="-mx-3 md:-mx-6 border-x border-b border-slate-300 overflow-hidden">
-          <table className="w-full text-xs">
-            <thead>
-              <tr className="bg-slate-800 text-white">
-                <th className="text-left px-3 py-2 font-semibold text-[10px] uppercase tracking-widest border-r border-slate-700">Doc Type</th>
-                <th className="text-left px-3 py-2 font-semibold text-[10px] uppercase tracking-widest border-r border-slate-700">Prefix</th>
-                <th className="text-right px-3 py-2 font-semibold text-[10px] uppercase tracking-widest border-r border-slate-700">Next Number</th>
-                <th className="text-right px-3 py-2 font-semibold text-[10px] uppercase tracking-widest border-r border-slate-700">Width</th>
-                <th className="text-left px-3 py-2 font-semibold text-[10px] uppercase tracking-widest border-r border-slate-700">Active</th>
-                <th className="text-left px-3 py-2 font-semibold text-[10px] uppercase tracking-widest border-r border-slate-700">Sample Preview</th>
-                <th className="text-right px-3 py-2 font-semibold text-[10px] uppercase tracking-widest">Actions</th>
-              </tr>
-            </thead>
-            <tbody>
-              {loading ? (
-                <tr><td colSpan={7} className="px-4 py-6 text-center text-xs text-slate-400 uppercase tracking-widest">Loading...</td></tr>
-              ) : series.length === 0 ? (
-                <tr><td colSpan={7} className="px-4 py-6 text-center text-xs text-slate-400 uppercase tracking-widest">No series for this fiscal year</td></tr>
-              ) : series.map((s, i) => (
-                <tr key={s.id} className={`border-b border-slate-100 hover:bg-blue-50/60 ${i % 2 ? 'bg-slate-50/70' : ''}`}>
-                  <td className="px-3 py-1.5 font-bold text-slate-800 border-r border-slate-100">{s.docType}</td>
-                  <td className="px-3 py-1.5 font-mono text-slate-700 border-r border-slate-100">{s.prefix}</td>
-                  <td className="px-3 py-1.5 text-right font-mono tabular-nums text-slate-700 border-r border-slate-100">{s.nextNumber}</td>
-                  <td className="px-3 py-1.5 text-right font-mono tabular-nums text-slate-700 border-r border-slate-100">{s.width}</td>
-                  <td className="px-3 py-1.5 border-r border-slate-100">
-                    {s.isActive ? (
-                      <span className="text-[9px] font-bold uppercase px-1.5 py-0.5 border border-green-600 bg-green-50 text-green-700">Active</span>
-                    ) : (
-                      <span className="text-[9px] font-bold uppercase px-1.5 py-0.5 border border-slate-400 bg-slate-50 text-slate-500">Inactive</span>
-                    )}
-                  </td>
-                  <td className="px-3 py-1.5 font-mono text-blue-700 border-r border-slate-100">{formatSample(s)}</td>
-                  <td className="px-3 py-1.5 text-right">
-                    <div className="flex items-center justify-end gap-1">
-                      <button onClick={() => openEdit(s)}
-                        className="px-2 py-0.5 bg-white border border-slate-300 text-slate-600 text-[10px] font-medium hover:bg-slate-50">
-                        Edit
-                      </button>
-                      <button onClick={() => handleReserveTest(s)} disabled={busy}
-                        className="px-2 py-0.5 bg-white border border-amber-300 text-amber-700 text-[10px] font-medium hover:bg-amber-50 disabled:opacity-50">
-                        Test Reserve
-                      </button>
-                    </div>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+        <div className="text-[11px] text-slate-300">
+          {loading ? 'Loading…' : `${total.toLocaleString('en-IN')} invoices`}
         </div>
       </div>
 
-      {/* Modal */}
-      {showNew && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50" onClick={() => setShowNew(false)}>
-          <div className="bg-white shadow-2xl w-full max-w-md" onClick={e => e.stopPropagation()}>
-            <div className="bg-slate-800 text-white px-4 py-2.5">
-              <span className="text-xs font-bold uppercase tracking-widest">{editing ? 'Edit Invoice Series' : 'New Invoice Series'}</span>
-            </div>
-            <div className="p-4 space-y-3">
-              <div>
-                <label className={labelCls}>Doc Type</label>
-                <select className={inputCls} value={form.docType} disabled={!!editing}
-                  onChange={e => setForm({ ...form, docType: e.target.value })}>
-                  {DOC_TYPES.map(d => <option key={d} value={d}>{d}</option>)}
-                </select>
-              </div>
-              <div>
-                <label className={labelCls}>Prefix</label>
-                <input className={inputCls + ' font-mono'} value={form.prefix}
-                  onChange={e => setForm({ ...form, prefix: e.target.value })} placeholder="ETH/26-27/" />
-              </div>
-              <div>
-                <label className={labelCls}>Width</label>
-                <input type="number" className={inputCls + ' font-mono tabular-nums'} value={form.width}
-                  onChange={e => setForm({ ...form, width: parseInt(e.target.value) || 5 })} />
-              </div>
-              {!editing && (
-                <div>
-                  <label className={labelCls}>Start Number</label>
-                  <input type="number" className={inputCls + ' font-mono tabular-nums'} value={form.nextNumber}
-                    onChange={e => setForm({ ...form, nextNumber: parseInt(e.target.value) || 1 })} />
-                </div>
-              )}
-              <div>
-                <label className={labelCls}>Active</label>
-                <div className="flex items-center h-[30px]">
-                  <input type="checkbox" checked={form.isActive} onChange={e => setForm({ ...form, isActive: e.target.checked })} className="mr-2" />
-                  <span className="text-xs text-slate-700">{form.isActive ? 'Active' : 'Inactive'}</span>
-                </div>
-              </div>
-            </div>
-            <div className="bg-slate-100 border-t border-slate-300 px-4 py-2 flex items-center justify-end gap-2">
-              <button onClick={() => setShowNew(false)}
-                className="px-3 py-1 bg-white border border-slate-300 text-slate-600 text-[11px] font-medium hover:bg-slate-50">
-                Cancel
-              </button>
-              <button onClick={handleSave} disabled={busy}
-                className="px-3 py-1 bg-blue-600 text-white text-[11px] font-medium hover:bg-blue-700 disabled:opacity-50">
-                {busy ? 'Saving...' : 'Save'}
-              </button>
-            </div>
+      {/* Filters */}
+      <div className="bg-slate-100 border border-slate-300 border-t-0 px-3 py-2 space-y-2">
+        <div className="flex flex-wrap gap-2 items-center">
+          <div className="relative flex-1 min-w-[200px]">
+            <Search size={13} className="absolute left-2.5 top-2 text-slate-400" />
+            <input
+              type="text" placeholder="Search inv #, customer, product, IRN..."
+              value={search} onChange={(e) => setSearch(e.target.value)}
+              className="border border-slate-300 px-2 py-1.5 pl-8 text-xs w-full focus:outline-none focus:ring-1 focus:ring-slate-400"
+            />
+          </div>
+          <div className="flex items-center gap-1 text-[11px]">
+            <label className="text-slate-600">From</label>
+            <input type="date" value={from} onChange={(e) => { setFrom(e.target.value); setPage(1); }}
+              className="border border-slate-300 px-2 py-1 text-xs focus:outline-none focus:ring-1 focus:ring-slate-400" />
+            <label className="text-slate-600">To</label>
+            <input type="date" value={to} onChange={(e) => { setTo(e.target.value); setPage(1); }}
+              className="border border-slate-300 px-2 py-1 text-xs focus:outline-none focus:ring-1 focus:ring-slate-400" />
+            {(from || to) && (
+              <button onClick={() => { setFrom(''); setTo(''); setPage(1); }} className="text-[10px] text-slate-500 hover:text-slate-800 px-1">clear</button>
+            )}
+          </div>
+        </div>
+        <div className="flex gap-0 overflow-x-auto">
+          {(['ALL', 'UNPAID', 'PARTIAL', 'PAID', 'CANCELLED'] as StatusTab[]).map((tab) => (
+            <button
+              key={tab} onClick={() => { setStatusFilter(tab); setPage(1); }}
+              className={`px-3 py-1 text-[10px] font-bold uppercase tracking-widest whitespace-nowrap border border-slate-300 mr-1 transition ${
+                statusFilter === tab ? 'bg-slate-800 text-white border-slate-800' : 'bg-white text-slate-500 hover:bg-slate-50'
+              }`}
+            >{tab}</button>
+          ))}
+        </div>
+      </div>
+
+      {/* Table */}
+      <div className="border border-slate-300 border-t-0 overflow-x-auto bg-white">
+        <table className="w-full text-[11px]">
+          <thead className="bg-slate-100 text-slate-600">
+            <tr>
+              <th className="px-2 py-1.5 text-left font-bold uppercase tracking-widest">Inv #</th>
+              <th className="px-2 py-1.5 text-left font-bold uppercase tracking-widest">Date</th>
+              <th className="px-2 py-1.5 text-left font-bold uppercase tracking-widest">Customer</th>
+              <th className="px-2 py-1.5 text-left font-bold uppercase tracking-widest">Product</th>
+              <th className="px-2 py-1.5 text-right font-bold uppercase tracking-widest">Qty</th>
+              <th className="px-2 py-1.5 text-right font-bold uppercase tracking-widest">Taxable</th>
+              <th className="px-2 py-1.5 text-right font-bold uppercase tracking-widest">GST</th>
+              <th className="px-2 py-1.5 text-right font-bold uppercase tracking-widest">TCS</th>
+              <th className="px-2 py-1.5 text-right font-bold uppercase tracking-widest">Total</th>
+              <th className="px-2 py-1.5 text-right font-bold uppercase tracking-widest">Paid</th>
+              <th className="px-2 py-1.5 text-center font-bold uppercase tracking-widest">Status</th>
+              <th className="px-2 py-1.5 text-center font-bold uppercase tracking-widest">IRN</th>
+              <th className="px-2 py-1.5 text-center font-bold uppercase tracking-widest">PDF</th>
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-slate-200">
+            {loading && (
+              <tr><td colSpan={13} className="px-2 py-6 text-center text-slate-500">
+                <Loader2 className="w-4 h-4 animate-spin inline mr-2" /> Loading…
+              </td></tr>
+            )}
+            {!loading && error && (
+              <tr><td colSpan={13} className="px-2 py-6 text-center text-red-600">{error}</td></tr>
+            )}
+            {!loading && !error && filtered.length === 0 && (
+              <tr><td colSpan={13} className="px-2 py-6 text-center text-slate-400">No invoices match.</td></tr>
+            )}
+            {!loading && filtered.map((inv) => (
+              <tr key={inv.id} className="hover:bg-slate-50">
+                <td className="px-2 py-1 font-mono font-bold">{inv.invoiceNo}</td>
+                <td className="px-2 py-1 whitespace-nowrap">{fmtDate(inv.invoiceDate)}</td>
+                <td className="px-2 py-1 truncate max-w-[180px]" title={inv.customer?.name}>{inv.customer?.shortName || inv.customer?.name || '--'}</td>
+                <td className="px-2 py-1 truncate max-w-[140px]" title={inv.productName}>{inv.productName}</td>
+                <td className="px-2 py-1 text-right font-mono tabular-nums">{fmt(inv.quantity)} {inv.unit}</td>
+                <td className="px-2 py-1 text-right font-mono tabular-nums">{fmt(inv.amount)}</td>
+                <td className="px-2 py-1 text-right font-mono tabular-nums">
+                  {fmt(inv.gstAmount)}
+                  {inv.gstPercent ? <span className="text-slate-400 ml-1 text-[9px]">({inv.gstPercent}%)</span> : null}
+                </td>
+                <td className="px-2 py-1 text-right font-mono tabular-nums">
+                  {fmt(inv.tcsAmount)}
+                  {inv.tcsSection ? <span className="text-slate-400 ml-1 text-[9px]">({inv.tcsSection})</span> : null}
+                </td>
+                <td className="px-2 py-1 text-right font-mono tabular-nums font-bold">{fmt(inv.totalAmount)}</td>
+                <td className="px-2 py-1 text-right font-mono tabular-nums">{fmt(inv.paidAmount)}</td>
+                <td className="px-2 py-1 text-center">
+                  <span className={`px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-widest border ${
+                    inv.status === 'PAID' ? 'bg-green-50 border-green-400 text-green-700'
+                    : inv.status === 'PARTIAL' ? 'bg-amber-50 border-amber-400 text-amber-700'
+                    : inv.status === 'CANCELLED' ? 'bg-slate-100 border-slate-400 text-slate-500'
+                    : 'bg-red-50 border-red-400 text-red-700'
+                  }`}>{inv.status}</span>
+                </td>
+                <td className="px-2 py-1 text-center">
+                  {inv.irn ? (
+                    <span className="text-[9px] font-mono text-green-700 cursor-help" title={`IRN: ${inv.irn}${inv.ewbNo ? '\nEWB: ' + inv.ewbNo : ''}`}>✓ {inv.irnStatus || 'OK'}</span>
+                  ) : (
+                    <span className="text-[9px] text-slate-400">—</span>
+                  )}
+                </td>
+                <td className="px-2 py-1 text-center">
+                  <button
+                    onClick={() => openPdf(inv.id)}
+                    className="text-slate-600 hover:text-blue-600" title="Open PDF"
+                  ><Printer className="w-3.5 h-3.5" /></button>
+                </td>
+              </tr>
+            ))}
+          </tbody>
+          {!loading && filtered.length > 0 && (
+            <tfoot className="bg-slate-100 border-t-2 border-slate-300 font-bold">
+              <tr>
+                <td className="px-2 py-1.5 text-[10px] uppercase tracking-widest text-slate-600" colSpan={5}>Page total ({filtered.length})</td>
+                <td className="px-2 py-1.5 text-right font-mono tabular-nums">{fmt(summary.taxable)}</td>
+                <td className="px-2 py-1.5 text-right font-mono tabular-nums">{fmt(summary.gst)}</td>
+                <td className="px-2 py-1.5 text-right font-mono tabular-nums">{fmt(summary.tcs)}</td>
+                <td className="px-2 py-1.5 text-right font-mono tabular-nums">{fmt(summary.total)}</td>
+                <td className="px-2 py-1.5 text-right font-mono tabular-nums">{fmt(summary.paid)}</td>
+                <td colSpan={3} className="px-2 py-1.5 text-right text-[10px] text-slate-500">Outstanding: <span className="font-mono">{fmt(summary.balance)}</span></td>
+              </tr>
+            </tfoot>
+          )}
+        </table>
+      </div>
+
+      {/* Pagination */}
+      {total > limit && (
+        <div className="flex items-center justify-between bg-slate-50 border border-slate-300 border-t-0 px-3 py-1.5 text-[11px] text-slate-600">
+          <div>Page {page} of {totalPages} — {total.toLocaleString('en-IN')} total</div>
+          <div className="flex gap-1">
+            <button disabled={page <= 1} onClick={() => setPage((p) => p - 1)}
+              className="px-2 py-0.5 border border-slate-300 bg-white disabled:opacity-40 hover:bg-slate-100">Prev</button>
+            <button disabled={page >= totalPages} onClick={() => setPage((p) => p + 1)}
+              className="px-2 py-0.5 border border-slate-300 bg-white disabled:opacity-40 hover:bg-slate-100">Next</button>
           </div>
         </div>
       )}

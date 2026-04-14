@@ -105,7 +105,7 @@ export const MODULE_DEFS: ModuleDef[] = [
   { key: 'taxes', label: 'Tax Dashboard', to: '/accounts/taxes', icon: PieChart, group: 'tax' },
   { key: 'tax-rules-reference', label: 'Tax Rules Reference', to: '/compliance/tax-rules', icon: BookOpen, group: 'tax' },
   { key: 'tax-fiscal-years', label: 'Fiscal Years', to: '/admin/tax/fiscal-years', icon: ClipboardList, group: 'tax', adminOnly: true },
-  { key: 'tax-invoice-series', label: 'Invoice Series', to: '/admin/tax/invoice-series', icon: Receipt, group: 'tax', adminOnly: true },
+  { key: 'tax-invoice-series', label: 'Sell Invoices', to: '/admin/tax/invoice-series', icon: Receipt, group: 'tax' },
   { key: 'tax-hsn', label: 'HSN Master', to: '/admin/tax/hsn', icon: Package, group: 'tax', adminOnly: true },
   { key: 'tax-tds', label: 'TDS Sections', to: '/admin/tax/tds-sections', icon: Calculator, group: 'tax', adminOnly: true },
   { key: 'tax-tcs', label: 'TCS Sections', to: '/admin/tax/tcs-sections', icon: Calculator, group: 'tax', adminOnly: true },
