@@ -98,7 +98,10 @@ export default function RawMaterialPurchase() {
   const [trucksModal, setTrucksModal] = useState<{ poId: string; title: string; subtitle?: string } | null>(null);
   const [ledgerModal, setLedgerModal] = useState<{ vendorId: string; vendorName: string } | null>(null);
   const [expandedMaterials, setExpandedMaterials] = useState<Set<string>>(new Set());
-  const [dealForm, setDealForm] = useState({ vendorId: '', vendorName: '', vendorPhone: '', materialItemId: '', rate: 0, remarks: '', quantityType: 'OPEN' });
+  const [dealForm, setDealForm] = useState({ vendorId: '', vendorName: '', vendorPhone: '', materialItemId: '', rate: 0, remarks: '', quantityType: 'OPEN', termsAccepted: [] as string[], overrideTdsSectionId: null as string | null });
+  // RM contract T&C catalog (loaded once)
+  const [poTerms, setPoTerms] = useState<Array<{ key: string; group: string; label: string; hasBackendHook?: boolean }>>([]);
+  const [tds194QId, setTds194QId] = useState<string | null>(null);
   const [date, setDate] = useState(new Date().toISOString().split('T')[0]);
   const [showModal, setShowModal] = useState(false);
   const [editId, setEditId] = useState<string | null>(null);
@@ -148,6 +151,39 @@ export default function RawMaterialPurchase() {
     setLoading(true);
     Promise.all([fetchMaster(), fetchSummary(), fetchConsumption(), fetchDeals(), fetchVendors()]).finally(() => setLoading(false));
   }, [fetchMaster, fetchSummary, fetchConsumption, fetchDeals, fetchVendors]);
+
+  // Load RM contract T&C catalog once (non-blocking; modal shows nothing if unavailable)
+  useEffect(() => {
+    (async () => {
+      try {
+        const [tRes, sRes] = await Promise.all([
+          api.get('/tax/po-terms?category=RAW_MATERIAL'),
+          api.get('/tax/tds-sections'),
+        ]);
+        setPoTerms(tRes.data?.terms ?? []);
+        const sections = Array.isArray(sRes.data) ? sRes.data : sRes.data?.sections ?? [];
+        const q = sections.find((s: { code?: string; oldSection?: string }) => s.code === '393_GOODS' || s.oldSection === '194Q');
+        setTds194QId(q?.id ?? null);
+      } catch { /* non-blocking */ }
+    })();
+  }, []);
+
+  // Pre-tick all 11 T&C whenever the modal opens fresh (create or edit with no saved terms)
+  useEffect(() => {
+    if (!showDealModal || poTerms.length === 0) return;
+    if (dealForm.termsAccepted.length > 0) return; // already populated (e.g., edit of saved deal)
+    setDealForm(f => ({ ...f, termsAccepted: poTerms.map(t => t.key), overrideTdsSectionId: tds194QId }));
+  }, [showDealModal, poTerms, tds194QId]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const toggleDealTerm = (key: string, checked: boolean) => {
+    setDealForm(f => {
+      const next = checked
+        ? Array.from(new Set([...f.termsAccepted, key]))
+        : f.termsAccepted.filter(k => k !== key);
+      const override = next.includes('TDS_194Q_0_1') ? tds194QId : null;
+      return { ...f, termsAccepted: next, overrideTdsSectionId: override };
+    });
+  };
 
   // Group deals by material name
   interface MaterialDealLine {
@@ -312,30 +348,30 @@ export default function RawMaterialPurchase() {
         }
       }
       if (editingDealId) {
-        const rParts = [(dealForm as Record<string, string>).remarks || ''];
-        if ((dealForm as Record<string, string>).origin) rParts.push(`Origin: ${(dealForm as Record<string, string>).origin}`);
-        if ((dealForm as Record<string, string>).deliveryPoint) rParts.push(`Delivery: ${(dealForm as Record<string, string>).deliveryPoint}`);
-        if ((dealForm as Record<string, string>).transportBy) rParts.push(`Transport: ${(dealForm as Record<string, string>).transportBy}`);
-        if ((dealForm as Record<string, string>).deliverySchedule) rParts.push(`Schedule: ${(dealForm as Record<string, string>).deliverySchedule}`);
-        const isTrucks = (dealForm as Record<string, string>).quantityUnit === 'TRUCKS';
-        if (isTrucks && (dealForm as Record<string, number>).quantity) rParts.push(`FIXED_TRUCKS:${(dealForm as Record<string, number>).quantity}`);
+        const rParts = [(dealForm as unknown as Record<string, string>).remarks || ''];
+        if ((dealForm as unknown as Record<string, string>).origin) rParts.push(`Origin: ${(dealForm as unknown as Record<string, string>).origin}`);
+        if ((dealForm as unknown as Record<string, string>).deliveryPoint) rParts.push(`Delivery: ${(dealForm as unknown as Record<string, string>).deliveryPoint}`);
+        if ((dealForm as unknown as Record<string, string>).transportBy) rParts.push(`Transport: ${(dealForm as unknown as Record<string, string>).transportBy}`);
+        if ((dealForm as unknown as Record<string, string>).deliverySchedule) rParts.push(`Schedule: ${(dealForm as unknown as Record<string, string>).deliverySchedule}`);
+        const isTrucks = (dealForm as unknown as Record<string, string>).quantityUnit === 'TRUCKS';
+        if (isTrucks && (dealForm as unknown as Record<string, number>).quantity) rParts.push(`FIXED_TRUCKS:${(dealForm as unknown as Record<string, number>).quantity}`);
         await api.put(`/raw-material-purchase/deals/${editingDealId}`, {
           rate: dealForm.rate,
           remarks: rParts.filter(Boolean).join(' | '),
           vendorId: dealForm.vendorId === '__new' ? undefined : dealForm.vendorId,
           materialItemId: dealForm.materialItemId,
-          paymentTerms: (dealForm as Record<string, string>).paymentTerms,
-          validUntil: (dealForm as Record<string, string>).validUntil || undefined,
-          deliveryPoint: (dealForm as Record<string, string>).deliveryPoint,
-          transportBy: (dealForm as Record<string, string>).transportBy,
-          truckCap: isTrucks && (dealForm as Record<string, number>).quantity ? Math.round((dealForm as Record<string, number>).quantity) : null,
+          paymentTerms: (dealForm as unknown as Record<string, string>).paymentTerms,
+          validUntil: (dealForm as unknown as Record<string, string>).validUntil || undefined,
+          deliveryPoint: (dealForm as unknown as Record<string, string>).deliveryPoint,
+          transportBy: (dealForm as unknown as Record<string, string>).transportBy,
+          truckCap: isTrucks && (dealForm as unknown as Record<string, number>).quantity ? Math.round((dealForm as unknown as Record<string, number>).quantity) : null,
         });
       } else {
         await api.post('/raw-material-purchase/deals', payload);
       }
       setShowDealModal(false);
       setEditingDealId(null);
-      setDealForm({ vendorId: '', vendorName: '', vendorPhone: '', materialItemId: '', rate: 0, remarks: '', quantityType: 'OPEN' });
+      setDealForm({ vendorId: '', vendorName: '', vendorPhone: '', materialItemId: '', rate: 0, remarks: '', quantityType: 'OPEN', termsAccepted: [], overrideTdsSectionId: null });
       fetchDeals();
     } catch (err: unknown) {
       const msg = (err as { response?: { data?: { error?: string } } })?.response?.data?.error || 'Failed';
@@ -388,7 +424,9 @@ export default function RawMaterialPurchase() {
       transportBy: d.transportBy || 'SUPPLIER',
       validUntil: d.deliveryDate ? d.deliveryDate.slice(0, 10) : '',
       deliverySchedule,
-    } as typeof dealForm);
+      termsAccepted: (d as unknown as { termsAccepted?: string[] }).termsAccepted ?? [],
+      overrideTdsSectionId: (d as unknown as { overrideTdsSectionId?: string | null }).overrideTdsSectionId ?? null,
+    } as unknown as typeof dealForm);
     setShowDealModal(true);
   };
 
@@ -450,7 +488,7 @@ export default function RawMaterialPurchase() {
             </button>
           )}
           {tab === 'deals' && isAdmin && (
-            <button onClick={() => { setEditingDealId(null); setDealForm({ vendorId: '', vendorName: '', vendorPhone: '', materialItemId: '', rate: 0, remarks: '', quantityType: 'OPEN' }); setShowDealModal(true); }} className="px-3 py-1 bg-blue-600 text-white text-[11px] font-medium hover:bg-blue-700">
+            <button onClick={() => { setEditingDealId(null); setDealForm({ vendorId: '', vendorName: '', vendorPhone: '', materialItemId: '', rate: 0, remarks: '', quantityType: 'OPEN', termsAccepted: [], overrideTdsSectionId: null }); setShowDealModal(true); }} className="px-3 py-1 bg-blue-600 text-white text-[11px] font-medium hover:bg-blue-700">
               + New Deal
             </button>
           )}
@@ -905,7 +943,7 @@ export default function RawMaterialPurchase() {
                   </div>
                   <div>
                     <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-0.5 block">Address</label>
-                    <input value={(dealForm as Record<string, string>).vendorAddress || ''} onChange={e => setDealForm({ ...dealForm, vendorAddress: e.target.value } as typeof dealForm)}
+                    <input value={(dealForm as unknown as Record<string, string>).vendorAddress || ''} onChange={e => setDealForm({ ...dealForm, vendorAddress: e.target.value } as typeof dealForm)}
                       className="w-full border border-slate-300 px-2.5 py-1.5 text-xs focus:outline-none focus:ring-1 focus:ring-slate-400" placeholder="e.g., Narsinghpur" />
                   </div>
                 </div>
@@ -924,7 +962,7 @@ export default function RawMaterialPurchase() {
                 </div>
                 <div>
                   <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-0.5 block">Deal Type</label>
-                  <select value={(dealForm as Record<string, string>).quantityType || 'OPEN'} onChange={e => {
+                  <select value={(dealForm as unknown as Record<string, string>).quantityType || 'OPEN'} onChange={e => {
                     const v = e.target.value;
                     setDealForm({ ...dealForm, quantityType: v, rate: v === 'JOB_WORK' ? 0 : dealForm.rate } as typeof dealForm);
                   }}
@@ -936,7 +974,7 @@ export default function RawMaterialPurchase() {
                 </div>
               </div>
               <div className="grid grid-cols-4 gap-3">
-                {(dealForm as Record<string, string>).quantityType !== 'JOB_WORK' && (
+                {(dealForm as unknown as Record<string, string>).quantityType !== 'JOB_WORK' && (
                 <div>
                   <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-0.5 block">Rate</label>
                   <input type="number" value={dealForm.rate || ''} onChange={e => setDealForm({ ...dealForm, rate: parseFloat(e.target.value) || 0 })}
@@ -946,9 +984,9 @@ export default function RawMaterialPurchase() {
                 <div>
                   <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-0.5 block">Quantity</label>
                   <div className="flex">
-                    <input type="number" max={99999} value={(dealForm as Record<string, number>).quantity || ''} onChange={e => setDealForm({ ...dealForm, quantity: parseFloat(e.target.value) || 0 } as typeof dealForm)}
+                    <input type="number" max={99999} value={(dealForm as unknown as Record<string, number>).quantity || ''} onChange={e => setDealForm({ ...dealForm, quantity: parseFloat(e.target.value) || 0 } as typeof dealForm)}
                       className="w-full border border-slate-300 border-r-0 px-2.5 py-1.5 text-sm font-mono focus:outline-none focus:ring-1 focus:ring-slate-400" placeholder="e.g., 100" />
-                    <select value={(dealForm as Record<string, string>).quantityUnit || 'MT'} onChange={e => setDealForm({ ...dealForm, quantityUnit: e.target.value } as typeof dealForm)}
+                    <select value={(dealForm as unknown as Record<string, string>).quantityUnit || 'MT'} onChange={e => setDealForm({ ...dealForm, quantityUnit: e.target.value } as typeof dealForm)}
                       className="border border-slate-300 px-1.5 py-1.5 text-[10px] bg-slate-50 text-slate-600 focus:outline-none" style={{ minWidth: '62px' }}>
                       <option value="MT">MT</option>
                       <option value="KG">KG</option>
@@ -959,7 +997,7 @@ export default function RawMaterialPurchase() {
                 </div>
                 <div>
                   <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-0.5 block">Payment Terms</label>
-                  <select value={(dealForm as Record<string, string>).paymentTerms || 'NET15'} onChange={e => setDealForm({ ...dealForm, paymentTerms: e.target.value } as typeof dealForm)}
+                  <select value={(dealForm as unknown as Record<string, string>).paymentTerms || 'NET15'} onChange={e => setDealForm({ ...dealForm, paymentTerms: e.target.value } as typeof dealForm)}
                     className="w-full border border-slate-300 px-2.5 py-1.5 text-xs focus:outline-none focus:ring-1 focus:ring-slate-400">
                     <option value="ADVANCE">Advance</option>
                     <option value="COD">Cash on Delivery</option>
@@ -972,7 +1010,7 @@ export default function RawMaterialPurchase() {
                 </div>
                 <div>
                   <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-0.5 block">Valid Until</label>
-                  <input type="date" value={(dealForm as Record<string, string>).validUntil || ''} onChange={e => setDealForm({ ...dealForm, validUntil: e.target.value } as typeof dealForm)}
+                  <input type="date" value={(dealForm as unknown as Record<string, string>).validUntil || ''} onChange={e => setDealForm({ ...dealForm, validUntil: e.target.value } as typeof dealForm)}
                     className="w-full border border-slate-300 px-2.5 py-1.5 text-xs focus:outline-none focus:ring-1 focus:ring-slate-400" />
                 </div>
               </div>
@@ -982,12 +1020,12 @@ export default function RawMaterialPurchase() {
               <div className="grid grid-cols-2 gap-3">
                 <div>
                   <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-0.5 block">Origin / Source</label>
-                  <input value={(dealForm as Record<string, string>).origin || ''} onChange={e => { const v = e.target.value; setDealForm({ ...dealForm, origin: v.charAt(0).toUpperCase() + v.slice(1) } as typeof dealForm); }}
+                  <input value={(dealForm as unknown as Record<string, string>).origin || ''} onChange={e => { const v = e.target.value; setDealForm({ ...dealForm, origin: v.charAt(0).toUpperCase() + v.slice(1) } as typeof dealForm); }}
                     className="w-full border border-slate-300 px-2.5 py-1.5 text-xs capitalize focus:outline-none focus:ring-1 focus:ring-slate-400" placeholder="e.g., Mumbai, Indore" />
                 </div>
                 <div>
                   <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-0.5 block">Delivery Point</label>
-                  <select value={(dealForm as Record<string, string>).deliveryPoint || 'Factory Gate'} onChange={e => setDealForm({ ...dealForm, deliveryPoint: e.target.value } as typeof dealForm)}
+                  <select value={(dealForm as unknown as Record<string, string>).deliveryPoint || 'Factory Gate'} onChange={e => setDealForm({ ...dealForm, deliveryPoint: e.target.value } as typeof dealForm)}
                     className="w-full border border-slate-300 px-2.5 py-1.5 text-xs focus:outline-none focus:ring-1 focus:ring-slate-400">
                     <option value="Factory Gate">Factory Gate</option>
                     <option value="Store Room">Store Room</option>
@@ -999,7 +1037,7 @@ export default function RawMaterialPurchase() {
               <div className="grid grid-cols-2 gap-3">
                 <div>
                   <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-0.5 block">Transport By</label>
-                  <select value={(dealForm as Record<string, string>).transportBy || 'SUPPLIER'} onChange={e => setDealForm({ ...dealForm, transportBy: e.target.value } as typeof dealForm)}
+                  <select value={(dealForm as unknown as Record<string, string>).transportBy || 'SUPPLIER'} onChange={e => setDealForm({ ...dealForm, transportBy: e.target.value } as typeof dealForm)}
                     className="w-full border border-slate-300 px-2.5 py-1.5 text-xs focus:outline-none focus:ring-1 focus:ring-slate-400">
                     <option value="SUPPLIER">Supplier</option>
                     <option value="SELF">Our Transport</option>
@@ -1008,7 +1046,7 @@ export default function RawMaterialPurchase() {
                 </div>
                 <div>
                   <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-0.5 block">Expected Delivery (Days)</label>
-                  <input type="number" min="1" value={(dealForm as Record<string, string>).deliverySchedule || ''} onChange={e => setDealForm({ ...dealForm, deliverySchedule: e.target.value } as typeof dealForm)}
+                  <input type="number" min="1" value={(dealForm as unknown as Record<string, string>).deliverySchedule || ''} onChange={e => setDealForm({ ...dealForm, deliverySchedule: e.target.value } as typeof dealForm)}
                     className="w-full border border-slate-300 px-2.5 py-1.5 text-xs focus:outline-none focus:ring-1 focus:ring-slate-400" placeholder="e.g., 7" />
                 </div>
               </div>
@@ -1020,6 +1058,46 @@ export default function RawMaterialPurchase() {
                 <input value={dealForm.remarks} onChange={e => { const v = e.target.value; setDealForm({ ...dealForm, remarks: v.charAt(0).toUpperCase() + v.slice(1) }); }}
                   className="w-full border border-slate-300 px-2.5 py-1.5 text-xs capitalize focus:outline-none focus:ring-1 focus:ring-slate-400" placeholder="Any additional notes" />
               </div>
+
+              {/* Section: Contract Terms & Conditions (pre-ticked; uncheck any that don't apply) */}
+              {poTerms.length > 0 && (
+                <>
+                  <div className="text-[9px] font-bold text-amber-700 uppercase tracking-widest border-b border-amber-200 pb-1 mt-2 flex items-center justify-between">
+                    <span>Contract Terms & Conditions</span>
+                    <span className="text-[9px] font-normal normal-case tracking-normal text-amber-600">
+                      {dealForm.termsAccepted.length} / {poTerms.length} ticked
+                      {dealForm.overrideTdsSectionId ? ' · 194Q override active' : ''}
+                    </span>
+                  </div>
+                  <div className="bg-amber-50 border border-amber-200 px-3 py-2 space-y-2">
+                    {Object.entries(
+                      poTerms.reduce<Record<string, typeof poTerms>>((acc, t) => {
+                        (acc[t.group] ||= []).push(t); return acc;
+                      }, {}),
+                    ).map(([group, terms]) => (
+                      <div key={group}>
+                        <div className="text-[10px] font-bold text-slate-700 mb-0.5">{group}</div>
+                        {terms.map(t => (
+                          <label key={t.key} className="flex items-start gap-1.5 text-[11px] leading-snug text-slate-800 py-0.5 cursor-pointer">
+                            <input
+                              type="checkbox"
+                              checked={dealForm.termsAccepted.includes(t.key)}
+                              onChange={e => toggleDealTerm(t.key, e.target.checked)}
+                              className="mt-0.5 rounded border-amber-400"
+                            />
+                            <span>
+                              {t.label}
+                              {t.hasBackendHook && dealForm.termsAccepted.includes(t.key) && (
+                                <span className="ml-1 text-[9px] font-bold text-amber-700">· TDS override applied</span>
+                              )}
+                            </span>
+                          </label>
+                        ))}
+                      </div>
+                    ))}
+                  </div>
+                </>
+              )}
             </div>
             <div className="border-t border-slate-200 px-4 py-3 flex justify-end gap-2">
               <button onClick={() => setShowDealModal(false)} className="px-3 py-1 bg-white border border-slate-300 text-slate-600 text-[11px] font-medium hover:bg-slate-50">Cancel</button>

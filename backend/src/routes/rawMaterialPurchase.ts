@@ -6,6 +6,7 @@ import { asyncHandler, validate } from '../shared/middleware';
 import { NotFoundError } from '../shared/errors';
 import { z } from 'zod';
 import prisma from '../config/prisma';
+import { DEFAULT_RM_TERM_KEYS } from '../data/poTerms';
 
 const router = Router();
 
@@ -286,6 +287,10 @@ const dealSchema = z.object({
   deliverySchedule: z.string().optional(),
   validUntil: z.string().optional(),
   remarks: z.string().optional(),
+  // Contract T&C — pre-ticked by server if not supplied
+  termsAccepted: z.array(z.string()).optional(),
+  // Per-PO TDS override — set when "Payment 0.1% TDS" (194Q) is ticked
+  overrideTdsSectionId: z.string().optional().nullable(),
 });
 
 // GET /deals — list raw material deals with running balance
@@ -471,6 +476,11 @@ router.post('/deals', authenticate, validate(dealSchema), asyncHandler(async (re
 
   const companyId = getActiveCompanyId(req);
   const poNo = await nextDocNo('PurchaseOrder', 'poNo', companyId);
+
+  // Contract T&C: every RM deal is a raw-material contract by definition, so
+  // default to all 11 clauses unless the client sent a curated list.
+  const termsAccepted = b.termsAccepted ?? [...DEFAULT_RM_TERM_KEYS];
+
   const po = await prisma.purchaseOrder.create({
     data: {
       poNo,
@@ -493,6 +503,8 @@ router.post('/deals', authenticate, validate(dealSchema), asyncHandler(async (re
       totalGst,
       grandTotal,
       userId: req.user!.id,
+      termsAccepted,
+      overrideTdsSectionId: b.overrideTdsSectionId || null,
       lines: {
         create: [{
           inventoryItemId: materialItem.id,
@@ -633,6 +645,8 @@ router.put('/deals/:id', authenticate, asyncHandler(async (req: AuthRequest, res
   if (b.deliveryPoint !== undefined) poUpdate.deliveryAddress = b.deliveryPoint || 'Factory Gate';
   if (b.transportBy !== undefined) poUpdate.transportBy = b.transportBy || 'BY_SUPPLIER';
   if (b.truckCap !== undefined) poUpdate.truckCap = b.truckCap ? Math.round(b.truckCap) : null;
+  if (b.termsAccepted !== undefined) poUpdate.termsAccepted = b.termsAccepted;
+  if (b.overrideTdsSectionId !== undefined) poUpdate.overrideTdsSectionId = b.overrideTdsSectionId || null;
   if (b.vendorId && !hasGrns) poUpdate.vendorId = b.vendorId;
 
   if (Object.keys(poUpdate).length > 0) {
