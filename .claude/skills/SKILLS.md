@@ -11,7 +11,6 @@
 
 ## Process / Plant Operations
 - **[process-production.md](process-production.md)** — Master grain-to-ethanol-to-DDGS pipeline. Sub-sections: grain intake (B), fermentation (C), distillation (D).
-- **[logistics-gate-entry-plan.md](logistics-gate-entry-plan.md)** — Gate entry operator UI + truck flow.
 
 ## Business Modules (cloud ERP)
 - **[sister-companies.md](sister-companies.md)** — Multi-company tenancy. MAEL/MGAL sister LLPs buy corn through MSPIL plant. Company selector at gate, companyId scoping, inter-company procurement.

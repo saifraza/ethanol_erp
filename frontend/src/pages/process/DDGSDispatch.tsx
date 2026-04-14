@@ -370,7 +370,7 @@ export default function DDGSDispatch() {
               <div>
                 <label className="text-[10px] text-gray-400">Invoice No (auto if blank)</label>
                 <input type="text" value={billInvNo} onChange={e => setBillInvNo(e.target.value)}
-                  className="borderpx-2 py-2 w-full text-sm" placeholder="GST/25-26/..." />
+                  className="borderpx-2 py-2 w-full text-sm" placeholder="GST/26-27/..." />
               </div>
               <div className="flex gap-2">
                 <button onClick={handleGenerateBill} disabled={!billRate}

@@ -213,10 +213,9 @@ Anything less — ANY `[ FAIL ]` line, any `[ warn ]` you don't understand, any 
 | `factory-server/scripts/deploy.sh` | The one sanctioned deploy script. Refuses to deploy on unhealthy state. |
 | `factory-server/run.bat` | Launcher with permanent stdout/stderr → timestamped log files. Committed to git for reference, lives at `C:\mspil\factory-server\run.bat` on the PC. |
 | `factory-server/src/services/masterDataCache.ts` | Cache freshness logic. Staleness computed from `lastCloudCheck`, not `lastCloudSync`. Counts consecutive ping failures. |
-| `.claude/skills/factory-architecture.md` | Deploy procedure + SSH commands + troubleshooting runbook. Points back to this file for incident history. |
-| `.claude/skills/factory-incidents-postmortem.md` | **This file.** The institutional memory. |
+| `.claude/skills/factory-operations.md` | **This file.** Incidents + architecture + deploy runbook (merged from former factory-architecture.md + factory-incidents-postmortem.md). |
+| `.claude/skills/weighbridge.md` | Hardware, serial protocol, product routing, corrections (merged from former weighbridge-system.md + weighbridge-add-product.md). |
 | `.claude/skills/debt-register.md` | Known tech debt, severity ranked. |
-| `.claude/skills/weighbridge-add-product.md` | Required reading before adding any new weighbridge product. Prevents incident #4-style drift. |
 
 ---
 

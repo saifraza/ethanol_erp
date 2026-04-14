@@ -24,18 +24,18 @@ Cloud ERP (app.mspil.in)
 │  Consol system — DO NOT TOUCH)           │
 │                                          │
 │  OUR SERVICE (separate from Oracle):     │
-│  Flask Web UI on :8098                   │
-│  SQLite DB (weighbridge.db)              │
-│  Cloud sync module                       │
-│  Receives live weight from all gate PCs  │
-│  SSH: pending IT enablement              │
+│  Node.js Express on :5000                │
+│  Hub: aggregates WB PCs, syncs to cloud  │
+│  React admin dashboard                   │
+│  SSH enabled (OpenSSH, port 22)          │
 └──────────────┬───────────────────────────┘
                │ LAN (always available)
         ┌──────┼──────┬──────┐
        WB-PC1 WB-PC2 WB-PC3 WB-PC4
-       Thin clients:
-       - weight_agent.py (reads COM, POSTs to server)
-       - Browser → http://192.168.0.10:8098
+       Each PC runs:
+       - Python Flask on :8098 (operator UI)
+       - weight_reader.py (reads COM1 serial)
+       - cloud_sync.py (pushes to factory server)
        - Thermal printer for slips
 ```
 
@@ -299,7 +299,7 @@ These are the exact payload shapes used between systems. Update this section whe
 }
 ```
 **Response**: `{ "ok": true, "ids": ["cloud-uuid-1"] }`
-**Known issue**: `po_id` maps from `supplierId` not actual PO UUID (DEBT-004). `ticket_no` always 0.
+**Note**: `po_id` now correctly maps to actual PO UUID (DEBT-004 resolved). `ticket_no` always 0.
 
 ### 2. POST /api/weighbridge/heartbeat (Factory Server → Cloud)
 **Caller**: `factory-server/src/services/pcMonitor.ts`

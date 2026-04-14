@@ -375,13 +375,13 @@ Fermented wash → Distillation → Ethanol Product (tanks)
 - **Production (BL)** = currentTotalStock - prevTotalStock + totalDispatch
 - Tank readings use calibration data (84,470 entries in calibrations.json, cached 24h)
 - All volumes in **BL (Bulk Liters)** at standard temperature — don't confuse with KG or regular liters
-- Opening stock (1,357,471 BL) is hardcoded — should come from Settings model
+- Opening stock is dynamic — retrieved from the first EthanolProductEntry in DB (no longer hardcoded)
 
 ## DDGS Tracking
 - DDGSStockEntry: daily production + stock levels
 - DDGSDispatchTruck: individual truck dispatches with PDF invoice generation
 - DDGS invoices: GST rate 5% (GST.defaultRate), HSN code 2303.30.00 (GST.hsnCodes.ddgs)
-- Invoice number prefix `GST/25-26/` is hardcoded — needs dynamic year detection
+- Invoice number prefix now uses dynamic fiscal year (Apr-Mar, e.g., `GST/26-27/`)
 
 ## Dispatch (Ethanol)
 - DispatchTruck: records each truck leaving with ethanol

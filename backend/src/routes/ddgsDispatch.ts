@@ -245,7 +245,11 @@ router.post('/:id/generate-bill', asyncHandler(async (req: AuthRequest, res: Res
     const gstAmount = Math.round(taxableAmount * gstRate / 100 * 100) / 100;
     const totalAmount = Math.round((taxableAmount + gstAmount) * 100) / 100;
 
-    const invNo = invoiceNo || `GST/25-26/${Date.now().toString().slice(-5)}`;
+    // Dynamic fiscal year: Apr-Mar (e.g., Apr 2026 → "26-27")
+    const now = new Date();
+    const fy = now.getMonth() >= 3 ? now.getFullYear() : now.getFullYear() - 1;
+    const fyStr = `${String(fy).slice(-2)}-${String(fy + 1).slice(-2)}`;
+    const invNo = invoiceNo || `GST/${fyStr}/${Date.now().toString().slice(-5)}`;
 
     const updated = await prisma.dDGSDispatchTruck.update({
       where: { id: req.params.id },
