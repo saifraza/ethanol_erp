@@ -16,6 +16,7 @@ import axios from 'axios';
 // RAG indexing removed — only compliance docs go to RAG
 import { generateVaultNote } from '../services/vaultWriter';
 import { recomputeGrnPaidStateForPO } from '../services/grnPaidState';
+import { calculateTds } from '../services/tdsCalculator';
 
 // ── Zod schemas ──
 const createVendorInvoiceSchema = z.object({
@@ -261,7 +262,6 @@ router.post('/', validate(createVendorInvoiceSchema), asyncHandler(async (req: A
     const loadingCharge = parseFloat(b.loadingCharge) || 0;
     const otherCharges = parseFloat(b.otherCharges) || 0;
     const roundOff = parseFloat(b.roundOff) || 0;
-    const tdsPercent = parseFloat(b.tdsPercent) || 0;
 
     const subtotal = quantity * rate;
 
@@ -283,7 +283,15 @@ router.post('/', validate(createVendorInvoiceSchema), asyncHandler(async (req: A
     }
 
     const totalAmount = subtotal + totalGst + freightCharge + loadingCharge + otherCharges + roundOff;
-    const tdsAmount = subtotal * (tdsPercent / 100);
+
+    // TDS: authoritative via Phase 2 calculator. Base = contract value excl GST
+    // but INCL ancillary charges (freight/loading/other) per 194C / 194Q intent.
+    // Client-supplied tdsPercent is ignored in favour of the calculator —
+    // anti-tampering + server-authoritative audit trail.
+    const tdsBase = subtotal + freightCharge + loadingCharge + otherCharges + roundOff;
+    const tds = await calculateTds(b.vendorId, tdsBase);
+    const tdsPercent = tds.rate;
+    const tdsAmount = tds.tdsAmount;
     const netPayable = totalAmount - tdsAmount;
     const balanceAmount = netPayable;
 
@@ -346,9 +354,11 @@ router.post('/', validate(createVendorInvoiceSchema), asyncHandler(async (req: A
         otherCharges,
         roundOff,
         totalAmount,
-        tdsSection: b.tdsSection || null,
+        tdsSection: tds.sectionCode || b.tdsSection || null,
         tdsPercent,
         tdsAmount,
+        tdsReasonSnapshot: { reason: tds.reason, baseRate: tds.baseRate, sectionLabel: tds.sectionLabel },
+        tdsComputedAt: new Date(),
         netPayable,
         paidAmount: 0,
         balanceAmount,
@@ -381,7 +391,6 @@ router.put('/:id', validate(updateVendorInvoiceSchema), asyncHandler(async (req:
     const loadingCharge = b.loadingCharge !== undefined ? parseFloat(b.loadingCharge) : existing.loadingCharge;
     const otherCharges = b.otherCharges !== undefined ? parseFloat(b.otherCharges) : existing.otherCharges;
     const roundOff = b.roundOff !== undefined ? parseFloat(b.roundOff) : existing.roundOff;
-    const tdsPercent = b.tdsPercent !== undefined ? parseFloat(b.tdsPercent) : existing.tdsPercent;
     const supplyType = b.supplyType || existing.supplyType;
 
     const subtotal = quantity * rate;
@@ -395,7 +404,13 @@ router.put('/:id', validate(updateVendorInvoiceSchema), asyncHandler(async (req:
     const totalGst = cgstAmount + sgstAmount + igstAmount;
     const isRCM = b.isRCM !== undefined ? b.isRCM : existing.isRCM;
     const totalAmount = subtotal + totalGst + freightCharge + loadingCharge + otherCharges + roundOff;
-    const tdsAmount = subtotal * (tdsPercent / 100);
+
+    // TDS via Phase 2 calculator — ignore client-supplied tdsPercent
+    // Base = contract value excl GST but incl ancillary (194C/194Q intent).
+    const tdsBase = subtotal + freightCharge + loadingCharge + otherCharges + roundOff;
+    const tds = await calculateTds(existing.vendorId, tdsBase);
+    const tdsPercent = tds.rate;
+    const tdsAmount = tds.tdsAmount;
     const netPayable = totalAmount - tdsAmount;
     const balanceAmount = netPayable - (existing.paidAmount || 0);
 
@@ -412,8 +427,12 @@ router.put('/:id', validate(updateVendorInvoiceSchema), asyncHandler(async (req:
         cgstAmount, sgstAmount, igstAmount, totalGst,
         rcmCgst: isRCM ? cgstAmount : 0, rcmSgst: isRCM ? sgstAmount : 0, rcmIgst: isRCM ? igstAmount : 0,
         freightCharge, loadingCharge, otherCharges, roundOff,
-        totalAmount, tdsSection: b.tdsSection ?? existing.tdsSection,
-        tdsPercent, tdsAmount, netPayable, balanceAmount: Math.max(0, balanceAmount),
+        totalAmount,
+        tdsSection: tds.sectionCode || existing.tdsSection,
+        tdsPercent, tdsAmount,
+        tdsReasonSnapshot: { reason: tds.reason, baseRate: tds.baseRate, sectionLabel: tds.sectionLabel },
+        tdsComputedAt: new Date(),
+        netPayable, balanceAmount: Math.max(0, balanceAmount),
         remarks: b.remarks ?? existing.remarks,
         poId: b.poId !== undefined ? (b.poId || null) : existing.poId,
         grnId: b.grnId !== undefined ? (b.grnId || null) : existing.grnId,

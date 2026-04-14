@@ -1020,6 +1020,7 @@ export default function FuelManagement() {
                   <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-0.5 block">GST %</label>
                   <input type="number" value={form.gstPercent ?? 5} onChange={e => setForm({ ...form, gstPercent: parseFloat(e.target.value) || 0 })}
                     className="w-full border border-slate-300 px-2.5 py-1.5 text-xs focus:outline-none focus:ring-1 focus:ring-slate-400" />
+                  <p className="mt-0.5 text-[10px] text-amber-700">Resolved from HSN master on save. Edit rates in Compliance → HSN Master.</p>
                 </div>
               </div>
               <div className="grid grid-cols-2 gap-3">

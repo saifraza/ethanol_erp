@@ -1199,8 +1199,13 @@ model InventoryItem {
   isActive                Boolean                  @default(true)
   remarks                 String?
   // SAP-style fields
-  hsnCode                 String?
-  gstPercent              Float                    @default(18)
+  hsnCode                 String? // legacy — kept for backfill fallback; new code reads hsnCodeRef
+  gstPercent              Float                    @default(18) // legacy cache — authoritative rate lives on GstRate via hsnCodeRef
+  // Phase-A tax unification (2026-04-14): link to HsnCode + GstRate master
+  hsnCodeId               String?
+  hsnCodeRef              HsnCode?                 @relation(fields: [hsnCodeId], references: [id])
+  gstOverridePercent      Float? // rare: per-item statutory override (e.g. Notification 2/2017 unbranded)
+  gstOverrideReason       String? // required when gstOverridePercent is set
   valuationMethod         String                   @default("WEIGHTED_AVG") // WEIGHTED_AVG, FIFO, STANDARD
   avgCost                 Float                    @default(0) // weighted average cost
   totalValue              Float                    @default(0) // currentStock × avgCost
@@ -1236,6 +1241,7 @@ model InventoryItem {
   @@index([category])
   @@index([division])
   @@index([companyId])
+  @@index([hsnCodeId])
 }
 
 model InventoryTransaction {
@@ -2250,6 +2256,15 @@ model PurchaseOrder {
   tdsSection      String?
   tdsPercent      Float                @default(0)
   tdsAmount       Float                @default(0)
+  // Phase-B TDS unification: snapshot from calculator at booking time
+  tdsReasonSnapshot Json? // { panMissing, nonFiler, thresholdMet, ldcApplied, ytdPaid }
+  tdsComputedAt   DateTime? // when calculator last ran — payment recomputes if stale
+  // Per-PO TDS section override (e.g., "Payment 0.1% TDS" clause on RM contract → 194Q).
+  // When set, calculator ignores vendor.tdsSectionId and uses this instead.
+  overrideTdsSectionId String?
+  overrideTdsSection   TdsSection? @relation("PoOverrideTds", fields: [overrideTdsSectionId], references: [id])
+  // RM contract terms ticked on this PO — keys from backend/src/data/poTerms.ts
+  termsAccepted   String[]             @default([])
   // Payment terms
   paymentTerms    String?
   creditDays      Int                  @default(30)
@@ -2300,16 +2315,21 @@ model POLine {
   inventoryItemId String?
   inventoryItem   InventoryItem? @relation(fields: [inventoryItemId], references: [id])
   description     String // item description
-  hsnCode         String?
+  hsnCode         String? // legacy string snapshot; new code reads hsnCodeRef
+  // Phase-A tax unification: snapshot HSN at PO time for audit integrity
+  hsnCodeId       String?
+  hsnCodeRef      HsnCode?       @relation(fields: [hsnCodeId], references: [id])
   quantity        Float
   unit            String         @default("KG")
   rate            Float
+  isRateInclusive Boolean        @default(false) // if true: rate is GST-inclusive; base = rate / (1 + gst%)
   amount          Float          @default(0) // qty × rate
   discountPercent Float          @default(0)
   discountAmount  Float          @default(0)
-  taxableAmount   Float          @default(0) // amount - discount
+  taxableAmount   Float          @default(0) // amount - discount (or back-solved when inclusive)
   // GST split
   gstPercent      Float          @default(18)
+  rateSnapshotGst Float? // audit: GST rate fetched from master at PO create/update time
   cgstPercent     Float          @default(0)
   cgstAmount      Float          @default(0)
   sgstPercent     Float          @default(0)
@@ -2329,6 +2349,7 @@ model POLine {
 
   @@index([inventoryItemId])
   @@index([poId])
+  @@index([hsnCodeId])
 }
 
 // ── Goods Receipt Note (factory receives goods against PO) ──
@@ -2475,6 +2496,9 @@ model VendorInvoice {
   tdsSection        String?
   tdsPercent        Float          @default(0)
   tdsAmount         Float          @default(0)
+  // Phase-B TDS unification: snapshot from calculator at invoice booking
+  tdsReasonSnapshot Json? // { panMissing, nonFiler, thresholdMet, ldcApplied, ytdPaid }
+  tdsComputedAt     DateTime? // when calculator last ran
   netPayable        Float          @default(0) // total - tds
   // Payment tracking
   paidAmount        Float          @default(0)
@@ -3972,16 +3996,18 @@ model InvoiceSeries {
 
 // HSN / SAC code master
 model HsnCode {
-  id          String     @id @default(cuid())
-  code        String     @unique // "2207 20"
-  description String
-  uqc         String // "KLR" | "KGS" | "NOS" | "MTS"
-  category    String // FINISHED_GOOD | RAW_MATERIAL | BYPRODUCT | SERVICE
-  isActive    Boolean    @default(true)
-  createdAt   DateTime   @default(now())
-  updatedAt   DateTime   @updatedAt
-  rates       GstRate[]
-  materials   Material[]
+  id             String          @id @default(cuid())
+  code           String          @unique // "2207 20"
+  description    String
+  uqc            String // "KLR" | "KGS" | "NOS" | "MTS"
+  category       String // FINISHED_GOOD | RAW_MATERIAL | BYPRODUCT | SERVICE
+  isActive       Boolean         @default(true)
+  createdAt      DateTime        @default(now())
+  updatedAt      DateTime        @updatedAt
+  rates          GstRate[]
+  materials      Material[]
+  inventoryItems InventoryItem[]
+  poLines        POLine[]
 
   @@index([code])
   @@index([category])
@@ -4027,6 +4053,7 @@ model TdsSection {
   createdAt          DateTime  @default(now())
   updatedAt          DateTime  @updatedAt
   vendors            Vendor[]
+  poOverrides        PurchaseOrder[] @relation("PoOverrideTds")
 
   @@index([newSection])
   @@index([effectiveFrom])

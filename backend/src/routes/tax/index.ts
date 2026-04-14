@@ -12,6 +12,7 @@ import gstr2bReconRoutes from './gstr2bRecon';
 import { authenticate, AuthRequest } from '../../middleware/auth';
 import { asyncHandler } from '../../shared/middleware';
 import { calculateTds } from '../../services/tdsCalculator';
+import { PO_TERMS_RAW_MATERIAL, termsForCategory } from '../../data/poTerms';
 
 const router = Router();
 
@@ -28,13 +29,20 @@ router.use('/gstr2b-recon', gstr2bReconRoutes);
 
 // ── TDS Calculator (live preview for payment screens) ──
 router.post('/calculate-tds', authenticate as any, asyncHandler(async (req: AuthRequest, res: Response) => {
-  const { vendorId, amount } = req.body;
+  const { vendorId, amount, overrideSectionId } = req.body;
   if (!vendorId || !amount) {
     res.status(400).json({ error: 'vendorId and amount are required' });
     return;
   }
-  const result = await calculateTds(vendorId, parseFloat(amount));
+  const result = await calculateTds(vendorId, parseFloat(amount), { overrideSectionId });
   res.json(result);
+}));
+
+// ── PO Terms catalog (standard contract clauses) ──
+router.get('/po-terms', authenticate as any, asyncHandler(async (req: AuthRequest, res: Response) => {
+  const category = (req.query.category as string | undefined)?.toUpperCase();
+  const terms = category ? termsForCategory(category) : PO_TERMS_RAW_MATERIAL;
+  res.json({ terms });
 }));
 
 export default router;

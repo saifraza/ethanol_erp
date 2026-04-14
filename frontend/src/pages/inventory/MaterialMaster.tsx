@@ -395,7 +395,12 @@ export default function MaterialMaster() {
               <FormField label="Cost Per Unit" value={form.costPerUnit} onChange={(v) => setForm({ ...form, costPerUnit: v })} type="number" />
               <div className="grid grid-cols-2 gap-4">
                 <FormField label="HSN Code" value={form.hsnCode} onChange={(v) => setForm({ ...form, hsnCode: v })} />
-                <FormField label="GST %" value={form.gstPercent} onChange={(v) => setForm({ ...form, gstPercent: v })} type="number" />
+                <div>
+                  <FormField label="GST %" value={form.gstPercent} onChange={(v) => setForm({ ...form, gstPercent: v })} type="number" />
+                  <p className="mt-1 text-[11px] text-amber-700">
+                    Auto-set from HSN master on save. To change a rate permanently, edit it in Compliance → HSN Master.
+                  </p>
+                </div>
               </div>
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">Valuation Method</label>

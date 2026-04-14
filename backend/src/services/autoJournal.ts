@@ -423,17 +423,28 @@ export async function onVendorPaymentMade(
   }
 ): Promise<string | null> {
   try {
+    // Resolve the TDS ledger FIRST — vendor section takes priority over the
+    // generic 2200 pool. Only require 2200 in chart-of-accounts if we end up
+    // falling back to it (otherwise a missing 2200 shouldn't block a payment
+    // that has a perfectly valid section-specific ledger).
+    let tdsAccountId: string | null = payment.tdsLedgerId || null;
+    if (!tdsAccountId && payment.tdsDeducted > 0 && payment.vendorId) {
+      const v = await prisma.vendor.findUnique({
+        where: { id: payment.vendorId },
+        select: { tdsSectionRef: { select: { defaultLedgerId: true } } },
+      });
+      tdsAccountId = v?.tdsSectionRef?.defaultLedgerId ?? null;
+    }
+
     const bankCode = PAYMENT_ACCOUNT[payment.mode] || ACCT.SBI_BANK;
     const codes = [bankCode, ACCT.TRADE_PAYABLE];
-    if (payment.tdsDeducted > 0 && !payment.tdsLedgerId) codes.push(ACCT.TDS_PAYABLE);
+    if (payment.tdsDeducted > 0 && !tdsAccountId) codes.push(ACCT.TDS_PAYABLE);
 
     const accts = await resolveAccounts(prisma, codes, payment.companyId);
     for (const code of codes) {
       if (!accts[code]) return null;
     }
-
-    // Use section-specific ledger if provided, else fall back to generic 2200
-    const tdsAccountId = payment.tdsLedgerId || accts[ACCT.TDS_PAYABLE];
+    if (payment.tdsDeducted > 0 && !tdsAccountId) tdsAccountId = accts[ACCT.TDS_PAYABLE];
 
     const totalSettled = payment.amount + payment.tdsDeducted;
     const lines: { accountId: string; debit: number; credit: number; narration?: string }[] = [

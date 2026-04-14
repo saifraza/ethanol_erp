@@ -179,7 +179,54 @@ const PurchaseOrders: React.FC = () => {
     otherCharges: 0,
     roundOff: 0,
     lines: [] as POLine[],
+    termsAccepted: [] as string[],
+    overrideTdsSectionId: null as string | null,
   });
+
+  // RM contract T&C catalog + 194Q section ID (loaded once)
+  const [poTerms, setPoTerms] = useState<Array<{ key: string; group: string; label: string; hasBackendHook?: boolean }>>([]);
+  const [tds194QId, setTds194QId] = useState<string | null>(null);
+  const [termsUserEdited, setTermsUserEdited] = useState(false); // don't stomp user choices
+
+  useEffect(() => {
+    (async () => {
+      try {
+        const [termsRes, sectionsRes] = await Promise.all([
+          api.get('/tax/po-terms?category=RAW_MATERIAL'),
+          api.get('/tax/tds-sections'),
+        ]);
+        setPoTerms(termsRes.data?.terms ?? []);
+        const sections = Array.isArray(sectionsRes.data) ? sectionsRes.data : sectionsRes.data?.sections ?? [];
+        const q = sections.find((s: { code?: string; oldSection?: string }) => s.code === '393_GOODS' || s.oldSection === '194Q');
+        setTds194QId(q?.id ?? null);
+      } catch { /* non-blocking */ }
+    })();
+  }, []);
+
+  // Auto pre-tick all 11 terms when any line references a RAW_MATERIAL item,
+  // unless the user has already edited the list manually this session.
+  useEffect(() => {
+    if (termsUserEdited) return;
+    const hasRm = formData.lines.some(l => {
+      const vi = vendorItemsList.find(v => v.inventoryItemId === l.inventoryItemId);
+      return vi ? (vi as unknown as { category?: string }).category === 'RAW_MATERIAL' : false;
+    });
+    if (hasRm && poTerms.length > 0 && formData.termsAccepted.length === 0) {
+      setFormData(f => ({ ...f, termsAccepted: poTerms.map(t => t.key) }));
+    }
+  }, [formData.lines, poTerms, termsUserEdited]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const toggleTerm = (key: string, checked: boolean) => {
+    setTermsUserEdited(true);
+    setFormData(f => {
+      const next = checked
+        ? Array.from(new Set([...f.termsAccepted, key]))
+        : f.termsAccepted.filter(k => k !== key);
+      // TDS_194Q_0_1 drives the override — tick/untick both sides
+      const override = next.includes('TDS_194Q_0_1') ? tds194QId : null;
+      return { ...f, termsAccepted: next, overrideTdsSectionId: override };
+    });
+  };
 
   // Vendor context: items they supply + recent POs
   const [vendorItemsList, setVendorItemsList] = useState<{ inventoryItemId: string; itemName: string; itemCode: string; unit: string; rate: number; hsnCode: string; gstPercent: number }[]>([]);
@@ -318,7 +365,10 @@ const PurchaseOrders: React.FC = () => {
             gstPercent: l.gstPercent || 18,
             isRCM: l.isRCM || false,
           })),
+          termsAccepted: po.termsAccepted || [],
+          overrideTdsSectionId: po.overrideTdsSectionId || null,
         });
+        setTermsUserEdited(true); // keep their saved choices on edit
       }
     }).catch(() => setPODetail(null)).finally(() => setDetailLoading(false));
   }, [selectedPOId, editingPoId]);
@@ -525,7 +575,10 @@ const PurchaseOrders: React.FC = () => {
         otherCharges: 0,
         roundOff: 0,
         lines: [],
+        termsAccepted: [],
+        overrideTdsSectionId: null,
       });
+      setTermsUserEdited(false);
       setShowCreateForm(false);
       setTimeout(() => setSuccess(''), 3000);
     } catch (err: any) {
@@ -991,6 +1044,44 @@ const PurchaseOrders: React.FC = () => {
                     <div className="flex justify-between"><span className="text-slate-500">Total GST:</span><span className="font-mono tabular-nums font-medium">{totalGst.toLocaleString('en-IN', { maximumFractionDigits: 2 })}</span></div>
                   </div>
                 </div>
+
+                {/* Contract T&C — shown for any PO; pre-ticked for RM lines */}
+                {poTerms.length > 0 && formData.lines.length > 0 && (
+                  <div className="bg-amber-50 border border-amber-200 px-3 py-2">
+                    <div className="flex items-center justify-between mb-2">
+                      <div className="text-[10px] font-bold text-amber-900 uppercase tracking-widest">Terms & Conditions</div>
+                      <div className="text-[9px] text-amber-700">
+                        {formData.termsAccepted.length} / {poTerms.length} clauses ticked
+                        {formData.overrideTdsSectionId ? ' · 194Q override active' : ''}
+                      </div>
+                    </div>
+                    {Object.entries(
+                      poTerms.reduce<Record<string, typeof poTerms>>((acc, t) => {
+                        (acc[t.group] ||= []).push(t); return acc;
+                      }, {}),
+                    ).map(([group, terms]) => (
+                      <div key={group} className="mb-1.5 last:mb-0">
+                        <div className="text-[10px] font-bold text-slate-700 mb-0.5">{group}</div>
+                        {terms.map(t => (
+                          <label key={t.key} className="flex items-start gap-1.5 text-[11px] leading-snug text-slate-800 py-0.5 cursor-pointer">
+                            <input
+                              type="checkbox"
+                              checked={formData.termsAccepted.includes(t.key)}
+                              onChange={e => toggleTerm(t.key, e.target.checked)}
+                              className="mt-0.5 rounded border-amber-400"
+                            />
+                            <span>
+                              {t.label}
+                              {t.hasBackendHook && formData.termsAccepted.includes(t.key) && (
+                                <span className="ml-1 text-[9px] font-bold text-amber-700">· TDS override applied</span>
+                              )}
+                            </span>
+                          </label>
+                        ))}
+                      </div>
+                    ))}
+                  </div>
+                )}
 
                 <div className="flex gap-2 justify-end pt-4 border-t border-slate-200">
                   <button type="button" onClick={() => { setShowCreateForm(false); setEditingPoId(null); }} className="px-4 py-1.5 bg-slate-200 text-slate-700 text-[11px] font-medium hover:bg-slate-300">CANCEL</button>

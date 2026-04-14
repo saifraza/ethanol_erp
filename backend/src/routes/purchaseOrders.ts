@@ -3,15 +3,20 @@ import prisma from '../config/prisma';
 import { authenticate, AuthRequest, authorize, getCompanyFilter, getActiveCompanyId } from '../middleware/auth';
 import { asyncHandler, validate } from '../shared/middleware';
 import { z } from 'zod';
+import { getEffectiveGstRate, computeGstSplit } from '../services/taxRateLookup';
+import { calculateTds } from '../services/tdsCalculator';
+import { DEFAULT_RM_TERM_KEYS, termByKey } from '../data/poTerms';
 
 const poLineSchema = z.object({
   inventoryItemId: z.string().optional().nullable(),
   materialId: z.string().optional().nullable(),
   description: z.string().optional().default(''),
   hsnCode: z.string().optional().default(''),
+  hsnCodeId: z.string().optional().nullable(),
   quantity: z.coerce.number().nonnegative(),
   unit: z.string().optional().default('KG'),
   rate: z.coerce.number().nonnegative(),
+  isRateInclusive: z.boolean().optional().default(false),
   discountPercent: z.coerce.number().nonnegative().optional().default(0),
   gstPercent: z.coerce.number().nonnegative().optional(),
   isRCM: z.boolean().optional().default(false),
@@ -33,6 +38,10 @@ const createPOSchema = z.object({
   otherCharges: z.coerce.number().nonnegative().optional().default(0),
   roundOff: z.coerce.number().optional().default(0),
   lines: z.array(poLineSchema).min(1),
+  // Contract T&C — frontend ticks the clause keys; server auto-pre-ticks all for RM if not provided
+  termsAccepted: z.array(z.string()).optional(),
+  // Per-PO TDS section override (e.g., 194Q for grain purchase)
+  overrideTdsSectionId: z.string().optional().nullable(),
 });
 
 const updatePOSchema = z.object({
@@ -51,6 +60,8 @@ const updatePOSchema = z.object({
   otherCharges: z.coerce.number().nonnegative().optional(),
   roundOff: z.coerce.number().optional(),
   lines: z.array(poLineSchema).optional(),
+  termsAccepted: z.array(z.string()).optional(),
+  overrideTdsSectionId: z.string().optional().nullable(),
 });
 import { generatePOPdf } from '../utils/pdfGenerator';
 // RAG indexing removed — only compliance docs go to RAG
@@ -62,6 +73,155 @@ import { writeAudit, auditDiff } from '../utils/auditLog';
 
 const router = Router();
 router.use(authenticate as any);
+
+// ──────────────────────────────────────────────────────────────────────────
+// Shared tax line processing — single source of truth for PO GST.
+//
+// Rate resolution precedence (per line):
+//   1. Explicit hsnCodeId on line → HSN master effective rate
+//   2. inventoryItem.hsnCodeId → master rate
+//   3. inventoryItem.gstOverridePercent (with reason) → override
+//   4. inventoryItem.gstPercent (legacy scalar) → fallback
+//   5. line.gstPercent (client-supplied, last resort)
+//
+// Supports inclusive/exclusive math via POLine.isRateInclusive.
+// ──────────────────────────────────────────────────────────────────────────
+interface ProcessedPOLine {
+  inventoryItemId: string | null;
+  materialId: null;
+  description: string;
+  hsnCode: string;
+  hsnCodeId: string | null;
+  quantity: number;
+  unit: string;
+  rate: number;
+  isRateInclusive: boolean;
+  discountPercent: number;
+  discountAmount: number;
+  gstPercent: number;
+  rateSnapshotGst: number;
+  amount: number;
+  taxableAmount: number;
+  cgstPercent: number;
+  cgstAmount: number;
+  sgstPercent: number;
+  sgstAmount: number;
+  igstPercent: number;
+  igstAmount: number;
+  totalGst: number;
+  lineTotal: number;
+  isRCM: boolean;
+  pendingQty: number;
+  receivedQty: number;
+}
+type LineInput = Record<string, unknown>;
+interface ItemRow {
+  id: string;
+  name: string | null;
+  unit: string | null;
+  hsnCode: string | null;
+  hsnCodeId: string | null;
+  gstPercent: number;
+  gstOverridePercent: number | null;
+  gstOverrideReason: string | null;
+}
+async function processPOLines(params: {
+  lines: LineInput[];
+  supplyType: 'INTRA_STATE' | 'INTER_STATE';
+  poDate: Date;
+}): Promise<ProcessedPOLine[]> {
+  const { lines, supplyType, poDate } = params;
+  const itemIds = lines
+    .map((l) => (l.materialId as string | undefined) || (l.inventoryItemId as string | undefined))
+    .filter((id): id is string => Boolean(id));
+  const itemsMap: Record<string, ItemRow> = {};
+  if (itemIds.length > 0) {
+    const items = await prisma.inventoryItem.findMany({
+      where: { id: { in: itemIds } },
+      select: {
+        id: true, name: true, unit: true, hsnCode: true, hsnCodeId: true,
+        gstPercent: true, gstOverridePercent: true, gstOverrideReason: true,
+      },
+    });
+    items.forEach((m) => { itemsMap[m.id] = m; });
+  }
+
+  const out: ProcessedPOLine[] = [];
+  for (const line of lines) {
+    const itemId = (line.materialId as string | null) || (line.inventoryItemId as string | null) || null;
+    const mat = itemId ? itemsMap[itemId] ?? null : null;
+
+    // Prefer explicit hsnCodeId on line, then item's FK
+    const hsnCodeId = (line.hsnCodeId as string | null | undefined) ?? mat?.hsnCodeId ?? null;
+
+    // Legacy code string: prefer line's string, then item's
+    const hsnCode = (line.hsnCode as string | undefined) || mat?.hsnCode || '';
+
+    // Resolve authoritative GST rate
+    const legacyGst = mat?.gstPercent ?? (line.gstPercent != null ? Number(line.gstPercent) : null);
+    const resolved = await getEffectiveGstRate({
+      hsnCodeId,
+      on: poDate,
+      itemOverridePercent: mat?.gstOverridePercent,
+      itemOverrideReason: mat?.gstOverrideReason,
+      legacyGstPercent: legacyGst,
+    });
+
+    const quantity = parseFloat(String(line.quantity ?? 0)) || 0;
+    const rate = parseFloat(String(line.rate ?? 0)) || 0;
+    const discountPercent = parseFloat(String(line.discountPercent ?? 0)) || 0;
+    const isRateInclusive = !!line.isRateInclusive;
+    const gstPercent = resolved.rate;
+
+    // amount = qty × rate (always stored as the raw line total pre-split)
+    const amount = quantity * rate;
+    const discountAmount = amount * (discountPercent / 100);
+    const preSplit = amount - discountAmount;
+
+    // Inclusive: preSplit IS the total (tax embedded); back-solve taxable
+    // Exclusive: preSplit IS taxable; tax goes on top
+    const split = computeGstSplit({
+      amount: preSplit,
+      gstPercent,
+      supplyType,
+      isInclusive: isRateInclusive,
+    });
+
+    const cgstPercent = supplyType === 'INTRA_STATE' ? gstPercent / 2 : 0;
+    const sgstPercent = supplyType === 'INTRA_STATE' ? gstPercent / 2 : 0;
+    const igstPercent = supplyType === 'INTER_STATE' ? gstPercent : 0;
+
+    out.push({
+      inventoryItemId: itemId,
+      materialId: null, // deprecated FK — points to Material, not InventoryItem
+      description: (line.description as string | undefined) || mat?.name || '',
+      hsnCode,
+      hsnCodeId,
+      quantity,
+      unit: (line.unit as string | undefined) || mat?.unit || 'KG',
+      rate,
+      isRateInclusive,
+      discountPercent,
+      discountAmount,
+      gstPercent,
+      rateSnapshotGst: gstPercent, // audit: what was master at booking time
+      amount,
+      taxableAmount: split.taxableAmount,
+      cgstPercent,
+      cgstAmount: split.cgstAmount,
+      sgstPercent,
+      sgstAmount: split.sgstAmount,
+      igstPercent,
+      igstAmount: split.igstAmount,
+      totalGst: split.totalGst,
+      lineTotal: split.lineTotal,
+      isRCM: !!line.isRCM,
+      pendingQty: quantity,
+      receivedQty: 0,
+    });
+  }
+  return out;
+}
 
 // GET / — list POs with filters (status, vendorId), pagination
 router.get('/', asyncHandler(async (req: AuthRequest, res: Response) => {
@@ -229,89 +389,48 @@ router.post('/', validate(createPOSchema), asyncHandler(async (req: AuthRequest,
       return;
     }
 
-    // Look up items for auto-fill (unified material master = InventoryItem)
-    const itemIds = (b.lines || []).map((l: any) => l.materialId || l.inventoryItemId).filter(Boolean);
-    const itemsMap: Record<string, any> = {};
-    if (itemIds.length > 0) {
-      const items = await prisma.inventoryItem.findMany({ where: { id: { in: itemIds } } });
-      items.forEach((m: any) => { itemsMap[m.id] = m; });
-    }
+    // Process lines via shared helper — HSN master is source of truth for GST
+    const poDate = b.poDate ? new Date(b.poDate) : new Date();
+    const supplyType = (b.supplyType || 'INTRA_STATE') as 'INTRA_STATE' | 'INTER_STATE';
+    const processedLines = await processPOLines({ lines: b.lines || [], supplyType, poDate });
 
-    // Process lines with calculations
-    const processedLines = (b.lines || []).map((line: any) => {
-      const itemId = line.materialId || line.inventoryItemId || null;
-      const mat = itemId ? itemsMap[itemId] : null;
-      const quantity = parseFloat(line.quantity) || 0;
-      const rate = parseFloat(line.rate) || 0;
-      const discountPercent = parseFloat(line.discountPercent) || 0;
-      const gstPercent = parseFloat(line.gstPercent) || (mat?.gstPercent || 0);
-
-      const amount = quantity * rate;
-      const discountAmount = amount * (discountPercent / 100);
-      const taxableAmount = amount - discountAmount;
-
-      let cgstPercent = 0, sgstPercent = 0, igstPercent = 0;
-      let cgstAmount = 0, sgstAmount = 0, igstAmount = 0;
-
-      if (b.supplyType === 'INTRA_STATE') {
-        cgstPercent = gstPercent / 2;
-        sgstPercent = gstPercent / 2;
-        cgstAmount = taxableAmount * (cgstPercent / 100);
-        sgstAmount = taxableAmount * (sgstPercent / 100);
-      } else if (b.supplyType === 'INTER_STATE') {
-        igstPercent = gstPercent;
-        igstAmount = taxableAmount * (igstPercent / 100);
-      }
-
-      const totalGst = cgstAmount + sgstAmount + igstAmount;
-      const lineTotal = taxableAmount + totalGst;
-
-      return {
-        inventoryItemId: itemId,
-        materialId: null, // deprecated — FK points to Material table, not InventoryItem
-        description: line.description || mat?.name || '',
-        hsnCode: line.hsnCode || mat?.hsnCode || '',
-        quantity,
-        unit: line.unit || mat?.unit || 'KG',
-        rate,
-        discountPercent,
-        discountAmount,
-        gstPercent,
-        amount,
-        taxableAmount,
-        cgstPercent,
-        cgstAmount,
-        sgstPercent,
-        sgstAmount,
-        igstPercent,
-        igstAmount,
-        totalGst,
-        lineTotal,
-        isRCM: line.isRCM || false,
-        pendingQty: quantity,
-        receivedQty: 0,
-      };
-    });
-
-    // Calculate header totals
-    const subtotal = processedLines.reduce((sum: number, line: any) => sum + line.amount, 0);
-    const totalCgst = processedLines.reduce((sum: number, line: any) => sum + line.cgstAmount, 0);
-    const totalSgst = processedLines.reduce((sum: number, line: any) => sum + line.sgstAmount, 0);
-    const totalIgst = processedLines.reduce((sum: number, line: any) => sum + line.igstAmount, 0);
+    // Header totals
+    const subtotal = processedLines.reduce((s, l) => s + l.taxableAmount, 0);
+    const totalCgst = processedLines.reduce((s, l) => s + l.cgstAmount, 0);
+    const totalSgst = processedLines.reduce((s, l) => s + l.sgstAmount, 0);
+    const totalIgst = processedLines.reduce((s, l) => s + l.igstAmount, 0);
     const totalGst = totalCgst + totalSgst + totalIgst;
     const freightCharge = parseFloat(b.freightCharge) || 0;
     const otherCharges = parseFloat(b.otherCharges) || 0;
     const roundOff = parseFloat(b.roundOff) || 0;
     const grandTotal = subtotal + totalGst + freightCharge + otherCharges + roundOff;
 
-    // Get vendor for TDS check
-    const vendor = await prisma.vendor.findUnique({
-      where: { id: b.vendorId },
-    });
+    // TDS — via the Phase 2 calculator (threshold, PAN, 206AB, LDC all handled).
+    // Base = contract value excluding GST, but including freight/other ancillary.
+    // Per-PO override (e.g., 194Q tick on RM contract) takes precedence over vendor default.
+    const tdsBase = subtotal + freightCharge + otherCharges + roundOff;
+    const tds = await calculateTds(b.vendorId, tdsBase, { overrideSectionId: b.overrideTdsSectionId });
 
-    let tdsAmount = 0;
-    if (vendor?.tdsApplicable) {
-      tdsAmount = subtotal * ((vendor.tdsPercent || 0) / 100);
+    // RM Contract T&C: if this PO has any RAW_MATERIAL line and client didn't specify
+    // termsAccepted, pre-tick all default terms. (User requested pre-tick all 11.)
+    const hasRmLine = processedLines.some((l) => {
+      // Line-level category isn't on POLine; use InventoryItem if we loaded it
+      // (we only selected a minimal set). Fallback: true if line.inventoryItemId present.
+      return !!l.inventoryItemId;
+    });
+    let termsAccepted: string[] = b.termsAccepted ?? [];
+    if (!b.termsAccepted && hasRmLine) {
+      // Resolve categories for the involved items — only auto-tick if any is RAW_MATERIAL
+      const ids = processedLines.map((l) => l.inventoryItemId).filter((x): x is string => !!x);
+      if (ids.length > 0) {
+        const cats = await prisma.inventoryItem.findMany({
+          where: { id: { in: ids } },
+          select: { category: true },
+        });
+        if (cats.some((c) => c.category === 'RAW_MATERIAL')) {
+          termsAccepted = [...DEFAULT_RM_TERM_KEYS];
+        }
+      }
     }
 
     // Create PO with lines in transaction
@@ -321,9 +440,9 @@ router.post('/', validate(createPOSchema), asyncHandler(async (req: AuthRequest,
       data: {
         poNo,
         vendorId: b.vendorId,
-        poDate: b.poDate ? new Date(b.poDate) : new Date(),
+        poDate,
         deliveryDate: b.deliveryDate ? new Date(b.deliveryDate) : null,
-        supplyType: b.supplyType || 'INTRA_STATE',
+        supplyType,
         placeOfSupply: b.placeOfSupply || '',
         paymentTerms: b.paymentTerms || '',
         creditDays: b.creditDays ? parseInt(b.creditDays) : 0,
@@ -340,10 +459,17 @@ router.post('/', validate(createPOSchema), asyncHandler(async (req: AuthRequest,
         otherCharges,
         roundOff,
         grandTotal,
-        tdsAmount,
+        tdsApplicable: tds.shouldDeduct,
+        tdsSection: tds.sectionCode || null,
+        tdsPercent: tds.rate,
+        tdsAmount: tds.tdsAmount,
+        tdsReasonSnapshot: { reason: tds.reason, baseRate: tds.baseRate, sectionLabel: tds.sectionLabel },
+        tdsComputedAt: new Date(),
+        overrideTdsSectionId: b.overrideTdsSectionId || null,
+        termsAccepted,
         status: 'DRAFT',
         userId: req.user!.id,
-        companyId: getActiveCompanyId(req),
+        companyId,
         lines: {
           create: processedLines,
         },
@@ -429,67 +555,29 @@ router.put('/:id', validate(updatePOSchema), asyncHandler(async (req: AuthReques
 
     const b = req.body;
 
-    // If lines are provided, rebuild them
+    // If lines are provided, rebuild them via shared helper
     if (b.lines && Array.isArray(b.lines)) {
-      // Look up items for auto-fill (unified material master)
-      const itemIds = b.lines.map((l: any) => l.materialId || l.inventoryItemId).filter(Boolean);
-      const itemsMap: Record<string, any> = {};
-      if (itemIds.length > 0) {
-        const items = await prisma.inventoryItem.findMany({ where: { id: { in: itemIds } } });
-        items.forEach((m: any) => { itemsMap[m.id] = m; });
-      }
+      const supplyType = (b.supplyType || po.supplyType) as 'INTRA_STATE' | 'INTER_STATE';
+      const poDate = b.poDate ? new Date(b.poDate) : po.poDate;
+      const processedLines = await processPOLines({ lines: b.lines, supplyType, poDate });
 
-      const supplyType = b.supplyType || po.supplyType;
-      const processedLines = b.lines.map((line: any) => {
-        const itemId = line.materialId || line.inventoryItemId || null;
-        const mat = itemId ? itemsMap[itemId] : null;
-        const quantity = parseFloat(line.quantity) || 0;
-        const rate = parseFloat(line.rate) || 0;
-        const discountPercent = parseFloat(line.discountPercent) || 0;
-        const gstPercent = parseFloat(line.gstPercent) || (mat?.gstPercent || 0);
-
-        const amount = quantity * rate;
-        const discountAmount = amount * (discountPercent / 100);
-        const taxableAmount = amount - discountAmount;
-
-        let cgstPercent = 0, sgstPercent = 0, igstPercent = 0;
-        let cgstAmount = 0, sgstAmount = 0, igstAmount = 0;
-
-        if (supplyType === 'INTRA_STATE') {
-          cgstPercent = gstPercent / 2; sgstPercent = gstPercent / 2;
-          cgstAmount = taxableAmount * (cgstPercent / 100);
-          sgstAmount = taxableAmount * (sgstPercent / 100);
-        } else if (supplyType === 'INTER_STATE') {
-          igstPercent = gstPercent;
-          igstAmount = taxableAmount * (igstPercent / 100);
-        }
-
-        const totalGst = cgstAmount + sgstAmount + igstAmount;
-        const lineTotal = taxableAmount + totalGst;
-
-        return {
-          inventoryItemId: itemId, materialId: null,
-          description: line.description || mat?.name || '',
-          hsnCode: line.hsnCode || mat?.hsnCode || '', quantity, unit: line.unit || mat?.unit || 'KG',
-          rate, discountPercent, discountAmount, gstPercent, amount, taxableAmount,
-          cgstPercent, cgstAmount, sgstPercent, sgstAmount, igstPercent, igstAmount,
-          totalGst, lineTotal, isRCM: line.isRCM || false, pendingQty: quantity, receivedQty: 0,
-        };
-      });
-
-      const subtotal = processedLines.reduce((s: number, l: any) => s + l.amount, 0);
-      const totalCgst = processedLines.reduce((s: number, l: any) => s + l.cgstAmount, 0);
-      const totalSgst = processedLines.reduce((s: number, l: any) => s + l.sgstAmount, 0);
-      const totalIgst = processedLines.reduce((s: number, l: any) => s + l.igstAmount, 0);
+      const subtotal = processedLines.reduce((s, l) => s + l.taxableAmount, 0);
+      const totalCgst = processedLines.reduce((s, l) => s + l.cgstAmount, 0);
+      const totalSgst = processedLines.reduce((s, l) => s + l.sgstAmount, 0);
+      const totalIgst = processedLines.reduce((s, l) => s + l.igstAmount, 0);
       const totalGst = totalCgst + totalSgst + totalIgst;
-      const freightCharge = parseFloat(b.freightCharge) ?? po.freightCharge;
-      const otherCharges = parseFloat(b.otherCharges) ?? po.otherCharges;
-      const roundOff = parseFloat(b.roundOff) ?? po.roundOff;
+      // parseFloat(undefined) → NaN. Use explicit undefined guard so omitting a
+      // header charge in PUT body doesn't poison the grand total.
+      const freightCharge = b.freightCharge !== undefined ? Number(b.freightCharge) : po.freightCharge;
+      const otherCharges = b.otherCharges !== undefined ? Number(b.otherCharges) : po.otherCharges;
+      const roundOff = b.roundOff !== undefined ? Number(b.roundOff) : po.roundOff;
       const grandTotal = subtotal + totalGst + freightCharge + otherCharges + roundOff;
 
-      const vendor = await prisma.vendor.findUnique({ where: { id: b.vendorId || po.vendorId } });
-      let tdsAmount = 0;
-      if (vendor?.tdsApplicable) tdsAmount = subtotal * ((vendor.tdsPercent || 0) / 100);
+      // TDS base: gross contract value (excluding GST) — matches 194C/194Q law.
+      // Respect per-PO override: user-supplied override beats stored; else keep existing.
+      const tdsBase = subtotal + freightCharge + otherCharges + roundOff;
+      const effOverride = b.overrideTdsSectionId !== undefined ? b.overrideTdsSectionId : po.overrideTdsSectionId;
+      const tds = await calculateTds(b.vendorId || po.vendorId, tdsBase, { overrideSectionId: effOverride });
 
       // Delete old lines and update PO atomically
       const updated = await prisma.$transaction(async (tx) => {
@@ -498,16 +586,24 @@ router.put('/:id', validate(updatePOSchema), asyncHandler(async (req: AuthReques
           where: { id: po.id },
           data: {
             vendorId: b.vendorId || po.vendorId,
-            poDate: b.poDate ? new Date(b.poDate) : po.poDate,
+            poDate,
             deliveryDate: b.deliveryDate ? new Date(b.deliveryDate) : po.deliveryDate,
-            supplyType: supplyType, placeOfSupply: b.placeOfSupply ?? po.placeOfSupply,
+            supplyType, placeOfSupply: b.placeOfSupply ?? po.placeOfSupply,
             paymentTerms: b.paymentTerms ?? po.paymentTerms,
             creditDays: b.creditDays !== undefined ? parseInt(b.creditDays) : po.creditDays,
             deliveryAddress: b.deliveryAddress ?? po.deliveryAddress,
             transportMode: b.transportMode ?? po.transportMode,
             remarks: b.remarks ?? po.remarks,
             subtotal, totalCgst, totalSgst, totalIgst, totalGst,
-            freightCharge, otherCharges, roundOff, grandTotal, tdsAmount,
+            freightCharge, otherCharges, roundOff, grandTotal,
+            tdsApplicable: tds.shouldDeduct,
+            tdsSection: tds.sectionCode || null,
+            tdsPercent: tds.rate,
+            tdsAmount: tds.tdsAmount,
+            tdsReasonSnapshot: { reason: tds.reason, baseRate: tds.baseRate, sectionLabel: tds.sectionLabel },
+            tdsComputedAt: new Date(),
+            overrideTdsSectionId: effOverride === null ? null : (effOverride ?? po.overrideTdsSectionId),
+            termsAccepted: b.termsAccepted !== undefined ? b.termsAccepted : po.termsAccepted,
             lines: { create: processedLines },
           },
           include: { lines: true },
@@ -676,6 +772,11 @@ router.get('/:id/pdf', asyncHandler(async (req: AuthRequest, res: Response) => {
       approvedBy: 'Sibtay Hasnain Zaidi',
       authorizedSignatory: 'OP Pandey — Unit Head',
       company: await getCompanyForPdf(po.companyId),
+      // Print T&C clauses ticked on the PO
+      contractTerms: (po.termsAccepted || [])
+        .map((k) => termByKey(k))
+        .filter((t): t is NonNullable<ReturnType<typeof termByKey>> => !!t)
+        .map((t) => ({ group: t.group, label: t.label })),
     };
     let pdfBuffer: Buffer;
     try {

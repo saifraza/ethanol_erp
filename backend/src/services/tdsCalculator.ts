@@ -32,13 +32,21 @@ export interface TdsResult {
  *
  * @param vendorId  UUID of the vendor being paid
  * @param grossAmount  Total payment amount (before TDS deduction)
- * @param fiscalYearId  Optional — defaults to current FY
+ * @param opts  Optional: { fiscalYearId, overrideSectionId }
+ *   overrideSectionId — per-transaction override (e.g. RM PO tick "194Q 0.1%")
+ *                       that takes precedence over vendor.tdsSectionId.
+ *                       When set, TDS is deducted even if vendor.tdsApplicable=false
+ *                       because the contract itself mandates it.
  */
 export async function calculateTds(
   vendorId: string,
   grossAmount: number,
-  fiscalYearId?: string,
+  opts?: { fiscalYearId?: string; overrideSectionId?: string | null } | string,
 ): Promise<TdsResult> {
+  // Back-compat: legacy call signature calculateTds(id, amount, fiscalYearId)
+  const fiscalYearId = typeof opts === 'string' ? opts : opts?.fiscalYearId;
+  const overrideSectionId = typeof opts === 'string' ? undefined : opts?.overrideSectionId ?? undefined;
+
   const noDeduction = (reason: string): TdsResult => ({
     shouldDeduct: false, sectionCode: '', sectionLabel: '', rate: 0, baseRate: 0,
     grossAmount, tdsAmount: 0, netAmount: grossAmount, ledgerId: null, reason,
@@ -52,9 +60,18 @@ export async function calculateTds(
     },
   });
   if (!vendor) return noDeduction('Vendor not found');
-  if (!vendor.tdsApplicable) return noDeduction('TDS not applicable for this vendor');
 
-  const section = vendor.tdsSectionRef;
+  // Resolve effective section: PO override wins over vendor default.
+  // When override is set, TDS applies even if vendor.tdsApplicable=false
+  // (the contract clause makes it mandatory — e.g., 194Q on grain purchase ≥ ₹50L).
+  let section = vendor.tdsSectionRef;
+  if (overrideSectionId) {
+    const override = await prisma.tdsSection.findUnique({ where: { id: overrideSectionId } });
+    if (override) section = override;
+  } else if (!vendor.tdsApplicable) {
+    return noDeduction('TDS not applicable for this vendor');
+  }
+
   if (!section) return noDeduction('No TDS section linked to vendor. Update vendor master → TDS Section dropdown.');
 
   // ── 2. Determine base rate (individual vs company)

@@ -93,6 +93,17 @@
   <div class="remarks-section"><div class="label">Remarks:</div><div class="text">{{remarks}}</div></div>
   {{/if}}
 
+  {{#if contractTerms.length}}
+  <div class="remarks-section">
+    <div class="label">Terms & Conditions:</div>
+    <ol class="text" style="padding-left:16px;margin:0;">
+      {{#each contractTerms}}
+      <li style="margin-bottom:2px;"><strong>{{group}}:</strong> {{label}}</li>
+      {{/each}}
+    </ol>
+  </div>
+  {{/if}}
+
   {{> terms-footer}}
   {{> signatures sigCount=3 sigLabels=(list "Prepared By" "Approved By" "Authorized Signatory") sigNames=(list preparedBy approvedBy authorizedSignatory)}}
 

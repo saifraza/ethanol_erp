@@ -1,9 +1,30 @@
 import { Router, Request, Response } from 'express';
 import prisma from '../config/prisma';
 import { authenticate, authorize, AuthRequest, getCompanyFilter, getActiveCompanyId } from '../middleware/auth';
+import { getEffectiveGstRate } from '../services/taxRateLookup';
 
 const router = Router();
 router.use(authenticate as any);
+
+/**
+ * Resolve the effective GST for an InventoryItem given a possible hsnCodeId and
+ * per-item override. HSN master is authoritative; legacyGstPercent is a fallback
+ * used only when no hsnCodeId is set (pre-migration items).
+ */
+async function resolveMaterialGst(opts: {
+  hsnCodeId?: string | null;
+  overridePercent?: number | null;
+  overrideReason?: string | null;
+  legacyGstPercent?: number | null;
+}): Promise<number> {
+  const r = await getEffectiveGstRate({
+    hsnCodeId: opts.hsnCodeId ?? null,
+    itemOverridePercent: opts.overridePercent,
+    itemOverrideReason: opts.overrideReason,
+    legacyGstPercent: opts.legacyGstPercent,
+  });
+  return r.rate;
+}
 
 // ─── Helper: generate next item code ───
 async function generateItemCode(): Promise<string> {
@@ -31,9 +52,11 @@ router.get('/', async (req: Request, res: Response) => {
       orderBy: { name: 'asc' },
       select: {
         id: true, code: true, name: true, category: true, subCategory: true,
-        hsnCode: true, unit: true, gstPercent: true, defaultRate: true,
-        minStock: true, currentStock: true, location: true, isActive: true,
-        remarks: true, avgCost: true,
+        hsnCode: true, hsnCodeId: true, unit: true, gstPercent: true,
+        gstOverridePercent: true, gstOverrideReason: true,
+        hsnCodeRef: { select: { id: true, code: true, description: true } },
+        defaultRate: true, minStock: true, currentStock: true, location: true,
+        isActive: true, remarks: true, avgCost: true,
       },
     });
     // Map to Material-compatible shape for frontend compat
@@ -59,15 +82,39 @@ router.post('/', async (req: Request, res: Response) => {
   try {
     const b = req.body;
     const code = await generateItemCode();
+
+    // If hsnCodeId supplied, lookup code string for legacy cache + use master GST.
+    let hsnCodeStr: string | null = b.hsnCode || null;
+    if (b.hsnCodeId) {
+      const h = await prisma.hsnCode.findUnique({ where: { id: b.hsnCodeId }, select: { code: true } });
+      if (h) hsnCodeStr = h.code;
+    }
+
+    const overridePercent = b.gstOverridePercent != null ? parseFloat(b.gstOverridePercent) : null;
+    const overrideReason = b.gstOverrideReason || null;
+    if (overridePercent != null && !overrideReason) {
+      return res.status(400).json({ error: 'gstOverrideReason is required when gstOverridePercent is set' });
+    }
+
+    const resolvedGst = await resolveMaterialGst({
+      hsnCodeId: b.hsnCodeId ?? null,
+      overridePercent,
+      overrideReason,
+      legacyGstPercent: b.gstPercent != null ? parseFloat(b.gstPercent) : null,
+    });
+
     const item = await prisma.inventoryItem.create({
       data: {
         name: b.name,
         code,
         category: b.category || 'RAW_MATERIAL',
         subCategory: b.subCategory || null,
-        hsnCode: b.hsnCode || null,
+        hsnCode: hsnCodeStr,
+        hsnCodeId: b.hsnCodeId || null,
         unit: normalizeUnit(b.unit),
-        gstPercent: b.gstPercent ? parseFloat(b.gstPercent) : 18,
+        gstPercent: resolvedGst,
+        gstOverridePercent: overridePercent,
+        gstOverrideReason: overrideReason,
         defaultRate: b.defaultRate ? parseFloat(b.defaultRate) : 0,
         costPerUnit: b.defaultRate ? parseFloat(b.defaultRate) : 0,
         minStock: b.minStock ? parseFloat(b.minStock) : 0,
@@ -86,19 +133,61 @@ router.post('/', async (req: Request, res: Response) => {
 router.put('/:id', async (req: Request, res: Response) => {
   try {
     const b = req.body;
+    const existing = await prisma.inventoryItem.findUnique({ where: { id: req.params.id } });
+    if (!existing) return res.status(404).json({ error: 'Material not found' });
+
     const data: Record<string, unknown> = {};
     if (b.name !== undefined) data.name = b.name;
     if (b.category !== undefined) data.category = b.category;
     if (b.subCategory !== undefined) data.subCategory = b.subCategory;
-    if (b.hsnCode !== undefined) data.hsnCode = b.hsnCode;
     if (b.unit !== undefined) data.unit = normalizeUnit(b.unit);
-    if (b.gstPercent !== undefined) data.gstPercent = parseFloat(b.gstPercent);
     if (b.defaultRate !== undefined) data.defaultRate = parseFloat(b.defaultRate);
     if (b.minStock !== undefined) data.minStock = parseFloat(b.minStock);
     if (b.storageLocation !== undefined) data.location = b.storageLocation;
     if (b.location !== undefined) data.location = b.location;
     if (b.remarks !== undefined) data.remarks = b.remarks;
     if (b.isActive !== undefined) data.isActive = b.isActive;
+
+    // Tax fields — source of truth is HsnCode master; only recompute if inputs changed.
+    const hsnIdChanged = b.hsnCodeId !== undefined && b.hsnCodeId !== existing.hsnCodeId;
+    const overrideChanged = b.gstOverridePercent !== undefined || b.gstOverrideReason !== undefined;
+    const legacyChanged = b.gstPercent !== undefined;
+    if (hsnIdChanged || overrideChanged || legacyChanged) {
+      const nextHsnId = b.hsnCodeId !== undefined ? b.hsnCodeId : existing.hsnCodeId;
+      const nextOverride = b.gstOverridePercent !== undefined
+        ? (b.gstOverridePercent == null ? null : parseFloat(b.gstOverridePercent))
+        : existing.gstOverridePercent;
+      const nextReason = b.gstOverrideReason !== undefined
+        ? (b.gstOverrideReason || null)
+        : existing.gstOverrideReason;
+      if (nextOverride != null && !nextReason) {
+        return res.status(400).json({ error: 'gstOverrideReason is required when gstOverridePercent is set' });
+      }
+      const legacy = b.gstPercent != null ? parseFloat(b.gstPercent) : existing.gstPercent;
+      const resolved = await resolveMaterialGst({
+        hsnCodeId: nextHsnId,
+        overridePercent: nextOverride,
+        overrideReason: nextReason,
+        legacyGstPercent: legacy,
+      });
+      data.hsnCodeId = nextHsnId;
+      data.gstOverridePercent = nextOverride;
+      data.gstOverrideReason = nextReason;
+      data.gstPercent = resolved;
+      // Keep legacy hsnCode string in sync
+      if (hsnIdChanged) {
+        if (nextHsnId) {
+          const h = await prisma.hsnCode.findUnique({ where: { id: nextHsnId }, select: { code: true } });
+          if (h) data.hsnCode = h.code;
+        } else if (b.hsnCode !== undefined) {
+          data.hsnCode = b.hsnCode;
+        }
+      } else if (b.hsnCode !== undefined) {
+        data.hsnCode = b.hsnCode;
+      }
+    } else if (b.hsnCode !== undefined) {
+      data.hsnCode = b.hsnCode;
+    }
 
     const item = await prisma.inventoryItem.update({ where: { id: req.params.id }, data });
     res.json({ ...item, storageLocation: item.location });
@@ -128,7 +217,7 @@ router.post('/seed', authorize('ADMIN') as any, async (req: Request, res: Respon
       { name: 'Sulphuric Acid', category: 'CHEMICAL', hsnCode: '2807', unit: 'kg', gstPercent: 18 },
       { name: 'Urea', category: 'CHEMICAL', hsnCode: '3102', unit: 'kg', gstPercent: 5 },
       { name: 'Antifoam', category: 'CHEMICAL', hsnCode: '3402', unit: 'ltr', gstPercent: 18 },
-      { name: 'HSD/Diesel', category: 'CONSUMABLE', hsnCode: '2710', unit: 'ltr', gstPercent: 0 },
+      { name: 'HSD/Diesel', category: 'CONSUMABLE', hsnCode: '2710', unit: 'ltr', gstPercent: 18 },
       { name: 'Furnace Oil', category: 'CONSUMABLE', hsnCode: '2710', unit: 'KL', gstPercent: 18 },
       { name: 'PP Bags', category: 'CONSUMABLE', hsnCode: '3923', unit: 'nos', gstPercent: 18 },
       { name: 'HDPE Bags', category: 'CONSUMABLE', hsnCode: '3923', unit: 'nos', gstPercent: 18 },

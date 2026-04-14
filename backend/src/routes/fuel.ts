@@ -5,6 +5,7 @@ import { NotFoundError } from '../shared/errors';
 import { z } from 'zod';
 import prisma from '../config/prisma';
 import { writeAudit } from '../utils/auditLog';
+import { getEffectiveGstRate } from '../services/taxRateLookup';
 
 const router = Router();
 
@@ -22,7 +23,10 @@ const fuelMasterSchema = z.object({
   maxStock: z.number().nullable().optional(),
   defaultRate: z.number().nullable().optional().default(0),
   hsnCode: z.string().nullable().optional(),
-  gstPercent: z.number().nullable().optional().default(5),
+  hsnCodeId: z.string().nullable().optional(),
+  gstPercent: z.number().nullable().optional(), // legacy fallback only; authoritative rate comes from HSN master
+  gstOverridePercent: z.number().nullable().optional(),
+  gstOverrideReason: z.string().nullable().optional(),
   location: z.string().nullable().optional(),
   remarks: z.string().nullable().optional(),
 });
@@ -38,8 +42,10 @@ router.get('/master', authenticate, asyncHandler(async (req: AuthRequest, res: R
       currentStock: true, minStock: true, maxStock: true,
       costPerUnit: true, avgCost: true, totalValue: true,
       defaultRate: true, steamRate: true, calorificValue: true,
-      hsnCode: true, gstPercent: true, location: true,
-      remarks: true, isActive: true, createdAt: true,
+      hsnCode: true, hsnCodeId: true, gstPercent: true,
+      gstOverridePercent: true, gstOverrideReason: true,
+      hsnCodeRef: { select: { id: true, code: true, description: true } },
+      location: true, remarks: true, isActive: true, createdAt: true,
     },
   });
   res.json(items);
@@ -68,6 +74,24 @@ router.post('/master', authenticate, validate(fuelMasterSchema), asyncHandler(as
     code = `FUEL-${String(count + 1).padStart(3, '0')}`;
   }
 
+  // Resolve authoritative GST — HSN master wins, override is escape-hatch, legacy scalar is fallback.
+  let hsnCodeStr: string | null = b.hsnCode || null;
+  if (b.hsnCodeId) {
+    const h = await prisma.hsnCode.findUnique({ where: { id: b.hsnCodeId }, select: { code: true } });
+    if (h) hsnCodeStr = h.code;
+  }
+  const overridePercent = b.gstOverridePercent != null ? Number(b.gstOverridePercent) : null;
+  const overrideReason = b.gstOverrideReason || null;
+  if (overridePercent != null && !overrideReason) {
+    return res.status(400).json({ error: 'gstOverrideReason is required when gstOverridePercent is set' });
+  }
+  const resolved = await getEffectiveGstRate({
+    hsnCodeId: b.hsnCodeId ?? null,
+    itemOverridePercent: overridePercent,
+    itemOverrideReason: overrideReason,
+    legacyGstPercent: b.gstPercent ?? null,
+  });
+
   const item = await prisma.inventoryItem.create({
     data: {
       name: b.name,
@@ -79,8 +103,11 @@ router.post('/master', authenticate, validate(fuelMasterSchema), asyncHandler(as
       minStock: b.minStock || 0,
       maxStock: b.maxStock || null,
       defaultRate: b.defaultRate || 0,
-      hsnCode: b.hsnCode || null,
-      gstPercent: b.gstPercent ?? 5,
+      hsnCode: hsnCodeStr,
+      hsnCodeId: b.hsnCodeId || null,
+      gstPercent: resolved.rate,
+      gstOverridePercent: overridePercent,
+      gstOverrideReason: overrideReason,
       location: b.location || null,
       remarks: b.remarks || null,
     },
@@ -94,6 +121,50 @@ router.put('/master/:id', authenticate, asyncHandler(async (req: AuthRequest, re
   if (!item) throw new NotFoundError('Fuel item', req.params.id);
 
   const b = req.body;
+
+  // Tax fields: only recompute if inputs changed. HSN master wins.
+  const hsnIdChanged = b.hsnCodeId !== undefined && b.hsnCodeId !== item.hsnCodeId;
+  const overrideChanged = b.gstOverridePercent !== undefined || b.gstOverrideReason !== undefined;
+  const legacyChanged = b.gstPercent !== undefined;
+  let taxPatch: { hsnCode?: string | null; hsnCodeId?: string | null; gstPercent?: number; gstOverridePercent?: number | null; gstOverrideReason?: string | null; } = {};
+
+  if (hsnIdChanged || overrideChanged || legacyChanged) {
+    const nextHsnId = b.hsnCodeId !== undefined ? b.hsnCodeId : item.hsnCodeId;
+    const nextOverride = b.gstOverridePercent !== undefined
+      ? (b.gstOverridePercent == null ? null : Number(b.gstOverridePercent))
+      : item.gstOverridePercent;
+    const nextReason = b.gstOverrideReason !== undefined
+      ? (b.gstOverrideReason || null)
+      : item.gstOverrideReason;
+    if (nextOverride != null && !nextReason) {
+      return res.status(400).json({ error: 'gstOverrideReason is required when gstOverridePercent is set' });
+    }
+    const legacy = b.gstPercent != null ? Number(b.gstPercent) : item.gstPercent;
+    const resolved = await getEffectiveGstRate({
+      hsnCodeId: nextHsnId,
+      itemOverridePercent: nextOverride,
+      itemOverrideReason: nextReason,
+      legacyGstPercent: legacy,
+    });
+    taxPatch.hsnCodeId = nextHsnId;
+    taxPatch.gstOverridePercent = nextOverride;
+    taxPatch.gstOverrideReason = nextReason;
+    taxPatch.gstPercent = resolved.rate;
+    // Keep legacy hsnCode string in sync when FK changes
+    if (hsnIdChanged) {
+      if (nextHsnId) {
+        const h = await prisma.hsnCode.findUnique({ where: { id: nextHsnId }, select: { code: true } });
+        taxPatch.hsnCode = h?.code ?? null;
+      } else if (b.hsnCode !== undefined) {
+        taxPatch.hsnCode = b.hsnCode;
+      }
+    } else if (b.hsnCode !== undefined) {
+      taxPatch.hsnCode = b.hsnCode;
+    }
+  } else if (b.hsnCode !== undefined) {
+    taxPatch.hsnCode = b.hsnCode;
+  }
+
   const updated = await prisma.inventoryItem.update({
     where: { id: req.params.id },
     data: {
@@ -105,10 +176,9 @@ router.put('/master/:id', authenticate, asyncHandler(async (req: AuthRequest, re
       minStock: b.minStock ?? item.minStock,
       maxStock: b.maxStock !== undefined ? b.maxStock : item.maxStock,
       defaultRate: b.defaultRate ?? item.defaultRate,
-      hsnCode: b.hsnCode !== undefined ? b.hsnCode : item.hsnCode,
-      gstPercent: b.gstPercent ?? item.gstPercent,
       location: b.location !== undefined ? b.location : item.location,
       remarks: b.remarks !== undefined ? b.remarks : item.remarks,
+      ...taxPatch,
     },
   });
   res.json(updated);

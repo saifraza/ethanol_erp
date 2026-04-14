@@ -5,9 +5,16 @@ import { asyncHandler } from '../../shared/middleware';
 import { NotFoundError, ValidationError } from '../../shared/errors';
 import { z } from 'zod';
 import { writeAudit, writeAuditMany } from '../../services/complianceAudit';
+import { getHsnRateImpact } from '../../services/taxRateLookup';
 
 const router = Router();
 router.use(authenticate as any);
+
+// GET /:id/impact — blast radius for a rate change
+router.get('/:id/impact', asyncHandler(async (req: AuthRequest, res: Response) => {
+  const impact = await getHsnRateImpact(req.params.id);
+  res.json(impact);
+}));
 
 const rateSchema = z.object({
   cgst: z.number().nonnegative().default(0),
