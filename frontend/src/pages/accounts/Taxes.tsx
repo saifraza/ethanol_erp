@@ -131,91 +131,33 @@ function GSTTab({ from, to }: { from: string; to: string }) {
         ))}
       </div>
 
-      {/* Document-level breakdown */}
+      {/* Document drill-downs — full tables live in their dedicated pages.
+          Tax Dashboard stays a KPI summary only (one place per data-set). */}
       {docs && (
-        <>
-          {/* Sales Invoices (Output GST) */}
-          {docs.salesInvoices.length > 0 && (
-            <div className="-mx-3 md:-mx-6 border-x border-b border-slate-300 overflow-hidden">
-              <div className="bg-slate-200 border-b border-slate-300 px-3 py-1.5">
-                <span className="text-[10px] font-bold text-slate-600 uppercase tracking-widest">Output GST Documents ({docs.salesInvoices.length} invoices)</span>
-              </div>
-              <div className="overflow-x-auto">
-                <table className="w-full text-xs">
-                  <thead><tr className="bg-slate-800 text-white">
-                    {['Inv #', 'Date', 'Customer', 'GSTIN', 'Product', 'Taxable', 'CGST', 'SGST', 'IGST', 'Total'].map(h => (
-                      <th key={h} className="px-3 py-2 font-semibold text-[10px] uppercase tracking-widest border-r border-slate-700 text-left last:border-r-0 last:text-right">{h}</th>
-                    ))}
-                  </tr></thead>
-                  <tbody>
-                    {docs.salesInvoices.map((inv: any, i: number) => (
-                      <tr key={inv.id} className={`border-b border-slate-100 hover:bg-blue-50/60 ${i % 2 ? 'bg-slate-50/70' : ''}`}>
-                        <td className="px-3 py-1.5 font-mono border-r border-slate-100">INV-{inv.invoiceNo}</td>
-                        <td className="px-3 py-1.5 border-r border-slate-100">{fmtDate(inv.invoiceDate)}</td>
-                        <td className="px-3 py-1.5 border-r border-slate-100">{inv.customer?.name || '--'}</td>
-                        <td className="px-3 py-1.5 font-mono text-[10px] border-r border-slate-100">{inv.customer?.gstNo || '--'}</td>
-                        <td className="px-3 py-1.5 border-r border-slate-100">{inv.productName}</td>
-                        <td className="px-3 py-1.5 text-right font-mono tabular-nums border-r border-slate-100">{fmtCurrency(inv.amount)}</td>
-                        <td className="px-3 py-1.5 text-right font-mono tabular-nums border-r border-slate-100">{fmtCurrency(inv.cgstAmount || 0)}</td>
-                        <td className="px-3 py-1.5 text-right font-mono tabular-nums border-r border-slate-100">{fmtCurrency(inv.sgstAmount || 0)}</td>
-                        <td className="px-3 py-1.5 text-right font-mono tabular-nums border-r border-slate-100">{fmtCurrency(inv.igstAmount || 0)}</td>
-                        <td className="px-3 py-1.5 text-right font-mono tabular-nums font-semibold">{fmtCurrency(inv.totalAmount)}</td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
+        <div className="-mx-3 md:-mx-6 border-x border-b border-slate-300 bg-slate-50 px-4 py-3 grid grid-cols-1 md:grid-cols-2 gap-3">
+          <a href="/admin/tax/invoice-series"
+             className="block border border-slate-300 bg-white hover:border-slate-500 hover:bg-slate-100 transition px-3 py-2">
+            <div className="flex items-center justify-between">
+              <div className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">Output GST — Sell Invoices</div>
+              <div className="text-[10px] text-slate-400 uppercase tracking-widest">View all →</div>
             </div>
-          )}
-
-          {/* Vendor Invoices + Contractor Bills (Input GST) */}
-          {(docs.vendorInvoices.length > 0 || docs.contractorBills.length > 0) && (
-            <div className="-mx-3 md:-mx-6 border-x border-b border-slate-300 overflow-hidden">
-              <div className="bg-slate-200 border-b border-slate-300 px-3 py-1.5">
-                <span className="text-[10px] font-bold text-slate-600 uppercase tracking-widest">Input GST Documents ({docs.vendorInvoices.length} vendor inv + {docs.contractorBills.length} contractor bills)</span>
-              </div>
-              <div className="overflow-x-auto">
-                <table className="w-full text-xs">
-                  <thead><tr className="bg-slate-800 text-white">
-                    {['Doc #', 'Date', 'Vendor/Contractor', 'GSTIN', 'Taxable', 'CGST', 'SGST', 'IGST', 'RCM', 'ITC'].map(h => (
-                      <th key={h} className="px-3 py-2 font-semibold text-[10px] uppercase tracking-widest border-r border-slate-700 text-left last:border-r-0">{h}</th>
-                    ))}
-                  </tr></thead>
-                  <tbody>
-                    {docs.vendorInvoices.map((v: any, i: number) => (
-                      <tr key={'v-' + v.id} className={`border-b border-slate-100 hover:bg-blue-50/60 ${i % 2 ? 'bg-slate-50/70' : ''}`}>
-                        <td className="px-3 py-1.5 font-mono border-r border-slate-100">{v.invoiceNo || '--'}</td>
-                        <td className="px-3 py-1.5 border-r border-slate-100">{fmtDate(v.invoiceDate)}</td>
-                        <td className="px-3 py-1.5 border-r border-slate-100">{v.vendor?.name || '--'}</td>
-                        <td className="px-3 py-1.5 font-mono text-[10px] border-r border-slate-100">{v.vendor?.gstin || '--'}</td>
-                        <td className="px-3 py-1.5 text-right font-mono tabular-nums border-r border-slate-100">{fmtCurrency(v.subtotal)}</td>
-                        <td className="px-3 py-1.5 text-right font-mono tabular-nums border-r border-slate-100">{fmtCurrency(v.cgstAmount || 0)}</td>
-                        <td className="px-3 py-1.5 text-right font-mono tabular-nums border-r border-slate-100">{fmtCurrency(v.sgstAmount || 0)}</td>
-                        <td className="px-3 py-1.5 text-right font-mono tabular-nums border-r border-slate-100">{fmtCurrency(v.igstAmount || 0)}</td>
-                        <td className="px-3 py-1.5 border-r border-slate-100">{v.isRCM ? <span className="text-[9px] font-bold uppercase px-1.5 py-0.5 border border-amber-400 bg-amber-50 text-amber-700">RCM</span> : '--'}</td>
-                        <td className="px-3 py-1.5">{v.itcClaimed ? <span className="text-[9px] font-bold uppercase px-1.5 py-0.5 border border-emerald-400 bg-emerald-50 text-emerald-700">Claimed</span> : v.itcEligible ? <span className="text-[9px] font-bold uppercase px-1.5 py-0.5 border border-blue-300 bg-blue-50 text-blue-600">Eligible</span> : <span className="text-[9px] text-slate-400">N/A</span>}</td>
-                      </tr>
-                    ))}
-                    {docs.contractorBills.map((c: any, i: number) => (
-                      <tr key={'c-' + c.id} className={`border-b border-slate-100 hover:bg-blue-50/60 ${(docs.vendorInvoices.length + i) % 2 ? 'bg-slate-50/70' : ''}`}>
-                        <td className="px-3 py-1.5 font-mono border-r border-slate-100">CB-{c.billNo}</td>
-                        <td className="px-3 py-1.5 border-r border-slate-100">{fmtDate(c.billDate)}</td>
-                        <td className="px-3 py-1.5 border-r border-slate-100">{c.contractor?.name || '--'}</td>
-                        <td className="px-3 py-1.5 font-mono text-[10px] border-r border-slate-100">{c.contractor?.gstin || '--'}</td>
-                        <td className="px-3 py-1.5 text-right font-mono tabular-nums border-r border-slate-100">{fmtCurrency(c.subtotal)}</td>
-                        <td className="px-3 py-1.5 text-right font-mono tabular-nums border-r border-slate-100">{fmtCurrency(c.cgstAmount || 0)}</td>
-                        <td className="px-3 py-1.5 text-right font-mono tabular-nums border-r border-slate-100">{fmtCurrency(c.sgstAmount || 0)}</td>
-                        <td className="px-3 py-1.5 text-right font-mono tabular-nums border-r border-slate-100">{fmtCurrency(c.igstAmount || 0)}</td>
-                        <td className="px-3 py-1.5 border-r border-slate-100">--</td>
-                        <td className="px-3 py-1.5">{c.itcClaimed ? <span className="text-[9px] font-bold uppercase px-1.5 py-0.5 border border-emerald-400 bg-emerald-50 text-emerald-700">Claimed</span> : c.itcEligible ? <span className="text-[9px] font-bold uppercase px-1.5 py-0.5 border border-blue-300 bg-blue-50 text-blue-600">Eligible</span> : <span className="text-[9px] text-slate-400">N/A</span>}</td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
+            <div className="text-xl font-bold text-slate-800 font-mono mt-0.5">{docs.salesInvoices.length}</div>
+            <div className="text-[10px] text-slate-500">invoices in the period</div>
+          </a>
+          <a href="/procurement/vendor-invoices"
+             className="block border border-slate-300 bg-white hover:border-slate-500 hover:bg-slate-100 transition px-3 py-2">
+            <div className="flex items-center justify-between">
+              <div className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">Input GST — Vendor & Contractor</div>
+              <div className="text-[10px] text-slate-400 uppercase tracking-widest">View all →</div>
             </div>
-          )}
-        </>
+            <div className="text-xl font-bold text-slate-800 font-mono mt-0.5">
+              {docs.vendorInvoices.length + docs.contractorBills.length}
+            </div>
+            <div className="text-[10px] text-slate-500">
+              {docs.vendorInvoices.length} vendor inv · {docs.contractorBills.length} contractor bills
+            </div>
+          </a>
+        </div>
       )}
     </>
   );
