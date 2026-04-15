@@ -355,7 +355,10 @@ export default function GrossWeighment() {
 
   // Fuel: lab can be done here (not blocked). Raw material: must test on cloud first.
   const labBlocked = scannedRecord && scannedRecord.direction === 'INBOUND' && !isFuel && scannedRecord.labStatus !== 'PASS' && scannedRecord.labStatus !== null;
-  const canCapture = scannedRecord && scannedRecord.status !== 'CANCELLED' && !labBlocked && !scaleStale && liveWeight > 100 && scaleStatus === 'STABLE' && scaleState.isClean && (
+  // scaleState.isClean only applies to FIRST weighments. On second weighments
+  // the truck is legitimately on the scale so a non-zero reading is expected.
+  const isSecondWeighment = scannedRecord?.status === 'FIRST_DONE';
+  const canCapture = scannedRecord && scannedRecord.status !== 'CANCELLED' && !labBlocked && !scaleStale && liveWeight > 100 && scaleStatus === 'STABLE' && (isSecondWeighment || scaleState.isClean) && (
     (scannedRecord.direction === 'INBOUND' && scannedRecord.status === 'GATE_ENTRY') ||
     (scannedRecord.direction === 'OUTBOUND' && scannedRecord.status === 'FIRST_DONE')
   );
@@ -403,15 +406,22 @@ export default function GrossWeighment() {
         </div>
       </div>
 
-      {/* SCALE-BLOCKED Banner — visible at all times when scale is not zero */}
-      {scaleState.blocked && (
+      {/* SCALE-NOT-ZERO Banner
+          - Hidden when operator has scanned a SECOND-weighment ticket
+            (status=FIRST_DONE) because the scale LEGITIMATELY reads that
+            truck's weight — the rule is skipped server-side for that case.
+          - Hidden if scale is clean (isClean=true).
+          - Shown only when: scale is non-zero AND operator has NOT scanned
+            a second-weighment ticket yet — i.e., about to capture a FIRST
+            weighment of a new truck. */}
+      {scaleState.blocked && !(scannedRecord && scannedRecord.status === 'FIRST_DONE') && (
         <div className="-mx-3 md:-mx-6 border-x border-b-2 border-red-700 bg-red-700 text-white px-4 py-3">
           <div className="flex items-start gap-3">
             <div className="text-2xl font-bold">⛔</div>
             <div className="flex-1">
-              <div className="text-xs font-bold uppercase tracking-widest">Capture Blocked — Scale Not Zero</div>
+              <div className="text-xs font-bold uppercase tracking-widest">Scale Not Zero — Check Before First Weighment</div>
               <div className="text-sm mt-1">{scaleState.blocked.message}</div>
-              <div className="text-[11px] mt-1 opacity-80">Capture button is disabled until the scale returns to zero. Reading auto-clears once the truck leaves.</div>
+              <div className="text-[11px] mt-1 opacity-80">This warning applies to FIRST weighments only. If you are doing the SECOND weighment of a truck already weighed in, scan the ticket — the system will allow it.</div>
             </div>
           </div>
         </div>

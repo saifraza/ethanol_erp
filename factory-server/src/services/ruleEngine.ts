@@ -203,6 +203,13 @@ async function checkScaleZero(
   const masterRule = rules.find(r => r.key === 'SCALE_ZERO_REQUIRED');
   if (!masterRule || masterRule.value !== 'true') return null; // disabled
 
+  // IMPORTANT: R1 only applies to FIRST weighments (status=GATE_ENTRY).
+  // The SECOND weighment of a truck legitimately reads the truck's weight
+  // (an empty truck coming back for tare will show ~12000 kg — that's the
+  // TARE we want to capture, not a block condition). Skip the rule entirely
+  // when we're completing an already-started weighment.
+  if (ctx.status === 'FIRST_DONE') return null;
+
   const threshold = await getNumericRule('SCALE_ZERO_THRESHOLD_KG', 50);
   const windowMin = await getNumericRule('SCALE_ZERO_WINDOW_MINUTES', 30);
   const since = new Date(Date.now() - windowMin * 60_000);
@@ -306,6 +313,12 @@ async function checkWeightDelta(
   if (!rule) return null;
   const threshold = parseFloat(rule.value);
   if (isNaN(threshold) || threshold <= 0) return null;
+
+  // R2, like R1, only applies to FIRST weighments. The second leg of a
+  // weighment can coincidentally match the gross/tare of a previous truck
+  // (e.g. two 45-tonne loaded trucks back-to-back, or two empty tractors
+  // at ~2000 kg each) — that's normal, not suspicious.
+  if (ctx.status === 'FIRST_DONE') return null;
 
   // Compare ONLY against the immediately previous capture on this scale.
   // No time window — even if last capture was hours ago, a near-identical
