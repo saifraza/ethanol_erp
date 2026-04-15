@@ -344,6 +344,39 @@ model RuleOverrideLog {
   @@index([createdAt])
 }
 
+// --- WEIGHMENT AUDIT QUEUE ---
+// Local-first audit log for safety-rule overrides + soft-confirms.
+// syncWorker pushes rows to cloud WeighmentAuditEvent (cloud is master for
+// reporting; factory keeps a copy so audit survives if cloud is unreachable).
+// Idempotency key: id (UUID generated here) maps 1:1 to cloud factoryEventId.
+model WeighmentAuditQueue {
+  id              String   @id @default(uuid())
+  eventType       String   // SCALE_NOT_ZERO_OVERRIDE | DELTA_CONFIRMED | INTERVAL_OVERRIDE | DUPLICATE_OVERRIDE
+  ruleKey         String?
+  weighmentId     String   // local Weighment.id
+  weighmentLocalId String  // local Weighment.localId (cloud join key)
+  ticketNo        Int?
+  vehicleNo       String?
+  pcId            String?
+  action          String?  // GROSS | TARE | GATE_ENTRY
+  newWeight       Float?
+  prevWeight      Float?
+  liveScaleWeight Float?
+  thresholdKg     Float?
+  message         String?
+  confirmedBy     String   // factory user.name
+  confirmReason   String?
+  rawPayload      String?  // JSON string for forensics
+  occurredAt      DateTime @default(now())
+  syncedToCloud   Boolean  @default(false)
+  syncedAt        DateTime?
+  cloudError      String?
+
+  @@index([syncedToCloud])
+  @@index([occurredAt])
+  @@index([weighmentId])
+}
+
 // --- PRINT QUEUE ---
 // For managing printer jobs across PCs
 model PrintJob {

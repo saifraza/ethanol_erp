@@ -316,6 +316,69 @@ function setLastRawMirrorResult(r: { synced: number; failed: number }) {
   _lastRawMirrorResult = { ...r, at: new Date().toISOString() };
 }
 
+/**
+ * Push unsynced WeighmentAuditQueue rows to cloud /api/weighbridge/audit/push.
+ * Cloud upserts on factoryEventId so retries are safe. Marks rows synced on
+ * success; on failure leaves syncedToCloud=false for next cycle.
+ */
+async function pushAuditEvents(): Promise<{ synced: number; failed: number }> {
+  const rows = await prisma.weighmentAuditQueue.findMany({
+    where: { syncedToCloud: false },
+    orderBy: { occurredAt: 'asc' },
+    take: 50,
+  });
+  if (rows.length === 0) return { synced: 0, failed: 0 };
+
+  const events = rows.map(r => ({
+    factoryEventId: r.id,
+    eventType: r.eventType,
+    ruleKey: r.ruleKey,
+    weighmentLocalId: r.weighmentLocalId,
+    ticketNo: r.ticketNo,
+    vehicleNo: r.vehicleNo,
+    pcId: r.pcId,
+    action: r.action,
+    newWeight: r.newWeight,
+    prevWeight: r.prevWeight,
+    liveScaleWeight: r.liveScaleWeight,
+    thresholdKg: r.thresholdKg,
+    message: r.message,
+    confirmedBy: r.confirmedBy,
+    confirmReason: r.confirmReason,
+    occurredAt: r.occurredAt.toISOString(),
+    rawPayload: r.rawPayload ? JSON.parse(r.rawPayload) : null,
+  }));
+
+  try {
+    const res = await fetch(`${config.cloudErpUrl}/weighbridge/audit/push`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'X-WB-Key': config.cloudApiKey },
+      body: JSON.stringify({ events }),
+    });
+    if (!res.ok) {
+      const txt = await res.text().catch(() => '');
+      console.error(`[AUDIT-SYNC] Cloud returned ${res.status}: ${txt.slice(0, 200)}`);
+      // Stamp the error so admin can see what happened
+      await prisma.weighmentAuditQueue.updateMany({
+        where: { id: { in: rows.map(r => r.id) } },
+        data: { cloudError: `${res.status}: ${txt.slice(0, 200)}` },
+      });
+      return { synced: 0, failed: rows.length };
+    }
+    const body = await res.json() as { ok: boolean; accepted: number; ackIds?: string[] };
+    const ackIds = body.ackIds || rows.map(r => r.id);
+    await prisma.weighmentAuditQueue.updateMany({
+      where: { id: { in: ackIds } },
+      data: { syncedToCloud: true, syncedAt: new Date(), cloudError: null },
+    });
+    return { synced: ackIds.length, failed: rows.length - ackIds.length };
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : 'Unknown error';
+    console.error(`[AUDIT-SYNC] Push threw: ${msg}`);
+    return { synced: 0, failed: rows.length };
+  }
+}
+
 /** Pull master data from cloud ERP. */
 export async function pullMasterData(): Promise<Record<string, number>> {
   const response = await fetch(`${config.cloudErpUrl}/weighbridge/master-data`, {
@@ -428,6 +491,17 @@ async function syncCycle(): Promise<void> {
       }
     } catch (err) {
       console.error(`[SYNC-WORKER] Raw mirror push crashed: ${err instanceof Error ? err.message : err}`);
+    }
+
+    // Push audit events (rule overrides, delta confirms) to cloud audit log.
+    // Independent failure path — audit drift never blocks weighment sync.
+    try {
+      const auditResult = await pushAuditEvents();
+      if (auditResult.synced > 0 || auditResult.failed > 0) {
+        console.log(`[SYNC-WORKER] Audit events: ${auditResult.synced} synced, ${auditResult.failed} failed`);
+      }
+    } catch (err) {
+      console.error(`[SYNC-WORKER] Audit push crashed: ${err instanceof Error ? err.message : err}`);
     }
 
     // Pull master data periodically

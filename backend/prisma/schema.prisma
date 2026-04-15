@@ -4501,3 +4501,38 @@ model GstReconEntry {
   @@index([supplierGstin, invoiceNumber])
   @@index([vendorInvoiceId])
 }
+
+// ═══════════════════════════════════════════════
+// WEIGHMENT AUDIT EVENT
+// Cross-system audit log for safety-rule overrides + soft-confirms at the
+// weighbridge. Factory server records locally first (WeighmentAuditQueue),
+// then syncWorker pushes to this cloud table. Visible at /admin/weighbridge-audit.
+// Event types: SCALE_NOT_ZERO_OVERRIDE, DELTA_CONFIRMED, INTERVAL_OVERRIDE,
+// DUPLICATE_OVERRIDE. Add new types as new rules ship — column is free-form.
+// ═══════════════════════════════════════════════
+model WeighmentAuditEvent {
+  id              String   @id @default(uuid())
+  factoryEventId  String   @unique // factory-side UUID, idempotency key
+  eventType       String   // SCALE_NOT_ZERO_OVERRIDE | DELTA_CONFIRMED | INTERVAL_OVERRIDE | DUPLICATE_OVERRIDE
+  ruleKey         String?  // BusinessRule.key that triggered the event (null if not rule-based)
+  weighmentLocalId String  // factory Weighment.localId — links to GrainTruck/DispatchTruck via remarks
+  ticketNo        Int?     // snapshot for readability
+  vehicleNo       String?  // snapshot
+  pcId            String?  // which scale was used
+  action          String?  // GROSS | TARE | GATE_ENTRY
+  newWeight       Float?   // weight that was being captured
+  prevWeight      Float?   // weight it was compared against
+  liveScaleWeight Float?   // live scale reading at capture time (R1 only)
+  thresholdKg     Float?   // rule threshold at the time
+  message         String?  // operator-facing message that was shown
+  confirmedBy     String   // factory user.name who clicked confirm/override
+  confirmReason   String?  // optional free-text reason
+  occurredAt      DateTime // when the event happened on factory
+  receivedAt      DateTime @default(now()) // when cloud received it
+  rawPayload      Json?    // full payload for forensics
+
+  @@index([eventType])
+  @@index([weighmentLocalId])
+  @@index([occurredAt])
+  @@index([ticketNo])
+}

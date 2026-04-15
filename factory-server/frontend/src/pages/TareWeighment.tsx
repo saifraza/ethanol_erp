@@ -46,11 +46,22 @@ export default function TareWeighment() {
   const [capturing, setCapturing] = useState(false);
   const [manualWeight, setManualWeight] = useState('');
   const [showManual, setShowManual] = useState(false);
-  // Rule violation override
+  // Rule violation override (PIN-required: SCALE_NOT_ZERO, INTERVAL_OVERRIDE, DUPLICATE_OVERRIDE)
   const [ruleViolations, setRuleViolations] = useState<Array<{ruleKey: string; ruleLabel: string; message: string}>>([]);
   const [showOverride, setShowOverride] = useState(false);
+  const [overrideKind, setOverrideKind] = useState<'PIN' | 'SCALE_NOT_ZERO'>('PIN');
   const [overridePin, setOverridePin] = useState('');
   const [pendingPayload, setPendingPayload] = useState<Record<string, unknown> | null>(null);
+  // Delta-confirm (soft confirm — no PIN, logged to cloud audit)
+  const [deltaViolations, setDeltaViolations] = useState<Array<{ruleKey: string; ruleLabel: string; message: string}>>([]);
+  const [showDeltaConfirm, setShowDeltaConfirm] = useState(false);
+  const [deltaReason, setDeltaReason] = useState('');
+  // Scale state preflight
+  const [scaleState, setScaleState] = useState<{
+    isClean: boolean;
+    blocked: { reason: string; message: string } | null;
+    lastCapture: { ticketNo: number | null; vehicleNo: string; weight: number; minutesAgo: number } | null;
+  }>({ isClean: true, blocked: null, lastCapture: null });
   // Ethanol outbound extra fields
   const [ethanolBL, setEthanolBL] = useState('');
   const [ethanolStrength, setEthanolStrength] = useState('');
@@ -111,6 +122,20 @@ export default function TareWeighment() {
   }, [token]);
 
   useEffect(() => { fetchPending(); const iv = setInterval(fetchPending, 10000); return () => clearInterval(iv); }, [fetchPending]);
+
+  // Poll scale state — drives the red "BLOCKED" banner so operator sees the
+  // problem before clicking Capture (mirrors GrossWeighment behaviour).
+  const fetchScaleState = useCallback(async () => {
+    try {
+      const res = await api.get('/weighbridge/scale-state', { params: { pcId: 'web' } });
+      setScaleState({
+        isClean: !!res.data.isClean,
+        blocked: res.data.blocked || null,
+        lastCapture: res.data.lastCapture || null,
+      });
+    } catch { /* ignore */ }
+  }, [token]);
+  useEffect(() => { fetchScaleState(); const iv = setInterval(fetchScaleState, 2000); return () => clearInterval(iv); }, [fetchScaleState]);
 
   // QR scan handler
   const handleScan = async (value: string) => {
@@ -185,10 +210,33 @@ export default function TareWeighment() {
       fetchPending();
       scanRef.current?.focus();
     } catch (err) {
-      if (axios.isAxiosError(err) && err.response?.status === 422 && err.response?.data?.error === 'RULE_VIOLATION') {
-        setRuleViolations(err.response.data.violations || []);
-        setPendingPayload({ weight: confirmWeight });
-        setShowOverride(true);
+      if (axios.isAxiosError(err) && err.response?.status === 422) {
+        const code = err.response.data?.error;
+        const violations = err.response.data?.violations || [];
+        const isEthanol = scannedRecord.direction === 'OUTBOUND' && (scannedRecord.materialName || '').toLowerCase().includes('ethanol');
+        const ethanolExtras = isEthanol ? {
+          ...(ethanolBL ? { quantityBL: ethanolBL } : {}),
+          ...(ethanolStrength ? { strength: ethanolStrength } : {}),
+          ...(ethanolSeal ? { sealNo: ethanolSeal } : {}),
+        } : {};
+        const fullPayload = { weight: confirmWeight, ...ethanolExtras };
+        if (code === 'DELTA_CONFIRM_REQUIRED') {
+          setDeltaViolations(violations);
+          setPendingPayload(fullPayload);
+          setShowDeltaConfirm(true);
+        } else if (code === 'SCALE_NOT_ZERO') {
+          setRuleViolations(violations);
+          setOverrideKind('SCALE_NOT_ZERO');
+          setPendingPayload(fullPayload);
+          setShowOverride(true);
+        } else if (code === 'RULE_VIOLATION') {
+          setRuleViolations(violations);
+          setOverrideKind('PIN');
+          setPendingPayload(fullPayload);
+          setShowOverride(true);
+        } else {
+          alert(err.response.data?.error || 'Capture rejected');
+        }
       } else if (axios.isAxiosError(err) && err.response?.data?.error) {
         alert(err.response.data.error);
       } else {
@@ -224,7 +272,7 @@ export default function TareWeighment() {
     );
   }
 
-  const canCapture = scannedRecord && scannedRecord.status !== 'CANCELLED' && !scaleStale && liveWeight > 100 && scaleStatus === 'STABLE' && (
+  const canCapture = scannedRecord && scannedRecord.status !== 'CANCELLED' && !scaleStale && liveWeight > 100 && scaleStatus === 'STABLE' && scaleState.isClean && (
     (scannedRecord.direction === 'OUTBOUND' && scannedRecord.status === 'GATE_ENTRY') ||
     (scannedRecord.direction === 'INBOUND' && scannedRecord.status === 'FIRST_DONE')
   );
@@ -272,6 +320,20 @@ export default function TareWeighment() {
           </span>
         </div>
       </div>
+
+      {/* SCALE-BLOCKED Banner — visible at all times when scale is not zero */}
+      {scaleState.blocked && (
+        <div className="-mx-3 md:-mx-6 border-x border-b-2 border-red-700 bg-red-700 text-white px-4 py-3">
+          <div className="flex items-start gap-3">
+            <div className="text-2xl font-bold">⛔</div>
+            <div className="flex-1">
+              <div className="text-xs font-bold uppercase tracking-widest">Capture Blocked — Scale Not Zero</div>
+              <div className="text-sm mt-1">{scaleState.blocked.message}</div>
+              <div className="text-[11px] mt-1 opacity-80">Capture button is disabled until the scale returns to zero. Reading auto-clears once the truck leaves.</div>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* QR Scan Input */}
       <div className="-mx-3 md:-mx-6 border-x border-b border-slate-300 bg-slate-800 px-4 py-3">
@@ -538,12 +600,76 @@ export default function TareWeighment() {
         );
       })()}
 
-      {/* Rule Violation Override Modal */}
+      {/* Delta-Confirm Modal (no PIN — soft confirmation, logged to cloud audit) */}
+      {showDeltaConfirm && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+          <div className="bg-white w-full max-w-md shadow-2xl">
+            <div className="bg-blue-700 text-white px-4 py-2.5">
+              <h3 className="text-xs font-bold uppercase tracking-widest">Confirm Weight — Similar To Recent Capture</h3>
+            </div>
+            <div className="p-5 space-y-3">
+              {deltaViolations.map((v, i) => (
+                <div key={i} className="bg-blue-50 border border-blue-200 px-3 py-2">
+                  <div className="text-xs font-bold text-blue-800">{v.ruleLabel}</div>
+                  <div className="text-xs text-blue-700 mt-0.5">{v.message}</div>
+                </div>
+              ))}
+              <div className="pt-2">
+                <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">Reason / Confirmation Note (optional)</label>
+                <textarea
+                  value={deltaReason}
+                  onChange={e => setDeltaReason(e.target.value)}
+                  placeholder="e.g. genuinely two trucks of same weight, verified visually"
+                  rows={2}
+                  className="mt-1 w-full border border-slate-300 px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-blue-400"
+                />
+                <div className="text-[10px] text-slate-500 mt-1">Confirmation will be logged to cloud audit trail with your name, time, and reason.</div>
+              </div>
+            </div>
+            <div className="border-t border-slate-200 px-5 py-3 flex justify-end gap-2">
+              <button
+                onClick={() => { setShowDeltaConfirm(false); setDeltaReason(''); setDeltaViolations([]); setPendingPayload(null); }}
+                className="px-4 py-2 bg-white border border-slate-300 text-slate-600 text-sm font-medium hover:bg-slate-50"
+              >Cancel</button>
+              <button
+                disabled={capturing}
+                onClick={async () => {
+                  if (!scannedRecord || !pendingPayload) return;
+                  setCapturing(true);
+                  try {
+                    await api.post(`/weighbridge/${scannedRecord.id}/tare`, {
+                      ...pendingPayload,
+                      confirmDelta: true,
+                      confirmReason: deltaReason || null,
+                    });
+                    setShowDeltaConfirm(false);
+                    setDeltaReason('');
+                    setDeltaViolations([]);
+                    setPendingPayload(null);
+                    const slip = scannedRecord.direction === 'OUTBOUND' ? 'gross-slip' : 'final-slip';
+                    window.open(`/api/weighbridge/print/${slip}/${scannedRecord.id}`, '_blank');
+                    setScannedRecord(null);
+                    fetchPending();
+                  } catch (err) {
+                    if (axios.isAxiosError(err) && err.response?.data?.error) alert(err.response.data.error);
+                    else alert('Confirm failed');
+                  } finally { setCapturing(false); }
+                }}
+                className="px-4 py-2 bg-blue-700 text-white text-sm font-bold hover:bg-blue-800 disabled:opacity-50"
+              >{capturing ? 'Saving...' : 'Confirm & Capture'}</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Rule Violation Override Modal (PIN required) */}
       {showOverride && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
           <div className="bg-white w-full max-w-md shadow-2xl">
-            <div className="bg-amber-600 text-white px-4 py-2.5">
-              <h3 className="text-xs font-bold uppercase tracking-widest">Rule Violation</h3>
+            <div className={`${overrideKind === 'SCALE_NOT_ZERO' ? 'bg-red-700' : 'bg-amber-600'} text-white px-4 py-2.5`}>
+              <h3 className="text-xs font-bold uppercase tracking-widest">
+                {overrideKind === 'SCALE_NOT_ZERO' ? 'Scale Not Zero — Truck Still On Scale' : 'Rule Violation'}
+              </h3>
             </div>
             <div className="p-5 space-y-3">
               {ruleViolations.map((v, i) => (

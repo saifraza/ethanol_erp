@@ -7,8 +7,8 @@ import { getCloudPrisma } from '../cloudPrisma';
 import { asyncHandler, requireWbKey, requireWbKeyOrAuth, requireAuth, requireRole, AuthRequest } from '../middleware';
 import { captureSnapshots } from '../services/cameraCapture';
 import { getMasterData } from '../services/masterDataCache';
-import { checkWeighmentRules, verifyOverridePin, logOverride } from '../services/ruleEngine';
-import { registerPC } from '../services/pcMonitor';
+import { enforceWeighmentRules, getNumericRule, getRuleValue } from '../services/ruleEngine';
+import { registerPC, fetchLiveWeight } from '../services/pcMonitor';
 
 const router = Router();
 
@@ -234,6 +234,94 @@ router.get('/weighments', requireAuth, asyncHandler(async (req: AuthRequest, res
   ]);
 
   res.json({ weighments, total, limit: take, offset: skip });
+}));
+
+// ──────────────────────────────────────────────────────────────────────────
+// GET /api/weighbridge/scale-state?pcId=
+// Preflight check the operator UI polls every ~2s. Returns:
+//   - liveWeight     : current scale reading (or null if unreachable)
+//   - lastCapture    : the most recent capture on this PC (any ticket)
+//   - isClean        : true when the scale is presumed empty
+//   - blocked        : { reason, message } when the operator should NOT capture
+// The block reason is rendered as a permanent red banner on the Gross/Tare
+// page so the operator knows WHY before they even click Capture.
+// ──────────────────────────────────────────────────────────────────────────
+router.get('/scale-state', requireAuth, asyncHandler(async (req: AuthRequest, res: Response) => {
+  const pcId = (req.query.pcId as string) || 'web';
+
+  // Live weight + thresholds
+  const [live, threshold, windowMin, masterEnabled] = await Promise.all([
+    fetchLiveWeight(pcId),
+    getNumericRule('SCALE_ZERO_THRESHOLD_KG', 50),
+    getNumericRule('SCALE_ZERO_WINDOW_MINUTES', 30),
+    getRuleValue('SCALE_ZERO_REQUIRED'),
+  ]);
+  const ruleEnabled = masterEnabled === 'true';
+  const since = new Date(Date.now() - windowMin * 60_000);
+
+  const recent = await prisma.weighment.findFirst({
+    where: {
+      OR: [
+        { grossPcId: pcId, grossTime: { gte: since }, grossWeight: { not: null } },
+        { tarePcId: pcId, tareTime: { gte: since }, tareWeight: { not: null } },
+      ],
+    },
+    orderBy: [{ grossTime: 'desc' }, { tareTime: 'desc' }],
+    select: {
+      ticketNo: true, vehicleNo: true,
+      grossWeight: true, tareWeight: true,
+      grossTime: true, tareTime: true,
+      grossPcId: true, tarePcId: true,
+    },
+  });
+
+  let lastCapture: { ticketNo: number | null; vehicleNo: string; weight: number; capturedAt: Date; minutesAgo: number } | null = null;
+  if (recent) {
+    let w: number | null = null; let t: Date | null = null;
+    if (recent.grossPcId === pcId && recent.grossTime && recent.grossWeight != null) {
+      w = recent.grossWeight; t = recent.grossTime;
+    }
+    if (recent.tarePcId === pcId && recent.tareTime && recent.tareWeight != null) {
+      if (!t || recent.tareTime > t) { w = recent.tareWeight; t = recent.tareTime; }
+    }
+    if (w != null && t) {
+      lastCapture = {
+        ticketNo: recent.ticketNo,
+        vehicleNo: recent.vehicleNo,
+        weight: w,
+        capturedAt: t,
+        minutesAgo: Math.round((Date.now() - t.getTime()) / 60_000),
+      };
+    }
+  }
+
+  let blocked: { reason: string; message: string } | null = null;
+  let isClean = true;
+
+  if (live != null && lastCapture && ruleEnabled) {
+    const diff = Math.abs(live - lastCapture.weight);
+    const liveAbs = Math.abs(live);
+    if (diff <= threshold && liveAbs > threshold) {
+      isClean = false;
+      blocked = {
+        reason: 'SCALE_NOT_ZERO',
+        message: `Previous truck T-${lastCapture.ticketNo} (${lastCapture.vehicleNo}, ${lastCapture.weight.toLocaleString('en-IN')} kg, ${lastCapture.minutesAgo} min ago) appears to still be on the scale. Live reading: ${live.toLocaleString('en-IN')} kg. Remove the vehicle and bring the scale to zero before capturing the next weight.`,
+      };
+    }
+  }
+
+  res.json({
+    pcId,
+    liveWeight: live,
+    scaleReachable: live != null,
+    lastCapture,
+    thresholdKg: threshold,
+    windowMin,
+    ruleEnabled,
+    isClean,
+    blocked,
+    serverTime: new Date().toISOString(),
+  });
 }));
 
 // GET /api/weighbridge/stats — today's summary (legacy)
@@ -504,23 +592,23 @@ router.post('/:id/gross', requireAuth, requireRole('GROSS_WB', 'ADMIN'), asyncHa
   }
 
   // Business rules check — runs on 1st and 2nd weight.
-  // Duplicate-weight check applies on 1st weight too (frozen digitizer case).
+  // Duplicate-weight, scale-zero, and delta-confirm checks all apply.
   {
-    const violations = await checkWeighmentRules(id, 'GROSS', weight, pcId || 'web');
-    if (violations.length > 0) {
-      const { overridePin, overrideBy } = req.body;
-      if (!overridePin) {
-        res.status(422).json({ error: 'RULE_VIOLATION', violations, canOverride: true });
-        return;
-      }
-      const pinValid = await verifyOverridePin(overridePin);
-      if (!pinValid) {
-        res.status(403).json({ error: 'Invalid override PIN' });
-        return;
-      }
-      for (const v of violations) {
-        await logOverride(v.ruleKey, id, 'GROSS', overrideBy || req.user?.name || 'admin');
-      }
+    const outcome = await enforceWeighmentRules({
+      weighmentId: id,
+      action: 'GROSS',
+      weight,
+      pcId: pcId || 'web',
+      body: req.body || {},
+      userName: req.user?.name || 'unknown',
+    });
+    if (outcome.status === 'NEEDS_PIN' || outcome.status === 'NEEDS_CONFIRM') {
+      res.status(422).json({ error: outcome.errorCode, violations: outcome.violations, canOverride: true });
+      return;
+    }
+    if (outcome.status === 'BAD_PIN') {
+      res.status(403).json({ error: 'Invalid override PIN' });
+      return;
     }
   }
 
@@ -627,21 +715,21 @@ router.post('/:id/tare', requireAuth, requireRole('TARE_WB', 'ADMIN'), asyncHand
 
   // Business rules check — runs on 1st and 2nd weight.
   {
-    const violations = await checkWeighmentRules(id, 'TARE', weight, pcId || 'web');
-    if (violations.length > 0) {
-      const { overridePin, overrideBy } = req.body;
-      if (!overridePin) {
-        res.status(422).json({ error: 'RULE_VIOLATION', violations, canOverride: true });
-        return;
-      }
-      const pinValid = await verifyOverridePin(overridePin);
-      if (!pinValid) {
-        res.status(403).json({ error: 'Invalid override PIN' });
-        return;
-      }
-      for (const v of violations) {
-        await logOverride(v.ruleKey, id, 'TARE', overrideBy || req.user?.name || 'admin');
-      }
+    const outcome = await enforceWeighmentRules({
+      weighmentId: id,
+      action: 'TARE',
+      weight,
+      pcId: pcId || 'web',
+      body: req.body || {},
+      userName: req.user?.name || 'unknown',
+    });
+    if (outcome.status === 'NEEDS_PIN' || outcome.status === 'NEEDS_CONFIRM') {
+      res.status(422).json({ error: outcome.errorCode, violations: outcome.violations, canOverride: true });
+      return;
+    }
+    if (outcome.status === 'BAD_PIN') {
+      res.status(403).json({ error: 'Invalid override PIN' });
+      return;
     }
   }
 

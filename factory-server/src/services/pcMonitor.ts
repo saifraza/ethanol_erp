@@ -140,6 +140,50 @@ async function forwardHeartbeatsToCloud(): Promise<void> {
   }
 }
 
+/**
+ * Fetch the LIVE weight from a specific WB PC right now (not the 5s cached value).
+ * Used by the rule engine at capture time for the SCALE_ZERO check — we need
+ * sub-second freshness because the operator just pressed "Capture".
+ *
+ * Returns null if:
+ *   - pcId not registered or IP unknown
+ *   - HTTP request times out (1.5s)
+ *   - response is not parseable
+ *   - scale reports stale=true (no signal from indicator)
+ *
+ * The rule engine treats null as "scale unreachable, fail open". Better to
+ * allow a capture than to block trucks because the network blipped.
+ */
+export async function fetchLiveWeight(pcId: string): Promise<number | null> {
+  // 'web' = factory-server's own UI proxy. Use the cached map (which is
+  // populated by pollAllPCs from any registered WB PC).
+  if (pcId === 'web' || pcId === 'system' || pcId === 'system-weighbridge') {
+    const wb = Array.from(pcStatus.values()).find(p => p.role === 'WEIGHBRIDGE' && p.alive);
+    if (!wb || !wb.data) return null;
+    const stale = !!(wb.data as Record<string, unknown>).stale;
+    if (stale) return null;
+    const w = parseFloat(String((wb.data as Record<string, unknown>).weight ?? ''));
+    return Number.isFinite(w) ? w : null;
+  }
+
+  const pc = pcRegistry.get(pcId);
+  if (!pc || pc.lanIp === 'unknown') return null;
+
+  try {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), 1500);
+    const res = await fetch(`http://${pc.lanIp}:${pc.port}/api/weight`, { signal: controller.signal });
+    clearTimeout(timer);
+    if (!res.ok) return null;
+    const data = await res.json() as Record<string, unknown>;
+    if (data.stale) return null;
+    const w = parseFloat(String(data.weight ?? ''));
+    return Number.isFinite(w) ? w : null;
+  } catch {
+    return null;
+  }
+}
+
 // Get all PC statuses
 export function getAllPCStatus(): PCHealthData[] {
   // Merge registry + status — ensure all registered PCs appear even if never polled
