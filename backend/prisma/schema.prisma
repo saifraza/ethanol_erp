@@ -4503,6 +4503,43 @@ model GstReconEntry {
 }
 
 // ═══════════════════════════════════════════════
+// ACTIVITY LOG — generic high-value audit trail
+// Captures every CREATE/UPDATE/DELETE on a whitelist of high-value models
+// (invoices, payments, POs, GRNs, vendors, customers, items, weighbridge,
+// contracts, journal entries, master data, business rules). Driven by Prisma
+// $use middleware in services/activityLogger.ts. Visible at /admin/activity-log.
+//
+// Volume estimate: ~100-500 high-value writes/day → ~36k-180k rows/year.
+// Trivial for Postgres. `changes` JSON only contains fields that actually
+// changed (UPDATE) or the full record (CREATE/DELETE).
+//
+// Excluded models (in SELF_WRITE_BLACKLIST or absent from MODEL_CATEGORY):
+//   - ActivityLog itself (would loop forever)
+//   - WeighmentAuditEvent / WeighmentAuditQueue (own page at /admin/weighbridge-audit)
+//   - StockLevel, SyncQueue, Heartbeat, OpcTag, WashTotalizer (high-volume noise)
+// ═══════════════════════════════════════════════
+model ActivityLog {
+  id          String   @id @default(uuid())
+  category    String   // FINANCIAL | MASTER_DATA | INVENTORY | WEIGHBRIDGE | COMPLIANCE | AUTH | CONTRACT | CONFIG
+  model       String   // e.g. "Invoice", "PurchaseOrder", "Vendor"
+  recordId    String?  // primary key of the affected row
+  action      String   // CREATE | UPDATE | DELETE
+  userId      String?  // null for system-initiated writes (background workers)
+  userName    String?  // "system" when no user context
+  userRole    String?
+  routePath   String?  // e.g. "POST /api/invoices"
+  ipAddress   String?
+  summary     String?  // short human-readable headline (computed by logger)
+  changes     Json?    // {field: {from, to}} for UPDATE, full row for CREATE/DELETE
+  createdAt   DateTime @default(now())
+
+  @@index([category, createdAt])
+  @@index([model, recordId])
+  @@index([userId, createdAt])
+  @@index([createdAt])
+}
+
+// ═══════════════════════════════════════════════
 // WEIGHMENT AUDIT EVENT
 // Cross-system audit log for safety-rule overrides + soft-confirms at the
 // weighbridge. Factory server records locally first (WeighmentAuditQueue),

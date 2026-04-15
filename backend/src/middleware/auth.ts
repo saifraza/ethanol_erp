@@ -1,6 +1,7 @@
 import { Request, Response, NextFunction } from 'express';
 import jwt from 'jsonwebtoken';
 import { config } from '../config';
+import { setUserOnContext } from '../services/requestContext';
 
 export interface AuthRequest extends Request {
   user?: {
@@ -85,6 +86,15 @@ export const authenticate = (req: AuthRequest, res: Response, next: NextFunction
   try {
     const decoded = jwt.verify(token, config.jwtSecret) as any;
     req.user = decoded;
+    // Propagate user identity into AsyncLocalStorage so the activity logger
+    // (Prisma middleware) knows WHO did each high-value write.
+    if (decoded?.id) {
+      setUserOnContext({
+        id: decoded.id,
+        name: decoded.name || decoded.email || 'unknown',
+        role: decoded.role || 'unknown',
+      });
+    }
     next();
   } catch (error) {
     res.status(401).json({ error: 'Invalid token' });

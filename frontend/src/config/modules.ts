@@ -125,6 +125,7 @@ export const MODULE_DEFS: ModuleDef[] = [
   { key: 'document-search', label: 'Doc Search (AI)', to: '/admin/document-search', icon: Search, group: 'admin' },
   { key: 'weighment-corrections', label: 'Weighment Corrections', to: '/admin/weighment-corrections', icon: ClipboardCheck, group: 'admin', adminOnly: true },
   { key: 'weighbridge-audit', label: 'Weighbridge Audit', to: '/admin/weighbridge-audit', icon: ClipboardCheck, group: 'admin', adminOnly: true },
+  { key: 'activity-log', label: 'Activity Log', to: '/admin/activity-log', icon: ClipboardCheck, group: 'admin', adminOnly: true },
 
   // ── HR & PAYROLL ──
   { key: 'hr-dashboard', label: 'HR Dashboard', to: '/hr/dashboard', icon: LayoutGrid, group: 'hr' },

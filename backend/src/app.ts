@@ -87,6 +87,7 @@ import labTestingRoutes from './routes/labTesting';
 import weighbridgeRoutes from './routes/weighbridge';
 import weighbridgeAdminRoutes from './routes/weighbridgeAdmin';
 import weighbridgeAuditRoutes from './routes/weighbridgeAudit';
+import activityLogRoutes from './routes/activityLog';
 import fuelRoutes from './routes/fuel';
 import rawMaterialPurchaseRoutes from './routes/rawMaterialPurchase';
 import storesPurchaseRoutes from './routes/storesPurchase';
@@ -166,6 +167,12 @@ app.use(cors({
 // Logging and body parsing
 app.use(morgan(process.env.NODE_ENV === 'production' ? 'combined' : 'dev'));
 app.use(express.json({ limit: '10mb' }));
+
+// Request-context middleware — wraps every request in AsyncLocalStorage so
+// the Prisma activity logger knows WHO did each write. Must mount BEFORE any
+// route handler. Auth middleware will populate userId/Name/Role later.
+import { requestContextMiddleware } from './services/requestContext';
+app.use(requestContextMiddleware);
 
 // Rate limiting for auth routes
 const authLimiter = rateLimit({
@@ -286,6 +293,9 @@ app.use('/api/weighbridge/admin', weighbridgeAdminRoutes);
 // delta-confirms, interval/duplicate overrides). Factory pushes via X-WB-Key,
 // admins read via JWT. See .claude/skills/weighbridge.md.
 app.use('/api/weighbridge/audit', weighbridgeAuditRoutes);
+// Generic activity log — auto-captures CREATE/UPDATE/DELETE on high-value
+// models via Prisma middleware. Read-only admin viewer.
+app.use('/api/activity-log', activityLogRoutes);
 // Fuel Management (master + daily consumption)
 app.use('/api/fuel', fuelRoutes);
 // Raw Material Purchase (deals, receipts, payments — mirrors fuel pattern)

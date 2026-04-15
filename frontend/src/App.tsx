@@ -62,6 +62,7 @@ const CompanyDocuments = React.lazy(() => import('./pages/admin/CompanyDocuments
 const DocumentSearch = React.lazy(() => import('./pages/admin/DocumentSearch'));
 const WeighmentCorrections = React.lazy(() => import('./pages/admin/WeighmentCorrections'));
 const WeighbridgeAudit = React.lazy(() => import('./pages/admin/WeighbridgeAudit'));
+const ActivityLog = React.lazy(() => import('./pages/admin/ActivityLog'));
 const Companies = React.lazy(() => import('./pages/admin/Companies'));
 // Compliance
 const ComplianceDashboard = React.lazy(() => import('./pages/compliance/ComplianceDashboard'));
@@ -223,6 +224,7 @@ export default function App() {
         <Route path="admin/document-search" element={<DocumentSearch />} />
         <Route path="admin/weighment-corrections" element={<WeighmentCorrections />} />
         <Route path="admin/weighbridge-audit" element={<WeighbridgeAudit />} />
+        <Route path="admin/activity-log" element={<ActivityLog />} />
         <Route path="admin/companies" element={<Companies />} />
         {/* Compliance */}
         <Route path="compliance" element={<ComplianceDashboard />} />
