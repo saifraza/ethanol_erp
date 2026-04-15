@@ -25,3 +25,4 @@ test-*.pdf
 test-*.js
 EINVOICE_IMPLEMENTATION.md
 mobile/
+generate_video.py
