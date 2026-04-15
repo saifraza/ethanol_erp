@@ -251,12 +251,12 @@ async function checkScaleZero(
     return null;
   }
 
-  // If the live weight is still close to the captured weight AND non-zero,
-  // the previous truck is still on the scale.
-  const diffFromPrev = Math.abs(live - prevWeight);
+  // Simple rule: after ANY recent capture on this scale, the next capture is
+  // blocked until the live reading returns to ≤ threshold (effectively zero).
+  // This catches partial roll-offs too — if truck has moved halfway off, live
+  // weight still > 50kg → still blocked. Only clears when truck is fully off.
   const liveAbs = Math.abs(live);
-  const trucksLikelySame = diffFromPrev <= threshold && liveAbs > threshold;
-  if (!trucksLikelySame) {
+  if (liveAbs <= threshold) {
     return { passed: true, ruleKey: 'SCALE_ZERO_REQUIRED', ruleLabel: masterRule.label, message: '', canOverride: false };
   }
 
@@ -265,7 +265,7 @@ async function checkScaleZero(
     passed: false,
     ruleKey: 'SCALE_ZERO_REQUIRED',
     ruleLabel: masterRule.label,
-    message: `Scale not zero — previous truck T-${recent.ticketNo} (${recent.vehicleNo}, ${prevWeight.toLocaleString('en-IN')} kg, ${minsAgo} min ago) appears to still be on the scale. Live reading: ${live.toLocaleString('en-IN')} kg. Remove the vehicle and bring the scale to zero before capturing the next weight. Action requested: capture ${newWeight.toLocaleString('en-IN')} kg for T-${ctx.ticketNo ?? '?'}.`,
+    message: `Scale not zero — live reading is ${live.toLocaleString('en-IN')} kg. Last capture on this scale was T-${recent.ticketNo} (${recent.vehicleNo}, ${prevWeight.toLocaleString('en-IN')} kg, ${minsAgo} min ago). Remove the vehicle so the scale returns to zero before capturing the next weight (allowed range: ≤ ${threshold} kg). Action requested: capture ${newWeight.toLocaleString('en-IN')} kg for T-${ctx.ticketNo ?? '?'}.`,
     canOverride: true,
     meta: {
       liveScaleWeight: live,
@@ -307,19 +307,18 @@ async function checkWeightDelta(
   const threshold = parseFloat(rule.value);
   if (isNaN(threshold) || threshold <= 0) return null;
 
-  const windowMin = await getNumericRule('WEIGHT_DELTA_LOOKBACK_MINUTES', 30);
-  const since = new Date(Date.now() - windowMin * 60_000);
-
-  const recent = await prisma.weighment.findMany({
+  // Compare ONLY against the immediately previous capture on this scale.
+  // No time window — even if last capture was hours ago, a near-identical
+  // weight is suspicious enough to warrant a confirmation.
+  const lastCapture = await prisma.weighment.findFirst({
     where: {
       id: { not: ctx.id },
       OR: [
-        { grossPcId: pcId, grossTime: { gte: since }, grossWeight: { not: null } },
-        { tarePcId: pcId, tareTime: { gte: since }, tareWeight: { not: null } },
+        { grossPcId: pcId, grossWeight: { not: null } },
+        { tarePcId: pcId, tareWeight: { not: null } },
       ],
     },
     orderBy: [{ grossTime: 'desc' }, { tareTime: 'desc' }],
-    take: 5,
     select: {
       ticketNo: true, vehicleNo: true,
       grossWeight: true, tareWeight: true,
@@ -328,41 +327,41 @@ async function checkWeightDelta(
     },
   });
 
-  // Find the closest match within threshold
-  let closest: { weight: number; time: Date; ticket: number | null; vehicle: string } | null = null;
-  let closestDiff = Infinity;
-  for (const r of recent) {
-    const candidates: Array<{ w: number | null; t: Date | null; pc: string | null }> = [
-      { w: r.grossWeight, t: r.grossTime, pc: r.grossPcId },
-      { w: r.tareWeight, t: r.tareTime, pc: r.tarePcId },
-    ];
-    for (const c of candidates) {
-      if (c.w == null || c.t == null || c.pc !== pcId) continue;
-      const diff = Math.abs(c.w - newWeight);
-      if (diff <= threshold && diff < closestDiff) {
-        closestDiff = diff;
-        closest = { weight: c.w, time: c.t, ticket: r.ticketNo, vehicle: r.vehicleNo };
-      }
+  if (!lastCapture) return null;
+
+  // Pick whichever weight on this row was captured on this PC and most recent
+  let prevWeight: number | null = null;
+  let prevTime: Date | null = null;
+  if (lastCapture.grossPcId === pcId && lastCapture.grossTime && lastCapture.grossWeight != null) {
+    prevWeight = lastCapture.grossWeight;
+    prevTime = lastCapture.grossTime;
+  }
+  if (lastCapture.tarePcId === pcId && lastCapture.tareTime && lastCapture.tareWeight != null) {
+    if (!prevTime || lastCapture.tareTime > prevTime) {
+      prevWeight = lastCapture.tareWeight;
+      prevTime = lastCapture.tareTime;
     }
   }
+  if (prevWeight == null || prevTime == null) return null;
 
-  if (!closest) {
+  const diff = Math.abs(prevWeight - newWeight);
+  if (diff > threshold) {
     return { passed: true, ruleKey: rule.key, ruleLabel: rule.label, message: '', canOverride: false };
   }
 
-  const minsAgo = Math.round((Date.now() - closest.time.getTime()) / 60_000);
+  const minsAgo = Math.round((Date.now() - prevTime.getTime()) / 60_000);
   return {
     passed: false,
     ruleKey: rule.key,
     ruleLabel: rule.label,
-    message: `Weight ${newWeight.toLocaleString('en-IN')} kg is within ${threshold} kg of T-${closest.ticket} (${closest.vehicle}, ${closest.weight.toLocaleString('en-IN')} kg, ${minsAgo} min ago). Possible same-truck-still-on-scale. Confirm to proceed (will be logged to cloud audit).`,
+    message: `Weight ${newWeight.toLocaleString('en-IN')} kg is within ${threshold} kg of the previous capture: T-${lastCapture.ticketNo} (${lastCapture.vehicleNo}, ${prevWeight.toLocaleString('en-IN')} kg, ${minsAgo} min ago). If this is a genuinely different truck, tick the box to confirm.`,
     canOverride: true,
     meta: {
-      prevWeight: closest.weight,
-      prevTicket: closest.ticket,
-      prevVehicle: closest.vehicle,
+      prevWeight,
+      prevTicket: lastCapture.ticketNo,
+      prevVehicle: lastCapture.vehicleNo,
       prevAtMinAgo: minsAgo,
-      diffKg: closestDiff,
+      diffKg: diff,
       thresholdKg: threshold,
       confirmType: 'DELTA_CONFIRM',
     },

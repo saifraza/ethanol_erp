@@ -96,24 +96,13 @@ const DEFAULT_RULES = [
   {
     key: 'WEIGHT_DELTA_CONFIRM_KG',
     label: 'Weight-delta confirmation threshold (kg)',
-    description: 'If new captured weight is within this many kg of any recent capture on the same scale, prompt the operator to confirm before saving. Confirmation is logged to cloud audit. 0 disables the rule. 20 kg catches "truck still on scale with slightly different reading".',
+    description: 'If new captured weight is within this many kg of the IMMEDIATELY PREVIOUS capture on the same scale, prompt the operator to confirm via checkbox before saving. Confirmation is logged to cloud audit. 0 disables the rule. 20 kg catches "two consecutive trucks suspiciously close in weight".',
     value: '20',
     valueType: 'number',
     category: 'WEIGHMENT',
     enabled: true,
     minValue: '0',
     maxValue: '500',
-  },
-  {
-    key: 'WEIGHT_DELTA_LOOKBACK_MINUTES',
-    label: 'Weight-delta — lookback window (minutes)',
-    description: 'How far back to scan for similar weights when computing the delta-confirm. Same default as scale-zero window.',
-    value: '30',
-    valueType: 'number',
-    category: 'WEIGHMENT',
-    enabled: true,
-    minValue: '5',
-    maxValue: '240',
   },
 ];
 

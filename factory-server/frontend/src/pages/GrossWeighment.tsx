@@ -58,10 +58,10 @@ export default function GrossWeighment() {
   const [overrideKind, setOverrideKind] = useState<'PIN' | 'SCALE_NOT_ZERO'>('PIN');
   const [overridePin, setOverridePin] = useState('');
   const [pendingPayload, setPendingPayload] = useState<Record<string, unknown> | null>(null);
-  // Delta-confirm (soft confirm — no PIN, logged to cloud audit)
+  // Delta-confirm (soft confirm — no PIN, logged to cloud audit). Checkbox-only.
   const [deltaViolations, setDeltaViolations] = useState<Array<{ruleKey: string; ruleLabel: string; message: string}>>([]);
   const [showDeltaConfirm, setShowDeltaConfirm] = useState(false);
-  const [deltaReason, setDeltaReason] = useState('');
+  const [deltaConfirmed, setDeltaConfirmed] = useState(false);
   // Scale state preflight — operator sees WHY capture is blocked before clicking
   const [scaleState, setScaleState] = useState<{
     isClean: boolean;
@@ -809,12 +809,12 @@ export default function GrossWeighment() {
         </div>
       )}
 
-      {/* Delta-Confirm Modal (no PIN — soft confirmation, logged to cloud audit) */}
+      {/* Delta-Confirm Modal (no PIN — checkbox confirmation, logged to cloud audit) */}
       {showDeltaConfirm && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
           <div className="bg-white w-full max-w-md shadow-2xl">
             <div className="bg-blue-700 text-white px-4 py-2.5">
-              <h3 className="text-xs font-bold uppercase tracking-widest">Confirm Weight — Similar To Recent Capture</h3>
+              <h3 className="text-xs font-bold uppercase tracking-widest">Confirm Weight — Similar To Previous Capture</h3>
             </div>
             <div className="p-5 space-y-3">
               {deltaViolations.map((v, i) => (
@@ -823,25 +823,24 @@ export default function GrossWeighment() {
                   <div className="text-xs text-blue-700 mt-0.5">{v.message}</div>
                 </div>
               ))}
-              <div className="pt-2">
-                <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">Reason / Confirmation Note (optional)</label>
-                <textarea
-                  value={deltaReason}
-                  onChange={e => setDeltaReason(e.target.value)}
-                  placeholder="e.g. genuinely two trucks of same weight, verified visually"
-                  rows={2}
-                  className="mt-1 w-full border border-slate-300 px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-blue-400"
+              <label className="flex items-start gap-2 pt-2 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={deltaConfirmed}
+                  onChange={e => setDeltaConfirmed(e.target.checked)}
+                  className="mt-0.5 h-4 w-4 border-slate-300"
+                  autoFocus
                 />
-                <div className="text-[10px] text-slate-500 mt-1">Confirmation will be logged to cloud audit trail with your name, time, and reason.</div>
-              </div>
+                <span className="text-sm text-slate-700">I confirm this is intentional — this is a different truck / load (will be logged to cloud audit trail with my name and time).</span>
+              </label>
             </div>
             <div className="border-t border-slate-200 px-5 py-3 flex justify-end gap-2">
               <button
-                onClick={() => { setShowDeltaConfirm(false); setDeltaReason(''); setDeltaViolations([]); setPendingPayload(null); }}
+                onClick={() => { setShowDeltaConfirm(false); setDeltaConfirmed(false); setDeltaViolations([]); setPendingPayload(null); }}
                 className="px-4 py-2 bg-white border border-slate-300 text-slate-600 text-sm font-medium hover:bg-slate-50"
               >Cancel</button>
               <button
-                disabled={capturing}
+                disabled={!deltaConfirmed || capturing}
                 onClick={async () => {
                   if (!scannedRecord || !pendingPayload) return;
                   setCapturing(true);
@@ -849,10 +848,9 @@ export default function GrossWeighment() {
                     await api.post(`/weighbridge/${scannedRecord.id}/gross`, {
                       ...pendingPayload,
                       confirmDelta: true,
-                      confirmReason: deltaReason || null,
                     });
                     setShowDeltaConfirm(false);
-                    setDeltaReason('');
+                    setDeltaConfirmed(false);
                     setDeltaViolations([]);
                     setPendingPayload(null);
                     const slip = scannedRecord.direction === 'OUTBOUND' ? 'final-slip' : 'gross-slip';

@@ -298,14 +298,15 @@ router.get('/scale-state', requireAuth, asyncHandler(async (req: AuthRequest, re
   let blocked: { reason: string; message: string } | null = null;
   let isClean = true;
 
+  // Simple rule: after ANY recent capture on this scale, block until the live
+  // reading drops to ≤ threshold (effectively zero). Catches partial roll-offs.
   if (live != null && lastCapture && ruleEnabled) {
-    const diff = Math.abs(live - lastCapture.weight);
     const liveAbs = Math.abs(live);
-    if (diff <= threshold && liveAbs > threshold) {
+    if (liveAbs > threshold) {
       isClean = false;
       blocked = {
         reason: 'SCALE_NOT_ZERO',
-        message: `Previous truck T-${lastCapture.ticketNo} (${lastCapture.vehicleNo}, ${lastCapture.weight.toLocaleString('en-IN')} kg, ${lastCapture.minutesAgo} min ago) appears to still be on the scale. Live reading: ${live.toLocaleString('en-IN')} kg. Remove the vehicle and bring the scale to zero before capturing the next weight.`,
+        message: `Scale not zero — live reading is ${live.toLocaleString('en-IN')} kg. Last capture on this scale was T-${lastCapture.ticketNo} (${lastCapture.vehicleNo}, ${lastCapture.weight.toLocaleString('en-IN')} kg, ${lastCapture.minutesAgo} min ago). Remove the vehicle so the scale returns to ≤ ${threshold} kg before capturing the next weight.`,
       };
     }
   }
