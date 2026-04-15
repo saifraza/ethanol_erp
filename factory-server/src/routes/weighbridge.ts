@@ -12,6 +12,10 @@ import { registerPC, fetchLiveWeight, getLastScaleZeroAt } from '../services/pcM
 
 const router = Router();
 
+// Boot time — used by the scale-state preflight to treat captures from
+// BEFORE this server process as ambiguous (no zero-history available).
+const _serverStartTime = new Date();
+
 // ============================================================
 // HELPERS
 // ============================================================
@@ -302,11 +306,16 @@ router.get('/scale-state', requireAuth, asyncHandler(async (req: AuthRequest, re
   // exists + scale HASN'T been cleared since that capture + scale currently
   // reads non-zero. The zero-crossing tracker (every 5s) is what lets us
   // distinguish "new truck on fresh scale" from "old truck never left".
+  // Deploy-resilience: if the previous capture happened BEFORE this server
+  // process started AND no zero recorded, assume scale cleared during the
+  // restart gap (we have no way to know otherwise).
   if (live != null && lastCapture && ruleEnabled) {
     const lastZero = getLastScaleZeroAt(pcId);
-    const capturedAt = new Date(lastCapture.capturedAt).getTime();
-    const clearedSinceCapture = lastZero && lastZero.getTime() > capturedAt;
-    if (!clearedSinceCapture && Math.abs(live) > threshold) {
+    const capturedAtMs = new Date(lastCapture.capturedAt).getTime();
+    const clearedSinceCapture = lastZero && lastZero.getTime() > capturedAtMs;
+    const prevBeforeServerStart = capturedAtMs < _serverStartTime.getTime();
+    const ambiguous = prevBeforeServerStart && !lastZero;
+    if (!clearedSinceCapture && !ambiguous && Math.abs(live) > threshold) {
       isClean = false;
       blocked = {
         reason: 'SCALE_NOT_ZERO',

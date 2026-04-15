@@ -30,6 +30,11 @@ let _rules: CachedRule[] = [];
 let _lastLoad = 0;
 const CACHE_TTL_MS = 10_000; // 10s — fast enough for admin changes
 
+// Server boot time — used by the scale-zero rule to treat a capture that
+// happened BEFORE the current process start as ambiguous (we can't know if
+// scale cleared during the restart gap, so we allow rather than blocking).
+const _serverStartTime = new Date();
+
 /** Load rules from DB (with TTL cache). */
 async function loadRules(): Promise<CachedRule[]> {
   const now = Date.now();
@@ -256,6 +261,19 @@ async function checkScaleZero(
   // records timestamps whenever the live reading falls to ≤50 kg.
   const lastZero = getLastScaleZeroAt(pcId);
   if (lastZero && lastZero.getTime() > prevTime.getTime()) {
+    return { passed: true, ruleKey: 'SCALE_ZERO_REQUIRED', ruleLabel: masterRule.label, message: '', canOverride: false };
+  }
+
+  // Deploy-resilience: if the server restarted AFTER the last capture, the
+  // in-memory zero tracker lost its state. We have no way to know whether
+  // the scale was cleared during that gap. Be conservative — if the capture
+  // was more than 2 minutes before the oldest zero record we have (or we
+  // have no zero records at all) AND the server has been up more than 10s,
+  // assume the scale cleared at some point during the restart gap. The
+  // live-weight check below is still the final safety net.
+  const serverStartMs = _serverStartTime.getTime();
+  const prevBeforeServerStart = prevTime.getTime() < serverStartMs;
+  if (prevBeforeServerStart && !lastZero) {
     return { passed: true, ruleKey: 'SCALE_ZERO_REQUIRED', ruleLabel: masterRule.label, message: '', canOverride: false };
   }
 
