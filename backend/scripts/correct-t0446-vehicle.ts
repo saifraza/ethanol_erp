@@ -1,8 +1,13 @@
 /**
- * One-shot correction: T-0397 DDGS outbound
- * Change vehicleNo MP06HH4218 → MP09HH4218
+ * One-shot correction: T-0446 DDGS outbound (SHREE SEETA SOLVEX)
+ * Change vehicleNo UP71281326 → UP71AT1336
  *
- * Updates: Weighment mirror + DDGSDispatchTruck + WeighmentCorrection audit row
+ * Safety verified 2026-04-15:
+ *  - Invoice 235 exists but irn=null, ewbNo=null, ewayBill=null
+ *  - Status = UNPAID, DDGSContractDispatch.status = DISPATCHED
+ *  - Shipment not yet DELIVERED → safe to correct DDGS.vehicleNo
+ *
+ * Updates: Weighment mirror + DDGSDispatchTruck + DDGSContractDispatch snapshot
  * Pushes to factory-server /api/weighbridge/correction so reprint shows new vehicle.
  */
 import prisma from '../src/config/prisma';
@@ -10,13 +15,13 @@ import { randomUUID } from 'crypto';
 import { runAsCliUser } from '../src/services/requestContext';
 import { flushActivityLogs } from '../src/services/activityLogger';
 
-const WEIGHMENT_ID = '29702edb-b998-4229-baca-3b3591385836';
-const DDGS_ID = '24216767-4131-47e1-a1e1-3c076c10fbb8';
-const FACTORY_LOCAL_ID = 'ea94fc9a-d87d-4fc2-b956-147af4ebe589';
-const TICKET_NO = 397;
-const OLD_VEH = 'MP06HH4218';
-const NEW_VEH = 'MP09HH4218';
-const REASON = 'Vehicle number typo on printed slip — MP06 should be MP09 (operator entry error)';
+const WEIGHMENT_ID = 'e62bff2a-fb0b-404b-be26-8ce16f95251a';
+const DDGS_ID = 'd07fca6b-4e29-447d-b701-ac2c2280e168';
+const FACTORY_LOCAL_ID = 'e5d0d203-5006-432c-be08-79ee3a232814';
+const TICKET_NO = 446;
+const OLD_VEH = 'UP71281326';
+const NEW_VEH = 'UP71AT1336';
+const REASON = 'Vehicle number typo on printed slip — actual vehicle per handwritten correction is UP71AT1336 (operator entry error, invoice not yet e-invoiced/EWB)';
 
 const FACTORY_URL = process.env.FACTORY_SERVER_URL || 'http://100.126.101.7:5000';
 const WB_KEY = process.env.WB_PUSH_KEY || 'mspil-wb-2026';
@@ -24,7 +29,6 @@ const WB_KEY = process.env.WB_PUSH_KEY || 'mspil-wb-2026';
 async function main() {
   const correctionId = randomUUID();
 
-  // Sanity check current state
   const mirror = await prisma.weighment.findUnique({ where: { id: WEIGHMENT_ID } });
   const ddgs = await prisma.dDGSDispatchTruck.findUnique({ where: { id: DDGS_ID } });
   if (!mirror || !ddgs) throw new Error('Record not found');
@@ -32,10 +36,18 @@ async function main() {
     throw new Error(`Stale — mirror=${mirror.vehicleNo} ddgs=${ddgs.vehicleNo}`);
   }
 
-  const rawPayload = { ...(mirror.rawPayload as Record<string, unknown>), vehicleNo: NEW_VEH };
+  // Re-verify guards at runtime (defence in depth)
+  const snap = await prisma.dDGSContractDispatch.findUnique({ where: { ddgsDispatchTruckId: DDGS_ID } });
+  if (snap?.invoiceId) {
+    const inv = await prisma.invoice.findUnique({
+      where: { id: snap.invoiceId },
+      select: { irn: true, ewbNo: true, ewayBill: true } as any,
+    });
+    if ((inv as any)?.irn) throw new Error('IRN already generated — cannot correct vehicle');
+    if ((inv as any)?.ewbNo || (inv as any)?.ewayBill) throw new Error('EWB already generated — cancel EWB first');
+  }
 
-  // NOTE: WeighmentCorrection cloud audit table has FK to GrainTruck only (skill Phase 1 scope).
-  // DDGS corrections log via: DDGS.remarks append + factory WeighmentCorrectionLog (no FK).
+  const rawPayload = { ...(mirror.rawPayload as Record<string, unknown>), vehicleNo: NEW_VEH };
   const auditStamp = `[CORRECTION ${new Date().toISOString()} by Saif] vehicleNo ${OLD_VEH}→${NEW_VEH}. Reason: ${REASON}. correctionId=${correctionId}`;
   const newRemarks = ddgs.remarks ? `${ddgs.remarks} | ${auditStamp}` : auditStamp;
 
@@ -50,8 +62,6 @@ async function main() {
       data: { vehicleNo: NEW_VEH, remarks: newRemarks },
     });
 
-    // If truck is already billed, DDGSContractDispatch has a snapshot copy
-    const snap = await tx.dDGSContractDispatch.findUnique({ where: { ddgsDispatchTruckId: DDGS_ID } });
     if (snap && snap.vehicleNo !== NEW_VEH) {
       await tx.dDGSContractDispatch.update({ where: { id: snap.id }, data: { vehicleNo: NEW_VEH } });
     }

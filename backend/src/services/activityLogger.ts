@@ -22,6 +22,19 @@ import { Prisma } from '@prisma/client';
 import prisma from '../config/prisma';
 import { getRequestContext } from './requestContext';
 
+// Track in-flight log writes so CLI scripts can drain them before process.exit.
+// Server processes never exit (or exit via SIGTERM which we don't gate); only
+// CLI/one-shot scripts need this. Capped implicitly by the rate of writes —
+// typical high-value endpoints produce 1-2 logs per request.
+const _pendingLogs = new Set<Promise<void>>();
+
+/** Await all in-flight ActivityLog writes. CLI scripts MUST call this before
+ *  process.exit(0) or the last few log rows will be dropped. */
+export async function flushActivityLogs(): Promise<void> {
+  if (_pendingLogs.size === 0) return;
+  await Promise.allSettled([..._pendingLogs]);
+}
+
 // Whitelist: model name → category. Models not in this map are NOT logged.
 // To add a model: pick an existing category or add a new one.
 const MODEL_CATEGORY: Record<string, string> = {
@@ -198,8 +211,12 @@ export const activityLogMiddleware: Prisma.Middleware = async (params, next) => 
   // Run the actual operation
   const result = await next(params);
 
-  // Log AFTER the write succeeded — fire-and-forget so it doesn't block
-  setImmediate(async () => {
+  // Log AFTER the write succeeded. Fire-and-forget so the underlying write
+  // (and the user's response) isn't blocked on the audit write. We track the
+  // promise in _pendingLogs so CLI scripts can drain pending writes before
+  // process.exit(0) — otherwise the last few log rows get dropped (the race
+  // we hit on T-0450 correction 2026-04-15).
+  const logPromise = (async () => {
     try {
       const after = (result && typeof result === 'object' && !Array.isArray(result))
         ? (result as Record<string, unknown>)
@@ -228,7 +245,9 @@ export const activityLogMiddleware: Prisma.Middleware = async (params, next) => 
     } catch (err) {
       console.error('[activity-log] middleware logging failed:', err instanceof Error ? err.message : err);
     }
-  });
+  })();
+  _pendingLogs.add(logPromise);
+  void logPromise.finally(() => _pendingLogs.delete(logPromise));
 
   return result;
 };

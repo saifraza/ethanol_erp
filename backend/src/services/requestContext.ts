@@ -34,6 +34,31 @@ export function runWithContext<T>(ctx: RequestContext, fn: () => T): T {
   return _als.run(ctx, fn);
 }
 
+/** CLI helper — wrap a script's main() so all its Prisma writes are tagged
+ *  with the given user in ActivityLog. Use `await flushActivityLogs()` in
+ *  the script's finally block before calling process.exit to ensure pending
+ *  audit rows are written.
+ *
+ *  Example:
+ *    import { runAsCliUser } from '../src/services/requestContext';
+ *    import { flushActivityLogs } from '../src/services/activityLogger';
+ *    runAsCliUser('Saif', main).finally(async () => {
+ *      await flushActivityLogs();
+ *      process.exit(0);
+ *    });
+ */
+export async function runAsCliUser<T>(userName: string, fn: () => Promise<T>): Promise<T> {
+  const ctx: RequestContext = {
+    userId: `cli-${userName.toLowerCase().replace(/\s+/g, '-')}`,
+    userName,
+    userRole: 'ADMIN',
+    routePath: 'CLI script',
+    ipAddress: 'cli',
+    skipActivityLog: false,
+  };
+  return await _als.run(ctx, fn);
+}
+
 /** Mutate the current request's user context (called by auth middleware AFTER
  *  it decodes the JWT — the requestContextMiddleware mounts earlier). */
 export function setUserOnContext(user: { id: string; name: string; role: string }): void {
