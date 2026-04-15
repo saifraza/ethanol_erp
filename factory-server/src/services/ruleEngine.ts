@@ -5,7 +5,7 @@
  */
 
 import prisma from '../prisma';
-import { getAllPCStatus, fetchLiveWeight } from './pcMonitor';
+import { getAllPCStatus, fetchLiveWeight, getLastScaleZeroAt } from './pcMonitor';
 
 export interface RuleResult {
   passed: boolean;
@@ -250,20 +250,24 @@ async function checkScaleZero(
   }
   if (prevWeight == null || prevTime == null) return null;
 
-  // Read live weight from the scale (fail-open on timeout — see fetchLiveWeight)
-  const live = await fetchLiveWeight(pcId);
-  if (live == null) {
-    // Scale unreachable — log and allow (don't block trucks because the
-    // monitor is down). The operator will see status DISCONNECTED in the UI.
-    return null;
+  // Was the scale observed at zero AFTER the last capture? If yes, the scale
+  // was cleared and a new truck can legitimately drive on for its first
+  // weighment. The zero-crossing tracker (pcMonitor) polls every 5s and
+  // records timestamps whenever the live reading falls to ≤50 kg.
+  const lastZero = getLastScaleZeroAt(pcId);
+  if (lastZero && lastZero.getTime() > prevTime.getTime()) {
+    return { passed: true, ruleKey: 'SCALE_ZERO_REQUIRED', ruleLabel: masterRule.label, message: '', canOverride: false };
   }
 
-  // Simple rule: after ANY recent capture on this scale, the next capture is
-  // blocked until the live reading returns to ≤ threshold (effectively zero).
-  // This catches partial roll-offs too — if truck has moved halfway off, live
-  // weight still > 50kg → still blocked. Only clears when truck is fully off.
-  const liveAbs = Math.abs(live);
-  if (liveAbs <= threshold) {
+  // Scale hasn't been cleared since the last capture. Check live weight.
+  const live = await fetchLiveWeight(pcId);
+  if (live == null) {
+    // Scale unreachable — fail-open. Operator sees DISCONNECTED status.
+    return null;
+  }
+  if (Math.abs(live) <= threshold) {
+    // Scale IS empty right now (live reading). Record it so future checks
+    // see the cleared state, and allow this capture.
     return { passed: true, ruleKey: 'SCALE_ZERO_REQUIRED', ruleLabel: masterRule.label, message: '', canOverride: false };
   }
 

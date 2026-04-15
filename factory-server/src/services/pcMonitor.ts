@@ -30,6 +30,35 @@ const pcStatus = new Map<string, PCHealthData>();
 // Dynamic PC registry — seed + auto-discovered PCs
 const pcRegistry = new Map<string, FactoryPC>();
 
+// Zero-crossing tracker — updated on every 5s poll. Records the most recent
+// time each scale read ≤ ZERO_TRACK_THRESHOLD_KG. The scale-zero rule uses
+// this to distinguish "scale was cleared between captures" (safe — next
+// truck can drive on) from "scale was never cleared since last capture"
+// (the real bug — previous truck still sitting there).
+const ZERO_TRACK_THRESHOLD_KG = 50;
+const scaleZeroAt = new Map<string, Date>();
+
+/** Called by the poller every 5s. Updates zero-crossing timestamp when the
+ *  live reading is at or below the noise-floor threshold. */
+function recordScaleReading(pcId: string, weight: number | null): void {
+  if (weight == null) return; // scale unreachable — don't pretend it's zero
+  if (Math.abs(weight) <= ZERO_TRACK_THRESHOLD_KG) {
+    scaleZeroAt.set(pcId, new Date());
+  }
+}
+
+/** Read the most recent time this scale was at zero (noise-floor tolerance).
+ *  Returns null if we've never seen the scale at zero since server start. */
+export function getLastScaleZeroAt(pcId: string): Date | null {
+  // Allow 'web' and other aliases to map to the primary WB PC.
+  if (pcId === 'web' || pcId === 'system' || pcId === 'system-weighbridge') {
+    const wb = Array.from(pcRegistry.values()).find(p => p.role === 'WEIGHBRIDGE');
+    if (wb) return scaleZeroAt.get(wb.pcId) ?? null;
+    return null;
+  }
+  return scaleZeroAt.get(pcId) ?? null;
+}
+
 /** Register a PC (from heartbeat, wb-push, or seed list). Auto-discovers new PCs. */
 export function registerPC(pc: { pcId: string; pcName?: string; lanIp?: string; port?: number; role?: string }): void {
   // Skip virtual sources (browser web UI, system processes)
@@ -75,6 +104,14 @@ async function pollPC(pc: FactoryPC): Promise<void> {
       lastChecked: new Date(),
       data,
     });
+
+    // Update zero-crossing tracker — enables the "was scale cleared since
+    // last capture?" check in the scale-zero rule. Ignores stale readings
+    // since those don't mean "empty", they mean "no signal".
+    if (!data.stale) {
+      const w = parseFloat(String(data.weight ?? ''));
+      if (Number.isFinite(w)) recordScaleReading(pc.pcId, w);
+    }
   } catch {
     const existing = pcStatus.get(pc.pcId);
     pcStatus.set(pc.pcId, {

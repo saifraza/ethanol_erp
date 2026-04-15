@@ -8,7 +8,7 @@ import { asyncHandler, requireWbKey, requireWbKeyOrAuth, requireAuth, requireRol
 import { captureSnapshots } from '../services/cameraCapture';
 import { getMasterData } from '../services/masterDataCache';
 import { enforceWeighmentRules, getNumericRule, getRuleValue } from '../services/ruleEngine';
-import { registerPC, fetchLiveWeight } from '../services/pcMonitor';
+import { registerPC, fetchLiveWeight, getLastScaleZeroAt } from '../services/pcMonitor';
 
 const router = Router();
 
@@ -298,15 +298,19 @@ router.get('/scale-state', requireAuth, asyncHandler(async (req: AuthRequest, re
   let blocked: { reason: string; message: string } | null = null;
   let isClean = true;
 
-  // Simple rule: after ANY recent capture on this scale, block until the live
-  // reading drops to ≤ threshold (effectively zero). Catches partial roll-offs.
+  // Only block when: rule enabled + scale reachable + a previous capture
+  // exists + scale HASN'T been cleared since that capture + scale currently
+  // reads non-zero. The zero-crossing tracker (every 5s) is what lets us
+  // distinguish "new truck on fresh scale" from "old truck never left".
   if (live != null && lastCapture && ruleEnabled) {
-    const liveAbs = Math.abs(live);
-    if (liveAbs > threshold) {
+    const lastZero = getLastScaleZeroAt(pcId);
+    const capturedAt = new Date(lastCapture.capturedAt).getTime();
+    const clearedSinceCapture = lastZero && lastZero.getTime() > capturedAt;
+    if (!clearedSinceCapture && Math.abs(live) > threshold) {
       isClean = false;
       blocked = {
         reason: 'SCALE_NOT_ZERO',
-        message: `Scale not zero — live reading is ${live.toLocaleString('en-IN')} kg. Last capture on this scale was T-${lastCapture.ticketNo} (${lastCapture.vehicleNo}, ${lastCapture.weight.toLocaleString('en-IN')} kg, ${lastCapture.minutesAgo} min ago). Remove the vehicle so the scale returns to ≤ ${threshold} kg before capturing the next weight.`,
+        message: `Scale not zero — live reading is ${live.toLocaleString('en-IN')} kg. Last capture on this scale was T-${lastCapture.ticketNo} (${lastCapture.vehicleNo}, ${lastCapture.weight.toLocaleString('en-IN')} kg, ${lastCapture.minutesAgo} min ago) and the scale hasn't hit zero since. Remove the vehicle so the scale returns to ≤ ${threshold} kg before the next first-weighment.`,
       };
     }
   }
