@@ -118,11 +118,17 @@ model Weighment {
   gateEntryAt   DateTime?
   firstWeightAt DateTime?
   secondWeightAt DateTime?
-  // Cloud sync
+  // Cloud sync (legacy push-based: push.ts handlers → GrainTruck/GoodsReceipt/etc.)
   cloudSynced   Boolean  @default(false)
   cloudSyncedAt DateTime?
   cloudError    String?
   syncAttempts  Int      @default(0)
+  // Cloud RAW mirror sync (row-for-row copy to cloud "Weighment" table)
+  // NULL = never pushed to mirror. Set to NOW() after each successful push.
+  // Query: "mirrorPushedAt IS NULL OR mirrorPushedAt < updatedAt" picks up
+  // new + edited rows without the in-memory cursor / 7-day lookback that
+  // caused blind spots in the old approach.
+  mirrorPushedAt DateTime?
   // Timestamps
   createdAt     DateTime @default(now())
   updatedAt     DateTime @updatedAt
@@ -131,6 +137,7 @@ model Weighment {
   @@index([ticketNo])
   @@index([status])
   @@index([cloudSynced])
+  @@index([mirrorPushedAt])
   @@index([vehicleNo])
   @@index([createdAt])
   @@index([labStatus])

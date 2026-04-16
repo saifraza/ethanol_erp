@@ -4115,7 +4115,7 @@ model TaxRuleExplanation {
 model Weighment {
   id                 String    @id @default(uuid())
   localId            String    @unique
-  ticketNo           Int?
+  ticketNo           Int?      @unique // unique index added 2026-04-16 — DB-level dedup safety net
   vehicleNo          String
   direction          String
   supplierName       String?
@@ -4171,7 +4171,7 @@ model Weighment {
   @@index([materialCategory])
   @@index([status])
   @@index([vehicleNo])
-  @@index([ticketNo])
+  // ticketNo: unique index lives on the field itself (@unique on line 4118)
   @@index([poId])
   @@index([factoryCreatedAt])
   @@index([direction, materialCategory, secondWeightAt])

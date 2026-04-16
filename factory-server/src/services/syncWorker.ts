@@ -223,24 +223,33 @@ export async function pushToCloud(): Promise<{ synced: number; failed: number }>
 // Runs ALONGSIDE pushToCloud() in the same sync cycle. Never blocks it.
 // On error, logs and moves on. Idempotent — safe to re-run the same batch.
 //
-// Cursor strategy: in-memory `Date`, defaults to 7 days ago on startup.
-// On successful batch, advances to the newest `updatedAt` seen. Survives
-// cycles but resets on process restart → up to 7 days get re-pushed, which
-// is safe because the cloud upsert is keyed by localId.
+// Sync strategy: persistent per-row flag `mirrorPushedAt` on Weighment.
+//   - NULL = never pushed
+//   - < updatedAt = row edited since last push → re-sync
+//   - >= updatedAt = up to date, skip
 //
-// No schema changes. No new dependencies. One outbound POST per cycle.
+// Replaces the previous in-memory cursor + 7-day lookback, which had a blind
+// spot: any row whose `updatedAt` fell outside the 7-day window on factory
+// restart would never be picked up again (see 2026-04-16 audit finding).
+// The flag approach is correct by construction — no time-based filter.
+//
+// Idempotent: the cloud upsert is keyed by localId, so re-sending the same
+// row is a no-op on the cloud side.
 
 const RAW_MIRROR_BATCH = 200;
-const RAW_MIRROR_LOOKBACK_MS = 7 * 24 * 60 * 60 * 1000; // 7 days
-let _rawMirrorCursor: Date = new Date(Date.now() - RAW_MIRROR_LOOKBACK_MS);
 let _lastRawMirrorResult: { synced: number; failed: number; at: string } | null = null;
 
 export async function pushRawToCloud(): Promise<{ synced: number; failed: number }> {
-  const rows = await prisma.weighment.findMany({
-    where: { updatedAt: { gt: _rawMirrorCursor } },
-    orderBy: { updatedAt: 'asc' },
-    take: RAW_MIRROR_BATCH,
-  });
+  // Pick up anything never pushed or edited since last push.
+  // Raw SQL because Prisma's `where` doesn't support column-to-column
+  // comparison (mirrorPushedAt < updatedAt).
+  const rows = await prisma.$queryRaw<Array<Record<string, unknown>>>`
+    SELECT * FROM "Weighment"
+    WHERE "mirrorPushedAt" IS NULL
+       OR "mirrorPushedAt" < "updatedAt"
+    ORDER BY "updatedAt" ASC
+    LIMIT ${RAW_MIRROR_BATCH}
+  `;
 
   if (rows.length === 0) return { synced: 0, failed: 0 };
 
@@ -284,16 +293,21 @@ export async function pushRawToCloud(): Promise<{ synced: number; failed: number
     const failed = result.failed?.length || 0;
 
     if (synced > 0) {
-      // Advance cursor to the newest updatedAt among successful rows
-      const successSet = new Set(result.processedLocalIds);
-      let newestTs = _rawMirrorCursor.getTime();
-      for (const r of rows) {
-        if (successSet.has(r.localId)) {
-          const ts = r.updatedAt.getTime();
-          if (ts > newestTs) newestTs = ts;
-        }
+      // Mark each successfully-pushed row so it won't be re-sent until edited.
+      // CRITICAL: must use raw SQL — `prisma.weighment.update()` would trigger
+      // the `@updatedAt` decorator and bump `updatedAt` to NOW, which would
+      // immediately make `mirrorPushedAt < updatedAt` true again → infinite
+      // resync loop. Raw UPDATE preserves updatedAt and only sets the flag.
+      // Set mirrorPushedAt = updatedAt (not NOW) so any genuine future edit
+      // bumps updatedAt past mirrorPushedAt and re-triggers a sync.
+      const successIds = result.processedLocalIds;
+      if (successIds.length > 0) {
+        await prisma.$executeRaw`
+          UPDATE "Weighment"
+          SET "mirrorPushedAt" = "updatedAt"
+          WHERE "localId" = ANY(${successIds}::text[])
+        `;
       }
-      _rawMirrorCursor = new Date(newestTs);
     }
 
     if (failed > 0) {
