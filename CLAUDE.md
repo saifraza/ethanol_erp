@@ -1,5 +1,16 @@
 # MSPIL Distillery ERP — Claude Code Guide
 
+## 🚨 STOP — Before ANY bulk SQL, schema change, or `prisma db push` on prod
+Read **[.claude/skills/incident-2026-04-16-db-damage.md](.claude/skills/incident-2026-04-16-db-damage.md)** first. Non-negotiable rules (learned the hard way):
+1. **`pg_dump` locally BEFORE any destructive op** → `~/Desktop/mspil-db-backups/`
+2. **Never run `prisma db push` on prod from your laptop** — let Railway's Procfile do it on deploy
+3. **Never use `--accept-data-loss` on prod**
+4. **Never run `pg_restore --clean` without a local pg_dump first** — if interrupted, constraints get dropped
+5. **Factory runs 24/7, no "safe window"** — treat every statement as if 50 trucks are at the gate
+6. Run bulk updates inside `BEGIN; ... COMMIT;` so you can `ROLLBACK` if counts look wrong
+7. **Ask user before any `UPDATE` touching > 100 rows**
+8. The GitHub backup workflow `.github/workflows/backup-db.yml` is sacred. Don't touch. Test restore quarterly.
+
 ## Project Overview
 - **Company**: Mahakaushal Sugar & Power Industries Ltd (MSPIL)
 - **System**: Distillery ERP for ethanol plant at Village Bachai, Dist. Narsinghpur, MP

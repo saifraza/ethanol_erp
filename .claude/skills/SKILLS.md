@@ -4,6 +4,9 @@
 > Agents in `.claude/agents/` read these on every invocation — keep them accurate.
 > ADRs (architecture decisions) live in `docs/adr/` — 6 recorded so far.
 
+## 🚨 READ FIRST — Before ANY bulk SQL, schema change, or `prisma db push` on prod
+- **[incident-2026-04-16-db-damage.md](incident-2026-04-16-db-damage.md)** — DB damage postmortem + hard rules. Factory runs 24/7, no safe window. `pg_dump` locally before every destructive op. Never `prisma db push` on prod from laptop. Never `--accept-data-loss` on prod. Never `pg_restore --clean` without a local dump first.
+
 ## Factory & Hardware (safety-critical)
 - **[factory-operations.md](factory-operations.md)** — **READ FIRST before ANY factory work.** Incidents postmortem (Part A) + architecture + deploy runbook (Part B). All 7 factory outages documented.
 - **[weighbridge.md](weighbridge.md)** — Hardware, serial protocol, 3-step workflow (Part A) + adding new products (Part B) + weighment corrections (Part C).
