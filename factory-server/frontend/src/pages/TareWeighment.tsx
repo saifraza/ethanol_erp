@@ -137,9 +137,19 @@ export default function TareWeighment() {
   }, [token]);
   useEffect(() => { fetchScaleState(); const iv = setInterval(fetchScaleState, 2000); return () => clearInterval(iv); }, [fetchScaleState]);
 
+  // Derived: is scan blocked because scale hasn't been to zero since last capture?
+  // (exempt when scannedRecord is FIRST_DONE — second weighment, truck legitimately on scale)
+  const scanBlocked = scaleState.blocked !== null && !(scannedRecord && scannedRecord.status === 'FIRST_DONE');
+
+  // Auto-focus scan input when block clears
+  useEffect(() => {
+    if (!scanBlocked && scanRef.current) scanRef.current.focus();
+  }, [scanBlocked]);
+
   // QR scan handler
   const handleScan = async (value: string) => {
     if (!value.trim()) return;
+    if (scanBlocked) return; // scale not zero — hard block, ignore scan
     try {
       const res = await api.get(`/weighbridge/lookup/${encodeURIComponent(value.trim())}`);
       const w = res.data;
@@ -345,11 +355,21 @@ export default function TareWeighment() {
         </div>
       )}
 
-      {/* QR Scan Input */}
-      <div className="-mx-3 md:-mx-6 border-x border-b border-slate-300 bg-slate-800 px-4 py-3">
-        <input ref={scanRef} value={scanInput} onChange={e => setScanInput(e.target.value)} onKeyDown={handleScanKeyDown}
-          className="w-full bg-slate-700 text-white px-4 py-3 text-sm font-mono focus:outline-none focus:ring-2 focus:ring-amber-500 placeholder-slate-500"
-          placeholder="Scan QR Code or Enter Ticket #" autoFocus />
+      {/* QR Scan Input — locked when scale not zero */}
+      <div className={`-mx-3 md:-mx-6 border-x border-b px-4 py-3 ${scanBlocked ? 'bg-red-800 border-red-700' : 'bg-slate-800 border-slate-300'}`}>
+        {scanBlocked ? (
+          <div className="flex items-center gap-3 py-1">
+            <div className="text-white text-2xl font-bold select-none">⛔</div>
+            <div className="flex-1">
+              <div className="text-sm font-bold uppercase tracking-widest text-white">Make Scale Zero To Scan New Truck</div>
+              <div className="text-xs text-red-100 mt-0.5">Current: <span className="font-mono font-bold">{liveWeight.toLocaleString('en-IN')} kg</span> — clear the scale (≤50 kg) before scanning the next QR</div>
+            </div>
+          </div>
+        ) : (
+          <input ref={scanRef} value={scanInput} onChange={e => setScanInput(e.target.value)} onKeyDown={handleScanKeyDown}
+            className="w-full bg-slate-700 text-white px-4 py-3 text-sm font-mono focus:outline-none focus:ring-2 focus:ring-amber-500 placeholder-slate-500"
+            placeholder="Scan QR Code or Enter Ticket #" autoFocus />
+        )}
       </div>
 
       {/* Scanned Record Card */}
