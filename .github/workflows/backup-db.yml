@@ -41,3 +41,20 @@ jobs:
           name: db-backup-${{ github.sha }}
           path: mspil-erp-backup-*.dump
           retention-days: 90
+
+      - name: Keep only the 2 most recent backups
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          # List all db-backup-* artifacts for this workflow, keep 2 newest, delete the rest.
+          # Saves storage when pushing multiple times per day.
+          gh api "repos/${{ github.repository }}/actions/artifacts?per_page=100" \
+            --jq '.artifacts[] | select(.name | startswith("db-backup-")) | select(.expired == false) | "\(.created_at)\t\(.id)\t\(.name)"' \
+            | sort -r \
+            | tail -n +3 \
+            | awk '{print $2}' \
+            | while read -r id; do
+                echo "Deleting older backup artifact id=$id"
+                gh api -X DELETE "repos/${{ github.repository }}/actions/artifacts/$id" || true
+              done
+          echo "Done — 2 newest backups retained."
