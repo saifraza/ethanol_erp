@@ -103,7 +103,7 @@ export default function Liquefaction() {
     'LT_120103': { field: 'iltLevel', label: 'ILT Level' },
     'LT_120102': { field: 'fltLevel', label: 'FLT Level' },
     'TE_120101': { field: 'iltTemp', label: 'ILT Temp' },
-    'TE_120201': { field: 'fltTemp', label: 'FLT Temp' },
+    'TE_120203': { field: 'fltTemp', label: 'FLT Temp' },
     'MG_120103': { field: 'hotWaterFlowRate', label: 'Hot Water Flow' },
     'MG_120104': { field: 'thinSlopRecycleFlowRate', label: 'Thin Slop Recycle Flow' },
     'MG_120301': { field: 'flowToFermenter', label: 'Flow to Fermenter' },
