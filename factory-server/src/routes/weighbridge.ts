@@ -1457,6 +1457,10 @@ router.post('/correction', requireWbKey, asyncHandler(async (req: Request, res: 
   if ('transporterName' in f) updateData.transporter = f.transporterName;
   if ('remarks' in f) updateData.remarks = f.remarks;
   if ('bags' in f) updateData.bags = f.bags;
+  // purchaseType: added 2026-04-16. PO mode vs JOB_WORK mode mistakes can be
+  // corrected when the downstream PO.dealType doesn't match the stamped
+  // purchaseType. Valid values: PO / SPOT / TRADER / JOB_WORK / OUTBOUND.
+  if ('purchaseType' in f) updateData.purchaseType = f.purchaseType;
 
   if (body.cancel) {
     updateData.status = 'CANCELLED';

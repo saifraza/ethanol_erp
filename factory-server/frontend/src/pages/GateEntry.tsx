@@ -155,6 +155,25 @@ export default function GateEntry() {
     } catch { /* ignore */ }
   }, [api]);
 
+  // If JOB_WORK mode is active but no JOB_WORK deals exist (e.g., user switched
+  // company and the new company has none), snap back to PO so we don't leave
+  // the operator stuck in an unusable empty mode. Runs after master-data loads.
+  useEffect(() => {
+    if (purchaseType === 'JOB_WORK') {
+      const stillHasJobWork = pos.some(p => {
+        if (p.deal_type !== 'JOB_WORK') return false;
+        if (!selectedCompanyId) return true;
+        if (p.company_id) return p.company_id === selectedCompanyId;
+        const defaultCompany = companies.find(c => c.isDefault);
+        return defaultCompany ? selectedCompanyId === defaultCompany.id : true;
+      });
+      if (!stillHasJobWork) {
+        setPurchaseType('PO');
+        setSelectedPoId('');
+      }
+    }
+  }, [pos, selectedCompanyId, companies, purchaseType]);
+
   useEffect(() => {
     loadMasterData(); loadCount();
     const iv = setInterval(() => { loadMasterData(true); loadCount(); }, 15000);
@@ -171,6 +190,14 @@ export default function GateEntry() {
     if (purchaseType === 'PO' || purchaseType === 'JOB_WORK') return !p.vendor_id || !traderIds.has(p.vendor_id);
     return true;
   }).filter(p => {
+    // Filter by PO.deal_type ↔ purchaseType mode.
+    // Added 2026-04-16: operator picked a STANDARD PO while in JOB_WORK mode,
+    // stamping T-502 as JOB_WORK when the underlying PO was a normal purchase.
+    // This filter makes it impossible to repeat that mistake.
+    if (purchaseType === 'JOB_WORK') return p.deal_type === 'JOB_WORK';
+    if (purchaseType === 'PO') return p.deal_type !== 'JOB_WORK';
+    return true;
+  }).filter(p => {
     // Filter by selected company (if companies exist and one is selected)
     if (!selectedCompanyId) return true; // no company selected = show all
     if (p.company_id) return p.company_id === selectedCompanyId;
@@ -178,6 +205,18 @@ export default function GateEntry() {
     const defaultCompany = companies.find(c => c.isDefault);
     return defaultCompany ? selectedCompanyId === defaultCompany.id : true;
   }).filter(p => !supplierName || p.vendor_name.toLowerCase().includes(supplierName.toLowerCase()));
+
+  // Hide JOB_WORK button entirely when no JOB_WORK POs exist for the current
+  // company. Prevents operators from clicking into an empty mode where they
+  // can't do anything but get confused. If a JOB_WORK PO is later created
+  // and cached, the button reappears automatically on next master-data refresh.
+  const hasJobWorkDeals = pos.some(p => {
+    if (p.deal_type !== 'JOB_WORK') return false;
+    if (!selectedCompanyId) return true;
+    if (p.company_id) return p.company_id === selectedCompanyId;
+    const defaultCompany = companies.find(c => c.isDefault);
+    return defaultCompany ? selectedCompanyId === defaultCompany.id : true;
+  });
   const selectedPO = pos.find(p => p.id === selectedPoId);
 
   // Filter suppliers and materials by selected company
@@ -410,10 +449,12 @@ export default function GateEntry() {
               className={`px-3 py-1.5 text-sm font-bold uppercase ${purchaseType === 'TRADER' ? 'bg-purple-600 text-white' : 'bg-white border border-slate-300 text-slate-600 hover:bg-slate-50'}`}>
               Trader
             </button>
-            <button onClick={() => setPurchaseType('JOB_WORK')}
-              className={`px-3 py-1.5 text-sm font-bold uppercase ${purchaseType === 'JOB_WORK' ? 'bg-amber-600 text-white' : 'bg-white border border-slate-300 text-slate-600 hover:bg-slate-50'}`}>
-              Job Work
-            </button>
+            {hasJobWorkDeals && (
+              <button onClick={() => setPurchaseType('JOB_WORK')}
+                className={`px-3 py-1.5 text-sm font-bold uppercase ${purchaseType === 'JOB_WORK' ? 'bg-amber-600 text-white' : 'bg-white border border-slate-300 text-slate-600 hover:bg-slate-50'}`}>
+                Job Work
+              </button>
+            )}
           </>
         )}
       </div>

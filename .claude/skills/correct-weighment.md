@@ -56,6 +56,7 @@ The cloud `Weighment` mirror is the single lookup table. Every weighment has a `
 | `transporterName` | SAFE | Metadata |
 | `remarks` | SAFE | Informational |
 | `bags` | SAFE | Metadata |
+| `purchaseType` | **CONDITIONAL** | Only safe when the downstream PO's `dealType` already matches the target value (e.g. PO.dealType=STANDARD but Weighment.purchaseType=JOB_WORK → safe to flip mirror to `PO`, no reversal needed). If the PO is itself wrong too, DO NOT flip — cancel + redo. Valid values: PO / SPOT / TRADER / JOB_WORK / OUTBOUND. See T-502 precedent (2026-04-16). |
 | weights, timestamps, ticketNo, factoryLocalId, grnId, labSampleId, uidRst | **NEVER** | Immutable from scale/lab/system |
 
 ### GoodsReceipt (fuel inbound)
@@ -223,6 +224,7 @@ const resp = await fetch(`${FACTORY_SERVER_URL}/api/weighbridge/correction`, {
 | `transporterName` | `transporter` |
 | `remarks` | `remarks` |
 | `bags` | `bags` |
+| `purchaseType` | `purchaseType` (added 2026-04-16) |
 
 Mark audit rows as `factorySynced: true` on success, `factorySynced: false` + `factoryError` on failure.
 
