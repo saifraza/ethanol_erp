@@ -201,19 +201,21 @@ export async function onSaleInvoiceCreated(
   }
 ): Promise<string | null> {
   try {
-    const isInterstate = invoice.supplyType === 'INTER_STATE' || (!invoice.supplyType && invoice.customer?.state && invoice.customer.state !== 'Madhya Pradesh');
     const salesCode = getSalesAccountCode(invoice.productName);
-    const gstCodes = isInterstate
-      ? [ACCT.GST_OUTPUT_IGST]
-      : [ACCT.GST_OUTPUT_CGST, ACCT.GST_OUTPUT_SGST];
-
     const tcsAmount = invoice.tcsAmount || 0;
-    const allCodes = [ACCT.TRADE_RECEIVABLE, salesCode, ...gstCodes, ...(tcsAmount > 0 ? [ACCT.TCS_PAYABLE_206C] : [])];
+    // Always resolve all GST accounts — we decide which to use from stored split (data-driven),
+    // falling back to supplyType flag only when stored split is empty. Handles invoices with
+    // inconsistent supplyType vs cgst/sgst/igst fields (seen on legacy Job Work invoices).
+    const allCodes = [
+      ACCT.TRADE_RECEIVABLE, salesCode,
+      ACCT.GST_OUTPUT_CGST, ACCT.GST_OUTPUT_SGST, ACCT.GST_OUTPUT_IGST,
+      ...(tcsAmount > 0 ? [ACCT.TCS_PAYABLE_206C] : []),
+    ];
     const accts = await resolveAccounts(prisma, allCodes, invoice.companyId);
-
-    // Check all accounts exist (TCS account only required if TCS > 0)
-    for (const code of allCodes) {
-      if (!accts[code]) return null; // Accounts not seeded yet
+    // Receivable + sales + TCS accounts are hard requirements; GST accounts only required
+    // if their respective split has a value.
+    for (const code of [ACCT.TRADE_RECEIVABLE, salesCode, ...(tcsAmount > 0 ? [ACCT.TCS_PAYABLE_206C] : [])]) {
+      if (!accts[code]) return null;
     }
 
     // Credit sales revenue includes freight recovery to keep journal balanced
@@ -223,14 +225,39 @@ export async function onSaleInvoiceCreated(
       { accountId: accts[salesCode], debit: 0, credit: salesCredit, narration: `${invoice.productName} sale${invoice.freightCharge ? ' + freight' : ''}` },
     ];
 
-    if (isInterstate) {
-      const igst = invoice.igstAmount ?? invoice.gstAmount;
-      lines.push({ accountId: accts[ACCT.GST_OUTPUT_IGST], debit: 0, credit: igst, narration: `IGST @${invoice.gstPercent}%` });
-    } else {
-      const cgst = invoice.cgstAmount ?? invoice.gstAmount / 2;
-      const sgst = invoice.sgstAmount ?? (invoice.gstAmount - cgst);
-      lines.push({ accountId: accts[ACCT.GST_OUTPUT_CGST], debit: 0, credit: cgst, narration: `CGST @${invoice.gstPercent / 2}%` });
-      lines.push({ accountId: accts[ACCT.GST_OUTPUT_SGST], debit: 0, credit: sgst, narration: `SGST @${invoice.gstPercent / 2}%` });
+    const storedCgst = invoice.cgstAmount || 0;
+    const storedSgst = invoice.sgstAmount || 0;
+    const storedIgst = invoice.igstAmount || 0;
+    const storedSum = storedCgst + storedSgst + storedIgst;
+    const hasStoredSplit = storedSum > 0.01;
+    const isInterstate = invoice.supplyType === 'INTER_STATE' || (!invoice.supplyType && invoice.customer?.state && invoice.customer.state !== 'Madhya Pradesh');
+    const halfPct = invoice.gstPercent / 2;
+
+    if (hasStoredSplit) {
+      // Use whichever buckets actually have a value
+      if (storedIgst > 0) {
+        if (!accts[ACCT.GST_OUTPUT_IGST]) return null;
+        lines.push({ accountId: accts[ACCT.GST_OUTPUT_IGST], debit: 0, credit: storedIgst, narration: `IGST @${invoice.gstPercent}%` });
+      }
+      if (storedCgst > 0) {
+        if (!accts[ACCT.GST_OUTPUT_CGST]) return null;
+        lines.push({ accountId: accts[ACCT.GST_OUTPUT_CGST], debit: 0, credit: storedCgst, narration: `CGST @${halfPct}%` });
+      }
+      if (storedSgst > 0) {
+        if (!accts[ACCT.GST_OUTPUT_SGST]) return null;
+        lines.push({ accountId: accts[ACCT.GST_OUTPUT_SGST], debit: 0, credit: storedSgst, narration: `SGST @${halfPct}%` });
+      }
+    } else if (invoice.gstAmount > 0) {
+      // No stored split — derive from supplyType flag
+      if (isInterstate) {
+        if (!accts[ACCT.GST_OUTPUT_IGST]) return null;
+        lines.push({ accountId: accts[ACCT.GST_OUTPUT_IGST], debit: 0, credit: invoice.gstAmount, narration: `IGST @${invoice.gstPercent}%` });
+      } else {
+        if (!accts[ACCT.GST_OUTPUT_CGST] || !accts[ACCT.GST_OUTPUT_SGST]) return null;
+        const halfGst = invoice.gstAmount / 2;
+        lines.push({ accountId: accts[ACCT.GST_OUTPUT_CGST], debit: 0, credit: halfGst, narration: `CGST @${halfPct}%` });
+        lines.push({ accountId: accts[ACCT.GST_OUTPUT_SGST], debit: 0, credit: halfGst, narration: `SGST @${halfPct}%` });
+      }
     }
 
     if (tcsAmount > 0) {

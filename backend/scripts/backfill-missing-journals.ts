@@ -122,8 +122,15 @@ async function adjustTcsGap() {
 
   const gaps: { inv: typeof tcsInvs[0]; existingDr: number; gap: number; jeId: string }[] = [];
   for (const inv of tcsInvs) {
+    // Skip if an adjustment JE already exists for this invoice (idempotent re-runs)
+    const adj = await prisma.journalEntry.findFirst({
+      where: { refType: 'SALE', refId: inv.id, narration: { contains: 'TCS adjustment' } },
+      select: { id: true },
+    });
+    if (adj) continue;
+
     const je = await prisma.journalEntry.findFirst({
-      where: { refType: 'SALE', refId: inv.id },
+      where: { refType: 'SALE', refId: inv.id, narration: { not: { contains: 'TCS adjustment' } } },
       select: { id: true, lines: { select: { debit: true, credit: true } } },
     });
     if (!je) continue; // handled by backfillSaleInvoiceNoJe
