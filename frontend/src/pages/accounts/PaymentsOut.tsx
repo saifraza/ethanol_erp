@@ -88,6 +88,8 @@ interface PendingPayable {
   vendorPhone: string | null;
   pendingCash?: number;
   pendingCashVouchers?: Array<{ id: string; voucherNo: number; amount: number; payeeName: string; date: string }>;
+  pendingBank?: number;        // INITIATED bank payments (UTR not entered yet)
+  pendingBankCount?: number;
 }
 
 interface PendingSummary {
@@ -1119,7 +1121,17 @@ export default function PaymentsOut() {
                                 {(item.grnTotalValue || 0) > 0 ? fmt(item.grnTotalValue || 0) : <span className="text-slate-300" title="Nothing delivered yet">--</span>}
                               </td>
                               <td className="px-3 py-1.5 border-r border-slate-100 text-right font-mono tabular-nums">{fmtAmt(item.totalInvoiced)}</td>
-                              <td className={`px-3 py-1.5 border-r border-slate-100 text-right font-mono tabular-nums ${item.totalPaid > 0 ? 'text-green-700 font-medium' : 'text-slate-400'}`}>{fmtAmt(item.totalPaid)}</td>
+                              <td className={`px-3 py-1.5 border-r border-slate-100 text-right font-mono tabular-nums ${item.totalPaid > 0 ? 'text-green-700 font-medium' : 'text-slate-400'}`}>
+                                <div className="flex flex-col items-end gap-0.5">
+                                  <span>{fmtAmt(item.totalPaid)}</span>
+                                  {(item.pendingBankCount || 0) > 0 && (
+                                    <span className="text-[8px] font-bold uppercase px-1 py-0.5 border border-yellow-500 bg-yellow-50 text-yellow-800 whitespace-nowrap"
+                                      title={`${item.pendingBankCount} bank payment(s) submitted but UTR not entered yet. Total: ₹${(item.pendingBank || 0).toLocaleString('en-IN')}. Click PAY to enter the UTR.`}>
+                                      UTR Pending · {fmtCompactINR(item.pendingBank || 0)}
+                                    </span>
+                                  )}
+                                </div>
+                              </td>
                               <td className="px-3 py-1.5 border-r border-slate-100 text-right font-mono tabular-nums">
                                 {(item.pendingCash || 0) > 0 ? (
                                   <div className="flex flex-col items-end gap-0.5">
@@ -2694,6 +2706,15 @@ export default function PaymentsOut() {
                         className="px-4 py-1.5 bg-green-600 text-white text-[11px] font-bold uppercase hover:bg-green-700 disabled:opacity-50">
                         {bankConfirming ? '...' : 'Confirm'}
                       </button>
+                      <button type="button"
+                        onClick={() => { setBankPendingPayment(null); setBankUtrInput(''); setBankReceiptFile(null); setPoPayItem(null); }}
+                        className="px-3 py-1.5 bg-white border border-slate-300 text-slate-600 text-[11px] font-medium hover:bg-slate-50"
+                        title="Close modal. Come back later (open PO Pay again) to enter the UTR.">
+                        Confirm Later
+                      </button>
+                    </div>
+                    <div className="text-[10px] text-slate-500 italic mt-1">
+                      No UTR from bank yet? Click "Confirm Later" and come back to this PO when you have it — the yellow block will reappear.
                     </div>
                     {/* Optional: upload bank receipt (PDF/JPG) — will auto-scan after confirm */}
                     <div className="pt-2 border-t border-yellow-200">

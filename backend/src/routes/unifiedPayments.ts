@@ -818,6 +818,8 @@ router.get('/outgoing/pending', asyncHandler(async (req: AuthRequest, res: Respo
     vendorPhone: string | null;
     pendingCash: number;
     pendingCashVouchers: Array<{ id: string; voucherNo: number; amount: number; payeeName: string; date: string }>;
+    pendingBank: number;       // sum of INITIATED bank payments (UTR not entered yet)
+    pendingBankCount: number;  // number of INITIATED bank payments
   }
 
   const pending: PendingPayable[] = [];
@@ -852,6 +854,25 @@ router.get('/outgoing/pending', asyncHandler(async (req: AuthRequest, res: Respo
       });
       totalPaid += directPayments.reduce((s, p) => s + p.amount, 0);
     }
+
+    // Count INITIATED bank payments (bank transfer done but UTR not entered yet)
+    // Surfaces as a "UTR PENDING" chip on the row so the team can see
+    // at-a-glance which POs are waiting for confirmation.
+    const initiatedPayments = await prisma.vendorPayment.findMany({
+      where: {
+        vendorId: po.vendor.id,
+        paymentStatus: 'INITIATED',
+        OR: [
+          { invoice: { poId: po.id } },
+          { remarks: { contains: `PO-${po.poNo} ` } },
+          { remarks: { endsWith: `PO-${po.poNo}` } },
+          { remarks: { contains: `PO-${po.poNo}|` } },
+        ],
+      },
+      select: { amount: true },
+    });
+    const pendingBankAmount = initiatedPayments.reduce((s, p) => s + p.amount, 0);
+    const pendingBankCount = initiatedPayments.length;
 
     // Skip if fully paid
     if (invoices.length > 0 && invoiceBalance <= 0) continue;
@@ -985,6 +1006,8 @@ router.get('/outgoing/pending', asyncHandler(async (req: AuthRequest, res: Respo
       vendorPhone: po.vendor.phone || null,
       pendingCash: 0,
       pendingCashVouchers: [],
+      pendingBank: Math.round(pendingBankAmount * 100) / 100,
+      pendingBankCount,
     });
   }
 
@@ -1095,6 +1118,8 @@ router.get('/outgoing/pending', asyncHandler(async (req: AuthRequest, res: Respo
       vendorPhone: cb.contractor.phone || null,
       pendingCash: 0,
       pendingCashVouchers: [],
+      pendingBank: 0,
+      pendingBankCount: 0,
     } as PendingPayable);
   }
 
