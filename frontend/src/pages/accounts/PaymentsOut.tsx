@@ -2,6 +2,35 @@ import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { X, CreditCard, FileText, Upload, Download, Mail } from 'lucide-react';
 import api from '../../services/api';
 
+// Pulls the clean UTR/bank-ref out of a free-text payment reference.
+// Example input : "RTGSO-JAY BAJRANG BHUSA BHA UBINR22026041601296969"
+// Returns       : { utr: "UBINR22026041601296969", prefix: "RTGSO-JAY BAJRANG BHUSA BHA" }
+function parseUtr(ref: string | null | undefined): { utr: string; prefix: string } {
+  if (!ref) return { utr: '', prefix: '' };
+  const trimmed = ref.trim();
+  const m = trimmed.match(/^(.*?)\s*([A-Z]{4}[A-Z0-9]{8,})\s*$/);
+  if (m) return { utr: m[2], prefix: m[1].trim() };
+  return { utr: trimmed, prefix: '' };
+}
+
+async function sendPaymentAdvice(paymentId: string, payee: string, vendorEmail: string | null | undefined): Promise<{ ok: boolean; sentTo?: string; error?: string }> {
+  let toEmail = (vendorEmail || '').trim();
+  if (!toEmail) {
+    const entered = window.prompt(`No email on file for ${payee}. Enter vendor email to send Payment Advice:`);
+    if (!entered) return { ok: false, error: 'Cancelled' };
+    toEmail = entered.trim();
+  } else {
+    if (!window.confirm(`Send Payment Advice to ${toEmail}?`)) return { ok: false, error: 'Cancelled' };
+  }
+  try {
+    const res = await api.post<{ ok: boolean; sentTo: string }>(`/vendor-payments/${paymentId}/send-email`, { to: toEmail });
+    return { ok: true, sentTo: res.data.sentTo };
+  } catch (err: unknown) {
+    const msg = (err as { response?: { data?: { error?: string } }; message?: string })?.response?.data?.error || (err as { message?: string })?.message || 'Send failed';
+    return { ok: false, error: msg };
+  }
+}
+
 // ═══════════════════════════════════════════════
 // Types
 // ═══════════════════════════════════════════════
@@ -73,6 +102,9 @@ interface OutPayment {
   tdsDeducted?: number;
   paymentStatus?: string;
   vendorEmail?: string | null;
+  adviceSentAt?: string | null;
+  adviceSentTo?: string | null;
+  hasGst?: boolean | null;
 }
 
 interface CompletedSummary {
@@ -167,7 +199,7 @@ export default function PaymentsOut() {
   const [poPayItem, setPoPayItem] = useState<PendingPayable | null>(null);
   const [poPayAmount, setPoPayAmount] = useState('');
   const [poPayMode, setPoPayMode] = useState('NEFT');
-  const [poPayIncludeGst, setPoPayIncludeGst] = useState(false);
+  const [poPayIncludeGst, setPoPayIncludeGst] = useState<boolean | null>(null);
   const [poPayRef, setPoPayRef] = useState('');
   const [poPayRemarks, setPoPayRemarks] = useState('');
   const [poPaySaving, setPoPaySaving] = useState(false);
@@ -240,6 +272,8 @@ export default function PaymentsOut() {
   const [extracting, setExtracting] = useState(false);
   const [extracted, setExtracted] = useState<Record<string, unknown> | null>(null);
   const [payForm, setPayForm] = useState({ amount: '', mode: 'NEFT', reference: '', paymentDate: todayStr(), tdsDeducted: '', tdsSection: '', tdsLedgerId: '', remarks: '' });
+  // Compulsory GST choice for every payment (invoice pay, direct pay, split pay) — null = not picked yet
+  const [payHasGst, setPayHasGst] = useState<boolean | null>(null);
   const [tdsCalc, setTdsCalc] = useState<{ shouldDeduct: boolean; rate: number; tdsAmount: number; netAmount: number; ledgerId: string | null; sectionLabel: string; reason: string } | null>(null);
   const [tdsOverride, setTdsOverride] = useState(true); // true = apply TDS, false = skip
   const [tdsLoading, setTdsLoading] = useState(false);
@@ -414,6 +448,7 @@ export default function PaymentsOut() {
       mode: 'NEFT', reference: '', paymentDate: todayStr(),
       tdsDeducted: '', tdsSection: '', tdsLedgerId: '', remarks: '',
     });
+    setPayHasGst(null);
     setTdsCalc(null);
     setTdsOverride(true);
     setSplitMode(false);
@@ -471,6 +506,14 @@ export default function PaymentsOut() {
   // Submit PO payment
   const submitPOPayment = async () => {
     if (!poPayItem || !poPayAmount || parseFloat(poPayAmount) <= 0) { alert('Enter a valid amount'); return; }
+    // Compulsory GST choice — if the PO carries GST, user MUST pick Inclusive or Without.
+    // If PO has 0 GST, payment is trivially "without GST" and we auto-send false.
+    const poHasGstOnPO = (poPayItem.poGst || 0) > 0;
+    if (poHasGstOnPO && poPayIncludeGst === null) {
+      alert('Please select Tax Treatment: Pay Including GST or Pay Without GST');
+      return;
+    }
+    const hasGstToSend: boolean = poHasGstOnPO ? !!poPayIncludeGst : false;
     setPoPaySaving(true);
     try {
       const res = await api.post(`/purchase-orders/${poPayItem.poId}/pay`, {
@@ -478,7 +521,7 @@ export default function PaymentsOut() {
         mode: poPayMode,
         reference: poPayRef,
         remarks: poPayRemarks,
-        includeGst: poPayIncludeGst,
+        hasGst: hasGstToSend,
       });
 
       // Cash payments create a voucher
@@ -544,6 +587,7 @@ export default function PaymentsOut() {
       tdsDeducted: item.tdsApplicable ? String(((item.grnTotalValue || item.poAmount) * (item.tdsPercent || 0) / 100).toFixed(2)) : '',
       tdsSection: item.tdsSection || '', remarks: `Fuel deal PO-${item.poNo}`,
     });
+    setPayHasGst(null);
     setSplitMode(false);
     setSplits([{ mode: 'NEFT', amount: '', reference: '' }]);
     setPayStep('instructions');
@@ -565,6 +609,7 @@ export default function PaymentsOut() {
   const submitDirectPayment = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!directPayItem) return;
+    if (payHasGst === null) { setError('Please select whether this payment includes GST'); return; }
     try {
       setSubmitting(true);
       setError('');
@@ -581,6 +626,7 @@ export default function PaymentsOut() {
           tdsDeducted: parseFloat(payForm.tdsDeducted) || 0,
           tdsSection: payForm.tdsSection || null,
           tdsLedgerId: payForm.tdsLedgerId || null,
+          hasGst: payHasGst,
         });
       } else {
         // Single payment
@@ -595,6 +641,7 @@ export default function PaymentsOut() {
           tdsSection: payForm.tdsSection || null,
           tdsLedgerId: payForm.tdsLedgerId || null,
           remarks: payForm.remarks || `Fuel deal PO-${directPayItem.poNo}`,
+          hasGst: payHasGst,
         });
       }
       setDirectPayItem(null);
@@ -683,6 +730,7 @@ export default function PaymentsOut() {
   const submitPayment = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!payModal) return;
+    if (payHasGst === null) { setError('Please select whether this payment includes GST'); return; }
     try {
       setSubmitting(true);
       setError('');
@@ -700,6 +748,7 @@ export default function PaymentsOut() {
           tdsDeducted: parseFloat(payForm.tdsDeducted) || 0,
           tdsSection: payForm.tdsSection || null,
           tdsLedgerId: payForm.tdsLedgerId || null,
+          hasGst: payHasGst,
         });
       } else {
         // Single payment
@@ -714,6 +763,7 @@ export default function PaymentsOut() {
           tdsSection: payForm.tdsSection || null,
           tdsLedgerId: payForm.tdsLedgerId || null,
           remarks: payForm.remarks || null,
+          hasGst: payHasGst,
         });
       }
       setPayModal(null);
@@ -1064,7 +1114,7 @@ export default function PaymentsOut() {
                                     const canAdvancePay = item.grnCount === 0 && item.invoices.length === 0 && isAdvance;
                                     if (canRunningPay || canAdvancePay) {
                                       return (
-                                        <button onClick={() => { setPoPayItem(item); setPoPayAmount(canAdvancePay ? String(item.poAmount || '') : ''); setPoPayMode('NEFT'); setPoPayRef(''); setPoPayRemarks(canAdvancePay ? 'Advance payment' : ''); setPoPayIncludeGst(false); setBankPendingPayment(null); fetchPOPayments(item.poId); }}
+                                        <button onClick={() => { setPoPayItem(item); setPoPayAmount(canAdvancePay ? String(item.poAmount || '') : ''); setPoPayMode('NEFT'); setPoPayRef(''); setPoPayRemarks(canAdvancePay ? 'Advance payment' : ''); setPoPayIncludeGst(null); setBankPendingPayment(null); fetchPOPayments(item.poId); }}
                                           className="px-2 py-0.5 bg-green-600 text-white text-[9px] font-bold uppercase hover:bg-green-700 flex items-center gap-1" title={canAdvancePay ? 'Pay in advance' : 'Pay against PO'}>
                                           <CreditCard size={10} /> {canAdvancePay ? 'ADV PAY' : 'PAY'}
                                         </button>
@@ -1113,9 +1163,9 @@ export default function PaymentsOut() {
                                           <div className="font-bold text-slate-500 uppercase tracking-widest mb-1">GRNs ({(poDetail.grns || []).length})</div>
                                           <div className="max-h-40 overflow-y-auto space-y-1">
                                             {(poDetail.grns || []).map((g: any) => (
-                                              <a key={g.id} href={`/api/goods-receipts/${g.id}/pdf?token=${localStorage.getItem('token')}`} target="_blank" rel="noopener noreferrer" className="block bg-white border border-slate-200 px-2 py-1.5 hover:bg-blue-50 hover:border-blue-300 cursor-pointer">
+                                              <a key={g.id} href={`/api/goods-receipts/${g.id}/pdf?token=${localStorage.getItem('token')}`} target="_blank" rel="noopener noreferrer" className="block bg-white border border-slate-200 px-2 py-1.5 hover:bg-blue-50 hover:border-blue-300 cursor-pointer" title="Open GRN PDF">
                                                 <div className="flex items-center justify-between">
-                                                  <span className="font-mono font-medium text-blue-700">GRN-{g.grnNo}</span>
+                                                  <span className="font-mono font-medium text-blue-700 inline-flex items-center gap-1"><FileText size={10} /> GRN-{g.grnNo}</span>
                                                   <span className={`text-[8px] font-bold uppercase px-1 py-0.5 border ${g.status === 'CONFIRMED' ? 'border-green-300 text-green-700' : 'border-slate-300 text-slate-500'}`}>{g.status}</span>
                                                 </div>
                                                 <div className="flex items-center justify-between mt-0.5">
@@ -1158,18 +1208,68 @@ export default function PaymentsOut() {
                                             const directPays = poDetail.pipeline?.paid?.directPayments || [];
                                             const pendingCVs = poDetail.pipeline?.paid?.pendingCashVouchers || [];
                                             const allPayments = [...invPayments, ...directPays];
+                                            const vendorEmailForPO = (poDetail.vendor as { email?: string | null } | undefined)?.email || null;
+                                            const vendorNameForPO = (poDetail.vendor as { name?: string } | undefined)?.name || 'Vendor';
                                             return <>
                                               <div className="font-bold text-slate-500 uppercase tracking-widest mb-1">Payments ({allPayments.length}{pendingCVs.length > 0 ? ` + ${pendingCVs.length} pending` : ''})</div>
                                               <div className="max-h-40 overflow-y-auto space-y-1">
-                                                {allPayments.map((p: any) => (
+                                                {allPayments.map((p: any) => {
+                                                  const { utr, prefix } = parseUtr(p.reference);
+                                                  const isConfirmed = (p.paymentStatus || 'CONFIRMED') === 'CONFIRMED';
+                                                  return (
                                                   <div key={p.id} className="bg-white border border-slate-200 px-2 py-1.5">
                                                     <div className="flex items-center justify-between">
                                                       <span>{fmtDate(p.paymentDate)} <span className="text-[8px] uppercase text-slate-400">{p.mode}</span></span>
                                                       <span className="font-mono tabular-nums text-green-700 font-medium">{fmt(p.amount)}</span>
                                                     </div>
-                                                    {p.reference && <div className="text-[9px] text-slate-400 mt-0.5 font-mono">Ref: {p.reference}</div>}
+                                                    {/* Clean UTR line */}
+                                                    {utr && (
+                                                      <div className="mt-0.5">
+                                                        <span className="text-[9px] font-bold text-slate-500 uppercase tracking-widest">UTR:</span>{' '}
+                                                        <span className="text-[10px] font-mono font-bold text-slate-800 select-all">{utr}</span>
+                                                      </div>
+                                                    )}
+                                                    {prefix && <div className="text-[8px] text-slate-400 mt-0 font-mono">{prefix}</div>}
+                                                    {/* GST status chip */}
+                                                    <div className="flex items-center gap-1 mt-1">
+                                                      {p.hasGst === true && <span className="text-[8px] font-bold uppercase text-green-700 bg-green-50 border border-green-300 px-1 py-0.5">Incl. GST</span>}
+                                                      {p.hasGst === false && <span className="text-[8px] font-bold uppercase text-orange-700 bg-orange-50 border border-orange-300 px-1 py-0.5">Without GST</span>}
+                                                      {(p.hasGst === null || p.hasGst === undefined) && <span className="text-[8px] font-bold uppercase text-slate-400 bg-slate-50 border border-slate-200 px-1 py-0.5">GST —</span>}
+                                                      {p.adviceSentAt && (
+                                                        <span className="text-[8px] font-bold uppercase text-blue-700 bg-blue-50 border border-blue-300 px-1 py-0.5 inline-flex items-center gap-0.5" title={`Sent to ${p.adviceSentTo || 'vendor'}`}>
+                                                          <Mail size={8} /> Sent {fmtDate(p.adviceSentAt)}
+                                                        </span>
+                                                      )}
+                                                    </div>
+                                                    {/* Advice actions */}
+                                                    {isConfirmed && (
+                                                      <div className="flex gap-1 mt-1">
+                                                        <a href={`/api/vendor-payments/${p.id}/pdf?token=${localStorage.getItem('token')}`} target="_blank" rel="noopener noreferrer"
+                                                          className="px-1.5 py-0.5 bg-emerald-700 text-white text-[8px] font-bold uppercase hover:bg-emerald-800 inline-flex items-center gap-0.5">
+                                                          <FileText size={8} /> Advice
+                                                        </a>
+                                                        <button type="button"
+                                                          onClick={async () => {
+                                                            const r = await sendPaymentAdvice(p.id, vendorNameForPO, vendorEmailForPO);
+                                                            if (r.ok) {
+                                                              alert(`Payment Advice sent to ${r.sentTo}`);
+                                                              if (selectedPOId) {
+                                                                const ref = await api.get(`/purchase-orders/${selectedPOId}`);
+                                                                setPODetail(ref.data);
+                                                              }
+                                                            } else if (r.error !== 'Cancelled') {
+                                                              alert(`Failed: ${r.error}`);
+                                                            }
+                                                          }}
+                                                          className="px-1.5 py-0.5 bg-blue-600 text-white text-[8px] font-bold uppercase hover:bg-blue-700 inline-flex items-center gap-0.5"
+                                                          title={vendorEmailForPO ? `Email advice to ${vendorEmailForPO}` : 'Email advice (will prompt for email)'}>
+                                                          <Mail size={8} /> {p.adviceSentAt ? 'Resend' : 'Email'}
+                                                        </button>
+                                                      </div>
+                                                    )}
                                                   </div>
-                                                ))}
+                                                  );
+                                                })}
                                                 {pendingCVs.map((v: any) => (
                                                   <div key={v.id} className="bg-yellow-50 border border-yellow-300 px-2 py-1.5">
                                                     <div className="flex items-center justify-between">
@@ -1340,25 +1440,17 @@ export default function PaymentsOut() {
                                   <button
                                     onClick={async (e) => {
                                       e.stopPropagation();
-                                      let toEmail = p.vendorEmail || '';
-                                      if (!toEmail) {
-                                        const entered = window.prompt(`No email on file for ${p.payee}. Enter vendor email to send Payment Advice:`);
-                                        if (!entered) return;
-                                        toEmail = entered.trim();
-                                      } else {
-                                        if (!window.confirm(`Send Payment Advice to ${toEmail}?`)) return;
-                                      }
-                                      try {
-                                        const res = await api.post<{ ok: boolean; sentTo: string }>(`/vendor-payments/${p.id}/send-email`, { to: toEmail });
-                                        alert(`Payment Advice sent to ${res.data.sentTo}`);
-                                      } catch (err: unknown) {
-                                        const msg = (err as { response?: { data?: { error?: string } }; message?: string })?.response?.data?.error || (err as { message?: string })?.message || 'Send failed';
-                                        alert(`Failed to send: ${msg}`);
+                                      const r = await sendPaymentAdvice(p.id, p.payee, p.vendorEmail);
+                                      if (r.ok) {
+                                        alert(`Payment Advice sent to ${r.sentTo}`);
+                                        fetchCompleted();
+                                      } else if (r.error !== 'Cancelled') {
+                                        alert(`Failed to send: ${r.error}`);
                                       }
                                     }}
-                                    className="px-1.5 py-0.5 bg-blue-600 text-white text-[9px] font-bold uppercase hover:bg-blue-700 inline-flex items-center gap-0.5"
-                                    title={p.vendorEmail ? `Email advice to ${p.vendorEmail}` : 'Email advice to vendor (prompts for email)'}>
-                                    <Mail size={9} /> EMAIL
+                                    className={`px-1.5 py-0.5 text-white text-[9px] font-bold uppercase inline-flex items-center gap-0.5 ${p.adviceSentAt ? 'bg-slate-500 hover:bg-slate-600' : 'bg-blue-600 hover:bg-blue-700'}`}
+                                    title={p.adviceSentAt ? `Sent ${fmtDate(p.adviceSentAt)} to ${p.adviceSentTo || ''}. Click to resend.` : (p.vendorEmail ? `Email advice to ${p.vendorEmail}` : 'Email advice to vendor (prompts for email)')}>
+                                    <Mail size={9} /> {p.adviceSentAt ? 'SENT' : 'EMAIL'}
                                   </button>
                                 )}
                               </div>
@@ -1374,9 +1466,22 @@ export default function PaymentsOut() {
                                   <div className="space-y-0.5 text-slate-600">
                                     <div>Date: <span className="text-slate-800 font-medium">{fmtDate(p.date)}</span></div>
                                     <div>Mode: <span className="text-slate-800 font-medium">{p.mode}</span></div>
-                                    <div>UTR/Ref: <span className="text-slate-800 font-mono">{p.reference || '--'}</span></div>
+                                    {(() => { const { utr, prefix } = parseUtr(p.reference); return (<>
+                                      <div>UTR: <span className="text-slate-900 font-mono font-bold select-all">{utr || '--'}</span></div>
+                                      {prefix && <div className="text-slate-400">Ref: <span className="font-mono">{prefix}</span></div>}
+                                    </>); })()}
                                     <div>Amount: <span className="text-slate-800 font-bold font-mono">{fmt(p.amount)}</span></div>
                                     {(p.tdsDeducted || 0) > 0 && <div>TDS: <span className="text-slate-800 font-mono">{fmt(p.tdsDeducted || 0)}</span></div>}
+                                    <div className="flex items-center gap-1 mt-1 flex-wrap">
+                                      {p.hasGst === true && <span className="text-[8px] font-bold uppercase text-green-700 bg-green-50 border border-green-300 px-1 py-0.5">Incl. GST</span>}
+                                      {p.hasGst === false && <span className="text-[8px] font-bold uppercase text-orange-700 bg-orange-50 border border-orange-300 px-1 py-0.5">Without GST</span>}
+                                      {(p.hasGst === null || p.hasGst === undefined) && <span className="text-[8px] font-bold uppercase text-slate-400 bg-slate-50 border border-slate-200 px-1 py-0.5">GST not captured</span>}
+                                      {p.adviceSentAt && (
+                                        <span className="text-[8px] font-bold uppercase text-blue-700 bg-blue-50 border border-blue-300 px-1 py-0.5 inline-flex items-center gap-0.5" title={`Advice emailed to ${p.adviceSentTo || 'vendor'}`}>
+                                          <Mail size={8} /> Sent {fmtDate(p.adviceSentAt)}
+                                        </span>
+                                      )}
+                                    </div>
                                   </div>
                                 </div>
                                 <div>
@@ -1412,25 +1517,17 @@ export default function PaymentsOut() {
                                   {p.payeeType === 'VENDOR' && p.paymentStatus === 'CONFIRMED' && (
                                     <button
                                       onClick={async () => {
-                                        let toEmail = p.vendorEmail || '';
-                                        if (!toEmail) {
-                                          const entered = window.prompt(`No email on file for ${p.payee}. Enter vendor email to send Payment Advice:`);
-                                          if (!entered) return;
-                                          toEmail = entered.trim();
-                                        } else {
-                                          if (!window.confirm(`Send Payment Advice to ${toEmail}?`)) return;
-                                        }
-                                        try {
-                                          const res = await api.post<{ ok: boolean; sentTo: string }>(`/vendor-payments/${p.id}/send-email`, { to: toEmail });
-                                          alert(`Payment Advice sent to ${res.data.sentTo}`);
-                                        } catch (err: unknown) {
-                                          const msg = (err as { response?: { data?: { error?: string } }; message?: string })?.response?.data?.error || (err as { message?: string })?.message || 'Send failed';
-                                          alert(`Failed to send: ${msg}`);
+                                        const r = await sendPaymentAdvice(p.id, p.payee, p.vendorEmail);
+                                        if (r.ok) {
+                                          alert(`Payment Advice sent to ${r.sentTo}`);
+                                          fetchCompleted();
+                                        } else if (r.error !== 'Cancelled') {
+                                          alert(`Failed: ${r.error}`);
                                         }
                                       }}
-                                      className="px-2 py-0.5 bg-blue-600 text-white text-[9px] font-bold uppercase hover:bg-blue-700 inline-flex items-center gap-1"
-                                      title={p.vendorEmail ? `Email advice to ${p.vendorEmail}` : 'No vendor email on file — will prompt'}>
-                                      <Mail size={9} /> Email Advice to Vendor{p.vendorEmail ? ` (${p.vendorEmail})` : ''}
+                                      className={`px-2 py-0.5 text-white text-[9px] font-bold uppercase inline-flex items-center gap-1 ${p.adviceSentAt ? 'bg-slate-500 hover:bg-slate-600' : 'bg-blue-600 hover:bg-blue-700'}`}
+                                      title={p.adviceSentAt ? `Sent ${fmtDate(p.adviceSentAt)} to ${p.adviceSentTo || ''}. Click to resend.` : (p.vendorEmail ? `Email advice to ${p.vendorEmail}` : 'No vendor email on file — will prompt')}>
+                                      <Mail size={9} /> {p.adviceSentAt ? `Resend Advice (last sent ${fmtDate(p.adviceSentAt)})` : `Email Advice to Vendor${p.vendorEmail ? ` (${p.vendorEmail})` : ''}`}
                                     </button>
                                   )}
                                   {p.poId && (
@@ -1908,6 +2005,22 @@ export default function PaymentsOut() {
               <form onSubmit={submitPayment} className="p-4 space-y-3">
                 {error && <div className="text-xs text-red-600 bg-red-50 border border-red-200 px-3 py-1.5">{error}</div>}
 
+                {/* Compulsory GST declaration */}
+                <div className={`border px-3 py-2 ${payHasGst === null ? 'border-red-400 bg-red-50' : 'border-slate-200 bg-slate-50'}`}>
+                  <div className="flex items-center gap-3 flex-wrap">
+                    <label className={`text-[10px] font-bold uppercase tracking-widest ${payHasGst === null ? 'text-red-700' : 'text-slate-600'}`}>Does this payment include GST? *</label>
+                    <button type="button" onClick={() => setPayHasGst(true)}
+                      className={`px-3 py-1 text-[10px] font-bold uppercase border ${payHasGst === true ? 'border-green-600 bg-green-600 text-white' : 'border-slate-300 bg-white text-slate-600 hover:bg-green-50'}`}>
+                      Yes — Includes GST
+                    </button>
+                    <button type="button" onClick={() => setPayHasGst(false)}
+                      className={`px-3 py-1 text-[10px] font-bold uppercase border ${payHasGst === false ? 'border-orange-600 bg-orange-600 text-white' : 'border-slate-300 bg-white text-slate-600 hover:bg-orange-50'}`}>
+                      No — Without GST / Advance
+                    </button>
+                    {payHasGst === null && <span className="text-[10px] text-red-600 font-semibold">Required before submitting</span>}
+                  </div>
+                </div>
+
                 {/* Split payment toggle */}
                 <div className="flex items-center gap-2 pb-1">
                   <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">Split Payment (Cash + Bank)</label>
@@ -2117,6 +2230,22 @@ export default function PaymentsOut() {
               {payStep === 'confirm' && (
               <form onSubmit={submitDirectPayment} className="p-4 space-y-3">
                 {error && <div className="text-xs text-red-600 bg-red-50 border border-red-200 px-3 py-1.5">{error}</div>}
+
+                {/* Compulsory GST declaration */}
+                <div className={`border px-3 py-2 ${payHasGst === null ? 'border-red-400 bg-red-50' : 'border-slate-200 bg-slate-50'}`}>
+                  <div className="flex items-center gap-3 flex-wrap">
+                    <label className={`text-[10px] font-bold uppercase tracking-widest ${payHasGst === null ? 'text-red-700' : 'text-slate-600'}`}>Does this payment include GST? *</label>
+                    <button type="button" onClick={() => setPayHasGst(true)}
+                      className={`px-3 py-1 text-[10px] font-bold uppercase border ${payHasGst === true ? 'border-green-600 bg-green-600 text-white' : 'border-slate-300 bg-white text-slate-600 hover:bg-green-50'}`}>
+                      Yes — Includes GST
+                    </button>
+                    <button type="button" onClick={() => setPayHasGst(false)}
+                      className={`px-3 py-1 text-[10px] font-bold uppercase border ${payHasGst === false ? 'border-orange-600 bg-orange-600 text-white' : 'border-slate-300 bg-white text-slate-600 hover:bg-orange-50'}`}>
+                      No — Without GST / Advance
+                    </button>
+                    {payHasGst === null && <span className="text-[10px] text-red-600 font-semibold">Required before submitting</span>}
+                  </div>
+                </div>
 
                 {/* Partial payment hint */}
                 <div className="bg-slate-50 border border-slate-200 px-3 py-2 text-xs text-slate-600">
@@ -2404,31 +2533,34 @@ export default function PaymentsOut() {
                   <div className="col-span-2">
                     {poPayItem.poGst > 0 ? (
                       <>
-                        <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest block mb-1">Tax Treatment *</label>
+                        <label className="text-[10px] font-bold text-red-600 uppercase tracking-widest block mb-1">Tax Treatment * (Required)</label>
                         <div className="grid grid-cols-2 gap-2">
                           <button type="button" onClick={() => setPoPayIncludeGst(true)}
-                            className={`px-3 py-2 border text-left text-xs ${poPayIncludeGst ? 'border-green-500 bg-green-50 text-green-800' : 'border-slate-300 bg-white text-slate-500 hover:bg-slate-50'}`}>
+                            className={`px-3 py-2 border text-left text-xs ${poPayIncludeGst === true ? 'border-green-500 bg-green-50 text-green-800' : 'border-slate-300 bg-white text-slate-500 hover:bg-slate-50'}`}>
                             <div className="font-bold uppercase tracking-widest text-[10px] flex items-center gap-1">
-                              <span className={`inline-block w-2 h-2 rounded-full ${poPayIncludeGst ? 'bg-green-600' : 'bg-slate-300'}`}></span>
+                              <span className={`inline-block w-2 h-2 rounded-full ${poPayIncludeGst === true ? 'bg-green-600' : 'bg-slate-300'}`}></span>
                               Pay Including GST
                             </div>
                             <div className="text-[10px] text-slate-500 mt-0.5">Base + GST = full invoice value</div>
                             <div className="text-[10px] text-slate-400 mt-0.5">GST included: <b className="font-mono">{fmt(poPayItem.poGst)}</b></div>
                           </button>
                           <button type="button" onClick={() => setPoPayIncludeGst(false)}
-                            className={`px-3 py-2 border text-left text-xs ${!poPayIncludeGst ? 'border-orange-500 bg-orange-50 text-orange-800' : 'border-slate-300 bg-white text-slate-500 hover:bg-slate-50'}`}>
+                            className={`px-3 py-2 border text-left text-xs ${poPayIncludeGst === false ? 'border-orange-500 bg-orange-50 text-orange-800' : 'border-slate-300 bg-white text-slate-500 hover:bg-slate-50'}`}>
                             <div className="font-bold uppercase tracking-widest text-[10px] flex items-center gap-1">
-                              <span className={`inline-block w-2 h-2 rounded-full ${!poPayIncludeGst ? 'bg-orange-600' : 'bg-slate-300'}`}></span>
+                              <span className={`inline-block w-2 h-2 rounded-full ${poPayIncludeGst === false ? 'bg-orange-600' : 'bg-slate-300'}`}></span>
                               Pay Without GST
                             </div>
                             <div className="text-[10px] text-slate-500 mt-0.5">Base amount only — pay GST separately later</div>
                             <div className="text-[10px] text-slate-400 mt-0.5">GST deferred: <b className="font-mono">{fmt(poPayItem.poGst)}</b></div>
                           </button>
                         </div>
+                        {poPayIncludeGst === null && (
+                          <div className="mt-1 text-[10px] text-red-600 font-semibold">You must pick one before submitting.</div>
+                        )}
                       </>
                     ) : (
                       <div className="text-[10px] text-slate-400 bg-slate-50 border border-slate-200 px-3 py-1.5">
-                        GST: <b>0% — No GST on this item</b>
+                        GST: <b>0% — No GST on this item</b> (will be recorded as "Without GST")
                       </div>
                     )}
                   </div>

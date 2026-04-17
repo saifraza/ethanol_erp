@@ -30,6 +30,7 @@ interface Outstanding {
 interface FormData {
   vendorId: string; invoiceId: string; amount: string; mode: 'CASH' | 'CHEQUE' | 'BANK_TRANSFER' | 'UPI' | 'DD';
   reference: string; tdsDeducted: string; tdsSection: string; isAdvance: boolean; remarks: string; paymentDate: string;
+  hasGst: boolean | null;
 }
 
 const VendorPayments: React.FC = () => {
@@ -47,6 +48,7 @@ const VendorPayments: React.FC = () => {
     vendorId: '', invoiceId: '', amount: '', mode: 'BANK_TRANSFER', reference: '',
     tdsDeducted: '', tdsSection: '', isAdvance: false, remarks: '',
     paymentDate: new Date().toISOString().split('T')[0],
+    hasGst: null,
   });
 
   useEffect(() => { fetchInitialData(); }, []);
@@ -118,6 +120,7 @@ const VendorPayments: React.FC = () => {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (formData.hasGst === null) { setError('Select whether this payment includes GST'); return; }
     try {
       await api.post('/vendor-payments', {
         vendorId: formData.vendorId, invoiceId: formData.invoiceId || null,
@@ -125,9 +128,10 @@ const VendorPayments: React.FC = () => {
         tdsDeducted: parseFloat(formData.tdsDeducted) || 0, tdsSection: formData.tdsSection,
         isAdvance: formData.isAdvance, remarks: formData.remarks,
         paymentDate: formData.paymentDate || new Date().toISOString().split('T')[0],
+        hasGst: formData.hasGst,
       });
       setShowForm(false);
-      setFormData({ vendorId: '', invoiceId: '', amount: '', mode: 'BANK_TRANSFER', reference: '', tdsDeducted: '', tdsSection: '', isAdvance: false, remarks: '', paymentDate: new Date().toISOString().split('T')[0] });
+      setFormData({ vendorId: '', invoiceId: '', amount: '', mode: 'BANK_TRANSFER', reference: '', tdsDeducted: '', tdsSection: '', isAdvance: false, remarks: '', paymentDate: new Date().toISOString().split('T')[0], hasGst: null });
       setSelectedVendor('');
       setInvoices([]);
       fetchInitialData();
@@ -252,6 +256,21 @@ const VendorPayments: React.FC = () => {
                     <div>
                       <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-0.5 block">Remarks</label>
                       <textarea name="remarks" value={formData.remarks} onChange={handleFormChange} rows={2} className="border border-slate-300 px-2.5 py-1.5 text-xs w-full focus:outline-none focus:ring-1 focus:ring-slate-400" />
+                    </div>
+                    {/* Compulsory GST declaration */}
+                    <div className={`border px-3 py-2 ${formData.hasGst === null ? 'border-red-400 bg-red-50' : 'border-slate-200 bg-slate-50'}`}>
+                      <div className="flex items-center gap-3 flex-wrap">
+                        <label className={`text-[10px] font-bold uppercase tracking-widest ${formData.hasGst === null ? 'text-red-700' : 'text-slate-600'}`}>Does this payment include GST? *</label>
+                        <button type="button" onClick={() => setFormData(f => ({ ...f, hasGst: true }))}
+                          className={`px-3 py-1 text-[10px] font-bold uppercase border ${formData.hasGst === true ? 'border-green-600 bg-green-600 text-white' : 'border-slate-300 bg-white text-slate-600 hover:bg-green-50'}`}>
+                          Yes — Includes GST
+                        </button>
+                        <button type="button" onClick={() => setFormData(f => ({ ...f, hasGst: false }))}
+                          className={`px-3 py-1 text-[10px] font-bold uppercase border ${formData.hasGst === false ? 'border-orange-600 bg-orange-600 text-white' : 'border-slate-300 bg-white text-slate-600 hover:bg-orange-50'}`}>
+                          No — Without GST / Advance
+                        </button>
+                        {formData.hasGst === null && <span className="text-[10px] text-red-600 font-semibold">Required</span>}
+                      </div>
                     </div>
                     <div className="flex gap-2 pt-3 border-t border-slate-200">
                       <button type="submit" className="px-4 py-1.5 bg-blue-600 text-white text-[11px] font-medium hover:bg-blue-700">RECORD PAYMENT</button>

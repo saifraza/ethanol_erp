@@ -23,6 +23,8 @@ const createVendorPaymentSchema = z.object({
   isAdvance: z.boolean().optional().default(false),
   remarks: z.string().optional().nullable(),
   paymentDate: z.string().optional(),
+  // Compulsory GST declaration at Pay time (legacy payments may omit this)
+  hasGst: z.boolean({ required_error: 'Select whether this payment includes GST' }),
 });
 
 const splitPaymentSchema = z.object({
@@ -38,6 +40,8 @@ const splitPaymentSchema = z.object({
   tdsSection: z.string().optional().nullable(),
   paymentDate: z.string().optional(),
   poNo: z.coerce.number().optional(),
+  // Compulsory GST declaration at Pay time
+  hasGst: z.boolean({ required_error: 'Select whether this payment includes GST' }),
 });
 
 const router = Router();
@@ -105,11 +109,25 @@ async function buildPaymentAdviceData(paymentId: string) {
   const totalPayable = payment.invoice?.netPayable || totalPaid;
   const tdsDeducted = payment.tdsDeducted || 0;
 
+  // Pull the clean UTR / bank-ref out of the free-text reference (e.g. "RTGSO-JAY BAJRANG ... UBINR22026041601296969")
+  const utrMatch = (payment.reference || '').match(/([A-Z]{4}[A-Z0-9]{8,})\s*$/);
+  const utrDisplay = utrMatch ? utrMatch[1] : (payment.reference || '-');
+
+  // GST Status label — comes from the compulsory choice captured at Pay time
+  const gstStatusLabel = payment.hasGst === true
+    ? 'INCLUSIVE OF GST'
+    : payment.hasGst === false
+      ? 'EXCLUSIVE OF GST (ADVANCE / WITHOUT GST)'
+      : 'NOT CAPTURED';
+
   const data: Record<string, unknown> = {
     paymentNo: payment.paymentNo,
     paymentDate: payment.paymentDate,
     poNo,
     invoiceRef: payment.invoice?.vendorInvNo || '',
+    utrDisplay,
+    hasGst: payment.hasGst === true,
+    gstStatusLabel,
     vendor: {
       name: payment.vendor.name,
       address: [payment.vendor.address, payment.vendor.city, payment.vendor.state].filter(Boolean).join(', '),
@@ -333,6 +351,7 @@ router.post('/', validate(createVendorPaymentSchema), asyncHandler(async (req: A
           isAdvance: b.isAdvance || false,
           remarks: b.remarks || null,
           paymentDate: b.paymentDate ? new Date(b.paymentDate) : new Date(),
+          hasGst: b.hasGst === true,
           userId: req.user!.id,
           companyId,
         },
@@ -462,6 +481,7 @@ router.post('/split-payment', validate(splitPaymentSchema), asyncHandler(async (
               isAdvance: !invoiceId,
               remarks: remarkParts.join(' | ') || null,
               paymentDate,
+              hasGst: b.hasGst === true,
               userId,
               companyId: getActiveCompanyId(req),
             },
@@ -707,7 +727,12 @@ router.post('/:id/send-email', asyncHandler(async (req: AuthRequest, res: Respon
   });
 
   if (result.success) {
-    res.json({ ok: true, messageId: result.messageId, sentTo: toEmail });
+    const sentAt = new Date();
+    await prisma.vendorPayment.update({
+      where: { id: payment.id },
+      data: { adviceSentAt: sentAt, adviceSentTo: toEmail },
+    });
+    res.json({ ok: true, messageId: result.messageId, sentTo: toEmail, sentAt });
   } else {
     res.status(500).json({ error: result.error || 'Email send failed' });
   }

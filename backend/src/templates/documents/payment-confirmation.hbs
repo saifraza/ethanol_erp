@@ -16,6 +16,8 @@
     <div class="detail-row"><span class="detail-label">Payment Date</span><span class="detail-value">{{formatDate paymentDate}}</span></div>
     {{#if poNo}}<div class="detail-row"><span class="detail-label">PO Reference</span><span class="detail-value bold">PO-{{poNo}}</span></div>{{/if}}
     {{#if invoiceRef}}<div class="detail-row"><span class="detail-label">Invoice Ref</span><span class="detail-value">{{invoiceRef}}</span></div>{{/if}}
+    <div class="detail-row"><span class="detail-label">UTR / Reference</span><span class="detail-value bold" style="font-family:monospace;color:#0f172a">{{utrDisplay}}</span></div>
+    <div class="detail-row"><span class="detail-label">GST Status</span><span class="detail-value bold" style="color:{{#if hasGst}}#166534{{else}}#92400e{{/if}}">{{gstStatusLabel}}</span></div>
     <div class="detail-row"><span class="detail-label">Status</span><span class="detail-value bold" style="color:#166534">RELEASED</span></div>
   </div>
 

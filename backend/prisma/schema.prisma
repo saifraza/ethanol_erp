@@ -33,58 +33,58 @@ model Company {
   createdAt     DateTime @default(now())
   updatedAt     DateTime @updatedAt
 
-  users             User[]
-  customers         Customer[]
-  salesOrders       SalesOrder[]
-  invoices          Invoice[]
-  payments          Payment[]
-  bankTransactions  BankTransaction[]
-  bankPaymentBatches BankPaymentBatch[]
-  cashVouchers      CashVoucher[]
-  postDatedCheques  PostDatedCheque[]
-  bankLoans         BankLoan[]
-  stockMovements       StockMovement[]
-  stockLevels          StockLevel[]
-  inventoryItems       InventoryItem[]
-  employees            Employee[]
-  materials            Material[]
-  products             Product[]
-  transporters         Transporter[]
-  contractors          Contractor[]
-  departments          Department[]
-  designations         Designation[]
-  purchaseRequisitions PurchaseRequisition[]
-  contractorBills      ContractorBill[]
-  contractorPayments   ContractorPayment[]
+  users                 User[]
+  customers             Customer[]
+  salesOrders           SalesOrder[]
+  invoices              Invoice[]
+  payments              Payment[]
+  bankTransactions      BankTransaction[]
+  bankPaymentBatches    BankPaymentBatch[]
+  cashVouchers          CashVoucher[]
+  postDatedCheques      PostDatedCheque[]
+  bankLoans             BankLoan[]
+  stockMovements        StockMovement[]
+  stockLevels           StockLevel[]
+  inventoryItems        InventoryItem[]
+  employees             Employee[]
+  materials             Material[]
+  products              Product[]
+  transporters          Transporter[]
+  contractors           Contractor[]
+  departments           Department[]
+  designations          Designation[]
+  purchaseRequisitions  PurchaseRequisition[]
+  contractorBills       ContractorBill[]
+  contractorPayments    ContractorPayment[]
   contractorStoreIssues ContractorStoreIssue[]
-  directPurchases      DirectPurchase[]
-  directSales          DirectSale[]
-  approvals            Approval[]
-  freightInquiries     FreightInquiry[]
-  freightQuotations    FreightQuotation[]
-  loanRepayments       LoanRepayment[]
-  invoiceSeries        InvoiceSeries[]
-  fiscalYears          FiscalYear[]
-  payrollRuns          PayrollRun[]
-  shipments            Shipment[]
-  dispatchRequests     DispatchRequest[]
-  ethanolContracts     EthanolContract[]
-  ddgsContracts        DDGSContract[]
-  sugarContracts       SugarContract[]
-  warehouses           Warehouse[]
+  directPurchases       DirectPurchase[]
+  directSales           DirectSale[]
+  approvals             Approval[]
+  freightInquiries      FreightInquiry[]
+  freightQuotations     FreightQuotation[]
+  loanRepayments        LoanRepayment[]
+  invoiceSeries         InvoiceSeries[]
+  fiscalYears           FiscalYear[]
+  payrollRuns           PayrollRun[]
+  shipments             Shipment[]
+  dispatchRequests      DispatchRequest[]
+  ethanolContracts      EthanolContract[]
+  ddgsContracts         DDGSContract[]
+  sugarContracts        SugarContract[]
+  warehouses            Warehouse[]
   // Back-relations for previously orphaned companyId fields
-  grainTrucks          GrainTruck[]
-  vendors              Vendor[]
-  purchaseOrders       PurchaseOrder[]
-  goodsReceipts        GoodsReceipt[]
-  vendorInvoices       VendorInvoice[]
-  vendorPayments       VendorPayment[]
-  accounts             Account[]
-  journalEntries       JournalEntry[]
-  dispatchTrucks       DispatchTruck[]
-  ddgsDispatchTrucks   DDGSDispatchTruck[]
-  sugarDispatchTrucks  SugarDispatchTruck[]
-  transporterPayments  TransporterPayment[]
+  grainTrucks           GrainTruck[]
+  vendors               Vendor[]
+  purchaseOrders        PurchaseOrder[]
+  goodsReceipts         GoodsReceipt[]
+  vendorInvoices        VendorInvoice[]
+  vendorPayments        VendorPayment[]
+  accounts              Account[]
+  journalEntries        JournalEntry[]
+  dispatchTrucks        DispatchTruck[]
+  ddgsDispatchTrucks    DDGSDispatchTruck[]
+  sugarDispatchTrucks   SugarDispatchTruck[]
+  transporterPayments   TransporterPayment[]
 }
 
 model User {
@@ -95,9 +95,9 @@ model User {
   role           String       @default("OPERATOR")
   paymentRole    String? // MAKER, CHECKER, RELEASER — null = no bank payment access
   allowedModules String? // comma-separated module keys, null = all access
-  phone          String?      // for mobile app PIN login
-  mobilePin      String?      // hashed PIN for mobile app
-  pushToken      String?      // Expo push notification token
+  phone          String? // for mobile app PIN login
+  mobilePin      String? // hashed PIN for mobile app
+  pushToken      String? // Expo push notification token
   companyId      String? // FK → Company (null = MSPIL default for backwards compat)
   company        Company?     @relation(fields: [companyId], references: [id])
   isActive       Boolean      @default(true)
@@ -189,14 +189,14 @@ model Settings {
   telegramModuleRouting  String? // JSON: { "module": "group1"|"group2"|"private" }
   // WhatsApp (outbound push via Baileys worker)
   whatsappEnabled        Boolean  @default(false)
-  whatsappWorkerUrl      String?  // e.g. https://mspil-whatsapp-production.up.railway.app
-  whatsappWorkerApiKey   String?  // shared secret for x-api-key header
-  whatsappGroupJid       String?  // Primary group JID (120363xxx@g.us)
+  whatsappWorkerUrl      String? // e.g. https://mspil-whatsapp-production.up.railway.app
+  whatsappWorkerApiKey   String? // shared secret for x-api-key header
+  whatsappGroupJid       String? // Primary group JID (120363xxx@g.us)
   whatsappGroupName      String?
-  whatsappGroup2Jid      String?  // Secondary group JID
+  whatsappGroup2Jid      String? // Secondary group JID
   whatsappGroup2Name     String?
-  whatsappPrivatePhones  String?  // Comma-separated: 91xxxxxxxxxx,91yyyyyyyyyy
-  whatsappModuleRouting  String?  // JSON: { "module": "group1"|"group2"|"private" }
+  whatsappPrivatePhones  String? // Comma-separated: 91xxxxxxxxxx,91yyyyyyyyyy
+  whatsappModuleRouting  String? // JSON: { "module": "group1"|"group2"|"private" }
   opcAlarmsEnabled       Boolean  @default(true) // OPC alarm toggle (persists across deploys)
   inventoryAlertsEnabled Boolean  @default(true) // Inventory low stock alert toggle
   opcWatchdogState       String? // JSON state for opcHealthWatchdog (survives Railway restarts) — added 2026-04-08
@@ -271,55 +271,55 @@ model GrainEntry {
 }
 
 model SiloSnapshot {
-  id                 String   @id @default(uuid())
-  date               DateTime @unique
-  source             String   @default("AUTO") // AUTO | BASELINE | OVERRIDE
+  id     String   @id @default(uuid())
+  date   DateTime @unique
+  source String   @default("AUTO") // AUTO | BASELINE | OVERRIDE
 
   // OPC tank levels at snapshot (KL, converted from %)
-  f1Level            Float    @default(0)
-  f2Level            Float    @default(0)
-  f3Level            Float    @default(0)
-  f4Level            Float    @default(0)
-  beerWellLevel      Float    @default(0)
-  pf1Level           Float    @default(0)
-  pf2Level           Float    @default(0)
-  iltLevel           Float    @default(0)
-  fltLevel           Float    @default(0)
-  totalVolumeKL      Float    @default(0)
+  f1Level       Float @default(0)
+  f2Level       Float @default(0)
+  f3Level       Float @default(0)
+  f4Level       Float @default(0)
+  beerWellLevel Float @default(0)
+  pf1Level      Float @default(0)
+  pf2Level      Float @default(0)
+  iltLevel      Float @default(0)
+  fltLevel      Float @default(0)
+  totalVolumeKL Float @default(0)
 
   // Flour silos (manual input — no OPC sensor)
-  flourSilo1Level    Float    @default(0) // MT
-  flourSilo2Level    Float    @default(0) // MT
-  flourTotal         Float    @default(0) // MT
+  flourSilo1Level Float @default(0) // MT
+  flourSilo2Level Float @default(0) // MT
+  flourTotal      Float @default(0) // MT
 
   // Wash from flow meter (KL, 24h)
-  washDistilledKL    Float    @default(0)
+  washDistilledKL Float @default(0)
 
   // Grain math
-  grainPctUsed       Float    @default(0.31)
-  grainInSystem      Float    @default(0)
-  deltaGrainInSystem Float    @default(0)
-  grainDistilled     Float    @default(0)
-  grainConsumed      Float    @default(0)
+  grainPctUsed       Float @default(0.31)
+  grainInSystem      Float @default(0)
+  deltaGrainInSystem Float @default(0)
+  grainDistilled     Float @default(0)
+  grainConsumed      Float @default(0)
 
   // Grain IN from trucks
-  grainReceivedMT    Float    @default(0)
-  truckCount         Int      @default(0)
+  grainReceivedMT Float @default(0)
+  truckCount      Int   @default(0)
 
   // Silo stock
-  siloOpening        Float    @default(0)
-  siloClosing        Float    @default(0)
+  siloOpening Float @default(0)
+  siloClosing Float @default(0)
 
   // Cumulatives (year)
-  cumReceived        Float    @default(0)
-  cumConsumed        Float    @default(0)
+  cumReceived Float @default(0)
+  cumConsumed Float @default(0)
 
   // Data quality
-  opcDataAge         Int?
-  remarks            String?
+  opcDataAge Int?
+  remarks    String?
 
-  createdAt          DateTime @default(now())
-  updatedAt          DateTime @updatedAt
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
   @@index([date])
 }
@@ -548,43 +548,43 @@ model FermentationEntry {
 
 // Fermentation batch metadata
 model FermentationBatch {
-  id                 String       @id @default(uuid())
-  batchNo            Int
-  fermenterNo        Int          @default(1)
-  phase              String       @default("PF_TRANSFER") // PF_TRANSFER, FILLING, REACTION, RETENTION, TRANSFER, CIP, DONE
-  pfTransferTime     DateTime?
-  fillingStartTime   DateTime?
-  fillingEndTime     DateTime?
-  setupEndTime       DateTime?
-  reactionStartTime  DateTime?
-  retentionStartTime DateTime?
-  fermentationEndTime DateTime?    // auto-set when gravity ≤ 1.0
-  transferTime       DateTime?
-  cipStartTime       DateTime?
-  cipEndTime         DateTime?
-  setupTime          String?
-  setupDate          DateTime?
-  setupGravity       Float?
-  setupRs            Float?
-  setupRst           Float?
-  fermLevel          Float? // level % of 2300 M³
-  volume             Float? // calculated litres
-  transferVolume     Float?
-  beerWellNo         Int?
-  finalDate          DateTime?
-  finalRsGravity     Float?
-  totalHours         Float?
-  yeast              String?
-  enzyme             String?
-  formolin           String?
-  booster            String?
-  urea               String?
-  finalAlcohol       Float?
-  remarks            String?
-  userId             String
-  createdAt          DateTime     @default(now())
-  updatedAt          DateTime     @updatedAt
-  dosings            FermDosing[]
+  id                  String       @id @default(uuid())
+  batchNo             Int
+  fermenterNo         Int          @default(1)
+  phase               String       @default("PF_TRANSFER") // PF_TRANSFER, FILLING, REACTION, RETENTION, TRANSFER, CIP, DONE
+  pfTransferTime      DateTime?
+  fillingStartTime    DateTime?
+  fillingEndTime      DateTime?
+  setupEndTime        DateTime?
+  reactionStartTime   DateTime?
+  retentionStartTime  DateTime?
+  fermentationEndTime DateTime? // auto-set when gravity ≤ 1.0
+  transferTime        DateTime?
+  cipStartTime        DateTime?
+  cipEndTime          DateTime?
+  setupTime           String?
+  setupDate           DateTime?
+  setupGravity        Float?
+  setupRs             Float?
+  setupRst            Float?
+  fermLevel           Float? // level % of 2300 M³
+  volume              Float? // calculated litres
+  transferVolume      Float?
+  beerWellNo          Int?
+  finalDate           DateTime?
+  finalRsGravity      Float?
+  totalHours          Float?
+  yeast               String?
+  enzyme              String?
+  formolin            String?
+  booster             String?
+  urea                String?
+  finalAlcohol        Float?
+  remarks             String?
+  userId              String
+  createdAt           DateTime     @default(now())
+  updatedAt           DateTime     @updatedAt
+  dosings             FermDosing[]
 
   @@unique([batchNo, fermenterNo])
   @@index([phase])
@@ -615,7 +615,7 @@ model FermDosing {
 // Fermenter filling events — computed from OPC/lab level trends (not operator buttons)
 // Source-of-truth for when a fermenter actually filled. See plan: piped-wishing-goblet.md
 model FermentationFillEvent {
-  id            String   @id @default(uuid())
+  id            String    @id @default(uuid())
   fermenterNo   Int
   batchNo       Int? // nullable — fills without a matched batch still captured for review
   startTime     DateTime
@@ -626,8 +626,8 @@ model FermentationFillEvent {
   confidence    String // HIGH | MEDIUM | LOW
   source        String // OPC | LAB | HYBRID
   crossChecks   Json // { tempOk, pfDropped, labWithin2h, startOk, endOk }
-  computedAt    DateTime @default(now())
-  updatedAt     DateTime @updatedAt
+  computedAt    DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
 
   @@unique([fermenterNo, startTime])
   @@index([batchNo, fermenterNo])
@@ -849,7 +849,7 @@ model DDGSDispatchTruck {
   updatedAt            DateTime              @default(now()) @updatedAt
   ddgsContractDispatch DDGSContractDispatch?
 
-  division  String? @default("ETHANOL") // SUGAR | POWER | ETHANOL | COMMON
+  division  String?  @default("ETHANOL") // SUGAR | POWER | ETHANOL | COMMON
   companyId String? // FK → Company (null = MSPIL default)
   company   Company? @relation(fields: [companyId], references: [id])
 
@@ -938,73 +938,73 @@ model DecanterEntry {
 // ETHANOL PRODUCT & DISPATCH
 // ═══════════════════════════════════════════════
 model EthanolProductEntry {
-  id            String          @id @default(uuid())
-  date          DateTime
-  yearStart     Int
+  id              String          @id @default(uuid())
+  date            DateTime
+  yearStart       Int
   // 9 tanks: current DIP, LT%, Strength%, Volume (BL)
-  recADip       Float?
-  recALt        Float?
-  recAStrength  Float?
-  recAVolume    Float?
-  recBDip       Float?
-  recBLt        Float?
-  recBStrength  Float?
-  recBVolume    Float?
-  recCDip       Float?
-  recCLt        Float?
-  recCStrength  Float?
-  recCVolume    Float?
-  issADip       Float?
-  issALt        Float?
-  issAStrength  Float?
-  issAVolume    Float?
-  issBDip       Float?
-  issBLt        Float?
-  issBStrength  Float?
-  issBVolume    Float?
-  issCDip       Float?
-  issCLt        Float?
-  issCStrength  Float?
-  issCVolume    Float?
-  bulkADip      Float?
-  bulkALt       Float?
-  bulkAStrength Float?
-  bulkAVolume   Float?
-  bulkBDip      Float?
-  bulkBLt       Float?
-  bulkBStrength Float?
-  bulkBVolume   Float?
-  bulkCDip      Float?
-  bulkCLt       Float?
-  bulkCStrength Float?
-  bulkCVolume   Float?
+  recADip         Float?
+  recALt          Float?
+  recAStrength    Float?
+  recAVolume      Float?
+  recBDip         Float?
+  recBLt          Float?
+  recBStrength    Float?
+  recBVolume      Float?
+  recCDip         Float?
+  recCLt          Float?
+  recCStrength    Float?
+  recCVolume      Float?
+  issADip         Float?
+  issALt          Float?
+  issAStrength    Float?
+  issAVolume      Float?
+  issBDip         Float?
+  issBLt          Float?
+  issBStrength    Float?
+  issBVolume      Float?
+  issCDip         Float?
+  issCLt          Float?
+  issCStrength    Float?
+  issCVolume      Float?
+  bulkADip        Float?
+  bulkALt         Float?
+  bulkAStrength   Float?
+  bulkAVolume     Float?
+  bulkBDip        Float?
+  bulkBLt         Float?
+  bulkBStrength   Float?
+  bulkBVolume     Float?
+  bulkCDip        Float?
+  bulkCLt         Float?
+  bulkCStrength   Float?
+  bulkCVolume     Float?
   // Dispatch Tank
-  dispDip       Float?
-  dispLt        Float?
-  dispStrength  Float?
-  dispVolume    Float?
+  dispDip         Float?
+  dispLt          Float?
+  dispStrength    Float?
+  dispVolume      Float?
   // RS / HFO / LFO tanks (15 M3 each) — current levels as %
-  rsLevel       Float?
-  hfoLevel      Float?
-  lfoLevel      Float?
+  rsLevel         Float?
+  hfoLevel        Float?
+  lfoLevel        Float?
   // Computed / summary fields
-  totalStock    Float           @default(0) // sum of all 9 tank volumes
-  avgStrength   Float           @default(0) // weighted average strength
-  totalDispatch Float           @default(0) // sum of all truck dispatch BL
-  productionBL  Float           @default(0) // currentStock - prevStock + dispatch
-  productionAL  Float           @default(0) // productionBL × avgStrength / 100
-  klpd          Float           @default(0) // kilolitres per day flow rate
+  totalStock      Float           @default(0) // sum of all 9 tank volumes
+  avgStrength     Float           @default(0) // weighted average strength
+  totalDispatch   Float           @default(0) // sum of all truck dispatch BL
+  productionBL    Float           @default(0) // currentStock - prevStock + dispatch
+  productionAL    Float           @default(0) // productionBL × avgStrength / 100
+  klpd            Float           @default(0) // kilolitres per day flow rate
   // Grain consumption — snapshotted from OPC at dip time
-  washTotalizer    Float?  // DCS cumulative totalizer (MG_140101 CURRENT) at dip time
-  washKL           Float?  // wash flow delta between prev dip and this dip
-  grainConsumedMT  Float?  // washKL × grainPct
-  yieldALperMT     Float?  // productionAL / grainConsumedMT
-  grainPctUsed     Float?  // grain% setting at time of calculation
-  remarks       String?
-  userId        String
-  createdAt     DateTime        @default(now())
-  updatedAt     DateTime        @updatedAt
-  trucks        DispatchTruck[]
+  washTotalizer   Float? // DCS cumulative totalizer (MG_140101 CURRENT) at dip time
+  washKL          Float? // wash flow delta between prev dip and this dip
+  grainConsumedMT Float? // washKL × grainPct
+  yieldALperMT    Float? // productionAL / grainConsumedMT
+  grainPctUsed    Float? // grain% setting at time of calculation
+  remarks         String?
+  userId          String
+  createdAt       DateTime        @default(now())
+  updatedAt       DateTime        @updatedAt
+  trucks          DispatchTruck[]
 
   @@index([date])
   @@index([yearStart, date])
@@ -1063,7 +1063,7 @@ model DispatchTruck {
   createdAt         DateTime             @default(now())
   updatedAt         DateTime             @default(now()) @updatedAt
 
-  division  String? @default("ETHANOL") // SUGAR | POWER | ETHANOL | COMMON
+  division  String?  @default("ETHANOL") // SUGAR | POWER | ETHANOL | COMMON
   companyId String? // FK → Company (null = MSPIL default)
   company   Company? @relation(fields: [companyId], references: [id])
 
@@ -1111,7 +1111,7 @@ model GrainTruck {
   transporterName  String?
   materialType     String? // BROKEN_RICE, RICE_HUSK, MAIZE etc.
   ticketNo         Int? // weighbridge ticket number
-  factoryLocalId   String?  @unique // factory-server Weighment.localId (dedup key — UNIQUE to prevent duplicate rows on concurrent push)
+  factoryLocalId   String?        @unique // factory-server Weighment.localId (dedup key — UNIQUE to prevent duplicate rows on concurrent push)
   cancelled        Boolean        @default(false) // soft-cancel flag set by admin correction
   cancelledReason  String?
   cancelledAt      DateTime?
@@ -1125,7 +1125,7 @@ model GrainTruck {
 
   division    String?               @default("ETHANOL") // SUGAR | POWER | ETHANOL | COMMON
   companyId   String? // FK → Company (null = MSPIL default)
-  company     Company? @relation(fields: [companyId], references: [id])
+  company     Company?              @relation(fields: [companyId], references: [id])
   corrections WeighmentCorrection[]
 
   @@index([date])
@@ -1257,7 +1257,7 @@ model InventoryItem {
   fuelConsumptions        FuelConsumption[]
   rawMaterialConsumptions RawMaterialConsumption[]
 
-  division String? @default("ETHANOL") // SUGAR | POWER | ETHANOL | COMMON
+  division  String?  @default("ETHANOL") // SUGAR | POWER | ETHANOL | COMMON
   companyId String? // FK → Company (null = MSPIL default)
   company   Company? @relation(fields: [companyId], references: [id])
 
@@ -1329,15 +1329,15 @@ model RawMaterialConsumption {
 
 // ── Department Master ──
 model Department {
-  id        String   @id @default(cuid())
-  name      String   @unique
+  id        String     @id @default(cuid())
+  name      String     @unique
   code      String?
-  isActive  Boolean  @default(true)
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  isActive  Boolean    @default(true)
+  createdAt DateTime   @default(now())
+  updatedAt DateTime   @updatedAt
   employees Employee[]
-  companyId  String?   // FK → Company (null = MSPIL default)
-  company    Company?  @relation(fields: [companyId], references: [id])
+  companyId String? // FK → Company (null = MSPIL default)
+  company   Company?   @relation(fields: [companyId], references: [id])
 
   @@index([companyId])
 }
@@ -1354,8 +1354,8 @@ model Warehouse {
   movements   StockMovement[]
   createdAt   DateTime        @default(now())
   updatedAt   DateTime        @updatedAt
-  companyId   String?   // FK → Company (null = MSPIL default)
-  company     Company?  @relation(fields: [companyId], references: [id])
+  companyId   String? // FK → Company (null = MSPIL default)
+  company     Company?        @relation(fields: [companyId], references: [id])
 
   @@index([companyId])
 }
@@ -1450,7 +1450,7 @@ model StockMovement {
   date          DateTime      @default(now())
   createdAt     DateTime      @default(now())
 
-  division String? @default("ETHANOL") // SUGAR | POWER | ETHANOL | COMMON
+  division  String?  @default("ETHANOL") // SUGAR | POWER | ETHANOL | COMMON
   companyId String? // FK → Company (null = MSPIL default)
   company   Company? @relation(fields: [companyId], references: [id])
 
@@ -1595,8 +1595,8 @@ model PurchaseRequisition {
   updatedAt         DateTime  @updatedAt
 
   purchaseOrders PurchaseOrder[] // auto-generated POs from this indent
-  companyId      String?   // FK → Company (null = MSPIL default)
-  company        Company?  @relation(fields: [companyId], references: [id])
+  companyId      String? // FK → Company (null = MSPIL default)
+  company        Company?        @relation(fields: [companyId], references: [id])
 
   @@index([status])
   @@index([urgency])
@@ -1668,8 +1668,8 @@ model Product {
   isActive    Boolean  @default(true)
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
-  companyId   String?   // FK → Company (null = MSPIL default)
-  company     Company?  @relation(fields: [companyId], references: [id])
+  companyId   String? // FK → Company (null = MSPIL default)
+  company     Company? @relation(fields: [companyId], references: [id])
 
   @@index([companyId])
 }
@@ -1690,8 +1690,8 @@ model Transporter {
   updatedAt     DateTime @updatedAt
 
   divisions String[] @default([]) // empty = available to all divisions
-  companyId String?   // FK → Company (null = MSPIL default)
-  company   Company?  @relation(fields: [companyId], references: [id])
+  companyId String? // FK → Company (null = MSPIL default)
+  company   Company? @relation(fields: [companyId], references: [id])
 
   @@index([companyId])
 }
@@ -1723,7 +1723,7 @@ model SalesOrder {
   dispatchRequests DispatchRequest[]
   invoices         Invoice[]
 
-  division String? @default("ETHANOL") // SUGAR | POWER | ETHANOL | COMMON
+  division  String?  @default("ETHANOL") // SUGAR | POWER | ETHANOL | COMMON
   companyId String? // FK → Company (null = MSPIL default)
   company   Company? @relation(fields: [companyId], references: [id])
 
@@ -1784,8 +1784,8 @@ model DispatchRequest {
   updatedAt       DateTime        @updatedAt
   shipments       Shipment[]
   freightInquiry  FreightInquiry?
-  companyId       String?   // FK → Company (null = MSPIL default)
-  company         Company?  @relation(fields: [companyId], references: [id])
+  companyId       String? // FK → Company (null = MSPIL default)
+  company         Company?        @relation(fields: [companyId], references: [id])
 
   @@index([companyId])
 }
@@ -1894,9 +1894,9 @@ model Shipment {
   documents           ShipmentDocument[]
   transporterPayments TransporterPayment[]
 
-  division  String? @default("ETHANOL") // SUGAR | POWER | ETHANOL | COMMON
-  companyId String?   // FK → Company (null = MSPIL default)
-  company   Company?  @relation(fields: [companyId], references: [id])
+  division  String?  @default("ETHANOL") // SUGAR | POWER | ETHANOL | COMMON
+  companyId String? // FK → Company (null = MSPIL default)
+  company   Company? @relation(fields: [companyId], references: [id])
 
   @@index([date])
   @@index([status])
@@ -1950,8 +1950,8 @@ model FreightInquiry {
   createdAt         DateTime           @default(now())
   updatedAt         DateTime           @updatedAt
   quotations        FreightQuotation[]
-  companyId         String?   // FK → Company (null = MSPIL default)
-  company           Company?  @relation(fields: [companyId], references: [id])
+  companyId         String? // FK → Company (null = MSPIL default)
+  company           Company?           @relation(fields: [companyId], references: [id])
 
   @@index([companyId])
 }
@@ -1977,8 +1977,8 @@ model FreightQuotation {
   remarks         String?
   quotedAt        DateTime       @default(now())
   createdAt       DateTime       @default(now())
-  companyId       String?   // FK → Company (null = MSPIL default)
-  company         Company?  @relation(fields: [companyId], references: [id])
+  companyId       String? // FK → Company (null = MSPIL default)
+  company         Company?       @relation(fields: [companyId], references: [id])
 
   @@index([companyId])
 }
@@ -2045,7 +2045,7 @@ model Invoice {
   // TCS (Tax Collected at Source) — Section 206C(1) for scrap sales
   tcsPercent              Float                   @default(0) // 2% from 01-Apr-2026
   tcsAmount               Float                   @default(0) // tcsPercent × amount
-  tcsSection              String?                 // "206C(1)" for scrap, "206C(1H)" for high-value
+  tcsSection              String? // "206C(1)" for scrap, "206C(1H)" for high-value
   totalAmount             Float                   @default(0) // amount + gst + freight + tcs
   // Payment tracking
   paidAmount              Float                   @default(0)
@@ -2084,13 +2084,13 @@ model Invoice {
 
   // Snapshot — frozen at IRN-generation time. See .claude/skills/invoice-snapshot-immutability.md
   // Phase 1 (shadow-write): populated alongside existing flow; read path still goes through live DB.
-  snapshotJsonPath  String? // e.g. snapshots/2026/04/INV-248.json (relative to SNAPSHOT_DIR)
-  snapshotPdfPath   String? // e.g. snapshots/2026/04/INV-248.pdf
-  snapshotJsonSha   String? // SHA256 hex of JSON bytes
-  snapshotPdfSha    String? // SHA256 hex of PDF bytes
-  snapshotAt        DateTime? // when frozen
+  snapshotJsonPath String? // e.g. snapshots/2026/04/INV-248.json (relative to SNAPSHOT_DIR)
+  snapshotPdfPath  String? // e.g. snapshots/2026/04/INV-248.pdf
+  snapshotJsonSha  String? // SHA256 hex of JSON bytes
+  snapshotPdfSha   String? // SHA256 hex of PDF bytes
+  snapshotAt       DateTime? // when frozen
 
-  division String? @default("ETHANOL") // SUGAR | POWER | ETHANOL | COMMON
+  division  String?  @default("ETHANOL") // SUGAR | POWER | ETHANOL | COMMON
   companyId String? // FK → Company (null = MSPIL default)
   company   Company? @relation(fields: [companyId], references: [id])
 
@@ -2121,7 +2121,7 @@ model Payment {
   createdAt   DateTime  @default(now())
   updatedAt   DateTime  @updatedAt
 
-  division String? @default("ETHANOL") // SUGAR | POWER | ETHANOL | COMMON
+  division  String?  @default("ETHANOL") // SUGAR | POWER | ETHANOL | COMMON
   companyId String? // FK → Company (null = MSPIL default)
   company   Company? @relation(fields: [companyId], references: [id])
 
@@ -2204,6 +2204,7 @@ model Vendor {
 
   companyId String? // FK → Company (null = MSPIL default)
   company   Company? @relation(fields: [companyId], references: [id])
+
   @@index([isAgent])
   @@index([companyId])
 }
@@ -2256,75 +2257,75 @@ model Material {
   grnLines GRNLine[]
 
   divisions String[] @default([]) // empty = available to all divisions
-  companyId String?   // FK → Company (null = MSPIL default)
-  company   Company?  @relation(fields: [companyId], references: [id])
+  companyId String? // FK → Company (null = MSPIL default)
+  company   Company? @relation(fields: [companyId], references: [id])
 
   @@index([companyId])
 }
 
 // ── Purchase Order (HQ creates, sent to vendor) ──
 model PurchaseOrder {
-  id              String               @id @default(uuid())
-  poNo            Int                  @default(autoincrement())
-  vendorId        String
-  vendor          Vendor               @relation(fields: [vendorId], references: [id])
-  poDate          DateTime             @default(now())
-  deliveryDate    DateTime?
+  id                   String               @id @default(uuid())
+  poNo                 Int                  @default(autoincrement())
+  vendorId             String
+  vendor               Vendor               @relation(fields: [vendorId], references: [id])
+  poDate               DateTime             @default(now())
+  deliveryDate         DateTime?
   // GST supply type
-  supplyType      String               @default("INTRA_STATE") // INTRA_STATE (CGST+SGST), INTER_STATE (IGST)
-  placeOfSupply   String? // state code
+  supplyType           String               @default("INTRA_STATE") // INTRA_STATE (CGST+SGST), INTER_STATE (IGST)
+  placeOfSupply        String? // state code
   // Totals (auto-calculated)
-  subtotal        Float                @default(0) // sum of line amounts
-  totalCgst       Float                @default(0)
-  totalSgst       Float                @default(0)
-  totalIgst       Float                @default(0)
-  totalGst        Float                @default(0)
-  freightCharge   Float                @default(0)
-  otherCharges    Float                @default(0)
-  roundOff        Float                @default(0)
-  grandTotal      Float                @default(0)
+  subtotal             Float                @default(0) // sum of line amounts
+  totalCgst            Float                @default(0)
+  totalSgst            Float                @default(0)
+  totalIgst            Float                @default(0)
+  totalGst             Float                @default(0)
+  freightCharge        Float                @default(0)
+  otherCharges         Float                @default(0)
+  roundOff             Float                @default(0)
+  grandTotal           Float                @default(0)
   // TDS
-  tdsApplicable   Boolean              @default(false)
-  tdsSection      String?
-  tdsPercent      Float                @default(0)
-  tdsAmount       Float                @default(0)
+  tdsApplicable        Boolean              @default(false)
+  tdsSection           String?
+  tdsPercent           Float                @default(0)
+  tdsAmount            Float                @default(0)
   // Phase-B TDS unification: snapshot from calculator at booking time
-  tdsReasonSnapshot Json? // { panMissing, nonFiler, thresholdMet, ldcApplied, ytdPaid }
-  tdsComputedAt   DateTime? // when calculator last ran — payment recomputes if stale
+  tdsReasonSnapshot    Json? // { panMissing, nonFiler, thresholdMet, ldcApplied, ytdPaid }
+  tdsComputedAt        DateTime? // when calculator last ran — payment recomputes if stale
   // Per-PO TDS section override (e.g., "Payment 0.1% TDS" clause on RM contract → 194Q).
   // When set, calculator ignores vendor.tdsSectionId and uses this instead.
   overrideTdsSectionId String?
-  overrideTdsSection   TdsSection? @relation("PoOverrideTds", fields: [overrideTdsSectionId], references: [id])
+  overrideTdsSection   TdsSection?          @relation("PoOverrideTds", fields: [overrideTdsSectionId], references: [id])
   // RM contract terms ticked on this PO — keys from backend/src/data/poTerms.ts
-  termsAccepted   String[]             @default([])
+  termsAccepted        String[]             @default([])
   // Payment terms
-  paymentTerms    String?
-  creditDays      Int                  @default(30)
+  paymentTerms         String?
+  creditDays           Int                  @default(30)
   // Logistics
-  deliveryAddress String? // factory address
-  transportMode   String? // ROAD, RAIL
-  transportBy     String? // BY_US, BY_SUPPLIER
+  deliveryAddress      String? // factory address
+  transportMode        String? // ROAD, RAIL
+  transportBy          String? // BY_US, BY_SUPPLIER
   // Deal type
-  dealType        String               @default("STANDARD") // STANDARD (fixed qty PO), OPEN (running account, no qty limit)
+  dealType             String               @default("STANDARD") // STANDARD (fixed qty PO), OPEN (running account, no qty limit)
   // Status
-  status          String               @default("DRAFT") // DRAFT, APPROVED, SENT, PARTIAL_RECEIVED, RECEIVED, CLOSED, CANCELLED
-  approvedBy      String?
-  approvedAt      DateTime?
+  status               String               @default("DRAFT") // DRAFT, APPROVED, SENT, PARTIAL_RECEIVED, RECEIVED, CLOSED, CANCELLED
+  approvedBy           String?
+  approvedAt           DateTime?
   // Refs
-  remarks         String?
-  truckCap        Int? // Max trucks for FIXED TRUCKS fuel deals (NF-4)
-  requisitionId   String? // FK to PurchaseRequisition (auto-PO from indent)
-  requisition     PurchaseRequisition? @relation(fields: [requisitionId], references: [id], onDelete: SetNull)
-  userId          String
-  createdAt       DateTime             @default(now())
-  updatedAt       DateTime             @updatedAt
+  remarks              String?
+  truckCap             Int? // Max trucks for FIXED TRUCKS fuel deals (NF-4)
+  requisitionId        String? // FK to PurchaseRequisition (auto-PO from indent)
+  requisition          PurchaseRequisition? @relation(fields: [requisitionId], references: [id], onDelete: SetNull)
+  userId               String
+  createdAt            DateTime             @default(now())
+  updatedAt            DateTime             @updatedAt
 
   lines          POLine[]
   grns           GoodsReceipt[]
   vendorInvoices VendorInvoice[]
   grainTrucks    GrainTruck[]
 
-  division  String? @default("ETHANOL") // SUGAR | POWER | ETHANOL | COMMON
+  division  String?  @default("ETHANOL") // SUGAR | POWER | ETHANOL | COMMON
   companyId String? // FK → Company (null = MSPIL default)
   company   Company? @relation(fields: [companyId], references: [id])
 
@@ -2438,7 +2439,7 @@ model GoodsReceipt {
   vendorInvoices VendorInvoice[]
   grainTrucks    GrainTruck[]
 
-  division  String? @default("ETHANOL") // SUGAR | POWER | ETHANOL | COMMON
+  division  String?  @default("ETHANOL") // SUGAR | POWER | ETHANOL | COMMON
   companyId String? // FK → Company (null = MSPIL default)
   company   Company? @relation(fields: [companyId], references: [id])
 
@@ -2548,7 +2549,7 @@ model VendorInvoice {
 
   payments VendorPayment[]
 
-  division  String? @default("ETHANOL") // SUGAR | POWER | ETHANOL | COMMON
+  division  String?  @default("ETHANOL") // SUGAR | POWER | ETHANOL | COMMON
   companyId String? // FK → Company (null = MSPIL default)
   company   Company? @relation(fields: [companyId], references: [id])
 
@@ -2581,6 +2582,11 @@ model VendorPayment {
   // Payment status (bank two-step flow)
   paymentStatus   String         @default("CONFIRMED") // INITIATED (pending UTR), CONFIRMED, CANCELLED
   confirmedAt     DateTime? // when UTR was entered and payment confirmed
+  // Payment Advice delivery (emailed to vendor after confirmation)
+  adviceSentAt    DateTime? // when Payment Advice email was delivered
+  adviceSentTo    String? // email address the advice was sent to
+  // GST inclusion — captured at Pay time (compulsory user choice)
+  hasGst          Boolean? // true = payment inclusive of GST, false = advance/GST excluded, null = legacy (not captured)
   // Bank file tracking (UBI APPA integration)
   bankFileBatch   String? // batch ID when included in bank file
   bankFileSentAt  DateTime? // when bank file was generated
@@ -2590,7 +2596,7 @@ model VendorPayment {
   createdAt       DateTime       @default(now())
   updatedAt       DateTime       @updatedAt
 
-  division  String? @default("ETHANOL") // SUGAR | POWER | ETHANOL | COMMON
+  division  String?  @default("ETHANOL") // SUGAR | POWER | ETHANOL | COMMON
   companyId String? // FK → Company (null = MSPIL default)
   company   Company? @relation(fields: [companyId], references: [id])
 
@@ -2638,8 +2644,8 @@ model Contractor {
   employees   Employee[]
 
   divisions String[] @default([]) // empty = available to all divisions
-  companyId String?   // FK → Company (null = MSPIL default)
-  company   Company?  @relation(fields: [companyId], references: [id])
+  companyId String? // FK → Company (null = MSPIL default)
+  company   Company? @relation(fields: [companyId], references: [id])
 
   @@index([pan])
   @@index([isActive])
@@ -2688,9 +2694,9 @@ model ContractorBill {
   lines    ContractorBillLine[]
   payments ContractorPayment[]
 
-  division  String? @default("ETHANOL") // SUGAR | POWER | ETHANOL | COMMON
-  companyId String?   // FK → Company (null = MSPIL default)
-  company   Company?  @relation(fields: [companyId], references: [id])
+  division  String?  @default("ETHANOL") // SUGAR | POWER | ETHANOL | COMMON
+  companyId String? // FK → Company (null = MSPIL default)
+  company   Company? @relation(fields: [companyId], references: [id])
 
   @@index([contractorId])
   @@index([status])
@@ -2730,8 +2736,8 @@ model ContractorPayment {
   createdAt     DateTime        @default(now())
   updatedAt     DateTime        @updatedAt
 
-  companyId     String?   // FK → Company (null = MSPIL default)
-  company       Company?  @relation(fields: [companyId], references: [id])
+  companyId String? // FK → Company (null = MSPIL default)
+  company   Company? @relation(fields: [companyId], references: [id])
 
   @@index([contractorId])
   @@index([billId])
@@ -2746,32 +2752,32 @@ model ContractorPayment {
 // ══════════════════════════════════════════════════════════════
 
 model ContractorStoreIssue {
-  id             String   @id @default(uuid())
-  issueNo        Int      @default(autoincrement())
-  issueDate      DateTime @default(now())
-  contractorId   String
-  contractor     Contractor @relation(fields: [contractorId], references: [id])
+  id            String     @id @default(uuid())
+  issueNo       Int        @default(autoincrement())
+  issueDate     DateTime   @default(now())
+  contractorId  String
+  contractor    Contractor @relation(fields: [contractorId], references: [id])
   // Totals (denormalized for list view)
-  subtotal       Float    @default(0) // Sum of (qty × rate) across lines
-  chargePercent  Float    @default(5) // Usage/handling charge %
-  chargeAmount   Float    @default(0) // chargePercent × subtotal / 100
-  totalAmount    Float    @default(0) // subtotal + chargeAmount
-  status         String   @default("DRAFT") // DRAFT | CONFIRMED | RETURNED | CANCELLED
-  purpose        String?  // What work the items are for
-  remarks        String?
-  returnedAt     DateTime?
-  returnRemarks  String?
-  userId         String   // Created by
-  confirmedBy    String?
-  confirmedAt    DateTime?
-  createdAt      DateTime @default(now())
-  updatedAt      DateTime @updatedAt
+  subtotal      Float      @default(0) // Sum of (qty × rate) across lines
+  chargePercent Float      @default(5) // Usage/handling charge %
+  chargeAmount  Float      @default(0) // chargePercent × subtotal / 100
+  totalAmount   Float      @default(0) // subtotal + chargeAmount
+  status        String     @default("DRAFT") // DRAFT | CONFIRMED | RETURNED | CANCELLED
+  purpose       String? // What work the items are for
+  remarks       String?
+  returnedAt    DateTime?
+  returnRemarks String?
+  userId        String // Created by
+  confirmedBy   String?
+  confirmedAt   DateTime?
+  createdAt     DateTime   @default(now())
+  updatedAt     DateTime   @updatedAt
 
   lines ContractorStoreIssueLine[]
 
-  division  String? @default("ETHANOL")
-  companyId String?   // FK → Company (null = MSPIL default)
-  company   Company?  @relation(fields: [companyId], references: [id])
+  division  String?  @default("ETHANOL")
+  companyId String? // FK → Company (null = MSPIL default)
+  company   Company? @relation(fields: [companyId], references: [id])
 
   @@index([contractorId])
   @@index([status])
@@ -2781,17 +2787,17 @@ model ContractorStoreIssue {
 }
 
 model ContractorStoreIssueLine {
-  id          String               @id @default(uuid())
-  issueId     String
-  issue       ContractorStoreIssue @relation(fields: [issueId], references: [id], onDelete: Cascade)
-  description String               // Item name
-  inventoryItemId String?          // Link to InventoryItem if from store stock
-  quantity    Float                @default(1)
-  unit        String               @default("NOS")
-  rate        Float                @default(0) // Cost price from store
-  amount      Float                @default(0) // qty × rate
-  returnedQty Float                @default(0) // How much was returned
-  remarks     String?
+  id              String               @id @default(uuid())
+  issueId         String
+  issue           ContractorStoreIssue @relation(fields: [issueId], references: [id], onDelete: Cascade)
+  description     String // Item name
+  inventoryItemId String? // Link to InventoryItem if from store stock
+  quantity        Float                @default(1)
+  unit            String               @default("NOS")
+  rate            Float                @default(0) // Cost price from store
+  amount          Float                @default(0) // qty × rate
+  returnedQty     Float                @default(0) // How much was returned
+  remarks         String?
 
   @@index([issueId])
 }
@@ -2835,9 +2841,9 @@ model DirectPurchase {
   createdAt       DateTime @default(now())
   updatedAt       DateTime @updatedAt
 
-  division  String? @default("ETHANOL") // SUGAR | POWER | ETHANOL | COMMON
-  companyId String?   // FK → Company (null = MSPIL default)
-  company   Company?  @relation(fields: [companyId], references: [id])
+  division  String?  @default("ETHANOL") // SUGAR | POWER | ETHANOL | COMMON
+  companyId String? // FK → Company (null = MSPIL default)
+  company   Company? @relation(fields: [companyId], references: [id])
 
   @@index([date])
   @@index([isPaid])
@@ -2847,48 +2853,48 @@ model DirectPurchase {
 
 // Scrap / Misc Sales Orders — open rate contracts with validity period
 model DirectSale {
-  id              String    @id @default(uuid())
-  entryNo         Int       @default(autoincrement())
-  date            DateTime  @default(now())
+  id               String    @id @default(uuid())
+  entryNo          Int       @default(autoincrement())
+  date             DateTime  @default(now())
   // Buyer — linked to Customer master
-  customerId      String?
-  customer        Customer? @relation(fields: [customerId], references: [id])
-  buyerName       String
-  buyerPhone      String?
-  buyerAddress    String?
+  customerId       String?
+  customer         Customer? @relation(fields: [customerId], references: [id])
+  buyerName        String
+  buyerPhone       String?
+  buyerAddress     String?
   // Product & Rate
-  productName     String    // Scrap Iron, Scrap SS, etc.
-  rate            Float     @default(0)
-  unit            String    @default("KG")
+  productName      String // Scrap Iron, Scrap SS, etc.
+  rate             Float     @default(0)
+  unit             String    @default("KG")
   // Validity
-  validFrom       DateTime  @default(now())
-  validTo         DateTime?
-  status          String    @default("ACTIVE") // ACTIVE, EXPIRED, CLOSED
+  validFrom        DateTime  @default(now())
+  validTo          DateTime?
+  status           String    @default("ACTIVE") // ACTIVE, EXPIRED, CLOSED
   // Supplied (running total from weighbridge dispatches)
-  quantity         Float    @default(0)  // estimated/target qty (0 = open/unlimited)
-  totalSuppliedQty Float   @default(0)
-  totalSuppliedAmt Float   @default(0)
-  amount           Float   @default(0)  // legacy: qty × rate (for backward compat)
+  quantity         Float     @default(0) // estimated/target qty (0 = open/unlimited)
+  totalSuppliedQty Float     @default(0)
+  totalSuppliedAmt Float     @default(0)
+  amount           Float     @default(0) // legacy: qty × rate (for backward compat)
   // Vehicle (legacy — future dispatches tracked separately)
-  vehicleNo    String?
-  weightSlipNo String?
-  grossWeight  Float?
-  tareWeight   Float?
-  netWeight    Float?
+  vehicleNo        String?
+  weightSlipNo     String?
+  grossWeight      Float?
+  tareWeight       Float?
+  netWeight        Float?
   // Payment (legacy)
-  paymentMode  String   @default("CASH")
-  paymentRef   String?
-  isPaid       Boolean  @default(true)
+  paymentMode      String    @default("CASH")
+  paymentRef       String?
+  isPaid           Boolean   @default(true)
   //
-  remarks      String?
-  userId       String
-  createdAt    DateTime @default(now())
-  updatedAt    DateTime @updatedAt
+  remarks          String?
+  userId           String
+  createdAt        DateTime  @default(now())
+  updatedAt        DateTime  @updatedAt
 
-  division   String?    @default("ETHANOL")
-  companyId  String?   // FK → Company (null = MSPIL default)
-  company    Company?  @relation(fields: [companyId], references: [id])
-  shipments  Shipment[]
+  division  String?    @default("ETHANOL")
+  companyId String? // FK → Company (null = MSPIL default)
+  company   Company?   @relation(fields: [companyId], references: [id])
+  shipments Shipment[]
 
   @@index([date])
   @@index([status])
@@ -2964,8 +2970,8 @@ model EthanolContract {
 
   liftings   EthanolLifting[]
   dispatches DispatchTruck[]
-  companyId  String?   // FK → Company (null = MSPIL default)
-  company    Company?  @relation(fields: [companyId], references: [id])
+  companyId  String? // FK → Company (null = MSPIL default)
+  company    Company?         @relation(fields: [companyId], references: [id])
 
   @@index([buyerCustomerId])
   @@index([companyId])
@@ -3038,8 +3044,8 @@ model TelegramMessage {
 
 model WhatsAppMessage {
   id        String   @id @default(cuid())
-  direction String   // "outgoing" (for now)
-  recipient String   // phone or group JID
+  direction String // "outgoing" (for now)
+  recipient String // phone or group JID
   message   String   @db.Text
   module    String?
   status    String   @default("sent") // sent, failed
@@ -3069,7 +3075,7 @@ model Account {
   journalLines     JournalLine[]
   bankTransactions BankTransaction[]
   companyId        String? // FK → Company (null = MSPIL default)
-  company          Company? @relation(fields: [companyId], references: [id])
+  company          Company?          @relation(fields: [companyId], references: [id])
   createdAt        DateTime          @default(now())
   updatedAt        DateTime          @updatedAt
 
@@ -3093,7 +3099,7 @@ model JournalEntry {
   createdAt       DateTime      @default(now())
   updatedAt       DateTime      @updatedAt
 
-  division  String? @default("ETHANOL") // SUGAR | POWER | ETHANOL | COMMON
+  division  String?  @default("ETHANOL") // SUGAR | POWER | ETHANOL | COMMON
   companyId String? // FK → Company (null = MSPIL default)
   company   Company? @relation(fields: [companyId], references: [id])
 
@@ -3136,7 +3142,7 @@ model BankTransaction {
   importBatch    String? // batch ID for CSV imports
   createdAt      DateTime @default(now())
 
-  division String? @default("ETHANOL") // SUGAR | POWER | ETHANOL | COMMON
+  division  String?  @default("ETHANOL") // SUGAR | POWER | ETHANOL | COMMON
   companyId String? // FK → Company (null = MSPIL default)
   company   Company? @relation(fields: [companyId], references: [id])
 
@@ -3206,7 +3212,7 @@ model CashVoucher {
   createdAt       DateTime  @default(now())
   updatedAt       DateTime  @updatedAt
 
-  division String? @default("ETHANOL") // SUGAR | POWER | ETHANOL | COMMON
+  division  String?  @default("ETHANOL") // SUGAR | POWER | ETHANOL | COMMON
   companyId String? // FK → Company (null = MSPIL default)
   company   Company? @relation(fields: [companyId], references: [id])
 
@@ -3223,30 +3229,30 @@ model CashVoucher {
 // ══════════════════════════════════════════════════════════════
 
 model BankLoan {
-  id                String          @id @default(uuid())
-  loanNo            String          @unique
-  bankName          String
-  bankAccountCode   String? // Account code from Chart of Accounts (e.g., 2400)
-  loanType          String          @default("TERM_LOAN") // TERM_LOAN, WORKING_CAPITAL, CC_LIMIT, EQUIPMENT
-  sanctionAmount    Float
-  disbursedAmount   Float           @default(0)
-  outstandingAmount Float           @default(0)
-  interestRate      Float // Annual rate (e.g., 9.5)
-  tenure            Int // Months
-  emiAmount         Float           @default(0)
-  sanctionDate      DateTime
-  disbursementDate  DateTime?
-  maturityDate      DateTime?
-  status            String          @default("ACTIVE") // ACTIVE, CLOSED, RESTRUCTURED
-  repaymentFrequency String         @default("MONTHLY") // MONTHLY, QUARTERLY, HALF_YEARLY, BULLET, NONE
-  securityDetails   String?
-  remarks           String?
-  repayments        LoanRepayment[]
-  userId            String
-  createdAt         DateTime        @default(now())
-  updatedAt         DateTime        @updatedAt
-  companyId         String? // FK → Company (null = MSPIL default)
-  company           Company?        @relation(fields: [companyId], references: [id])
+  id                 String          @id @default(uuid())
+  loanNo             String          @unique
+  bankName           String
+  bankAccountCode    String? // Account code from Chart of Accounts (e.g., 2400)
+  loanType           String          @default("TERM_LOAN") // TERM_LOAN, WORKING_CAPITAL, CC_LIMIT, EQUIPMENT
+  sanctionAmount     Float
+  disbursedAmount    Float           @default(0)
+  outstandingAmount  Float           @default(0)
+  interestRate       Float // Annual rate (e.g., 9.5)
+  tenure             Int // Months
+  emiAmount          Float           @default(0)
+  sanctionDate       DateTime
+  disbursementDate   DateTime?
+  maturityDate       DateTime?
+  status             String          @default("ACTIVE") // ACTIVE, CLOSED, RESTRUCTURED
+  repaymentFrequency String          @default("MONTHLY") // MONTHLY, QUARTERLY, HALF_YEARLY, BULLET, NONE
+  securityDetails    String?
+  remarks            String?
+  repayments         LoanRepayment[]
+  userId             String
+  createdAt          DateTime        @default(now())
+  updatedAt          DateTime        @updatedAt
+  companyId          String? // FK → Company (null = MSPIL default)
+  company            Company?        @relation(fields: [companyId], references: [id])
 
   @@index([status])
   @@index([bankName])
@@ -3272,8 +3278,8 @@ model LoanRepayment {
   userId           String?
   createdAt        DateTime  @default(now())
 
-  companyId        String?   // FK → Company (null = MSPIL default)
-  company          Company?  @relation(fields: [companyId], references: [id])
+  companyId String? // FK → Company (null = MSPIL default)
+  company   Company? @relation(fields: [companyId], references: [id])
 
   @@index([loanId])
   @@index([dueDate])
@@ -3384,7 +3390,7 @@ model BankPaymentBatch {
   items          BankPaymentItem[]
   audit          BankPaymentAudit[]
   companyId      String? // FK → Company (null = MSPIL default)
-  company        Company? @relation(fields: [companyId], references: [id])
+  company        Company?           @relation(fields: [companyId], references: [id])
 
   @@index([status])
   @@index([createdBy])
@@ -3518,8 +3524,8 @@ model Approval {
   createdAt   DateTime  @default(now())
   updatedAt   DateTime  @updatedAt
 
-  companyId   String?   // FK → Company (null = MSPIL default)
-  company     Company?  @relation(fields: [companyId], references: [id])
+  companyId String? // FK → Company (null = MSPIL default)
+  company   Company? @relation(fields: [companyId], references: [id])
 
   @@index([status])
   @@index([type])
@@ -3757,8 +3763,8 @@ model DDGSContract {
 
   dispatches     DDGSContractDispatch[]
   dispatchTrucks DDGSDispatchTruck[]
-  companyId      String?   // FK → Company (null = MSPIL default)
-  company        Company?  @relation(fields: [companyId], references: [id])
+  companyId      String? // FK → Company (null = MSPIL default)
+  company        Company?               @relation(fields: [companyId], references: [id])
 
   @@index([customerId])
   @@index([status])
@@ -3863,7 +3869,7 @@ model SugarDispatchTruck {
   updatedAt             DateTime               @default(now()) @updatedAt
   sugarContractDispatch SugarContractDispatch?
 
-  division  String? @default("ETHANOL") // SUGAR | POWER | ETHANOL | COMMON
+  division  String?  @default("ETHANOL") // SUGAR | POWER | ETHANOL | COMMON
   companyId String? // FK → Company (null = MSPIL default)
   company   Company? @relation(fields: [companyId], references: [id])
 
@@ -3912,8 +3918,8 @@ model SugarContract {
 
   dispatches     SugarContractDispatch[]
   dispatchTrucks SugarDispatchTruck[]
-  companyId      String?   // FK → Company (null = MSPIL default)
-  company        Company?  @relation(fields: [companyId], references: [id])
+  companyId      String? // FK → Company (null = MSPIL default)
+  company        Company?                @relation(fields: [companyId], references: [id])
 
   @@index([customerId])
   @@index([status])
@@ -3998,8 +4004,8 @@ model FiscalYear {
   series    InvoiceSeries[]
   createdAt DateTime        @default(now())
   updatedAt DateTime        @updatedAt
-  companyId String?   // FK → Company (null = MSPIL default)
-  company   Company?  @relation(fields: [companyId], references: [id])
+  companyId String? // FK → Company (null = MSPIL default)
+  company   Company?        @relation(fields: [companyId], references: [id])
 
   @@index([isCurrent])
   @@index([companyId])
@@ -4018,8 +4024,8 @@ model InvoiceSeries {
   createdAt  DateTime   @default(now())
   updatedAt  DateTime   @updatedAt
 
-  companyId  String?   // FK → Company (null = MSPIL default)
-  company    Company?  @relation(fields: [companyId], references: [id])
+  companyId String? // FK → Company (null = MSPIL default)
+  company   Company? @relation(fields: [companyId], references: [id])
 
   @@unique([fyId, docType])
   @@index([fyId])
@@ -4067,23 +4073,23 @@ model GstRate {
 
 // TDS Section master (new Income-tax Act 2025 codes + old legacy)
 model TdsSection {
-  id                 String    @id @default(cuid())
-  code               String    @unique // "393_CONTRACTOR"
+  id                 String          @id @default(cuid())
+  code               String          @unique // "393_CONTRACTOR"
   newSection         String // "393"
   oldSection         String? // "194C"
   nature             String // "Contractor"
   rateIndividual     Float // 1
   rateOthers         Float // 2
-  thresholdSingle    Float     @default(0)
-  thresholdAggregate Float     @default(0)
-  panMissingRate     Float     @default(20)
-  nonFilerRate       Float     @default(5)
+  thresholdSingle    Float           @default(0)
+  thresholdAggregate Float           @default(0)
+  panMissingRate     Float           @default(20)
+  nonFilerRate       Float           @default(5)
   effectiveFrom      DateTime
   effectiveTill      DateTime?
-  isActive           Boolean   @default(true)
+  isActive           Boolean         @default(true)
   defaultLedgerId    String? // FK → Account (TDS Payable ledger for this section)
-  createdAt          DateTime  @default(now())
-  updatedAt          DateTime  @updatedAt
+  createdAt          DateTime        @default(now())
+  updatedAt          DateTime        @updatedAt
   vendors            Vendor[]
   poOverrides        PurchaseOrder[] @relation("PoOverrideTds")
 
@@ -4145,59 +4151,59 @@ model TaxRuleExplanation {
 /// syncWorker (Phase 2) and by a Tailscale backfill script (Phase 3).
 /// See .claude/memory or commit history for the architectural context.
 model Weighment {
-  id                 String    @id @default(uuid())
-  localId            String    @unique
-  ticketNo           Int?      @unique // unique index added 2026-04-16 — DB-level dedup safety net
-  vehicleNo          String
-  direction          String
-  supplierName       String?
-  customerName       String?
-  shipToName         String?
-  materialName       String?
-  materialCategory   String?
-  purchaseType       String?
-  poId               String?
-  poLineId           String?
-  supplierId         String?
-  customerId         String?
-  grossWeight        Float?
-  tareWeight         Float?
-  netWeight          Float?
-  grossTime          DateTime?
-  tareTime           DateTime?
-  gateEntryAt        DateTime?
-  firstWeightAt      DateTime?
-  secondWeightAt     DateTime?
-  releaseAt          DateTime?
-  status             String
-  labStatus          String?
-  labMoisture        Float?
-  labStarch          Float?
-  labDamaged         Float?
-  labForeignMatter   Float?
-  labRemarks         String?
-  driverName         String?
-  driverPhone        String?
-  driverLicense      String?
-  transporterName    String?
-  transporterGstin   String?
-  vehicleType        String?
-  bags               Int?
-  rate               Float?
-  strength           Float?
-  quantityBL         Float?
-  sealNo             String?
-  rstNo              String?
-  remarks            String?
-  cancelled          Boolean   @default(false)
-  cancelledReason    String?
-  cancelledAt        DateTime?
-  factoryCreatedAt   DateTime?
-  factoryUpdatedAt   DateTime?
-  rawPayload         Json?
-  syncedAt           DateTime  @default(now()) @updatedAt
-  syncedFromIp       String?
-  mirrorVersion      Int       @default(1)
+  id               String    @id @default(uuid())
+  localId          String    @unique
+  ticketNo         Int?      @unique // unique index added 2026-04-16 — DB-level dedup safety net
+  vehicleNo        String
+  direction        String
+  supplierName     String?
+  customerName     String?
+  shipToName       String?
+  materialName     String?
+  materialCategory String?
+  purchaseType     String?
+  poId             String?
+  poLineId         String?
+  supplierId       String?
+  customerId       String?
+  grossWeight      Float?
+  tareWeight       Float?
+  netWeight        Float?
+  grossTime        DateTime?
+  tareTime         DateTime?
+  gateEntryAt      DateTime?
+  firstWeightAt    DateTime?
+  secondWeightAt   DateTime?
+  releaseAt        DateTime?
+  status           String
+  labStatus        String?
+  labMoisture      Float?
+  labStarch        Float?
+  labDamaged       Float?
+  labForeignMatter Float?
+  labRemarks       String?
+  driverName       String?
+  driverPhone      String?
+  driverLicense    String?
+  transporterName  String?
+  transporterGstin String?
+  vehicleType      String?
+  bags             Int?
+  rate             Float?
+  strength         Float?
+  quantityBL       Float?
+  sealNo           String?
+  rstNo            String?
+  remarks          String?
+  cancelled        Boolean   @default(false)
+  cancelledReason  String?
+  cancelledAt      DateTime?
+  factoryCreatedAt DateTime?
+  factoryUpdatedAt DateTime?
+  rawPayload       Json?
+  syncedAt         DateTime  @default(now()) @updatedAt
+  syncedFromIp     String?
+  mirrorVersion    Int       @default(1)
 
   @@index([direction, gateEntryAt])
   @@index([materialCategory])
@@ -4227,26 +4233,26 @@ model Designation {
   updatedAt DateTime @updatedAt
 
   employees Employee[]
-  companyId String?   // FK → Company (null = MSPIL default)
-  company   Company?  @relation(fields: [companyId], references: [id])
+  companyId String? // FK → Company (null = MSPIL default)
+  company   Company?   @relation(fields: [companyId], references: [id])
 
   @@index([companyId])
 }
 
 model Employee {
-  id    String @id @default(cuid())
+  id      String @id @default(cuid())
   empCode String @unique // MSPIL-001
   empNo   Int    @unique @default(autoincrement())
 
   // Personal
-  firstName      String
-  lastName       String
-  fatherName     String?
-  dateOfBirth    DateTime?
-  gender         String? // MALE, FEMALE, OTHER
-  bloodGroup     String?
-  maritalStatus  String?
-  photo          String?
+  firstName     String
+  lastName      String
+  fatherName    String?
+  dateOfBirth   DateTime?
+  gender        String? // MALE, FEMALE, OTHER
+  bloodGroup    String?
+  maritalStatus String?
+  photo         String?
 
   // Contact
   phone            String?
@@ -4266,8 +4272,8 @@ model Employee {
   pfMemberNo            String? // Establishment-specific: AA/BBB/CCCCCCC
   pfJoiningDate         DateTime?
   previousPfNo          String? // For Form 13 transfer
-  isInternationalWorker Boolean @default(false)
-  higherPensionOpt      Boolean @default(false) // Section 11(3) opt-in
+  isInternationalWorker Boolean   @default(false)
+  higherPensionOpt      Boolean   @default(false) // Section 11(3) opt-in
 
   // ESI
   esicNo String?
@@ -4304,10 +4310,10 @@ model Employee {
   dateOfJoining    DateTime
   confirmationDate DateTime?
   dateOfLeaving    DateTime?
-  employmentType   String  @default("PERMANENT") // PERMANENT, CONTRACT, FIXED_TERM, TRAINEE, APPRENTICE, DAILY_WAGE
+  employmentType   String    @default("PERMANENT") // PERMANENT, CONTRACT, FIXED_TERM, TRAINEE, APPRENTICE, DAILY_WAGE
   skillCategory    String? // UNSKILLED, SEMI_SKILLED, SKILLED, HIGHLY_SKILLED
   shiftPattern     String? // DAY, ROTATING_3SHIFT, GENERAL
-  workLocation     String  @default("FACTORY") // FACTORY, OFFICE
+  workLocation     String    @default("FACTORY") // FACTORY, OFFICE
 
   // Salary Config
   ctcAnnual        Float   @default(0)
@@ -4335,8 +4341,8 @@ model Employee {
 
   salaryComponents EmployeeSalaryComponent[]
   payrollLines     PayrollLine[]
-  companyId        String?   // FK → Company (null = MSPIL default)
-  company          Company?  @relation(fields: [companyId], references: [id])
+  companyId        String? // FK → Company (null = MSPIL default)
+  company          Company?                  @relation(fields: [companyId], references: [id])
 
   @@index([departmentId])
   @@index([designationId])
@@ -4347,17 +4353,17 @@ model Employee {
 }
 
 model SalaryComponent {
-  id              String  @id @default(cuid())
-  code            String  @unique // BASIC, HRA, EPF_EE, EPF_ER_EPF, EPF_ER_EPS, etc.
+  id              String   @id @default(cuid())
+  code            String   @unique // BASIC, HRA, EPF_EE, EPF_ER_EPF, EPF_ER_EPS, etc.
   name            String
   type            String // EARNING, DEDUCTION, EMPLOYER_CONTRIBUTION
-  isStatutory     Boolean @default(false)
-  isTaxable       Boolean @default(true)
-  isPfWage        Boolean @default(false) // included in PF wage calculation
-  calculationType String  @default("FIXED") // FIXED, PERCENTAGE_OF_BASIC, PERCENTAGE_OF_GROSS, FORMULA
+  isStatutory     Boolean  @default(false)
+  isTaxable       Boolean  @default(true)
+  isPfWage        Boolean  @default(false) // included in PF wage calculation
+  calculationType String   @default("FIXED") // FIXED, PERCENTAGE_OF_BASIC, PERCENTAGE_OF_GROSS, FORMULA
   defaultPct      Float?
-  isActive        Boolean @default(true)
-  sortOrder       Int     @default(0)
+  isActive        Boolean  @default(true)
+  sortOrder       Int      @default(0)
   createdAt       DateTime @default(now())
   updatedAt       DateTime @updatedAt
 
@@ -4407,8 +4413,8 @@ model PayrollRun {
   updatedAt        DateTime  @updatedAt
 
   lines     PayrollLine[]
-  companyId String?   // FK → Company (null = MSPIL default)
-  company   Company?  @relation(fields: [companyId], references: [id])
+  companyId String? // FK → Company (null = MSPIL default)
+  company   Company?      @relation(fields: [companyId], references: [id])
 
   @@unique([month, year])
   @@index([status])
@@ -4476,25 +4482,25 @@ model PayrollLineComponent {
 
 // ── GST Reconciliation (2A / 2B) ────────────────────────────
 model GstReconRun {
-  id            String   @id @default(cuid())
-  returnType    String   // "2A" | "2B"
-  filingPeriod  String   // "042026" (MMYYYY from portal)
-  periodMonth   Int      // 4
-  periodYear    Int      // 2026
-  buyerGstin    String
-  uploadedAt    DateTime @default(now())
-  uploadedBy    String
-  status        String   @default("UPLOADED") // UPLOADED | MATCHED | FINALIZED
-  totalPortal   Int      @default(0)
-  totalBooks    Int      @default(0)
-  matched       Int      @default(0)
-  onlyInPortal  Int      @default(0)
-  onlyInBooks   Int      @default(0)
-  mismatch      Int      @default(0)
-  itcMatched    Float    @default(0)
-  itcAtRisk     Float    @default(0)
-  rawJson       String?  @db.Text
-  entries       GstReconEntry[]
+  id           String          @id @default(cuid())
+  returnType   String // "2A" | "2B"
+  filingPeriod String // "042026" (MMYYYY from portal)
+  periodMonth  Int // 4
+  periodYear   Int // 2026
+  buyerGstin   String
+  uploadedAt   DateTime        @default(now())
+  uploadedBy   String
+  status       String          @default("UPLOADED") // UPLOADED | MATCHED | FINALIZED
+  totalPortal  Int             @default(0)
+  totalBooks   Int             @default(0)
+  matched      Int             @default(0)
+  onlyInPortal Int             @default(0)
+  onlyInBooks  Int             @default(0)
+  mismatch     Int             @default(0)
+  itcMatched   Float           @default(0)
+  itcAtRisk    Float           @default(0)
+  rawJson      String?         @db.Text
+  entries      GstReconEntry[]
 
   @@index([filingPeriod])
   @@index([returnType, filingPeriod])
@@ -4502,25 +4508,25 @@ model GstReconRun {
 }
 
 model GstReconEntry {
-  id              String       @id @default(cuid())
+  id              String      @id @default(cuid())
   runId           String
-  run             GstReconRun  @relation(fields: [runId], references: [id], onDelete: Cascade)
-  source          String       // "PORTAL" | "BOOKS"
+  run             GstReconRun @relation(fields: [runId], references: [id], onDelete: Cascade)
+  source          String // "PORTAL" | "BOOKS"
   supplierGstin   String
   supplierName    String?
   invoiceNumber   String
   invoiceDate     DateTime?
-  invoiceValue    Float        @default(0)
-  taxableValue    Float        @default(0)
-  cgst            Float        @default(0)
-  sgst            Float        @default(0)
-  igst            Float        @default(0)
-  cess            Float        @default(0)
-  totalGst        Float        @default(0)
-  isRCM           Boolean      @default(false)
-  itcAvailable    String?      // "Y" | "N" from portal
-  matchStatus     String       @default("PENDING") // MATCHED | ONLY_IN_PORTAL | ONLY_IN_BOOKS | MISMATCH
-  matchMethod     String?      // "AUTO" | "MANUAL"
+  invoiceValue    Float       @default(0)
+  taxableValue    Float       @default(0)
+  cgst            Float       @default(0)
+  sgst            Float       @default(0)
+  igst            Float       @default(0)
+  cess            Float       @default(0)
+  totalGst        Float       @default(0)
+  isRCM           Boolean     @default(false)
+  itcAvailable    String? // "Y" | "N" from portal
+  matchStatus     String      @default("PENDING") // MATCHED | ONLY_IN_PORTAL | ONLY_IN_BOOKS | MISMATCH
+  matchMethod     String? // "AUTO" | "MANUAL"
   vendorInvoiceId String?
   taxDiffCgst     Float?
   taxDiffSgst     Float?
@@ -4551,19 +4557,19 @@ model GstReconEntry {
 //   - StockLevel, SyncQueue, Heartbeat, OpcTag, WashTotalizer (high-volume noise)
 // ═══════════════════════════════════════════════
 model ActivityLog {
-  id          String   @id @default(uuid())
-  category    String   // FINANCIAL | MASTER_DATA | INVENTORY | WEIGHBRIDGE | COMPLIANCE | AUTH | CONTRACT | CONFIG
-  model       String   // e.g. "Invoice", "PurchaseOrder", "Vendor"
-  recordId    String?  // primary key of the affected row
-  action      String   // CREATE | UPDATE | DELETE
-  userId      String?  // null for system-initiated writes (background workers)
-  userName    String?  // "system" when no user context
-  userRole    String?
-  routePath   String?  // e.g. "POST /api/invoices"
-  ipAddress   String?
-  summary     String?  // short human-readable headline (computed by logger)
-  changes     Json?    // {field: {from, to}} for UPDATE, full row for CREATE/DELETE
-  createdAt   DateTime @default(now())
+  id        String   @id @default(uuid())
+  category  String // FINANCIAL | MASTER_DATA | INVENTORY | WEIGHBRIDGE | COMPLIANCE | AUTH | CONTRACT | CONFIG
+  model     String // e.g. "Invoice", "PurchaseOrder", "Vendor"
+  recordId  String? // primary key of the affected row
+  action    String // CREATE | UPDATE | DELETE
+  userId    String? // null for system-initiated writes (background workers)
+  userName  String? // "system" when no user context
+  userRole  String?
+  routePath String? // e.g. "POST /api/invoices"
+  ipAddress String?
+  summary   String? // short human-readable headline (computed by logger)
+  changes   Json? // {field: {from, to}} for UPDATE, full row for CREATE/DELETE
+  createdAt DateTime @default(now())
 
   @@index([category, createdAt])
   @@index([model, recordId])
@@ -4580,25 +4586,25 @@ model ActivityLog {
 // DUPLICATE_OVERRIDE. Add new types as new rules ship — column is free-form.
 // ═══════════════════════════════════════════════
 model WeighmentAuditEvent {
-  id              String   @id @default(uuid())
-  factoryEventId  String   @unique // factory-side UUID, idempotency key
-  eventType       String   // SCALE_NOT_ZERO_OVERRIDE | DELTA_CONFIRMED | INTERVAL_OVERRIDE | DUPLICATE_OVERRIDE
-  ruleKey         String?  // BusinessRule.key that triggered the event (null if not rule-based)
-  weighmentLocalId String  // factory Weighment.localId — links to GrainTruck/DispatchTruck via remarks
-  ticketNo        Int?     // snapshot for readability
-  vehicleNo       String?  // snapshot
-  pcId            String?  // which scale was used
-  action          String?  // GROSS | TARE | GATE_ENTRY
-  newWeight       Float?   // weight that was being captured
-  prevWeight      Float?   // weight it was compared against
-  liveScaleWeight Float?   // live scale reading at capture time (R1 only)
-  thresholdKg     Float?   // rule threshold at the time
-  message         String?  // operator-facing message that was shown
-  confirmedBy     String   // factory user.name who clicked confirm/override
-  confirmReason   String?  // optional free-text reason
-  occurredAt      DateTime // when the event happened on factory
-  receivedAt      DateTime @default(now()) // when cloud received it
-  rawPayload      Json?    // full payload for forensics
+  id               String   @id @default(uuid())
+  factoryEventId   String   @unique // factory-side UUID, idempotency key
+  eventType        String // SCALE_NOT_ZERO_OVERRIDE | DELTA_CONFIRMED | INTERVAL_OVERRIDE | DUPLICATE_OVERRIDE
+  ruleKey          String? // BusinessRule.key that triggered the event (null if not rule-based)
+  weighmentLocalId String // factory Weighment.localId — links to GrainTruck/DispatchTruck via remarks
+  ticketNo         Int? // snapshot for readability
+  vehicleNo        String? // snapshot
+  pcId             String? // which scale was used
+  action           String? // GROSS | TARE | GATE_ENTRY
+  newWeight        Float? // weight that was being captured
+  prevWeight       Float? // weight it was compared against
+  liveScaleWeight  Float? // live scale reading at capture time (R1 only)
+  thresholdKg      Float? // rule threshold at the time
+  message          String? // operator-facing message that was shown
+  confirmedBy      String // factory user.name who clicked confirm/override
+  confirmReason    String? // optional free-text reason
+  occurredAt       DateTime // when the event happened on factory
+  receivedAt       DateTime @default(now()) // when cloud received it
+  rawPayload       Json? // full payload for forensics
 
   @@index([eventType])
   @@index([weighmentLocalId])

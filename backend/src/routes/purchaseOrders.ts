@@ -345,7 +345,7 @@ router.get('/:id', asyncHandler(async (req: AuthRequest, res: Response) => {
         ],
       },
       orderBy: { paymentDate: 'desc' },
-      select: { id: true, amount: true, mode: true, reference: true, paymentDate: true, tdsDeducted: true, remarks: true },
+      select: { id: true, amount: true, mode: true, reference: true, paymentDate: true, tdsDeducted: true, remarks: true, paymentStatus: true, adviceSentAt: true, adviceSentTo: true, hasGst: true },
     });
     const directPaidTotal = directPayments.reduce((s, p) => s + p.amount, 0);
     totalPaid += directPaidTotal;
@@ -930,9 +930,10 @@ router.get('/:id/payments', asyncHandler(async (req: AuthRequest, res: Response)
 
 // POST /:id/pay — record payment against PO (partial OK, auto-close when fully paid)
 router.post('/:id/pay', asyncHandler(async (req: AuthRequest, res: Response) => {
-  const { mode, reference, remarks: userRemarks } = req.body;
+  const { mode, reference, remarks: userRemarks, hasGst } = req.body;
   const amount = parseFloat(req.body.amount);
   if (!amount || !isFinite(amount) || amount <= 0) return res.status(400).json({ error: 'Amount must be a positive number' });
+  if (typeof hasGst !== 'boolean') return res.status(400).json({ error: 'Select whether this payment includes GST (hasGst true/false).' });
 
   const po = await prisma.purchaseOrder.findUnique({
     where: { id: req.params.id },
@@ -1066,6 +1067,7 @@ router.post('/:id/pay', asyncHandler(async (req: AuthRequest, res: Response) => 
       paymentStatus: reference ? 'CONFIRMED' : 'INITIATED', // If UTR provided, auto-confirm
       confirmedAt: reference ? new Date() : null,
       isAdvance: false,
+      hasGst,
       remarks: `Payment against PO-${po.poNo}${userRemarks ? ' | ' + userRemarks : ''}`,
       userId: req.user!.id,
       companyId: getActiveCompanyId(req),

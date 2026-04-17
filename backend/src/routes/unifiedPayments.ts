@@ -31,6 +31,9 @@ interface UnifiedPayment {
   // Payment Advice gating (vendor payments only — non-vendor rows leave these undefined)
   paymentStatus?: string;           // INITIATED | CONFIRMED | CANCELLED
   vendorEmail?: string | null;      // from Vendor.email — used to enable "Email Advice" UI
+  adviceSentAt?: Date | null;       // when Payment Advice was emailed
+  adviceSentTo?: string | null;     // email the advice was sent to
+  hasGst?: boolean | null;          // true/false/null (null = legacy, before the field existed)
 }
 
 // ═══════════════════════════════════════════════
@@ -65,7 +68,7 @@ router.get('/outgoing', asyncHandler(async (req: AuthRequest, res: Response) => 
       select: {
         id: true, paymentDate: true, amount: true, mode: true, reference: true,
         remarks: true, tdsDeducted: true, isAdvance: true, createdAt: true,
-        paymentStatus: true,
+        paymentStatus: true, adviceSentAt: true, adviceSentTo: true, hasGst: true,
         vendor: { select: { name: true, email: true } },
         invoice: { select: { invoiceNo: true, vendorInvNo: true, poId: true, grnId: true, filePath: true, totalAmount: true } },
       },
@@ -93,6 +96,9 @@ router.get('/outgoing', asyncHandler(async (req: AuthRequest, res: Response) => 
         // Payment Advice gating
         paymentStatus: p.paymentStatus,
         vendorEmail: p.vendor.email || null,
+        adviceSentAt: p.adviceSentAt || null,
+        adviceSentTo: p.adviceSentTo || null,
+        hasGst: p.hasGst,
       });
     }
   }
