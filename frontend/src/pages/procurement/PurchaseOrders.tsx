@@ -27,6 +27,7 @@ interface Vendor {
   id: string;
   name: string;
   email?: string;
+  category?: string; // CONTRACTOR_CIVIL, FUEL_SUPPLIER, RAW_MATERIAL_SUPPLIER, etc.
 }
 
 interface Material {
@@ -827,13 +828,34 @@ const PurchaseOrders: React.FC = () => {
                 </div>
 
                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-3">
-                  <div>
-                    <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-0.5 block">Vendor *</label>
-                    <select value={formData.vendorId} onChange={(e) => { setFormData({ ...formData, vendorId: e.target.value }); loadVendorContext(e.target.value); }} required className="border border-slate-300 px-2.5 py-1.5 text-xs w-full focus:outline-none focus:ring-1 focus:ring-slate-400">
-                      <option value="">Select Vendor</option>
-                      {vendors.map((v) => (<option key={v.id} value={v.id}>{v.name}</option>))}
-                    </select>
-                  </div>
+                  {(() => {
+                    // Filter vendors by PO type when category tagging exists in the Vendor master.
+                    // CONTRACTOR      → any vendor whose category starts with "CONTRACTOR_"
+                    // SERVICE/RENT/UTILITY — no category convention yet; show all with a hint
+                    // GOODS / OTHER   → all vendors
+                    const typeFilter = formData.poType;
+                    const contractorVendors = vendors.filter(v => (v.category || '').toUpperCase().startsWith('CONTRACTOR'));
+                    let list = vendors;
+                    let filterLabel = '';
+                    if (typeFilter === 'CONTRACTOR' && contractorVendors.length > 0) {
+                      list = contractorVendors;
+                      filterLabel = `${contractorVendors.length} contractor vendor(s) by category`;
+                    } else if (typeFilter === 'CONTRACTOR') {
+                      filterLabel = 'No vendors tagged as CONTRACTOR_* yet — showing all. Tag them in Vendor master for auto-filter.';
+                    }
+                    return (
+                      <div>
+                        <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-0.5 block">
+                          Vendor * {typeFilter !== 'GOODS' && <span className="text-indigo-600 font-normal normal-case">· {typeFilter}</span>}
+                        </label>
+                        <select value={formData.vendorId} onChange={(e) => { setFormData({ ...formData, vendorId: e.target.value }); loadVendorContext(e.target.value); }} required className="border border-slate-300 px-2.5 py-1.5 text-xs w-full focus:outline-none focus:ring-1 focus:ring-slate-400">
+                          <option value="">Select Vendor</option>
+                          {list.map((v) => (<option key={v.id} value={v.id}>{v.name}{v.category ? ` · ${v.category}` : ''}</option>))}
+                        </select>
+                        {filterLabel && <div className="text-[9px] text-slate-500 mt-0.5 italic">{filterLabel}</div>}
+                      </div>
+                    );
+                  })()}
                   <div>
                     <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-0.5 block">PO Date *</label>
                     <input type="date" value={formData.poDate} onChange={(e) => setFormData({ ...formData, poDate: e.target.value })} required className="border border-slate-300 px-2.5 py-1.5 text-xs w-full focus:outline-none focus:ring-1 focus:ring-slate-400" />
