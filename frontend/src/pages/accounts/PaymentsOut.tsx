@@ -155,6 +155,14 @@ interface Outstanding {
 
 const fmt = (n: number) => n === 0 ? '--' : '\u20B9' + Math.abs(n).toLocaleString('en-IN', { minimumFractionDigits: 0, maximumFractionDigits: 0 });
 const fmtAmt = (n: number) => '\u20B9' + Math.abs(n).toLocaleString('en-IN', { minimumFractionDigits: 0, maximumFractionDigits: 0 }); // always show ₹0
+// Compact INR for sublabels: 2,22,924 → "2.2 L", 1,04,00,000 → "1.04 Cr"
+const fmtCompactINR = (n: number): string => {
+  const a = Math.abs(n);
+  if (a >= 1e7) return `\u20B9${(a / 1e7).toFixed(2).replace(/\.?0+$/, '')} Cr`;
+  if (a >= 1e5) return `\u20B9${(a / 1e5).toFixed(1).replace(/\.0$/, '')} L`;
+  if (a >= 1e3) return `\u20B9${(a / 1e3).toFixed(1).replace(/\.0$/, '')} K`;
+  return `\u20B9${a.toLocaleString('en-IN', { maximumFractionDigits: 0 })}`;
+};
 const fmtDec = (n: number) => n === 0 ? '--' : '\u20B9' + Math.abs(n).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 const fmtDate = (d: string | null) => d ? new Date(d).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: '2-digit' }) : '--';
 const todayStr = () => new Date().toISOString().split('T')[0];
@@ -1045,7 +1053,7 @@ export default function PaymentsOut() {
                             <th className="text-left px-3 py-2 font-semibold text-[10px] uppercase tracking-widest border-r border-slate-700">PO#</th>
                             <th className="text-left px-3 py-2 font-semibold text-[10px] uppercase tracking-widest border-r border-slate-700">Vendor</th>
                             <th className="text-left px-3 py-2 font-semibold text-[10px] uppercase tracking-widest border-r border-slate-700">Terms</th>
-                            <th className="text-right px-3 py-2 font-semibold text-[10px] uppercase tracking-widest border-r border-slate-700">Payable</th>
+                            <th className="text-right px-3 py-2 font-semibold text-[10px] uppercase tracking-widest border-r border-slate-700" title="Value of material received via GRN (delivered). If nothing delivered yet, shows the PO order value. Grey sublabel shows PO ceiling when different.">Received</th>
                             <th className="text-right px-3 py-2 font-semibold text-[10px] uppercase tracking-widest border-r border-slate-700">Invoiced</th>
                             <th className="text-right px-3 py-2 font-semibold text-[10px] uppercase tracking-widest border-r border-slate-700">Paid</th>
                             <th className="text-right px-3 py-2 font-semibold text-[10px] uppercase tracking-widest border-r border-slate-700" title="Cash issued to team but not yet settled">Cash Out</th>
@@ -1072,10 +1080,17 @@ export default function PaymentsOut() {
                               </td>
                               <td className="px-3 py-1.5 border-r border-slate-100 text-right font-mono tabular-nums">
                                 {(() => {
-                                  const useGrnValue = item.dealType === 'OPEN' || !item.poAmount;
+                                  const grn = item.grnTotalValue || 0;
+                                  const po = item.poAmount || 0;
+                                  const hasGrn = grn > 0;
+                                  const main = hasGrn ? grn : po;
+                                  const showCap = hasGrn && po > grn + 100; // fuel / open — PO ceiling bigger than delivered
                                   return <>
-                                    {fmt(useGrnValue ? (item.grnTotalValue || 0) : item.poAmount)}
-                                    {useGrnValue && (item.grnTotalValue || 0) > 0 && <div className="text-[8px] text-slate-400">GRN value</div>}
+                                    {fmt(main)}
+                                    <div className="text-[8px] text-slate-400 font-sans normal-case tracking-normal">
+                                      {hasGrn ? 'received' : (po > 0 ? 'ordered (nothing delivered yet)' : '')}
+                                      {showCap && <span className="text-slate-300"> &middot; cap {fmtCompactINR(po)}</span>}
+                                    </div>
                                   </>;
                                 })()}
                               </td>
@@ -1340,7 +1355,7 @@ export default function PaymentsOut() {
                         <tfoot>
                           <tr className="bg-slate-800 text-white font-semibold">
                             <td className="px-3 py-2 text-[10px] uppercase tracking-widest" colSpan={3}>Total ({filtered.length} POs)</td>
-                            <td className="px-3 py-2 text-right font-mono tabular-nums">{fmt(filtered.reduce((s, i) => s + i.poAmount, 0))}</td>
+                            <td className="px-3 py-2 text-right font-mono tabular-nums" title="Sum of material received (falls back to PO order value when nothing delivered yet)">{fmt(filtered.reduce((s, i) => s + ((i.grnTotalValue || 0) > 0 ? (i.grnTotalValue || 0) : (i.poAmount || 0)), 0))}</td>
                             <td colSpan={2}></td>
                             <td className="px-3 py-2 text-right font-mono tabular-nums text-yellow-300">{fmt(filtered.reduce((s, i) => s + (i.pendingCash || 0), 0))}</td>
                             <td className="px-3 py-2 text-right font-mono tabular-nums">{fmt(filtered.reduce((s, i) => s + i.balance, 0))}</td>
