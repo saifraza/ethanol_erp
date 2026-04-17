@@ -210,6 +210,7 @@ async function buildSnapshotData(invoiceId: string): Promise<Record<string, any>
     irnStatus: invoice.irnStatus || null,
     ackNo: invoice.ackNo || null,
     signedQRCode: invoice.signedQRCode || null,
+    // irnQrDataUrl populated below (raw signedQRCode JWT → QR PNG data URL)
 
     // E-Way Bill (may not exist at snapshot time; re-snapshot on EWB generation is out of scope for Phase 1)
     ewbNo: invoice.ewbNo || null,
@@ -259,6 +260,22 @@ export async function freezeInvoice(invoiceId: string): Promise<FreezeResult> {
     const absPdfPath = path.join(absDir, `${fileStem}.pdf`);
 
     await fs.mkdir(absDir, { recursive: true });
+
+    // Convert signedQRCode JWT to a QR code data URL for the template
+    // (same transform as routes/invoices.ts live-render path so snapshot renders identically).
+    if (data.irn) {
+      try {
+        const { generateQRCode } = await import('./templateEngine');
+        const qrContent = data.signedQRCode || `https://einvoice1.gst.gov.in/Others/VSignQRCode?irn=${data.irn}`;
+        const qrDataUrl = await generateQRCode(qrContent);
+        data.irnQrDataUrl = qrDataUrl;
+        // Persist the generated PNG data URL in the JSON snapshot so anyone reloading
+        // the JSON later gets the visual QR directly, without needing to re-encode the JWT.
+        data.signedQRCode = null; // raw JWT no longer needed in the snapshot after embedding
+      } catch (qrErr) {
+        console.warn(`[InvoiceSnapshot] QR generation failed for invoice ${invoiceId}:`, qrErr);
+      }
+    }
 
     // Render PDF using the same pipeline as GET /:id/pdf
     const pdfBuffer = await renderDocumentPdf({
