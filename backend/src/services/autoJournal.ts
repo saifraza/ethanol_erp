@@ -239,6 +239,19 @@ export async function onSaleInvoiceCreated(
       lines.push({ accountId: accts[ACCT.TCS_PAYABLE_206C], debit: 0, credit: tcsAmount, narration: `TCS ${section}${pct}` });
     }
 
+    // Round-off: totalAmount is stored rounded to 2 dp but line items can drift ≤ ₹1.
+    // Auto-balance via OTHER_INCOME (3003) — Cr when debit > credit, Dr when credit > debit.
+    const dr = lines.reduce((s, l) => s + l.debit, 0);
+    const cr = lines.reduce((s, l) => s + l.credit, 0);
+    const gap = Math.round((dr - cr) * 100) / 100;
+    if (Math.abs(gap) >= 0.01 && Math.abs(gap) < 1.0) {
+      const roundAccts = await resolveAccounts(prisma, [ACCT.OTHER_INCOME], invoice.companyId);
+      if (roundAccts[ACCT.OTHER_INCOME]) {
+        if (gap > 0) lines.push({ accountId: roundAccts[ACCT.OTHER_INCOME], debit: 0, credit: gap, narration: 'Round-off' });
+        else         lines.push({ accountId: roundAccts[ACCT.OTHER_INCOME], debit: -gap, credit: 0, narration: 'Round-off' });
+      }
+    }
+
     return await prisma.$transaction(async (tx: any) => {
       return createJournalEntry(tx, {
         date: invoice.invoiceDate,

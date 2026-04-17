@@ -22,38 +22,35 @@ const prisma = new PrismaClient();
 const APPLY = process.argv.includes('--apply');
 
 async function ensureTcsAccount() {
-  // Find every distinct companyId that has accounts
-  const companyIds = await prisma.account.findMany({
-    select: { companyId: true },
-    distinct: ['companyId'],
+  // Account.code has a global @unique constraint in the current schema,
+  // so 2250 can only exist once overall (not per-company). Create if missing.
+  const existing = await prisma.account.findFirst({
+    where: { code: '2250' },
+    select: { id: true, companyId: true },
   });
-
-  let created = 0;
-  for (const { companyId } of companyIds) {
-    const existing = await prisma.account.findFirst({
-      where: { code: '2250', companyId },
-      select: { id: true },
-    });
-    if (existing) continue;
-
-    if (APPLY) {
-      await prisma.account.create({
-        data: {
-          code: '2250',
-          name: 'TCS Payable u/s 206C',
-          type: 'LIABILITY',
-          subType: 'CURRENT_LIABILITY',
-          isSystem: true,
-          companyId,
-        },
-      });
-      created++;
-    } else {
-      console.log(`  [DRY] would create account 2250 for company ${companyId || '(default)'}`);
-      created++;
-    }
+  if (existing) {
+    console.log(`Account 2250 already exists (id=${existing.id} company=${existing.companyId || '(null)'})`);
+    return;
   }
-  console.log(`Account 2250: ${APPLY ? 'created' : 'missing'} in ${created} companies`);
+  if (APPLY) {
+    // Attach to first company that has accounts (matches majority of seeded CoA)
+    const first = await prisma.account.findFirst({
+      select: { companyId: true }, orderBy: { createdAt: 'asc' },
+    });
+    await prisma.account.create({
+      data: {
+        code: '2250',
+        name: 'TCS Payable u/s 206C',
+        type: 'LIABILITY',
+        subType: 'CURRENT_LIABILITY',
+        isSystem: true,
+        companyId: first?.companyId ?? null,
+      },
+    });
+    console.log(`Account 2250 created on company ${first?.companyId || '(null)'}`);
+  } else {
+    console.log(`[DRY] would create account 2250`);
+  }
 }
 
 async function backfillSaleInvoiceNoJe() {
