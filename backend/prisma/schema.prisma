@@ -612,6 +612,29 @@ model FermDosing {
   addedAt      DateTime          @default(now())
 }
 
+// Fermenter filling events — computed from OPC/lab level trends (not operator buttons)
+// Source-of-truth for when a fermenter actually filled. See plan: piped-wishing-goblet.md
+model FermentationFillEvent {
+  id            String   @id @default(uuid())
+  fermenterNo   Int
+  batchNo       Int? // nullable — fills without a matched batch still captured for review
+  startTime     DateTime
+  endTime       DateTime? // null while filling is still in progress (live detection)
+  startLevel    Float // level % at start of fill
+  peakLevel     Float // max level reached during fill
+  durationHours Float? // null while in-progress
+  confidence    String // HIGH | MEDIUM | LOW
+  source        String // OPC | LAB | HYBRID
+  crossChecks   Json // { tempOk, pfDropped, labWithin2h, startOk, endOk }
+  computedAt    DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  @@unique([fermenterNo, startTime])
+  @@index([batchNo, fermenterNo])
+  @@index([fermenterNo, startTime])
+  @@index([endTime])
+}
+
 // Beer Well readings
 model BeerWellReading {
   id        String   @id @default(uuid())

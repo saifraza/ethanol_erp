@@ -118,5 +118,8 @@ const server = app.listen(PORT, HOST, async () => {
     import('./services/opcReadingCleanup').then(m => m.startOpcReadingCleanup()).catch(() => {});
     import('./services/siloSnapshotJob').then(m => m.startSiloSnapshotJob()).catch(() => {});
   }
+
+  // Fermenter fill event detector — runs every 5 min; works OPC-first, falls back to lab
+  import('./services/fermentation/fillLive').then(m => m.startFillLive()).catch(() => {});
 });
 

@@ -6,6 +6,7 @@ import prisma from '../config/prisma';
 import { authenticate, AuthRequest, authorize } from '../middleware/auth';
 import { broadcast } from '../services/messagingGateway';
 import { asyncHandler } from '../shared/middleware';
+import { triggerRecompute as triggerFillRecompute } from '../services/fermentation/fillLive';
 
 const router = Router();
 
@@ -363,6 +364,7 @@ router.post('/field-reading', asyncHandler(async (req: AuthRequest, res: Respons
       fermentationFinished = true;
     }
 
+    triggerFillRecompute(vesselNo);
     res.status(201).json({ entry, batchNo: fermBatch.batchNo, fermentationFinished });
 }));
 
@@ -495,6 +497,7 @@ router.post('/lab-reading', asyncHandler(async (req: AuthRequest, res: Response)
         fermentationFinished = true;
       }
 
+      triggerFillRecompute(vesselNo);
       res.status(201).json({ entry, batchNo: fermBatch.batchNo, autoAdvanced, autoAdvancedTo: autoAdvanced ? 'REACTION' : undefined, fermentationFinished });
 
       // Telegram notify
@@ -549,6 +552,7 @@ router.post('/', upload.single('spentLossPhoto'), async (req: AuthRequest, res: 
     }
   }
 
+  triggerFillRecompute(fermenterNo);
   res.status(201).json(entry);
 });
 

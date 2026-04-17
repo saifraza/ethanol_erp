@@ -90,10 +90,9 @@ function detectPhaseFromData(level: number, temp: number, slope: number, dataAge
     return { phase: 'DRAINING', confidence: slope < -5 ? 'HIGH' : 'MEDIUM' };
   }
 
-  // FILLING: level rising
-  if (slope > 2) {
-    return { phase: 'FILLING', confidence: slope > 5 ? 'HIGH' : 'MEDIUM' };
-  }
+  // FILLING detection moved to fillLive.ts (event-based, cross-checked).
+  // getAllFermenterPhases() overrides phase='FILLING' when an in-progress
+  // FermentationFillEvent exists for the fermenter.
 
   // REACTION: high level, stable, normal temp range
   if (level > 50 && Math.abs(slope) < 2 && temp >= 25 && temp <= 40) {
@@ -220,6 +219,25 @@ export async function getAllFermenterPhases(): Promise<FermenterState[]> {
 
   try {
     const states = await Promise.all(FERMENTER_TAGS.map(f => detectSingleFermenter(opc, f)));
+
+    // Override phase=FILLING for fermenters with an in-progress FermentationFillEvent.
+    // Event-based detection (fillLive) is the source of truth; slope heuristic removed.
+    try {
+      const { default: prisma } = await import('../config/prisma');
+      const active = await prisma.fermentationFillEvent.findMany({
+        where: { endTime: null },
+        select: { fermenterNo: true, confidence: true },
+      });
+      const activeMap = new Map(active.map(a => [a.fermenterNo, a.confidence as Confidence]));
+      for (const s of states) {
+        if (activeMap.has(s.fermenterNo)) {
+          s.detectedPhase = 'FILLING';
+          s.confidence = (activeMap.get(s.fermenterNo) ?? 'MEDIUM') as Confidence;
+          s.alarmEnabled = ALARM_PHASES.includes('FILLING');
+        }
+      }
+    } catch { /* non-fatal — fill events table may not yet exist pre-deploy */ }
+
     _cache = states;
     _cacheTime = Date.now();
     return states;
