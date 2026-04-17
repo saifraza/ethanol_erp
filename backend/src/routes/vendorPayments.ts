@@ -878,13 +878,16 @@ Return ONLY the JSON object, no markdown, no prose.`;
     bankReceiptExtracted: extracted as unknown as object,
     bankReceiptScannedAt: new Date(),
   };
-  // Clean UTR — always overwrite the messy ref with the bank-issued UTR when extracted cleanly
+  // Clean UTR — only overwrite the messy ref when cross-checks PASS. If warnings exist
+  // the user likely uploaded the wrong receipt; preserve the original reference so we
+  // don't destroy correct data. The extracted UTR is still kept in bankReceiptExtracted.
   const extractedUtr = typeof extracted?.utr === 'string' ? extracted.utr.trim() : '';
-  if (extractedUtr && /^[A-Z]{4}[A-Z0-9]{8,}$/.test(extractedUtr)) {
+  const utrIsClean = !!extractedUtr && /^[A-Z]{4}[A-Z0-9]{8,}$/.test(extractedUtr);
+  if (utrIsClean && warnings.length === 0) {
     updates.reference = extractedUtr;
   }
   // If payment was in INITIATED state and the cross-check is clean, auto-confirm it
-  if (payment.paymentStatus === 'INITIATED' && warnings.length === 0 && extractedUtr) {
+  if (payment.paymentStatus === 'INITIATED' && warnings.length === 0 && utrIsClean) {
     updates.paymentStatus = 'CONFIRMED';
     updates.confirmedAt = new Date();
   }
