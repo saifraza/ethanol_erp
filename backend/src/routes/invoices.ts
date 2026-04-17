@@ -521,6 +521,54 @@ router.get('/:id/pdf', asyncHandler(async (req: AuthRequest, res: Response) => {
     const invLabel = customInvNo ? customInvNo.replace(/\//g, '-') : `INV-${invoice.invoiceNo}`;
     res.setHeader('Content-Disposition', `inline; filename="${invLabel}.pdf"`);
     res.send(pdfBuffer);
+
+    // Self-healing backfill: if invoice has IRN but no snapshot, freeze in background.
+    // Phase 1 shadow-write means read path still goes through live render above,
+    // but any IRN-generated invoice without a snapshot gets one on its next view.
+    if (invoice.irn && !(invoice as any).snapshotAt) {
+      freezeInvoice(invoice.id).catch(err => {
+        console.error(`[Invoice] Self-heal snapshot failed for INV-${invoice.invoiceNo}:`, err);
+      });
+    }
+}));
+
+// POST /admin/backfill-snapshots — One-shot admin endpoint to freeze all IRN-generated invoices
+// that don't yet have a snapshot. Safe to call repeatedly (idempotent — only processes missing).
+router.post('/admin/backfill-snapshots', asyncHandler(async (req: AuthRequest, res: Response) => {
+    if (req.user?.role !== 'ADMIN' && req.user?.role !== 'SUPER_ADMIN') {
+      return res.status(403).json({ error: 'Admin only' });
+    }
+
+    const limit = Math.min(parseInt(String(req.query.limit || '50')) || 50, 200);
+
+    const targets = await prisma.invoice.findMany({
+      where: {
+        irn: { not: null },
+        snapshotAt: null,
+      },
+      select: { id: true, invoiceNo: true },
+      take: limit,
+      orderBy: { invoiceNo: 'asc' },
+    });
+
+    const results = {
+      total: targets.length,
+      frozen: 0,
+      failed: 0,
+      errors: [] as { invoiceNo: number; error: string }[],
+    };
+
+    for (const t of targets) {
+      const r = await freezeInvoice(t.id);
+      if (r.ok) {
+        results.frozen++;
+      } else {
+        results.failed++;
+        results.errors.push({ invoiceNo: (t as any).invoiceNo, error: r.error || 'unknown' });
+      }
+    }
+
+    res.json(results);
 }));
 
 // POST /:id/e-invoice — Generate IRN for invoice
