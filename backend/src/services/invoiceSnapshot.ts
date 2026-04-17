@@ -19,7 +19,14 @@ import prisma from '../config/prisma';
 import { renderDocumentPdf } from './documentRenderer';
 import { getCompanyForPdf } from '../utils/pdfCompanyHelper';
 
-const SNAPSHOT_DIR = process.env.SNAPSHOT_DIR || path.resolve(__dirname, '..', '..', 'public', 'snapshots');
+// Resolution order:
+//   1. Explicit SNAPSHOT_DIR env var (user override)
+//   2. Railway-injected volume mount path (survives redeploys) + /snapshots
+//   3. Local public/snapshots folder (dev + ephemeral fallback — survives only until next deploy)
+const SNAPSHOT_DIR = process.env.SNAPSHOT_DIR
+  || (process.env.RAILWAY_VOLUME_MOUNT_PATH
+        ? path.join(process.env.RAILWAY_VOLUME_MOUNT_PATH, 'invoice-snapshots')
+        : path.resolve(__dirname, '..', '..', 'public', 'snapshots'));
 const SCHEMA_VERSION = 1;
 
 export interface FreezeResult {

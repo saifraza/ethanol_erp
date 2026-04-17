@@ -399,7 +399,11 @@ router.get('/:id/pdf', asyncHandler(async (req: AuthRequest, res: Response) => {
         const { promises: fsp } = await import('fs');
         const pathMod = await import('path');
         const { createHash } = await import('crypto');
-        const SNAPSHOT_DIR = process.env.SNAPSHOT_DIR || pathMod.resolve(__dirname, '..', '..', 'public', 'snapshots');
+        // Match resolution order used by invoiceSnapshot service
+        const SNAPSHOT_DIR = process.env.SNAPSHOT_DIR
+          || (process.env.RAILWAY_VOLUME_MOUNT_PATH
+                ? pathMod.join(process.env.RAILWAY_VOLUME_MOUNT_PATH, 'invoice-snapshots')
+                : pathMod.resolve(__dirname, '..', '..', 'public', 'snapshots'));
         const absPath = pathMod.join(SNAPSHOT_DIR, snap.snapshotPdfPath);
         const buf = await fsp.readFile(absPath);
         const sha = createHash('sha256').update(buf).digest('hex');
@@ -412,8 +416,23 @@ router.get('/:id/pdf', asyncHandler(async (req: AuthRequest, res: Response) => {
           return res.send(buf);
         }
         console.error(`[Invoice] CRITICAL SHA MISMATCH on INV-${snap.invoiceNo}: file=${sha} db=${snap.snapshotPdfSha}. Falling back to live render.`);
-      } catch (err) {
-        console.error(`[Invoice] Snapshot read failed for INV-${snap.invoiceNo}, falling back to live render:`, err instanceof Error ? err.message : err);
+      } catch (err: any) {
+        const isMissing = err?.code === 'ENOENT';
+        if (isMissing) {
+          // Snapshot file is gone (e.g. Railway redeploy wiped ephemeral disk).
+          // Clear the orphan pointer so future self-heal can re-freeze, then fall through to live render.
+          console.warn(`[Invoice] Snapshot file missing for INV-${snap.invoiceNo}, clearing orphan pointer + self-healing.`);
+          prisma.invoice.update({
+            where: { id: req.params.id },
+            data: {
+              snapshotJsonPath: null, snapshotPdfPath: null,
+              snapshotJsonSha: null, snapshotPdfSha: null,
+              snapshotAt: null,
+            } as any,
+          }).catch(() => {});
+        } else {
+          console.error(`[Invoice] Snapshot read failed for INV-${snap.invoiceNo}, falling back to live render:`, err instanceof Error ? err.message : err);
+        }
       }
     }
 
