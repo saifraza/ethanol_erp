@@ -338,6 +338,7 @@ router.post('/:id/liftings', asyncHandler(async (req: AuthRequest, res: Response
           productName: contract.contractType === 'JOB_WORK' ? 'Job Work Charges for Ethanol Production' : 'ETHANOL',
           customerId: cust.id, userId: 'system', invoiceDate: lifting.liftingDate,
           customer: { state: cust.state },
+          companyId: inv.companyId || undefined,
         });
 
         // 3. IRN + EWB: fire-and-forget (external API, OK to be async)
@@ -547,6 +548,7 @@ router.patch('/liftings/:liftingId/rate', asyncHandler(async (req: AuthRequest, 
     userId: 'system',
     invoiceDate: inv.invoiceDate,
     customer: { state: inv.customer?.state },
+    companyId: inv.companyId || undefined,
   });
 
   res.json({ success: true, ...result });
@@ -755,6 +757,7 @@ router.post('/:id/liftings/:liftingId/create-invoice', asyncHandler(async (req: 
       supplyType: gst.supplyType, productName: invoice.productName,
       customerId: customer.id, userId: (req as any).user?.id || 'system',
       invoiceDate: lifting.liftingDate, customer: { state: customer.state },
+      companyId: invoice.companyId || undefined,
     });
 
     res.json({ invoice });

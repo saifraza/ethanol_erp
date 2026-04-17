@@ -32,7 +32,8 @@ async function syncGrnToInventory(
   grnNo: number,
   lines: Array<{ inventoryItemId?: string | null; materialId?: string | null; acceptedQty: number; rate: number; unit: string; batchNo: string; storageLocation: string }>,
   warehouseId: string | null,
-  userId: string
+  userId: string,
+  companyId?: string | null
 ): Promise<void> {
   // Need a warehouse — use provided one or find default
   let whId = warehouseId;
@@ -120,6 +121,7 @@ async function syncGrnToInventory(
         itemName: invItem.name,
         userId,
         date: movement.date,
+        companyId: companyId || undefined,
       }).catch(() => {});
     });
   }
@@ -865,6 +867,7 @@ router.put('/:id/status', asyncHandler(async (req: AuthRequest, res: Response) =
           })),
           null,
           req.user!.id,
+          updated.companyId,
         );
       } catch (syncErr: unknown) {
         // Step 6 fix: Revert GRN to DRAFT if inventory sync fails — don't leave orphaned CONFIRMED with no stock

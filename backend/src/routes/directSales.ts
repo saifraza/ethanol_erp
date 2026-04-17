@@ -376,9 +376,12 @@ router.post('/:orderId/shipments/:shipmentId/create-invoice', asyncHandler(async
       id: invoice.id, invoiceNo: invoice.invoiceNo, totalAmount: invoice.totalAmount,
       amount: invoice.amount, gstAmount: invoice.gstAmount, gstPercent,
       cgstAmount: invoice.cgstAmount, sgstAmount: invoice.sgstAmount, igstAmount: invoice.igstAmount,
-      supplyType: invoice.supplyType, productName: order.productName,
+      supplyType: invoice.supplyType,
+      tcsAmount: invoice.tcsAmount, tcsPercent: invoice.tcsPercent, tcsSection: invoice.tcsSection,
+      productName: order.productName,
       customerId: order.customerId || '', userId: req.user!.id,
       invoiceDate: shipment.date, customer: { state: customerState },
+      companyId: invoice.companyId || undefined,
     });
   }
 

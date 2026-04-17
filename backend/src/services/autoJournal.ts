@@ -40,6 +40,7 @@ const ACCT = {
   GST_INPUT_SGST: '1201',
   GST_INPUT_IGST: '1202',
   TDS_PAYABLE: '2200',
+  TCS_PAYABLE_206C: '2250', // TCS collected u/s 206C (scrap, tendu leaves, etc.) — payable to govt
   LOANS_BANK: '2400',
   // Income
   ETHANOL_SALES: '3001',
@@ -188,6 +189,9 @@ export async function onSaleInvoiceCreated(
     igstAmount?: number;
     supplyType?: string;
     freightCharge?: number;
+    tcsAmount?: number;
+    tcsPercent?: number;
+    tcsSection?: string | null;
     productName: string;
     customerId: string;
     userId: string;
@@ -203,10 +207,11 @@ export async function onSaleInvoiceCreated(
       ? [ACCT.GST_OUTPUT_IGST]
       : [ACCT.GST_OUTPUT_CGST, ACCT.GST_OUTPUT_SGST];
 
-    const allCodes = [ACCT.TRADE_RECEIVABLE, salesCode, ...gstCodes];
+    const tcsAmount = invoice.tcsAmount || 0;
+    const allCodes = [ACCT.TRADE_RECEIVABLE, salesCode, ...gstCodes, ...(tcsAmount > 0 ? [ACCT.TCS_PAYABLE_206C] : [])];
     const accts = await resolveAccounts(prisma, allCodes, invoice.companyId);
 
-    // Check all accounts exist
+    // Check all accounts exist (TCS account only required if TCS > 0)
     for (const code of allCodes) {
       if (!accts[code]) return null; // Accounts not seeded yet
     }
@@ -226,6 +231,12 @@ export async function onSaleInvoiceCreated(
       const sgst = invoice.sgstAmount ?? (invoice.gstAmount - cgst);
       lines.push({ accountId: accts[ACCT.GST_OUTPUT_CGST], debit: 0, credit: cgst, narration: `CGST @${invoice.gstPercent / 2}%` });
       lines.push({ accountId: accts[ACCT.GST_OUTPUT_SGST], debit: 0, credit: sgst, narration: `SGST @${invoice.gstPercent / 2}%` });
+    }
+
+    if (tcsAmount > 0) {
+      const section = invoice.tcsSection || '206C(1)';
+      const pct = invoice.tcsPercent ? ` @${invoice.tcsPercent}%` : '';
+      lines.push({ accountId: accts[ACCT.TCS_PAYABLE_206C], debit: 0, credit: tcsAmount, narration: `TCS ${section}${pct}` });
     }
 
     return await prisma.$transaction(async (tx: any) => {
@@ -396,6 +407,94 @@ export async function onPurchaseBooked(
     });
   } catch (err) {
     console.error('[AutoJournal] Failed to create purchase journal:', err);
+    return null;
+  }
+}
+
+// ═══════════════════════════════════════════════════════
+// VENDOR INVOICE BOOKED → Journal Entry (Input GST delta)
+//
+// Design note: GRN already posts Dr Inventory / Cr Payable at BASE amount
+// (qty × rate, excluding GST — see routes/goodsReceipts.ts). So at VI
+// confirmation we only need to gross up by the GST portion:
+//   Dr GST Input CGST + SGST (or IGST)  = totalGst
+//     Cr Trade Payable                  = totalGst
+//
+// Net result across GRN+VI:  Dr Inventory base, Dr Input GST, Cr Payable (base + GST)
+//
+// Skipped when:
+//   - totalGst == 0 (exempt/zero-rated supply)
+//   - isRCM == true (reverse charge — buyer pays GST to govt directly, separate path)
+//   - itcEligible == false (blocked credits per Sec 17(5) — GST sits in cost, needs
+//     different treatment; tracked as out-of-scope for this pass)
+// ═══════════════════════════════════════════════════════
+export async function onVendorInvoiceBooked(
+  prisma: PrismaClient,
+  invoice: {
+    id: string;
+    invoiceNo: number;
+    vendorInvNo?: string | null;
+    cgstAmount: number;
+    sgstAmount: number;
+    igstAmount: number;
+    totalGst: number;
+    isRCM: boolean;
+    itcEligible: boolean;
+    invoiceDate: Date;
+    userId: string;
+    companyId?: string;
+  }
+): Promise<string | null> {
+  try {
+    if (invoice.totalGst <= 0) return null;
+    if (invoice.isRCM) return null; // RCM has its own reverse-charge flow (phase C)
+    if (!invoice.itcEligible) return null; // blocked credits — GST stays in cost
+
+    const accts = await resolveAccounts(
+      prisma,
+      [ACCT.GST_INPUT_CGST, ACCT.GST_INPUT_SGST, ACCT.GST_INPUT_IGST, ACCT.TRADE_PAYABLE],
+      invoice.companyId
+    );
+    if (!accts[ACCT.TRADE_PAYABLE]) return null;
+
+    const lines: { accountId: string; debit: number; credit: number; narration?: string }[] = [];
+
+    if (invoice.cgstAmount > 0) {
+      if (!accts[ACCT.GST_INPUT_CGST]) return null;
+      lines.push({ accountId: accts[ACCT.GST_INPUT_CGST], debit: invoice.cgstAmount, credit: 0, narration: `Input CGST on VI-${invoice.invoiceNo}` });
+    }
+    if (invoice.sgstAmount > 0) {
+      if (!accts[ACCT.GST_INPUT_SGST]) return null;
+      lines.push({ accountId: accts[ACCT.GST_INPUT_SGST], debit: invoice.sgstAmount, credit: 0, narration: `Input SGST on VI-${invoice.invoiceNo}` });
+    }
+    if (invoice.igstAmount > 0) {
+      if (!accts[ACCT.GST_INPUT_IGST]) return null;
+      lines.push({ accountId: accts[ACCT.GST_INPUT_IGST], debit: invoice.igstAmount, credit: 0, narration: `Input IGST on VI-${invoice.invoiceNo}` });
+    }
+
+    if (lines.length === 0) return null;
+
+    const vendorRef = invoice.vendorInvNo ? ` (${invoice.vendorInvNo})` : '';
+    lines.push({
+      accountId: accts[ACCT.TRADE_PAYABLE],
+      debit: 0,
+      credit: invoice.totalGst,
+      narration: `VI-${invoice.invoiceNo}${vendorRef} GST add-on`,
+    });
+
+    return await prisma.$transaction(async (tx: any) => {
+      return createJournalEntry(tx, {
+        date: invoice.invoiceDate,
+        narration: `Vendor Invoice VI-${invoice.invoiceNo}${vendorRef} — Input GST`,
+        refType: 'PURCHASE',
+        refId: invoice.id,
+        userId: invoice.userId,
+        companyId: invoice.companyId,
+        lines,
+      });
+    });
+  } catch (err) {
+    console.error('[AutoJournal] Failed to create vendor invoice GST journal:', err);
     return null;
   }
 }

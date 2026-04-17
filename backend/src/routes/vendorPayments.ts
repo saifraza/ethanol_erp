@@ -428,6 +428,7 @@ router.post('/', validate(createVendorPaymentSchema), asyncHandler(async (req: A
       vendorId: b.vendorId,
       userId: req.user!.id,
       paymentDate: b.paymentDate ? new Date(b.paymentDate) : new Date(),
+      companyId: payment.companyId || undefined,
     }).catch(() => {});
 
     // Recompute GRN paid state on linked PO (auto-flips DRAFT → PARTIAL when fullyPaid)

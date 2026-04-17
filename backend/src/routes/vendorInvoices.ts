@@ -17,6 +17,7 @@ import axios from 'axios';
 import { generateVaultNote } from '../services/vaultWriter';
 import { recomputeGrnPaidStateForPO } from '../services/grnPaidState';
 import { calculateTds } from '../services/tdsCalculator';
+import { onVendorInvoiceBooked } from '../services/autoJournal';
 
 // ── Zod schemas ──
 const createVendorInvoiceSchema = z.object({
@@ -465,6 +466,25 @@ router.put('/:id/status', asyncHandler(async (req: AuthRequest, res: Response) =
       where: { id: req.params.id },
       data: { status: newStatus },
     });
+
+    // On PENDING → VERIFIED, post the Input GST journal (fire-and-forget).
+    // GRN already posted Dr Inventory / Cr Payable at base; this tops up the GST portion.
+    if (invoice.status === 'PENDING' && newStatus === 'VERIFIED' && updated.totalGst > 0) {
+      onVendorInvoiceBooked(prisma, {
+        id: updated.id,
+        invoiceNo: updated.invoiceNo,
+        vendorInvNo: updated.vendorInvNo,
+        cgstAmount: updated.cgstAmount,
+        sgstAmount: updated.sgstAmount,
+        igstAmount: updated.igstAmount,
+        totalGst: updated.totalGst,
+        isRCM: updated.isRCM,
+        itcEligible: updated.itcEligible,
+        invoiceDate: updated.invoiceDate,
+        userId: updated.userId,
+        companyId: updated.companyId || undefined,
+      }).catch(err => console.error('[VI] Input GST journal failed:', err));
+    }
 
     res.json(updated);
 }));

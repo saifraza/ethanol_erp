@@ -239,6 +239,7 @@ router.post('/:id/release', asyncHandler(async (req: AuthRequest, res: Response)
     supplyType: gst.supplyType, freightCharge: 0,
     productName: result.invoice.productName, customerId: customer.id,
     userId: req.user?.id || 'system', invoiceDate: truck.date,
+    companyId: result.invoice.companyId || undefined,
   }).catch(() => {});
 
   res.json({

@@ -344,6 +344,7 @@ router.post('/seed', asyncHandler(async (req: AuthRequest, res: Response) => {
     { code: '2101', name: 'GST Output Tax (SGST)', type: 'LIABILITY', subType: 'CURRENT_LIABILITY', isSystem: true },
     { code: '2102', name: 'GST Output Tax (IGST)', type: 'LIABILITY', subType: 'CURRENT_LIABILITY', isSystem: true },
     { code: '2200', name: 'TDS Payable', type: 'LIABILITY', subType: 'CURRENT_LIABILITY', isSystem: true },
+    { code: '2250', name: 'TCS Payable u/s 206C', type: 'LIABILITY', subType: 'CURRENT_LIABILITY', isSystem: true },
     { code: '2300', name: 'Employee Payables', type: 'LIABILITY', subType: 'CURRENT_LIABILITY', isSystem: false },
     { code: '2400', name: 'Loans - Bank', type: 'LIABILITY', subType: 'LONG_TERM_LIABILITY', isSystem: false },
     { code: '2500', name: 'Advance from Customers', type: 'LIABILITY', subType: 'CURRENT_LIABILITY', isSystem: false },

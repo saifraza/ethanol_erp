@@ -227,8 +227,10 @@ router.post('/', validate(createInvoiceSchema), asyncHandler(async (req: AuthReq
       cgstAmount: invoice.cgstAmount, sgstAmount: invoice.sgstAmount,
       igstAmount: invoice.igstAmount, supplyType: invoice.supplyType,
       freightCharge: invoice.freightCharge,
+      tcsAmount: invoice.tcsAmount, tcsPercent: invoice.tcsPercent, tcsSection: invoice.tcsSection,
       productName: invoice.productName, customerId: b.customerId,
       userId: req.user!.id, invoiceDate: invoice.invoiceDate,
+      companyId: invoice.companyId || undefined,
     }).catch(() => {});
 
     res.status(201).json(invoice);
@@ -308,8 +310,10 @@ router.post('/from-shipment/:shipmentId', asyncHandler(async (req: AuthRequest, 
       amount: invoice.amount, gstAmount: invoice.gstAmount, gstPercent: invoice.gstPercent,
       cgstAmount: invoice.cgstAmount, sgstAmount: invoice.sgstAmount,
       igstAmount: invoice.igstAmount, supplyType: invoice.supplyType,
+      tcsAmount: invoice.tcsAmount, tcsPercent: invoice.tcsPercent, tcsSection: invoice.tcsSection,
       productName: invoice.productName, customerId: order.customerId,
       userId: req.user!.id, invoiceDate: invoice.invoiceDate,
+      companyId: invoice.companyId || undefined,
     }).catch(() => {});
 
     res.status(201).json(invoice);
