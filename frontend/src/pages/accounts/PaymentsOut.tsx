@@ -342,11 +342,12 @@ export default function PaymentsOut() {
   const [scanUploading, setScanUploading] = useState(false);
   const [scanResult, setScanResult] = useState<{ extracted: Record<string, unknown> | null; warnings: string[] } | null>(null);
 
-  // Multi-PO allocation state — in the PO Pay modal, if the typed amount exceeds the
-  // current PO balance, team can either spread the excess across other open POs of the
-  // same vendor OR park it as a vendor advance. Map: poId → amount (string for input binding).
-  const [poAllocExtras, setPoAllocExtras] = useState<Record<string, string>>({});
-  const [poAllocAdvance, setPoAllocAdvance] = useState<string>('');
+  // Pay target — one-click destination for the typed amount. Overflow (when the typed
+  // amount exceeds the target PO's balance) automatically spills over into vendor advance.
+  //   'current'  → pay the PO the modal was opened for
+  //   <poId>     → pay a sibling open PO of the same vendor
+  //   'advance'  → hold entirely as vendor advance (no PO attribution)
+  const [payTarget, setPayTarget] = useState<string>('current');
   const [tdsCalc, setTdsCalc] = useState<{ shouldDeduct: boolean; rate: number; tdsAmount: number; netAmount: number; ledgerId: string | null; sectionLabel: string; reason: string } | null>(null);
   const [tdsOverride, setTdsOverride] = useState(true); // true = apply TDS, false = skip
   const [tdsLoading, setTdsLoading] = useState(false);
@@ -597,21 +598,30 @@ export default function PaymentsOut() {
     }
     const hasGstToSend: boolean = poHasGstOnPO ? !!poPayIncludeGst : false;
 
-    // Multi-allocation path — if team is distributing across multiple POs or holding some as advance,
-    // hit the /vendor-payments/allocate endpoint. Otherwise stick with single-PO /:id/pay for backwards compat.
-    const extraPoAllocs = Object.entries(poAllocExtras)
-      .map(([poId, str]) => ({ poId, amount: parseFloat(str) || 0 }))
-      .filter(a => a.amount > 0);
-    const advanceAmt = parseFloat(poAllocAdvance) || 0;
-    const useAllocate = extraPoAllocs.length > 0 || advanceAmt > 0;
+    // Derive allocation from the single target picker. Overflow auto-spills to advance.
+    const totalAmt = parseFloat(poPayAmount);
+    const currentBal = Math.max(0, (poReceivedValue || poPayItem.grnTotalValue) - poPayItem.totalPaid - poPendingCash);
+    let allocations: Array<{ poId: string; amount: number }> = [];
+    let advanceAmt = 0;
+    if (payTarget === 'advance') {
+      advanceAmt = totalAmt;
+    } else if (payTarget === 'current') {
+      const toPo = Math.min(totalAmt, currentBal);
+      if (toPo > 0) allocations.push({ poId: poPayItem.poId, amount: toPo });
+      advanceAmt = Math.max(0, totalAmt - toPo);
+    } else {
+      // payTarget is a sibling PO id
+      const sibling = pendingItems.find(p => p.poId === payTarget);
+      if (!sibling) { alert('Selected PO not found — please re-select.'); setPoPaySaving(false); return; }
+      const toSib = Math.min(totalAmt, sibling.balance);
+      if (toSib > 0) allocations.push({ poId: sibling.poId, amount: toSib });
+      advanceAmt = Math.max(0, totalAmt - toSib);
+    }
+    const useAllocate = allocations.length !== 1 || advanceAmt > 0 || (allocations.length === 1 && allocations[0].poId !== poPayItem.poId);
 
     setPoPaySaving(true);
     try {
       if (useAllocate) {
-        const allocations = [
-          { poId: poPayItem.poId, amount: parseFloat(poPayAmount) },
-          ...extraPoAllocs,
-        ];
         const res = await api.post('/vendor-payments/allocate', {
           vendorId: poPayItem.vendorId,
           mode: poPayMode,
@@ -624,13 +634,12 @@ export default function PaymentsOut() {
         const summary: string[] = [];
         for (const p of res.data.payments || []) {
           if (p.type === 'PO_PAYMENT') summary.push(`PO-${p.poNo}: ₹${p.amount.toLocaleString('en-IN')}`);
-          else if (p.type === 'ADVANCE') summary.push(`Advance: ₹${p.amount.toLocaleString('en-IN')}`);
+          else if (p.type === 'ADVANCE') summary.push(`Vendor Advance: ₹${p.amount.toLocaleString('en-IN')}`);
         }
         const closedStr = (res.data.closedPOs || []).length ? `\n\nPOs auto-closed: ${(res.data.closedPOs || []).map((n: number) => 'PO-' + n).join(', ')}` : '';
-        alert(`Allocation saved (${res.data.status}):\n${summary.join('\n')}${closedStr}`);
+        alert(`Payment recorded (${res.data.status}):\n${summary.join('\n')}${closedStr}`);
         setPoPayItem(null);
-        setPoAllocExtras({});
-        setPoAllocAdvance('');
+        setPayTarget('current');
         await fetchPending();
         return;
       }
@@ -1266,7 +1275,7 @@ export default function PaymentsOut() {
                                     const canAdvancePay = item.grnCount === 0 && item.invoices.length === 0 && isAdvance;
                                     if (canRunningPay || canAdvancePay) {
                                       return (
-                                        <button onClick={() => { setPoPayItem(item); setPoPayAmount(canAdvancePay ? String(item.poAmount || '') : ''); setPoPayMode('NEFT'); setPoPayRef(''); setPoPayRemarks(canAdvancePay ? 'Advance payment' : ''); setPoPayIncludeGst(null); setBankPendingPayment(null); setPoAllocExtras({}); setPoAllocAdvance(''); fetchPOPayments(item.poId); }}
+                                        <button onClick={() => { setPoPayItem(item); setPoPayAmount(canAdvancePay ? String(item.poAmount || '') : ''); setPoPayMode('NEFT'); setPoPayRef(''); setPoPayRemarks(canAdvancePay ? 'Advance payment' : ''); setPoPayIncludeGst(null); setBankPendingPayment(null); setPayTarget('current'); fetchPOPayments(item.poId); }}
                                           className="px-2 py-0.5 bg-green-600 text-white text-[9px] font-bold uppercase hover:bg-green-700 flex items-center gap-1" title={canAdvancePay ? 'Pay in advance' : 'Pay against PO'}>
                                           <CreditCard size={10} /> {canAdvancePay ? 'ADV PAY' : 'PAY'}
                                         </button>
@@ -2816,96 +2825,87 @@ export default function PaymentsOut() {
                   </div>
                 )}
 
-                {/* ═══ Other Open POs for this Vendor — multi-allocation ═══ */}
+                {/* ═══ Pay Against — single target picker with auto-overflow to advance ═══ */}
                 {(() => {
+                  const totalAmt = parseFloat(poPayAmount) || 0;
                   const siblingPOs = pendingItems.filter(p => p.vendorId === poPayItem.vendorId && p.poId !== poPayItem.poId && p.balance > 0);
-                  const currentAmt = parseFloat(poPayAmount) || 0;
-                  const extraAlloc = Object.values(poAllocExtras).reduce((s, str) => s + (parseFloat(str) || 0), 0);
-                  const advAlloc = parseFloat(poAllocAdvance) || 0;
-                  const grandTotal = currentAmt + extraAlloc + advAlloc;
-                  if (siblingPOs.length === 0 && !advAlloc) {
-                    // No other open POs — still offer the advance option
+                  const currentBal = Math.max(0, (poReceivedValue || poPayItem.grnTotalValue) - poPayItem.totalPaid - poPendingCash);
+
+                  // Compute preview split for a given target
+                  const preview = (target: string): { poAmt: number; poLabel: string; advAmt: number } => {
+                    if (target === 'advance') return { poAmt: 0, poLabel: '', advAmt: totalAmt };
+                    if (target === 'current') {
+                      const toPo = Math.min(totalAmt, currentBal);
+                      return { poAmt: toPo, poLabel: `PO-${poPayItem.poNo}`, advAmt: Math.max(0, totalAmt - toPo) };
+                    }
+                    const sib = siblingPOs.find(s => s.poId === target);
+                    if (!sib) return { poAmt: 0, poLabel: '', advAmt: totalAmt };
+                    const toPo = Math.min(totalAmt, sib.balance);
+                    return { poAmt: toPo, poLabel: `PO-${sib.poNo}`, advAmt: Math.max(0, totalAmt - toPo) };
+                  };
+
+                  const Tile = ({ value, label, balance, material }: { value: string; label: string; balance?: number; material?: string }) => {
+                    const selected = payTarget === value;
+                    const prev = selected && totalAmt > 0 ? preview(value) : null;
                     return (
-                      <div className="border border-slate-200 bg-slate-50 px-3 py-2 text-xs">
-                        <div className="flex items-center justify-between gap-3">
-                          <label className="text-[10px] font-bold text-slate-600 uppercase tracking-widest">Or pay extra as Vendor Advance</label>
-                          <input type="number" value={poAllocAdvance} onChange={e => setPoAllocAdvance(e.target.value)}
-                            placeholder="0" className="border border-slate-300 px-2 py-1 text-xs w-32 font-mono text-right focus:outline-none focus:ring-1 focus:ring-slate-400" />
+                      <button type="button" onClick={() => setPayTarget(value)}
+                        className={`text-left border p-2 transition ${selected ? 'border-indigo-600 bg-indigo-50' : 'border-slate-300 bg-white hover:bg-slate-50'}`}>
+                        <div className="flex items-start gap-2">
+                          <span className={`inline-block w-3 h-3 rounded-full mt-0.5 flex-shrink-0 ${selected ? 'bg-indigo-600 ring-2 ring-indigo-200' : 'bg-white border-2 border-slate-300'}`}></span>
+                          <div className="flex-1 min-w-0">
+                            <div className="text-[11px] font-bold text-slate-800 truncate">{label}</div>
+                            {material && <div className="text-[10px] text-slate-500 truncate">{material}</div>}
+                            {balance !== undefined && <div className="text-[10px] text-slate-600 font-mono">Balance: <b>{fmt(balance)}</b></div>}
+                            {prev && prev.poAmt > 0 && (
+                              <div className="text-[10px] text-green-700 font-mono mt-1">→ {fmt(prev.poAmt)} to {prev.poLabel}</div>
+                            )}
+                            {prev && prev.advAmt > 0 && (
+                              <div className="text-[10px] text-amber-700 font-mono">→ {fmt(prev.advAmt)} to Advance (overflow)</div>
+                            )}
+                            {prev && prev.poAmt === 0 && value !== 'advance' && (
+                              <div className="text-[10px] text-amber-700 font-mono mt-1">→ all to Advance (no PO balance)</div>
+                            )}
+                          </div>
                         </div>
-                        <div className="text-[10px] text-slate-500 mt-1">Overpayment held as vendor advance — can be adjusted against a future PO invoice.</div>
-                      </div>
+                      </button>
                     );
-                  }
+                  };
+
                   return (
-                    <div className="border border-indigo-200 bg-indigo-50/40 px-3 py-2 text-xs space-y-2">
-                      <div className="text-[10px] font-bold text-indigo-800 uppercase tracking-widest">
-                        Other Open POs for {poPayItem.vendorName} · {siblingPOs.length} running
+                    <div className="border border-slate-200 bg-slate-50 px-3 py-2 space-y-2">
+                      <div className="text-[10px] font-bold text-slate-600 uppercase tracking-widest">
+                        Pay Against (pick one) {totalAmt > 0 && <span className="text-slate-400 font-normal normal-case">· overflow auto-goes to Vendor Advance</span>}
                       </div>
-                      <table className="w-full text-[11px]">
-                        <thead>
-                          <tr className="text-slate-500 text-[9px] uppercase tracking-widest">
-                            <th className="text-left px-1 py-1">PO#</th>
-                            <th className="text-left px-1 py-1">Material</th>
-                            <th className="text-right px-1 py-1">Balance</th>
-                            <th className="text-right px-1 py-1">Allocate</th>
-                          </tr>
-                        </thead>
-                        <tbody>
-                          {siblingPOs.map(sib => (
-                            <tr key={sib.poId} className="border-t border-indigo-100">
-                              <td className="px-1 py-1 font-mono text-blue-700 font-medium">PO-{sib.poNo}</td>
-                              <td className="px-1 py-1 text-slate-600 max-w-[180px] truncate" title={sib.material || ''}>{sib.material || '--'}</td>
-                              <td className="px-1 py-1 text-right font-mono text-red-600">{fmt(sib.balance)}</td>
-                              <td className="px-1 py-1 text-right">
-                                <input type="number" value={poAllocExtras[sib.poId] || ''}
-                                  onChange={e => setPoAllocExtras(prev => ({ ...prev, [sib.poId]: e.target.value }))}
-                                  placeholder="0" max={sib.balance}
-                                  className="border border-slate-300 px-1.5 py-0.5 text-xs w-28 font-mono text-right focus:outline-none focus:ring-1 focus:ring-indigo-500" />
-                                {parseFloat(poAllocExtras[sib.poId] || '0') > sib.balance && (
-                                  <div className="text-[9px] text-red-600 font-bold">Exceeds balance</div>
-                                )}
-                              </td>
-                            </tr>
-                          ))}
-                          <tr className="border-t border-indigo-200 bg-indigo-50">
-                            <td className="px-1 py-1 text-slate-700 font-bold italic" colSpan={2}>Vendor Advance (rest)</td>
-                            <td className="px-1 py-1 text-right text-slate-400">—</td>
-                            <td className="px-1 py-1 text-right">
-                              <input type="number" value={poAllocAdvance} onChange={e => setPoAllocAdvance(e.target.value)}
-                                placeholder="0" className="border border-slate-300 px-1.5 py-0.5 text-xs w-28 font-mono text-right focus:outline-none focus:ring-1 focus:ring-amber-500" />
-                            </td>
-                          </tr>
-                        </tbody>
-                      </table>
-                      <div className="flex items-center justify-between pt-1 border-t border-indigo-200 text-[11px]">
-                        <span className="text-slate-600">
-                          Current PO: <b className="font-mono">{fmt(currentAmt)}</b>
-                          <span className="mx-2 text-slate-300">+</span>
-                          Other POs: <b className="font-mono">{fmt(extraAlloc)}</b>
-                          <span className="mx-2 text-slate-300">+</span>
-                          Advance: <b className="font-mono text-amber-700">{fmt(advAlloc)}</b>
-                        </span>
-                        <span className="font-bold text-indigo-800">
-                          = {fmt(grandTotal)} total
-                        </span>
+                      <div className="grid grid-cols-2 gap-2">
+                        <Tile value="current" label={`Current — PO-${poPayItem.poNo}`} balance={currentBal} material={poPayItem.material || undefined} />
+                        {siblingPOs.map(sib => (
+                          <Tile key={sib.poId} value={sib.poId} label={`PO-${sib.poNo}`} balance={sib.balance} material={sib.material || undefined} />
+                        ))}
+                        <Tile value="advance" label="Vendor Advance only" material="Hold as advance — adjust later against any invoice" />
                       </div>
                     </div>
                   );
                 })()}
 
-                <button onClick={submitPOPayment} disabled={poPaySaving || !poPayAmount}
+                <button onClick={submitPOPayment} disabled={poPaySaving || !poPayAmount || !payTarget}
                   className="w-full px-4 py-2 bg-green-600 text-white text-[11px] font-bold uppercase tracking-widest hover:bg-green-700 disabled:opacity-50">
                   {(() => {
                     if (poPaySaving) return 'Processing...';
-                    const cur = parseFloat(poPayAmount) || 0;
-                    const extra = Object.values(poAllocExtras).reduce((s, v) => s + (parseFloat(v) || 0), 0);
-                    const adv = parseFloat(poAllocAdvance) || 0;
-                    const total = cur + extra + adv;
+                    const totalAmt = parseFloat(poPayAmount) || 0;
                     const gstSuffix = poPayItem.poGst > 0 ? (poPayIncludeGst ? ' (Incl. GST)' : ' (Ex. GST)') : '';
-                    if (extra > 0 || adv > 0) {
-                      return `Pay ₹${total.toLocaleString('en-IN')} via ${poPayMode}${gstSuffix} — ${1 + Object.keys(poAllocExtras).filter(k => parseFloat(poAllocExtras[k] || '0') > 0).length} PO(s)${adv > 0 ? ' + Advance' : ''}`;
+                    if (totalAmt === 0) return `Enter amount`;
+                    const currentBal = Math.max(0, (poReceivedValue || poPayItem.grnTotalValue) - poPayItem.totalPaid - poPendingCash);
+                    let poAmt = 0, advAmt = 0, poLabel = '';
+                    if (payTarget === 'advance') { advAmt = totalAmt; }
+                    else if (payTarget === 'current') { poAmt = Math.min(totalAmt, currentBal); advAmt = totalAmt - poAmt; poLabel = `PO-${poPayItem.poNo}`; }
+                    else {
+                      const sib = pendingItems.find(p => p.poId === payTarget);
+                      if (sib) { poAmt = Math.min(totalAmt, sib.balance); advAmt = totalAmt - poAmt; poLabel = `PO-${sib.poNo}`; }
                     }
-                    return `Pay ${cur > 0 ? '₹' + cur.toLocaleString('en-IN') : ''} via ${poPayMode}${gstSuffix}`;
+                    const parts: string[] = [];
+                    if (poAmt > 0) parts.push(`${fmt(poAmt)} → ${poLabel}`);
+                    if (advAmt > 0) parts.push(`${fmt(advAmt)} → Advance`);
+                    return `Pay ₹${totalAmt.toLocaleString('en-IN')} via ${poPayMode}${gstSuffix} · ${parts.join(' + ') || 'select target'}`;
                   })()}
                 </button>
 
