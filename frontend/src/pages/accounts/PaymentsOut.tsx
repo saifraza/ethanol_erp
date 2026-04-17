@@ -194,6 +194,13 @@ export default function PaymentsOut() {
   const [pendingCategory, setPendingCategory] = useState<string>('ALL');
   const [pendingDateFrom, setPendingDateFrom] = useState('');
   const [pendingDateTo, setPendingDateTo] = useState('');
+  // Sortable columns — click a header to toggle asc/desc, matches /procurement/purchase-orders pattern
+  const [pendingSortField, setPendingSortField] = useState<string>('poNo');
+  const [pendingSortDir, setPendingSortDir] = useState<'asc' | 'desc'>('desc');
+  const togglePendingSort = (field: string) => {
+    if (pendingSortField === field) setPendingSortDir(d => d === 'asc' ? 'desc' : 'asc');
+    else { setPendingSortField(field); setPendingSortDir('desc'); }
+  };
 
   // Single source of truth: KPIs and table both render from this filtered list
   const filteredPending = useMemo(() => {
@@ -228,11 +235,25 @@ export default function PaymentsOut() {
         return true;
       })
       .sort((a, b) => {
-        const aFuel = FUEL_KW.some(kw => (a.material || '').toLowerCase().includes(kw)) ? 0 : 1;
-        const bFuel = FUEL_KW.some(kw => (b.material || '').toLowerCase().includes(kw)) ? 0 : 1;
-        return aFuel - bFuel;
+        let av: number | string = 0, bv: number | string = 0;
+        switch (pendingSortField) {
+          case 'poNo': av = a.poNo; bv = b.poNo; break;
+          case 'vendor': av = (a.vendorName || '').toLowerCase(); bv = (b.vendorName || '').toLowerCase(); break;
+          case 'poAmount': av = a.poAmount || 0; bv = b.poAmount || 0; break;
+          case 'grnTotalValue': av = a.grnTotalValue || 0; bv = b.grnTotalValue || 0; break;
+          case 'totalInvoiced': av = a.totalInvoiced || 0; bv = b.totalInvoiced || 0; break;
+          case 'totalPaid': av = a.totalPaid || 0; bv = b.totalPaid || 0; break;
+          case 'pendingCash': av = a.pendingCash || 0; bv = b.pendingCash || 0; break;
+          case 'balance': av = a.balance || 0; bv = b.balance || 0; break;
+          case 'status': av = a.paymentStatus; bv = b.paymentStatus; break;
+          case 'daysOverdue': av = a.daysOverdue ?? -9999; bv = b.daysOverdue ?? -9999; break;
+          default: av = a.poNo; bv = b.poNo;
+        }
+        if (av < bv) return pendingSortDir === 'asc' ? -1 : 1;
+        if (av > bv) return pendingSortDir === 'asc' ? 1 : -1;
+        return 0;
       });
-  }, [pendingItems, pendingSearch, pendingCategory, pendingDateFrom, pendingDateTo]);
+  }, [pendingItems, pendingSearch, pendingCategory, pendingDateFrom, pendingDateTo, pendingSortField, pendingSortDir]);
 
   // --- PO Pay modal ---
   const [poPayItem, setPoPayItem] = useState<PendingPayable | null>(null);
@@ -1086,44 +1107,56 @@ export default function PaymentsOut() {
                       <table className="w-full text-xs">
                         <thead>
                           <tr className="bg-slate-800 text-white">
-                            <th className="text-left px-3 py-2 font-semibold text-[10px] uppercase tracking-widest border-r border-slate-700">PO#</th>
-                            <th className="text-left px-3 py-2 font-semibold text-[10px] uppercase tracking-widest border-r border-slate-700">Vendor</th>
-                            <th className="text-left px-3 py-2 font-semibold text-[10px] uppercase tracking-widest border-r border-slate-700">Terms</th>
-                            <th className="text-right px-3 py-2 font-semibold text-[10px] uppercase tracking-widest border-r border-slate-700" title="Total PO order value (authorization ceiling). For fuel / open-ended POs this can be larger than what's been delivered.">Order Value</th>
-                            <th className="text-right px-3 py-2 font-semibold text-[10px] uppercase tracking-widest border-r border-slate-700" title="Value of material received via GRN (delivered). This is what can be owed to the vendor right now.">Received</th>
-                            <th className="text-right px-3 py-2 font-semibold text-[10px] uppercase tracking-widest border-r border-slate-700">Invoiced</th>
-                            <th className="text-right px-3 py-2 font-semibold text-[10px] uppercase tracking-widest border-r border-slate-700">Paid</th>
-                            <th className="text-right px-3 py-2 font-semibold text-[10px] uppercase tracking-widest border-r border-slate-700" title="Cash vouchers issued but not yet settled (cash team hasn't handed over the money yet)">Cash Out</th>
-                            <th className="text-right px-3 py-2 font-semibold text-[10px] uppercase tracking-widest border-r border-slate-700">Balance</th>
-                            <th className="text-left px-3 py-2 font-semibold text-[10px] uppercase tracking-widest border-r border-slate-700">Status</th>
-                            <th className="text-right px-3 py-2 font-semibold text-[10px] uppercase tracking-widest border-r border-slate-700" title="Days overdue relative to due date (GRN date + payment terms). Positive = overdue.">Days</th>
-                            <th className="text-center px-3 py-2 font-semibold text-[10px] uppercase tracking-widest">Actions</th>
+                            {(() => {
+                              const sortIcon = (field: string) => pendingSortField === field ? <span className="ml-1 text-[8px]">{pendingSortDir === 'asc' ? '▲' : '▼'}</span> : null;
+                              const sortBtn = (field: string, label: string, align: 'left' | 'right' | 'center' = 'left', tooltip?: string) => (
+                                <button type="button" onClick={() => togglePendingSort(field)}
+                                  className={`w-full flex items-center gap-0.5 ${align === 'right' ? 'justify-end' : align === 'center' ? 'justify-center' : 'justify-start'} hover:text-blue-300`}
+                                  title={tooltip || `Sort by ${label}`}>
+                                  <span>{label}</span>{sortIcon(field)}
+                                </button>
+                              );
+                              return <>
+                                <th className="text-left px-2 py-2 font-semibold text-[10px] uppercase tracking-widest border-r border-slate-700">{sortBtn('poNo', 'PO#')}</th>
+                                <th className="text-left px-2 py-2 font-semibold text-[10px] uppercase tracking-widest border-r border-slate-700">{sortBtn('vendor', 'Vendor')}</th>
+                                <th className="text-left px-2 py-2 font-semibold text-[10px] uppercase tracking-widest border-r border-slate-700">Terms</th>
+                                <th className="text-right px-2 py-2 font-semibold text-[10px] uppercase tracking-widest border-r border-slate-700">{sortBtn('poAmount', 'Order', 'right', 'Total PO order value (authorization ceiling)')}</th>
+                                <th className="text-right px-2 py-2 font-semibold text-[10px] uppercase tracking-widest border-r border-slate-700">{sortBtn('grnTotalValue', 'Received', 'right', 'Value of material delivered via GRN')}</th>
+                                <th className="text-right px-2 py-2 font-semibold text-[10px] uppercase tracking-widest border-r border-slate-700">{sortBtn('totalInvoiced', 'Invoiced', 'right')}</th>
+                                <th className="text-right px-2 py-2 font-semibold text-[10px] uppercase tracking-widest border-r border-slate-700">{sortBtn('totalPaid', 'Paid', 'right')}</th>
+                                <th className="text-right px-2 py-2 font-semibold text-[10px] uppercase tracking-widest border-r border-slate-700">{sortBtn('pendingCash', 'Cash', 'right', 'Cash vouchers issued but not yet settled')}</th>
+                                <th className="text-right px-2 py-2 font-semibold text-[10px] uppercase tracking-widest border-r border-slate-700">{sortBtn('balance', 'Balance', 'right')}</th>
+                                <th className="text-left px-2 py-2 font-semibold text-[10px] uppercase tracking-widest border-r border-slate-700">{sortBtn('status', 'Status')}</th>
+                                <th className="text-right px-2 py-2 font-semibold text-[10px] uppercase tracking-widest border-r border-slate-700">{sortBtn('daysOverdue', 'Days', 'right', 'Days overdue — positive = overdue. Hover Days cell for due date.')}</th>
+                                <th className="text-center px-2 py-2 font-semibold text-[10px] uppercase tracking-widest">Actions</th>
+                              </>;
+                            })()}
                           </tr>
                         </thead>
                         <tbody>
                           {filtered.map((item, i) => (
                           <React.Fragment key={item.poId}>
                             <tr className={`border-b border-slate-100 hover:bg-blue-50/60 ${i % 2 ? 'bg-slate-50/70' : ''} ${selectedPOId === item.poId ? 'bg-blue-50' : ''}`}>
-                              <td className="px-3 py-1.5 border-r border-slate-100 font-mono font-medium">
+                              <td className="px-2 py-1.5 border-r border-slate-100 font-mono font-medium whitespace-nowrap">
                                 <button onClick={() => setSelectedPOId(selectedPOId === item.poId ? null : item.poId)} className="text-blue-700 hover:text-blue-900 hover:underline">
                                   {item.dealType === 'CONTRACTOR' ? `BILL-${item.poNo}` : `PO-${item.poNo}`}
                                 </button>
-                                {item.dealType === 'CONTRACTOR' && <span className="ml-1 text-[8px] font-bold uppercase px-1 py-0.5 border border-violet-300 bg-violet-50 text-violet-700">CONTRACTOR</span>}
+                                {item.dealType === 'CONTRACTOR' && <span className="ml-1 text-[8px] font-bold uppercase px-1 py-0.5 border border-violet-300 bg-violet-50 text-violet-700">CON</span>}
                               </td>
-                              <td className="px-3 py-1.5 border-r border-slate-100 font-medium text-slate-800 max-w-[180px] truncate">{item.vendorName}</td>
-                              <td className="px-3 py-1.5 border-r border-slate-100">
-                                <span className="text-[9px] font-bold uppercase px-1.5 py-0.5 border border-slate-300 bg-slate-50 text-slate-600">{item.paymentTerms || `NET${item.creditDays}`}</span>
+                              <td className="px-2 py-1.5 border-r border-slate-100 font-medium text-slate-800 max-w-[160px] truncate" title={item.vendorName}>{item.vendorName}</td>
+                              <td className="px-2 py-1.5 border-r border-slate-100 whitespace-nowrap">
+                                <span className="text-[9px] font-bold uppercase px-1 py-0.5 border border-slate-300 bg-slate-50 text-slate-600">{item.paymentTerms || `NET${item.creditDays}`}</span>
                               </td>
-                              <td className="px-3 py-1.5 border-r border-slate-100 text-right font-mono tabular-nums text-slate-600">
-                                {(item.poAmount || 0) > 0 ? fmt(item.poAmount) : <span className="text-slate-300">--</span>}
+                              <td className="px-2 py-1.5 border-r border-slate-100 text-right font-mono tabular-nums text-slate-600 whitespace-nowrap" title={item.poAmount ? `₹${item.poAmount.toLocaleString('en-IN')}` : ''}>
+                                {(item.poAmount || 0) > 0 ? fmtCompactINR(item.poAmount) : <span className="text-slate-300">--</span>}
                               </td>
-                              <td className="px-3 py-1.5 border-r border-slate-100 text-right font-mono tabular-nums">
-                                {(item.grnTotalValue || 0) > 0 ? fmt(item.grnTotalValue || 0) : <span className="text-slate-300" title="Nothing delivered yet">--</span>}
+                              <td className="px-2 py-1.5 border-r border-slate-100 text-right font-mono tabular-nums whitespace-nowrap" title={item.grnTotalValue ? `₹${item.grnTotalValue.toLocaleString('en-IN')}` : ''}>
+                                {(item.grnTotalValue || 0) > 0 ? fmtCompactINR(item.grnTotalValue || 0) : <span className="text-slate-300" title="Nothing delivered yet">--</span>}
                               </td>
-                              <td className="px-3 py-1.5 border-r border-slate-100 text-right font-mono tabular-nums">{fmtAmt(item.totalInvoiced)}</td>
-                              <td className={`px-3 py-1.5 border-r border-slate-100 text-right font-mono tabular-nums ${item.totalPaid > 0 ? 'text-green-700 font-medium' : 'text-slate-400'}`}>
+                              <td className="px-2 py-1.5 border-r border-slate-100 text-right font-mono tabular-nums whitespace-nowrap" title={item.totalInvoiced ? `₹${item.totalInvoiced.toLocaleString('en-IN')}` : ''}>{(item.totalInvoiced || 0) > 0 ? fmtCompactINR(item.totalInvoiced) : <span className="text-slate-300">--</span>}</td>
+                              <td className={`px-2 py-1.5 border-r border-slate-100 text-right font-mono tabular-nums whitespace-nowrap ${item.totalPaid > 0 ? 'text-green-700 font-medium' : 'text-slate-400'}`} title={item.totalPaid ? `₹${item.totalPaid.toLocaleString('en-IN')}` : ''}>
                                 <div className="flex flex-col items-end gap-0.5">
-                                  <span>{fmtAmt(item.totalPaid)}</span>
+                                  <span>{(item.totalPaid || 0) > 0 ? fmtCompactINR(item.totalPaid) : '--'}</span>
                                   {(item.pendingBankCount || 0) > 0 && (
                                     <span className="text-[8px] font-bold uppercase px-1 py-0.5 border border-yellow-500 bg-yellow-50 text-yellow-800 whitespace-nowrap"
                                       title={`${item.pendingBankCount} bank payment(s) submitted but UTR not entered yet. Total: ₹${(item.pendingBank || 0).toLocaleString('en-IN')}. Click PAY to enter the UTR.`}>
@@ -1132,10 +1165,10 @@ export default function PaymentsOut() {
                                   )}
                                 </div>
                               </td>
-                              <td className="px-3 py-1.5 border-r border-slate-100 text-right font-mono tabular-nums">
+                              <td className="px-2 py-1.5 border-r border-slate-100 text-right font-mono tabular-nums whitespace-nowrap">
                                 {(item.pendingCash || 0) > 0 ? (
                                   <div className="flex flex-col items-end gap-0.5">
-                                    <span className="text-yellow-700 font-medium">{fmtAmt(item.pendingCash || 0)}</span>
+                                    <span className="text-yellow-700 font-medium" title={`₹${(item.pendingCash || 0).toLocaleString('en-IN')}`}>{fmtCompactINR(item.pendingCash || 0)}</span>
                                     <span className="text-[8px] font-bold uppercase px-1 py-0.5 border border-yellow-400 bg-yellow-50 text-yellow-700"
                                       title={(item.pendingCashVouchers || []).map(v => `CV#${v.voucherNo} ${v.payeeName} ₹${v.amount.toLocaleString('en-IN')}`).join('\n')}>
                                       {(item.pendingCashVouchers || []).length} CV
@@ -1143,9 +1176,9 @@ export default function PaymentsOut() {
                                   </div>
                                 ) : <span className="text-slate-300">--</span>}
                               </td>
-                              <td className={`px-3 py-1.5 border-r border-slate-100 text-right font-mono tabular-nums font-bold ${item.balance > 0 ? 'text-red-600' : 'text-green-600'}`}>{fmtAmt(item.balance)}</td>
-                              <td className="px-3 py-1.5 border-r border-slate-100">
-                                <span className={`text-[9px] font-bold uppercase px-1.5 py-0.5 border ${
+                              <td className={`px-2 py-1.5 border-r border-slate-100 text-right font-mono tabular-nums font-bold whitespace-nowrap ${item.balance > 0 ? 'text-red-600' : 'text-green-600'}`} title={item.balance ? `₹${item.balance.toLocaleString('en-IN')}` : ''}>{(item.balance || 0) > 0 ? fmtCompactINR(item.balance) : '--'}</td>
+                              <td className="px-2 py-1.5 border-r border-slate-100">
+                                <span className={`text-[9px] font-bold uppercase px-1.5 py-0.5 border whitespace-nowrap ${
                                   item.paymentStatus === 'PO_APPROVED' ? 'border-slate-400 bg-slate-100 text-slate-600' :
                                   item.paymentStatus === 'NO_GRN' ? 'border-slate-300 bg-slate-50 text-slate-500' :
                                   item.paymentStatus === 'GRN_RECEIVED' ? 'border-amber-400 bg-amber-50 text-amber-700' :
@@ -1161,11 +1194,11 @@ export default function PaymentsOut() {
                                    'PAID'}
                                 </span>
                               </td>
-                              <td className={`px-3 py-1.5 border-r border-slate-100 text-right font-mono tabular-nums font-bold ${item.daysOverdue !== null && item.daysOverdue > 0 ? 'text-red-600' : item.daysOverdue !== null && item.daysOverdue >= -7 ? 'text-amber-600' : 'text-green-600'}`}
+                              <td className={`px-2 py-1.5 border-r border-slate-100 text-right font-mono tabular-nums font-bold whitespace-nowrap ${item.daysOverdue !== null && item.daysOverdue > 0 ? 'text-red-600' : item.daysOverdue !== null && item.daysOverdue >= -7 ? 'text-amber-600' : 'text-green-600'}`}
                                 title={item.dueDate ? `Due ${fmtDate(item.dueDate)}` : 'No due date (no GRN yet)'}>
                                 {item.daysOverdue !== null ? (item.daysOverdue > 0 ? `+${item.daysOverdue}` : String(item.daysOverdue)) : '--'}
                               </td>
-                              <td className="px-3 py-1.5 text-center">
+                              <td className="px-2 py-1.5 text-center">
                                 <div className="flex items-center justify-center gap-1">
                                   {/* INV button — show when GRN exists and no invoice yet */}
                                   {item.invoiceStatus === 'NO_INVOICE' && item.grnCount > 0 && (
