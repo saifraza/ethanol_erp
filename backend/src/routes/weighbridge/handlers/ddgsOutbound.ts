@@ -2,7 +2,7 @@ import prisma from '../../../config/prisma';
 import { WeighmentInput, PushContext, PushOutcome, emptyOutcome } from '../shared';
 import { nextInvoiceNo, nextCounter } from '../../../utils/invoiceCounter';
 import { onSaleInvoiceCreated } from '../../../services/autoJournal';
-import { generateIRN, generateEWBByIRN } from '../../../services/eInvoice';
+import { generateIRN } from '../../../services/eInvoice';
 import { calcDDGSGstSplit } from '../../../services/ddgsInvoiceService';
 
 const DDGS_HSN = '2303';
@@ -396,13 +396,8 @@ export async function handleDDGSOutbound(w: WeighmentInput, ctx: PushContext): P
               where: { id: inv.id },
               data: { irn: irnRes.irn, irnDate: new Date(), irnStatus: 'GENERATED', ackNo: irnRes.ackNo ? String(irnRes.ackNo) : null, signedQRCode: irnRes.signedQRCode?.slice(0, 4000) || null } as any,
             });
-            const vehNo = (txResult.dispatch.vehicleNo || '').replace(/\s/g, '');
-            const autoEwbData: Record<string, any> = { Irn: irnRes.irn, Distance: 100, TransMode: '1', VehNo: vehNo, VehType: 'R' };
-            if (txResult.dispatch.transporterName && txResult.dispatch.transporterName.length >= 3) autoEwbData.TransName = txResult.dispatch.transporterName;
-            const ewbRes = await generateEWBByIRN(irnRes.irn, autoEwbData);
-            if (ewbRes.success && ewbRes.ewayBillNo) {
-              await prisma.invoice.update({ where: { id: inv.id }, data: { ewbNo: ewbRes.ewayBillNo, ewbDate: new Date(), ewbStatus: 'GENERATED' } as any });
-            }
+            // EWB auto-generation disabled: EWB amount often differs from invoice amount.
+            // User uploads EWB PDF manually via manual-ewb endpoint on the contract/dispatch page.
           }
         } catch (err: any) {
           process.stderr.write(`[DDGS_OUT] IRN/EWB failed for invoice ${txResult.invoiceId}: ${err?.message || err}\n`);
