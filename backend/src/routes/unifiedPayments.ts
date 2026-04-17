@@ -28,6 +28,9 @@ interface UnifiedPayment {
   invoiceFilePath?: string | null;
   invoiceAmount?: number | null;
   tdsDeducted?: number;
+  // Payment Advice gating (vendor payments only — non-vendor rows leave these undefined)
+  paymentStatus?: string;           // INITIATED | CONFIRMED | CANCELLED
+  vendorEmail?: string | null;      // from Vendor.email — used to enable "Email Advice" UI
 }
 
 // ═══════════════════════════════════════════════
@@ -62,7 +65,8 @@ router.get('/outgoing', asyncHandler(async (req: AuthRequest, res: Response) => 
       select: {
         id: true, paymentDate: true, amount: true, mode: true, reference: true,
         remarks: true, tdsDeducted: true, isAdvance: true, createdAt: true,
-        vendor: { select: { name: true } },
+        paymentStatus: true,
+        vendor: { select: { name: true, email: true } },
         invoice: { select: { invoiceNo: true, vendorInvNo: true, poId: true, grnId: true, filePath: true, totalAmount: true } },
       },
     });
@@ -86,6 +90,9 @@ router.get('/outgoing', asyncHandler(async (req: AuthRequest, res: Response) => 
         invoiceFilePath: p.invoice?.filePath || null,
         invoiceAmount: p.invoice?.totalAmount || null,
         tdsDeducted: p.tdsDeducted || 0,
+        // Payment Advice gating
+        paymentStatus: p.paymentStatus,
+        vendorEmail: p.vendor.email || null,
       });
     }
   }

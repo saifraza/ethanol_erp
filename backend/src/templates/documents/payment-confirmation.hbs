@@ -1,17 +1,22 @@
 <!DOCTYPE html>
 <html lang="en">
-<head><meta charset="UTF-8"><title>Payment Confirmation</title>{{> base-styles}}</head>
+<head><meta charset="UTF-8"><title>Payment Advice</title>{{> base-styles}}</head>
 <body>
 <div class="page">
   {{> letterhead}}
-  <div class="doc-title">PAYMENT CONFIRMATION</div>
+  <div class="doc-title">PAYMENT ADVICE</div>
+
+  <div style="font-size:9px;color:#334155;margin:6px 0 10px 0;line-height:1.4">
+    Dear <strong>{{vendor.name}}</strong>,<br>
+    This is to advise you that the following payment has been released to your account. Kindly reconcile against the referenced invoice / PO and acknowledge receipt.
+  </div>
 
   <div class="details-grid">
-    <div class="detail-row"><span class="detail-label">Confirmation No</span><span class="detail-value bold">PAY-{{paymentNo}}</span></div>
+    <div class="detail-row"><span class="detail-label">Advice No</span><span class="detail-value bold">PAY-{{paymentNo}}</span></div>
     <div class="detail-row"><span class="detail-label">Payment Date</span><span class="detail-value">{{formatDate paymentDate}}</span></div>
     {{#if poNo}}<div class="detail-row"><span class="detail-label">PO Reference</span><span class="detail-value bold">PO-{{poNo}}</span></div>{{/if}}
     {{#if invoiceRef}}<div class="detail-row"><span class="detail-label">Invoice Ref</span><span class="detail-value">{{invoiceRef}}</span></div>{{/if}}
-    <div class="detail-row"><span class="detail-label">Status</span><span class="detail-value bold" style="color:#166534">PAID</span></div>
+    <div class="detail-row"><span class="detail-label">Status</span><span class="detail-value bold" style="color:#166534">RELEASED</span></div>
   </div>
 
   <div class="boxes">

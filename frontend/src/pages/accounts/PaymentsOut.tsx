@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
-import { X, CreditCard, FileText, Upload, Download } from 'lucide-react';
+import { X, CreditCard, FileText, Upload, Download, Mail } from 'lucide-react';
 import api from '../../services/api';
 
 // ═══════════════════════════════════════════════
@@ -71,6 +71,8 @@ interface OutPayment {
   invoiceFilePath?: string | null;
   invoiceAmount?: number | null;
   tdsDeducted?: number;
+  paymentStatus?: string;
+  vendorEmail?: string | null;
 }
 
 interface CompletedSummary {
@@ -1329,10 +1331,37 @@ export default function PaymentsOut() {
                           <td className="px-3 py-1.5 text-slate-400 text-[11px] max-w-[200px] truncate">{p.remarks || '--'}</td>
                           <td className="px-3 py-1.5 text-center">
                             {p.payeeType === 'VENDOR' && (
-                              <button onClick={() => window.open(`/api/vendor-payments/${p.id}/pdf?token=${localStorage.getItem('token')}`, '_blank')}
-                                className="px-1.5 py-0.5 bg-slate-600 text-white text-[9px] font-bold uppercase hover:bg-slate-700" title="Print Payment Confirmation">
-                                PDF
-                              </button>
+                              <div className="flex gap-1 justify-center">
+                                <button onClick={(e) => { e.stopPropagation(); window.open(`/api/vendor-payments/${p.id}/pdf?token=${localStorage.getItem('token')}`, '_blank'); }}
+                                  className="px-1.5 py-0.5 bg-slate-600 text-white text-[9px] font-bold uppercase hover:bg-slate-700" title="Download Payment Advice">
+                                  ADVICE
+                                </button>
+                                {p.paymentStatus === 'CONFIRMED' && (
+                                  <button
+                                    onClick={async (e) => {
+                                      e.stopPropagation();
+                                      let toEmail = p.vendorEmail || '';
+                                      if (!toEmail) {
+                                        const entered = window.prompt(`No email on file for ${p.payee}. Enter vendor email to send Payment Advice:`);
+                                        if (!entered) return;
+                                        toEmail = entered.trim();
+                                      } else {
+                                        if (!window.confirm(`Send Payment Advice to ${toEmail}?`)) return;
+                                      }
+                                      try {
+                                        const res = await api.post<{ ok: boolean; sentTo: string }>(`/vendor-payments/${p.id}/send-email`, { to: toEmail });
+                                        alert(`Payment Advice sent to ${res.data.sentTo}`);
+                                      } catch (err: unknown) {
+                                        const msg = (err as { response?: { data?: { error?: string } }; message?: string })?.response?.data?.error || (err as { message?: string })?.message || 'Send failed';
+                                        alert(`Failed to send: ${msg}`);
+                                      }
+                                    }}
+                                    className="px-1.5 py-0.5 bg-blue-600 text-white text-[9px] font-bold uppercase hover:bg-blue-700 inline-flex items-center gap-0.5"
+                                    title={p.vendorEmail ? `Email advice to ${p.vendorEmail}` : 'Email advice to vendor (prompts for email)'}>
+                                    <Mail size={9} /> EMAIL
+                                  </button>
+                                )}
+                              </div>
                             )}
                           </td>
                         </tr>
@@ -1371,9 +1400,39 @@ export default function PaymentsOut() {
                                 </div>
                               </div>
                               {/* Document Links */}
-                              {(p.poId || p.grnId || p.invoiceFilePath) && (
-                                <div className="flex items-center gap-2 mt-3 pt-2 border-t border-slate-200">
+                              {(p.poId || p.grnId || p.invoiceFilePath || p.payeeType === 'VENDOR') && (
+                                <div className="flex items-center gap-2 mt-3 pt-2 border-t border-slate-200 flex-wrap">
                                   <span className="text-[9px] font-bold text-slate-400 uppercase tracking-widest">Documents:</span>
+                                  {p.payeeType === 'VENDOR' && (
+                                    <a href={`/api/vendor-payments/${p.id}/pdf?token=${localStorage.getItem('token')}`} target="_blank" rel="noopener noreferrer"
+                                      className="px-2 py-0.5 bg-emerald-700 text-white text-[9px] font-bold uppercase hover:bg-emerald-800 inline-flex items-center gap-1">
+                                      <FileText size={9} /> Payment Advice
+                                    </a>
+                                  )}
+                                  {p.payeeType === 'VENDOR' && p.paymentStatus === 'CONFIRMED' && (
+                                    <button
+                                      onClick={async () => {
+                                        let toEmail = p.vendorEmail || '';
+                                        if (!toEmail) {
+                                          const entered = window.prompt(`No email on file for ${p.payee}. Enter vendor email to send Payment Advice:`);
+                                          if (!entered) return;
+                                          toEmail = entered.trim();
+                                        } else {
+                                          if (!window.confirm(`Send Payment Advice to ${toEmail}?`)) return;
+                                        }
+                                        try {
+                                          const res = await api.post<{ ok: boolean; sentTo: string }>(`/vendor-payments/${p.id}/send-email`, { to: toEmail });
+                                          alert(`Payment Advice sent to ${res.data.sentTo}`);
+                                        } catch (err: unknown) {
+                                          const msg = (err as { response?: { data?: { error?: string } }; message?: string })?.response?.data?.error || (err as { message?: string })?.message || 'Send failed';
+                                          alert(`Failed to send: ${msg}`);
+                                        }
+                                      }}
+                                      className="px-2 py-0.5 bg-blue-600 text-white text-[9px] font-bold uppercase hover:bg-blue-700 inline-flex items-center gap-1"
+                                      title={p.vendorEmail ? `Email advice to ${p.vendorEmail}` : 'No vendor email on file — will prompt'}>
+                                      <Mail size={9} /> Email Advice to Vendor{p.vendorEmail ? ` (${p.vendorEmail})` : ''}
+                                    </button>
+                                  )}
                                   {p.poId && (
                                     <a href={`/api/purchase-orders/${p.poId}/pdf?token=${localStorage.getItem('token')}`} target="_blank" rel="noopener noreferrer"
                                       className="px-2 py-0.5 bg-slate-700 text-white text-[9px] font-bold uppercase hover:bg-slate-800 inline-flex items-center gap-1">

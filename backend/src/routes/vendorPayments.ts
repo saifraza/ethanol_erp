@@ -8,7 +8,6 @@ import { recomputeGrnPaidStateForPO } from '../services/grnPaidState';
 import { renderDocumentPdf } from '../services/documentRenderer';
 import { nextDocNo } from '../utils/docSequence';
 import { getCompanyForPdf } from '../utils/pdfCompanyHelper';
-import PDFDocument from 'pdfkit';
 import { sendEmail } from '../services/messaging';
 
 // ── Zod schemas ──
@@ -45,11 +44,12 @@ const router = Router();
 router.use(authenticate as any);
 
 // ═══════════════════════════════════════════════
-// GET /:id/pdf — Payment confirmation PDF (single payment or full split view)
+// Build data payload for the Payment Advice template.
+// Shared by GET /:id/pdf and POST /:id/send-email so both emit the exact same document.
 // ═══════════════════════════════════════════════
-router.get('/:id/pdf', asyncHandler(async (req: AuthRequest, res: Response) => {
+async function buildPaymentAdviceData(paymentId: string) {
   const payment = await prisma.vendorPayment.findUnique({
-    where: { id: req.params.id },
+    where: { id: paymentId },
     include: {
       vendor: true,
       invoice: {
@@ -60,9 +60,8 @@ router.get('/:id/pdf', asyncHandler(async (req: AuthRequest, res: Response) => {
       },
     },
   });
-  if (!payment) return res.status(404).json({ error: 'Payment not found' });
+  if (!payment) return null;
 
-  // Find ALL payments for the same invoice (to show full split picture)
   interface PaymentSplit { mode: string; amount: number; reference: string; date: Date; type: string }
   const paymentSplits: PaymentSplit[] = [];
 
@@ -79,7 +78,6 @@ router.get('/:id/pdf', asyncHandler(async (req: AuthRequest, res: Response) => {
     paymentSplits.push({ mode: payment.mode, amount: payment.amount, reference: payment.reference || '', date: payment.paymentDate, type: 'Bank Transfer' });
   }
 
-  // Find CashVouchers linked to same vendor + PO (via remarks)
   const poNo = payment.invoice?.po?.poNo;
   if (poNo) {
     try {
@@ -93,7 +91,6 @@ router.get('/:id/pdf', asyncHandler(async (req: AuthRequest, res: Response) => {
     } catch { /* CashVoucher table may not exist */ }
   }
 
-  // GRN details
   const grns: Array<Record<string, unknown>> = [];
   if (payment.invoice?.grn) {
     const g = payment.invoice.grn;
@@ -108,7 +105,7 @@ router.get('/:id/pdf', asyncHandler(async (req: AuthRequest, res: Response) => {
   const totalPayable = payment.invoice?.netPayable || totalPaid;
   const tdsDeducted = payment.tdsDeducted || 0;
 
-  const data = {
+  const data: Record<string, unknown> = {
     paymentNo: payment.paymentNo,
     paymentDate: payment.paymentDate,
     poNo,
@@ -141,11 +138,22 @@ router.get('/:id/pdf', asyncHandler(async (req: AuthRequest, res: Response) => {
     remarks: payment.remarks || '',
   };
 
-  (data as any).company = await getCompanyForPdf(payment.companyId);
+  data.company = await getCompanyForPdf(payment.companyId);
+
+  return { payment, data, totalPaid };
+}
+
+// ═══════════════════════════════════════════════
+// GET /:id/pdf — Payment Advice PDF (single payment or full split view)
+// ═══════════════════════════════════════════════
+router.get('/:id/pdf', asyncHandler(async (req: AuthRequest, res: Response) => {
+  const built = await buildPaymentAdviceData(req.params.id);
+  if (!built) return res.status(404).json({ error: 'Payment not found' });
+  const { payment, data } = built;
 
   const pdf = await renderDocumentPdf({ docType: 'PAYMENT_CONFIRMATION', data, verifyId: payment.id });
   res.setHeader('Content-Type', 'application/pdf');
-  res.setHeader('Content-Disposition', `inline; filename="Payment-${payment.paymentNo}.pdf"`);
+  res.setHeader('Content-Disposition', `inline; filename="Payment-Advice-PAY-${payment.paymentNo}.pdf"`);
   res.send(pdf);
 }));
 
@@ -651,63 +659,58 @@ router.post('/generate-bank-file', asyncHandler(async (req: AuthRequest, res: Re
     });
 }));
 
-// POST /:id/send-email — Send payment receipt/advice to vendor
+// POST /:id/send-email — Email Payment Advice (HBS template) to the vendor.
+// Requires payment to be in CONFIRMED state (UTR has been entered).
 router.post('/:id/send-email', asyncHandler(async (req: AuthRequest, res: Response) => {
-    const pmt = await prisma.vendorPayment.findUnique({
-      where: { id: req.params.id },
-      include: { vendor: true },
-    });
-    if (!pmt) { res.status(404).json({ error: 'Payment not found' }); return; }
+  const built = await buildPaymentAdviceData(req.params.id);
+  if (!built) { res.status(404).json({ error: 'Payment not found' }); return; }
+  const { payment, data } = built;
 
-    const toEmail = req.body.to || (pmt as any).vendor?.email;
-    if (!toEmail) { res.status(400).json({ error: 'No email address. Add vendor email or provide "to" in request.' }); return; }
+  if (payment.paymentStatus !== 'CONFIRMED') {
+    res.status(400).json({ error: 'Payment Advice can only be sent after UTR confirmation.' });
+    return;
+  }
 
-    const pdfBuffer = await new Promise<Buffer>((resolve, reject) => {
-      const chunks: Buffer[] = [];
-      const doc = new PDFDocument({ size: 'A4', margin: 40 });
-      doc.on('data', (chunk: Buffer) => chunks.push(chunk));
-      doc.on('end', () => resolve(Buffer.concat(chunks)));
-      doc.on('error', reject);
+  const toEmail: string | undefined = (req.body?.to as string | undefined) || (payment.vendor as { email?: string | null }).email || undefined;
+  if (!toEmail) {
+    res.status(400).json({ error: 'No email on vendor. Add vendor email or pass "to" in request body.' });
+    return;
+  }
 
-      doc.fontSize(14).font('Helvetica-Bold').text('PAYMENT ADVICE', { align: 'center' });
-      doc.moveDown();
-      doc.fontSize(10).font('Helvetica-Bold').text('MSPIL — Mahakaushal Sugar & Power Industries Ltd');
-      doc.fontSize(8).font('Helvetica').text('Village Bachai, Dist. Narsinghpur, M.P.');
-      doc.moveDown();
+  const pdfBuffer = await renderDocumentPdf({ docType: 'PAYMENT_CONFIRMATION', data, verifyId: payment.id });
 
-      doc.fontSize(9).font('Helvetica');
-      doc.text(`Payment Date: ${pmt.paymentDate ? new Date(pmt.paymentDate).toLocaleDateString('en-IN') : '-'}`);
-      doc.text(`Vendor: ${(pmt as any).vendor?.name || '-'}`);
-      doc.text(`Mode: ${pmt.mode || '-'}`);
-      doc.text(`Reference: ${pmt.reference || '-'}`);
-      doc.moveDown();
-      doc.font('Helvetica-Bold').fontSize(11);
-      doc.text(`Amount Paid: Rs. ${(pmt.amount || 0).toLocaleString('en-IN', { minimumFractionDigits: 2 })}`);
-      if (pmt.tdsDeducted) {
-        doc.fontSize(9).font('Helvetica');
-        doc.text(`TDS Deducted: Rs. ${pmt.tdsDeducted.toLocaleString('en-IN', { minimumFractionDigits: 2 })}`);
-      }
-      if (pmt.remarks) {
-        doc.moveDown();
-        doc.text(`Remarks: ${pmt.remarks}`);
-      }
-      doc.end();
-    });
+  const paymentNoStr = String(payment.paymentNo).padStart(4, '0');
+  const fileName = `Payment-Advice-PAY-${paymentNoStr}.pdf`;
+  const subject: string = (req.body?.subject as string | undefined) || `Payment Advice — PAY-${paymentNoStr} — MSPIL`;
+  const amountStr = (payment.amount || 0).toLocaleString('en-IN', { minimumFractionDigits: 2 });
+  const dateStr = payment.paymentDate ? new Date(payment.paymentDate).toLocaleDateString('en-IN') : '-';
+  const body: string = (req.body?.body as string | undefined) || [
+    `Dear ${payment.vendor.name},`,
+    '',
+    `This is to advise you that the following payment has been released to your account:`,
+    '',
+    `  Amount       : Rs. ${amountStr}`,
+    `  Payment Date : ${dateStr}`,
+    `  Mode         : ${payment.mode}`,
+    `  UTR / Ref    : ${payment.reference || '-'}`,
+    payment.invoice?.vendorInvNo ? `  Invoice Ref  : ${payment.invoice.vendorInvNo}` : '',
+    '',
+    `Please find the formal payment advice attached as PDF. Kindly acknowledge receipt and reconcile against the referenced invoice.`,
+    '',
+    `Regards,`,
+    `Accounts — Mahakaushal Sugar & Power Industries Ltd`,
+  ].filter(Boolean).join('\n');
 
-    const label = `Payment-${pmt.reference || String(pmt.paymentNo).padStart(4, '0')}`;
-    const subject = req.body.subject || `${label} — Payment Advice from MSPIL`;
-    const body = req.body.body || `Dear ${(pmt as any).vendor?.name || 'Vendor'},\n\nPlease find attached payment advice for Rs. ${(pmt.amount || 0).toLocaleString('en-IN')} dated ${pmt.paymentDate ? new Date(pmt.paymentDate).toLocaleDateString('en-IN') : '-'}.\n\nRegards,\nMSPIL Distillery`;
+  const result = await sendEmail({
+    to: toEmail, subject, text: body,
+    attachments: [{ filename: fileName, content: pdfBuffer, contentType: 'application/pdf' }],
+  });
 
-    const result = await sendEmail({
-      to: toEmail, subject, text: body,
-      attachments: [{ filename: `${label}.pdf`, content: pdfBuffer, contentType: 'application/pdf' }],
-    });
-
-    if (result.success) {
-      res.json({ ok: true, messageId: result.messageId, sentTo: toEmail });
-    } else {
-      res.status(500).json({ error: result.error || 'Email send failed' });
-    }
+  if (result.success) {
+    res.json({ ok: true, messageId: result.messageId, sentTo: toEmail });
+  } else {
+    res.status(500).json({ error: result.error || 'Email send failed' });
+  }
 }));
 
 export default router;
