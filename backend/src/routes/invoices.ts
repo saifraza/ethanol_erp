@@ -222,7 +222,7 @@ router.post('/', validate(createInvoiceSchema), asyncHandler(async (req: AuthReq
     });
 
     onSaleInvoiceCreated(prisma, {
-      id: invoice.id, invoiceNo: invoice.invoiceNo, totalAmount: invoice.totalAmount,
+      id: invoice.id, invoiceNo: invoice.invoiceNo, remarks: invoice.remarks, totalAmount: invoice.totalAmount,
       amount: invoice.amount, gstAmount: invoice.gstAmount, gstPercent: invoice.gstPercent,
       cgstAmount: invoice.cgstAmount, sgstAmount: invoice.sgstAmount,
       igstAmount: invoice.igstAmount, supplyType: invoice.supplyType,
@@ -306,7 +306,7 @@ router.post('/from-shipment/:shipmentId', asyncHandler(async (req: AuthRequest, 
     await prisma.shipment.update({ where: { id: shipmentId }, data: { invoiceRef: String(invoice.invoiceNo) } });
 
     onSaleInvoiceCreated(prisma, {
-      id: invoice.id, invoiceNo: invoice.invoiceNo, totalAmount: invoice.totalAmount,
+      id: invoice.id, invoiceNo: invoice.invoiceNo, remarks: invoice.remarks, totalAmount: invoice.totalAmount,
       amount: invoice.amount, gstAmount: invoice.gstAmount, gstPercent: invoice.gstPercent,
       cgstAmount: invoice.cgstAmount, sgstAmount: invoice.sgstAmount,
       igstAmount: invoice.igstAmount, supplyType: invoice.supplyType,

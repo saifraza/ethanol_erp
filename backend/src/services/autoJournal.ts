@@ -180,6 +180,7 @@ export async function onSaleInvoiceCreated(
   invoice: {
     id: string;
     invoiceNo: number;
+    remarks?: string | null; // holds the printed invoice number, e.g. "INV/ETH/040"
     totalAmount: number;
     amount: number;
     gstAmount: number;
@@ -201,6 +202,10 @@ export async function onSaleInvoiceCreated(
   }
 ): Promise<string | null> {
   try {
+    // Prefer printed invoice no (stored in `remarks` by convention, e.g. "INV/ETH/040").
+    // Only accept remarks that match the doc-series format — else it's arbitrary user text.
+    const isDocNo = /^(INV|DCH|GP|CN|DN)\/[A-Z]+\/\d+$/.test(invoice.remarks || '');
+    const displayNo = isDocNo ? invoice.remarks! : `INV-${invoice.invoiceNo}`;
     const salesCode = getSalesAccountCode(invoice.productName);
     const tcsAmount = invoice.tcsAmount || 0;
     // Always resolve all GST accounts — we decide which to use from stored split (data-driven),
@@ -221,7 +226,7 @@ export async function onSaleInvoiceCreated(
     // Credit sales revenue includes freight recovery to keep journal balanced
     const salesCredit = invoice.amount + (invoice.freightCharge || 0);
     const lines: { accountId: string; debit: number; credit: number; narration?: string }[] = [
-      { accountId: accts[ACCT.TRADE_RECEIVABLE], debit: invoice.totalAmount, credit: 0, narration: `INV-${invoice.invoiceNo}` },
+      { accountId: accts[ACCT.TRADE_RECEIVABLE], debit: invoice.totalAmount, credit: 0, narration: displayNo },
       { accountId: accts[salesCode], debit: 0, credit: salesCredit, narration: `${invoice.productName} sale${invoice.freightCharge ? ' + freight' : ''}` },
     ];
 
@@ -282,7 +287,7 @@ export async function onSaleInvoiceCreated(
     return await prisma.$transaction(async (tx: any) => {
       return createJournalEntry(tx, {
         date: invoice.invoiceDate,
-        narration: `Sale Invoice INV-${invoice.invoiceNo} — ${invoice.productName}`,
+        narration: `Sale Invoice ${displayNo} — ${invoice.productName}`,
         refType: 'SALE',
         refId: invoice.id,
         userId: invoice.userId,

@@ -331,7 +331,7 @@ router.post('/:id/liftings', asyncHandler(async (req: AuthRequest, res: Response
 
         // Auto-journal (non-critical, outside transaction)
         onSaleInvoiceCreated(prisma, {
-          id: inv.id, invoiceNo: inv.invoiceNo, totalAmount: total,
+          id: inv.id, invoiceNo: inv.invoiceNo, remarks: inv.remarks, totalAmount: total,
           amount: amount!, gstAmount: gst.gstAmount, gstPercent: contract.gstPercent || 18,
           cgstAmount: gst.cgstAmount, sgstAmount: gst.sgstAmount, igstAmount: gst.igstAmount,
           supplyType: gst.supplyType,
@@ -535,6 +535,7 @@ router.patch('/liftings/:liftingId/rate', asyncHandler(async (req: AuthRequest, 
   await onSaleInvoiceCreated(prisma, {
     id: inv.id,
     invoiceNo: inv.invoiceNo,
+    remarks: inv.remarks,
     totalAmount: newTotal,
     amount: newAmount,
     gstAmount: gst.gstAmount,
@@ -751,7 +752,7 @@ router.post('/:id/liftings/:liftingId/create-invoice', asyncHandler(async (req: 
 
     // Auto-journal: Dr Trade Receivable, Cr Sales + GST
     onSaleInvoiceCreated(prisma, {
-      id: invoice.id, invoiceNo: invoice.invoiceNo, totalAmount: invoice.totalAmount,
+      id: invoice.id, invoiceNo: invoice.invoiceNo, remarks: invoice.remarks, totalAmount: invoice.totalAmount,
       amount: invoice.amount, gstAmount: gst.gstAmount, gstPercent,
       cgstAmount: gst.cgstAmount, sgstAmount: gst.sgstAmount, igstAmount: gst.igstAmount,
       supplyType: gst.supplyType, productName: invoice.productName,

@@ -233,7 +233,7 @@ router.post('/:id/release', asyncHandler(async (req: AuthRequest, res: Response)
 
   // Fire-and-forget journal entry
   onSaleInvoiceCreated(prisma, {
-    id: result.invoice.id, invoiceNo: result.invoice.invoiceNo, totalAmount,
+    id: result.invoice.id, invoiceNo: result.invoice.invoiceNo, remarks: result.invoice.remarks, totalAmount,
     amount, gstAmount: gst.gstAmount, gstPercent,
     cgstAmount: gst.cgstAmount, sgstAmount: gst.sgstAmount, igstAmount: gst.igstAmount,
     supplyType: gst.supplyType, freightCharge: 0,

@@ -373,7 +373,8 @@ router.post('/:orderId/shipments/:shipmentId/create-invoice', asyncHandler(async
 
     // Auto-journal (fire-and-forget)
     onSaleInvoiceCreated(prisma, {
-      id: invoice.id, invoiceNo: invoice.invoiceNo, totalAmount: invoice.totalAmount,
+      id: invoice.id, invoiceNo: invoice.invoiceNo, remarks: invoice.remarks,
+      totalAmount: invoice.totalAmount,
       amount: invoice.amount, gstAmount: invoice.gstAmount, gstPercent,
       cgstAmount: invoice.cgstAmount, sgstAmount: invoice.sgstAmount, igstAmount: invoice.igstAmount,
       supplyType: invoice.supplyType,
