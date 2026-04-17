@@ -49,7 +49,8 @@ const splitPaymentSchema = z.object({
 });
 
 // Vendor-level multi-allocation: one lump-sum transfer spread across N POs
-// of the same vendor with optional "rest as advance". Captures compulsory GST.
+// of the same vendor with optional "rest as advance". Captures compulsory GST
+// and optional TDS (withheld at source; stored on the first allocation for audit).
 const allocateSchema = z.object({
   vendorId: z.string().min(1),
   mode: z.string().optional().default('NEFT'),
@@ -62,6 +63,9 @@ const allocateSchema = z.object({
     amount: z.coerce.number().positive(),
   })).default([]),
   advanceAmount: z.coerce.number().nonnegative().default(0),
+  // TDS deducted at source (payable to govt, not to vendor). Bank transfer = sum − tds.
+  tdsDeducted: z.coerce.number().nonnegative().optional().default(0),
+  tdsSection: z.string().optional().nullable(),
 });
 
 const router = Router();
@@ -934,6 +938,8 @@ router.post('/allocate', validate(allocateSchema), asyncHandler(async (req: Auth
     hasGst: boolean;
     allocations: Array<{ poId: string; amount: number }>;
     advanceAmount: number;
+    tdsDeducted?: number;
+    tdsSection?: string | null;
   };
   if ((b.allocations?.length || 0) === 0 && (b.advanceAmount || 0) === 0) {
     res.status(400).json({ error: 'Provide at least one PO allocation or an advance amount.' });
@@ -968,8 +974,13 @@ router.post('/allocate', validate(allocateSchema), asyncHandler(async (req: Auth
 
   await prisma.$transaction(async (tx: any) => {
     // One VendorPayment per PO allocation
+    let tdsRemaining = b.tdsDeducted || 0;
     for (const alloc of b.allocations) {
       const po = poById.get(alloc.poId)!;
+      // Attach TDS to the first allocation(s) — matches splitPaymentSchema convention
+      // (single TDS audit trail per transfer, not split per PO).
+      const tdsForThisRow = Math.min(tdsRemaining, alloc.amount);
+      tdsRemaining -= tdsForThisRow;
       const payment = await tx.vendorPayment.create({
         data: {
           vendorId: b.vendorId,
@@ -981,6 +992,8 @@ router.post('/allocate', validate(allocateSchema), asyncHandler(async (req: Auth
           confirmedAt: b.reference ? paymentDate : null,
           isAdvance: false,
           hasGst: b.hasGst,
+          tdsDeducted: tdsForThisRow,
+          tdsSection: tdsForThisRow > 0 ? (b.tdsSection || null) : null,
           remarks: `Payment against PO-${po.poNo}${baseRemarks ? ' | ' + baseRemarks : ''}`,
           userId,
           companyId,
@@ -1014,8 +1027,11 @@ router.post('/allocate', validate(allocateSchema), asyncHandler(async (req: Auth
       }
     }
 
-    // Optional advance — one more VendorPayment, isAdvance=true, no PO ref in remarks
+    // Optional advance — one more VendorPayment, isAdvance=true, no PO ref in remarks.
+    // Absorb any residual TDS here if allocations couldn't.
     if (b.advanceAmount > 0) {
+      const tdsForAdvance = Math.min(tdsRemaining, b.advanceAmount);
+      tdsRemaining -= tdsForAdvance;
       const advPayment = await tx.vendorPayment.create({
         data: {
           vendorId: b.vendorId,
@@ -1027,6 +1043,8 @@ router.post('/allocate', validate(allocateSchema), asyncHandler(async (req: Auth
           confirmedAt: b.reference ? paymentDate : null,
           isAdvance: true,
           hasGst: b.hasGst,
+          tdsDeducted: tdsForAdvance,
+          tdsSection: tdsForAdvance > 0 ? (b.tdsSection || null) : null,
           remarks: `Vendor advance${baseRemarks ? ' | ' + baseRemarks : ''}`,
           userId,
           companyId,
@@ -1036,16 +1054,23 @@ router.post('/allocate', validate(allocateSchema), asyncHandler(async (req: Auth
     }
   });
 
-  // Fire auto-journal entries for confirmed payments (best-effort, outside txn)
+  // Fire auto-journal entries for confirmed payments (best-effort, outside txn).
+  // TDS tracked on the VendorPayment rows themselves — re-read to pass the right per-row tdsDeducted
+  // so autoJournal can post: Dr Vendor ₹amount / Cr Bank ₹(amount−tds) / Cr TDS Payable ₹tds.
   for (const c of created) {
-    if (c.paymentStatus === 'CONFIRMED') {
-      try {
-        await onVendorPaymentMade(prisma as Parameters<typeof onVendorPaymentMade>[0], {
-          id: c.id, amount: c.amount, mode: b.mode, reference: b.reference,
-          tdsDeducted: 0, vendorId: b.vendorId, userId, paymentDate,
-        });
-      } catch { /* best effort */ }
-    }
+    if (c.paymentStatus !== 'CONFIRMED') continue;
+    try {
+      const row = await prisma.vendorPayment.findUnique({
+        where: { id: c.id },
+        select: { tdsDeducted: true, tdsSection: true },
+      });
+      await onVendorPaymentMade(prisma as Parameters<typeof onVendorPaymentMade>[0], {
+        id: c.id, amount: c.amount, mode: b.mode, reference: b.reference,
+        tdsDeducted: row?.tdsDeducted || 0,
+        tdsSection: row?.tdsSection || null,
+        vendorId: b.vendorId, userId, paymentDate,
+      });
+    } catch { /* best effort */ }
   }
 
   res.json({

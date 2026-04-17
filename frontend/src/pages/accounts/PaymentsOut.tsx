@@ -348,6 +348,12 @@ export default function PaymentsOut() {
   // The team can edit each tile's amount directly — no auto-waterfall surprise.
   // Any residual (typed total − sum of allocations) auto-goes to Vendor Advance.
   const [payAllocations, setPayAllocations] = useState<Record<string, string>>({ current: '' });
+
+  // TDS — computed from backend tax rules (section, thresholds, PAN, 206AB, LDC).
+  // Team can override the toggle (apply / skip), but rate + section come from calc.
+  const [poPayTdsCalc, setPoPayTdsCalc] = useState<{ shouldDeduct: boolean; sectionLabel: string; sectionCode: string; rate: number; tdsAmount: number; netAmount: number; reason: string; ledgerId: string | null } | null>(null);
+  const [poPayTdsApply, setPoPayTdsApply] = useState<boolean>(false); // default OFF until team confirms
+  const [poPayTdsLoading, setPoPayTdsLoading] = useState(false);
   const [tdsCalc, setTdsCalc] = useState<{ shouldDeduct: boolean; rate: number; tdsAmount: number; netAmount: number; ledgerId: string | null; sectionLabel: string; reason: string } | null>(null);
   const [tdsOverride, setTdsOverride] = useState(true); // true = apply TDS, false = skip
   const [tdsLoading, setTdsLoading] = useState(false);
@@ -458,6 +464,27 @@ export default function PaymentsOut() {
   useEffect(() => {
     if (selectedVendor && activeTab === 'ledger') fetchLedger(selectedVendor);
   }, [selectedVendor, activeTab, fetchLedger]);
+
+  // Debounced TDS calculation for PO Pay modal — hits /tax/calculate-tds whenever
+  // (vendor, amount) changes. Applies Indian rules: section + threshold + 206AB +
+  // PAN missing + Lower Deduction Cert. Team can still toggle apply/skip.
+  useEffect(() => {
+    if (!poPayItem) return;
+    const amt = parseFloat(poPayAmount) || 0;
+    if (amt <= 0) { setPoPayTdsCalc(null); return; }
+    setPoPayTdsLoading(true);
+    const t = setTimeout(async () => {
+      try {
+        const res = await api.post('/tax/calculate-tds', { vendorId: poPayItem.vendorId, amount: amt });
+        setPoPayTdsCalc(res.data);
+        // Auto-turn the toggle ON when rules say "should deduct" — team can still turn it off
+        if (res.data.shouldDeduct) setPoPayTdsApply(true);
+        else setPoPayTdsApply(false);
+      } catch { setPoPayTdsCalc(null); }
+      finally { setPoPayTdsLoading(false); }
+    }, 400);
+    return () => clearTimeout(t);
+  }, [poPayItem, poPayAmount]);
 
   // ═══════════════════════════════════════════════
   // Modal handlers
@@ -625,6 +652,10 @@ export default function PaymentsOut() {
     if (residual < -0.01) { alert(`Allocations (${fmt(sumAllocated)}) exceed the typed amount (${fmt(totalAmt)}).`); setPoPaySaving(false); return; }
     if (allocations.length === 0 && advanceAmt <= 0) { alert('Enter an allocation against at least one target.'); setPoPaySaving(false); return; }
 
+    // TDS portion — only if team toggled "Apply TDS" and the calculator said to deduct
+    const tdsAmt = (poPayTdsApply && poPayTdsCalc?.shouldDeduct) ? (poPayTdsCalc.tdsAmount || 0) : 0;
+    const tdsSectionToSend = tdsAmt > 0 ? (poPayTdsCalc?.sectionLabel || null) : null;
+
     setPoPaySaving(true);
     try {
       const res = await api.post('/vendor-payments/allocate', {
@@ -635,6 +666,8 @@ export default function PaymentsOut() {
         hasGst: hasGstToSend,
         allocations,
         advanceAmount: advanceAmt,
+        tdsDeducted: tdsAmt,
+        tdsSection: tdsSectionToSend,
       });
       const summary: string[] = [];
       for (const p of res.data.payments || []) {
@@ -645,6 +678,8 @@ export default function PaymentsOut() {
       alert(`Payment recorded (${res.data.status}):\n${summary.join('\n')}${closedStr}`);
       setPoPayItem(null);
       setPayAllocations({ current: '' });
+      setPoPayTdsCalc(null);
+      setPoPayTdsApply(false);
       await fetchPending();
     } catch (err: unknown) {
       alert((err as { response?: { data?: { error?: string } } })?.response?.data?.error || 'Payment failed');
@@ -1220,7 +1255,7 @@ export default function PaymentsOut() {
                                     const canAdvancePay = item.grnCount === 0 && item.invoices.length === 0 && isAdvance;
                                     if (canRunningPay || canAdvancePay) {
                                       return (
-                                        <button onClick={() => { setPoPayItem(item); setPoPayAmount(canAdvancePay ? String(item.poAmount || '') : ''); setPoPayMode('NEFT'); setPoPayRef(''); setPoPayRemarks(canAdvancePay ? 'Advance payment' : ''); setPoPayIncludeGst(null); setBankPendingPayment(null); setPayAllocations({ current: '' }); fetchPOPayments(item.poId); }}
+                                        <button onClick={() => { setPoPayItem(item); setPoPayAmount(canAdvancePay ? String(item.poAmount || '') : ''); setPoPayMode('NEFT'); setPoPayRef(''); setPoPayRemarks(canAdvancePay ? 'Advance payment' : ''); setPoPayIncludeGst(null); setBankPendingPayment(null); setPayAllocations({ current: '' }); setPoPayTdsCalc(null); setPoPayTdsApply(false); fetchPOPayments(item.poId); }}
                                           className="px-2 py-0.5 bg-green-600 text-white text-[9px] font-bold uppercase hover:bg-green-700 flex items-center gap-1" title={canAdvancePay ? 'Pay in advance' : 'Pay against PO'}>
                                           <CreditCard size={10} /> {canAdvancePay ? 'ADV PAY' : 'PAY'}
                                         </button>
@@ -2727,6 +2762,28 @@ export default function PaymentsOut() {
                             <td className="text-right px-2 py-1.5 text-amber-900 font-bold border-l border-amber-200">{fmt(toOtherPOs + toAdvanceWaterfall)}</td>
                           </tr>
                         )}
+                        {/* TDS split — shown when toggle is ON. Gross reduces vendor/PO balance,
+                            net is the actual bank debit, TDS is a separate payable to govt. */}
+                        {poPayTdsApply && poPayTdsCalc?.shouldDeduct && enteredAmt > 0 && (
+                          <>
+                            <tr className="bg-red-50/60 border-b border-red-200">
+                              <td className="px-2 py-1.5 text-red-800 font-sans text-[10px] font-bold uppercase tracking-widest">
+                                ↳ TDS Withheld @ {poPayTdsCalc.rate}% ({poPayTdsCalc.sectionLabel})
+                              </td>
+                              <td className="text-right px-2 py-1.5 text-red-700 border-l border-red-200" colSpan={2}>
+                                <span className="text-[9px] text-slate-400">payable to govt →</span>
+                              </td>
+                              <td className="text-right px-2 py-1.5 text-red-700 font-bold border-l border-red-200">({fmt(poPayTdsCalc.tdsAmount)})</td>
+                            </tr>
+                            <tr className="bg-blue-50 border-b border-blue-200">
+                              <td className="px-2 py-1.5 text-blue-900 font-sans text-[10px] font-bold uppercase tracking-widest">
+                                ↳ Bank Transfer to Vendor (actual cash out)
+                              </td>
+                              <td className="text-right px-2 py-1.5 text-blue-800 border-l border-blue-200" colSpan={2}></td>
+                              <td className="text-right px-2 py-1.5 text-blue-900 font-bold border-l border-blue-200">{fmt(enteredAmt - poPayTdsCalc.tdsAmount)}</td>
+                            </tr>
+                          </>
+                        )}
                       </>
                     )}
                   </tbody>
@@ -2810,6 +2867,45 @@ export default function PaymentsOut() {
                     ) : (
                       <div className="text-[10px] text-slate-400 bg-slate-50 border border-slate-200 px-3 py-1.5">
                         GST: <b>0% — No GST on this item</b> (will be recorded as "Without GST")
+                      </div>
+                    )}
+                  </div>
+                  {/* TDS Treatment — computed from backend tax rules (section, thresholds, PAN, 206AB, LDC) */}
+                  <div className="col-span-2">
+                    <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest block mb-1">TDS Treatment</label>
+                    {poPayTdsLoading && <div className="text-[10px] text-slate-400 italic">Calculating TDS per rules…</div>}
+                    {!poPayTdsLoading && !poPayTdsCalc && (parseFloat(poPayAmount) || 0) === 0 && (
+                      <div className="text-[10px] text-slate-400 bg-slate-50 border border-slate-200 px-3 py-1.5">Enter amount to check TDS applicability</div>
+                    )}
+                    {!poPayTdsLoading && poPayTdsCalc && !poPayTdsCalc.shouldDeduct && (
+                      <div className="text-[10px] text-slate-500 bg-slate-50 border border-slate-200 px-3 py-1.5">
+                        <b>No TDS applicable.</b> {poPayTdsCalc.reason}
+                      </div>
+                    )}
+                    {!poPayTdsLoading && poPayTdsCalc && poPayTdsCalc.shouldDeduct && (
+                      <div className="grid grid-cols-2 gap-2">
+                        <button type="button" onClick={() => setPoPayTdsApply(true)}
+                          className={`px-3 py-2 border text-left text-xs ${poPayTdsApply ? 'border-red-500 bg-red-50 text-red-800' : 'border-slate-300 bg-white text-slate-500 hover:bg-slate-50'}`}>
+                          <div className="font-bold uppercase tracking-widest text-[10px] flex items-center gap-1">
+                            <span className={`inline-block w-2 h-2 rounded-full ${poPayTdsApply ? 'bg-red-600' : 'bg-slate-300'}`}></span>
+                            Deduct TDS @ {poPayTdsCalc.rate}%
+                          </div>
+                          <div className="text-[10px] text-slate-500 mt-0.5">{poPayTdsCalc.sectionLabel}</div>
+                          <div className="text-[10px] mt-0.5"><span className="text-slate-400">TDS withheld: </span><b className="font-mono text-red-700">{fmt(poPayTdsCalc.tdsAmount)}</b></div>
+                          <div className="text-[10px]"><span className="text-slate-400">Vendor receives: </span><b className="font-mono text-blue-700">{fmt(poPayTdsCalc.netAmount)}</b></div>
+                        </button>
+                        <button type="button" onClick={() => setPoPayTdsApply(false)}
+                          className={`px-3 py-2 border text-left text-xs ${!poPayTdsApply ? 'border-slate-500 bg-slate-100 text-slate-800' : 'border-slate-300 bg-white text-slate-500 hover:bg-slate-50'}`}>
+                          <div className="font-bold uppercase tracking-widest text-[10px] flex items-center gap-1">
+                            <span className={`inline-block w-2 h-2 rounded-full ${!poPayTdsApply ? 'bg-slate-600' : 'bg-slate-300'}`}></span>
+                            Skip TDS (pay full)
+                          </div>
+                          <div className="text-[10px] text-slate-500 mt-0.5">Pay gross amount — TDS already handled / not required</div>
+                          <div className="text-[10px] text-amber-600 mt-0.5">⚠ Breaks rule for this vendor — use only if TDS was booked at invoice time.</div>
+                        </button>
+                        <div className="col-span-2 text-[9px] text-slate-400 italic border-t border-slate-200 pt-1 mt-1">
+                          <b>Rule:</b> {poPayTdsCalc.reason}
+                        </div>
                       </div>
                     )}
                   </div>
