@@ -2629,13 +2629,16 @@ export default function PaymentsOut() {
             }
           }
           if (_remaining > 0) toAdvanceWaterfall += _remaining; // auto-spill to advance
-          // Base/GST split of the portion hitting CURRENT PO
-          const thisPayBase = (poPayIncludeGst === true ? toCurrentPo * baseFraction : toCurrentPo);
-          const thisPayGst = (poPayIncludeGst === true ? toCurrentPo * gstFraction : 0);
-          const newBalBase = Math.max(0, balBase - thisPayBase);
-          const newBalGst = Math.max(0, balGst - thisPayGst);
-          const newBalTotal = newBalBase + newBalGst;
-          const showPreview = enteredAmt > 0 && poPayIncludeGst !== null;
+          // Base/GST split of the portion hitting CURRENT PO. If Tax Treatment not yet picked,
+          // we still show the Total column so the preview is useful before the team picks a
+          // treatment; Base/GST columns go blank until they pick.
+          const gstPicked = poPayIncludeGst !== null;
+          const thisPayBase = gstPicked ? (poPayIncludeGst === true ? toCurrentPo * baseFraction : toCurrentPo) : 0;
+          const thisPayGst = gstPicked ? (poPayIncludeGst === true ? toCurrentPo * gstFraction : 0) : 0;
+          const newBalBase = gstPicked ? Math.max(0, balBase - thisPayBase) : balBase;
+          const newBalGst = gstPicked ? Math.max(0, balGst - thisPayGst) : balGst;
+          const newBalTotal = Math.max(0, balTotal - toCurrentPo);
+          const showPreview = enteredAmt > 0; // breakdown preview shows as soon as amount is typed
           return (
           <div className="fixed inset-0 bg-black/50 flex items-start justify-center z-50 overflow-y-auto py-4" onClick={() => setPoPayItem(null)}>
             <div className="bg-white shadow-2xl w-full max-w-4xl mx-4" onClick={e => e.stopPropagation()}>
@@ -2708,18 +2711,23 @@ export default function PaymentsOut() {
                           <td className="px-2 py-1.5 text-emerald-800 font-bold font-sans uppercase tracking-widest text-[10px]">
                             ↓ If confirmed · This Payment {toCurrentPo < enteredAmt && <span className="normal-case font-normal text-[9px] text-slate-500">(to this PO only)</span>}
                           </td>
-                          <td className="text-right px-2 py-1.5 text-emerald-700 font-bold border-l border-emerald-200">{fmt(thisPayBase)}</td>
-                          <td className="text-right px-2 py-1.5 text-emerald-700 font-bold border-l border-emerald-200">{fmt(thisPayGst)}</td>
+                          <td className="text-right px-2 py-1.5 text-emerald-700 font-bold border-l border-emerald-200">{gstPicked ? fmt(thisPayBase) : <span className="text-slate-300 font-normal">—</span>}</td>
+                          <td className="text-right px-2 py-1.5 text-emerald-700 font-bold border-l border-emerald-200">{gstPicked ? fmt(thisPayGst) : <span className="text-slate-300 font-normal">—</span>}</td>
                           <td className="text-right px-2 py-1.5 text-emerald-800 font-bold border-l border-emerald-200">{fmt(toCurrentPo)}</td>
                         </tr>
                         <tr className="border-b border-emerald-200 bg-emerald-50/70">
                           <td className="px-2 py-1.5 text-slate-700 font-bold font-sans uppercase tracking-widest text-[10px]">
                             = Balance After This
                           </td>
-                          <td className={`text-right px-2 py-1.5 font-bold border-l border-emerald-200 ${newBalBase > 0 ? 'text-orange-700' : 'text-green-700'}`}>{fmt(newBalBase)}</td>
-                          <td className={`text-right px-2 py-1.5 font-bold border-l border-emerald-200 ${newBalGst > 0 ? 'text-orange-700' : 'text-green-700'}`}>{fmt(newBalGst)}</td>
+                          <td className={`text-right px-2 py-1.5 font-bold border-l border-emerald-200 ${gstPicked ? (newBalBase > 0 ? 'text-orange-700' : 'text-green-700') : 'text-slate-300'}`}>{gstPicked ? fmt(newBalBase) : '—'}</td>
+                          <td className={`text-right px-2 py-1.5 font-bold border-l border-emerald-200 ${gstPicked ? (newBalGst > 0 ? 'text-orange-700' : 'text-green-700') : 'text-slate-300'}`}>{gstPicked ? fmt(newBalGst) : '—'}</td>
                           <td className={`text-right px-2 py-1.5 font-bold border-l border-emerald-200 ${newBalTotal > 0 ? 'text-orange-700' : 'text-green-700 text-sm'}`}>{newBalTotal > 0 ? fmt(newBalTotal) : '— WILL BE SETTLED ✓'}</td>
                         </tr>
+                        {!gstPicked && (
+                          <tr className="bg-red-50 border-b border-red-200">
+                            <td colSpan={4} className="px-2 py-1 text-[10px] text-red-700 font-sans italic text-center">Pick Tax Treatment below to see Base / GST split</td>
+                          </tr>
+                        )}
                         {(toOtherPOs > 0 || toAdvanceWaterfall > 0) && (
                           <tr className="bg-amber-50 border-b border-amber-200">
                             <td className="px-2 py-1.5 text-amber-800 font-sans text-[10px] font-bold uppercase tracking-widest" colSpan={3}>
@@ -2911,20 +2919,9 @@ export default function PaymentsOut() {
                         ))}
                         <Tile value="advance" label="Vendor Advance" material="Hold — adjust later against any invoice" />
                       </div>
-                      {totalAmt > 0 && (
-                        <div className="bg-white border border-slate-200 px-3 py-1.5 text-[11px] font-mono">
-                          <div className="text-[9px] font-bold uppercase tracking-widest text-slate-500 mb-0.5 font-sans">Allocation preview</div>
-                          {steps.filter(s => s.poAmt > 0).map((s, i) => (
-                            <div key={i} className="flex justify-between text-slate-700"><span>{i + 1}. {s.poLabel}</span><span className="text-green-700 font-bold">{fmt(s.poAmt)}</span></div>
-                          ))}
-                          {overflowToAdvance > 0 && (
-                            <div className="flex justify-between text-amber-700 font-bold border-t border-slate-200 mt-1 pt-1"><span>↳ Overflow → Vendor Advance</span><span>{fmt(overflowToAdvance)}</span></div>
-                          )}
-                          {steps.filter(s => s.poAmt > 0).length === 0 && overflowToAdvance === 0 && (
-                            <div className="text-slate-400">Tick at least one target above.</div>
-                          )}
-                        </div>
-                      )}
+                      {/* Standalone allocation preview removed — same info already lives in the
+                          Payment Breakdown table at the top (green + amber rows) and in the
+                          Payment History ledger pending row below. */}
                     </div>
                   );
                 })()}
@@ -3006,11 +3003,11 @@ export default function PaymentsOut() {
                   </div>
                 )}
 
-                {/* Payment history ledger — Base / GST breakdown */}
-                {splits.length > 0 && (
+                {/* Payment history ledger — Base / GST breakdown (shown when history exists OR when user is entering a new payment) */}
+                {(splits.length > 0 || showPreview) && (
                   <div className="mt-3">
                     <div className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-1">
-                      Payment History ({splits.length}) — Base / GST Ledger
+                      Payment History ({splits.length}) — Base / GST Ledger{showPreview && <span className="text-emerald-700 normal-case tracking-normal font-normal ml-2">· projected row in green</span>}
                     </div>
                     <table className="w-full text-[11px] border border-slate-200">
                       <thead>
@@ -3044,6 +3041,31 @@ export default function PaymentsOut() {
                             </tr>
                           );
                         })}
+                        {/* Projected row — the payment being typed but not submitted yet.
+                            Only covers the portion landing on CURRENT PO; other POs/advance
+                            are flagged in the type chip. */}
+                        {showPreview && (
+                          <tr className="bg-emerald-50 border-t-2 border-emerald-400 border-b border-emerald-200">
+                            <td className="px-2 py-1 text-emerald-800 font-sans font-bold">[Projected]</td>
+                            <td className="px-2 py-1 text-emerald-700 text-[10px] font-bold">{poPayMode}</td>
+                            <td className="px-2 py-1 text-emerald-600 max-w-[160px] truncate" title={poPayRef || 'will be entered on confirm'}>
+                              {poPayRef ? poPayRef : <span className="italic text-emerald-500">will be entered on confirm</span>}
+                            </td>
+                            <td className="px-2 py-1 text-right text-emerald-800 font-bold border-l border-emerald-200">{fmt(toCurrentPo)}</td>
+                            <td className="px-2 py-1 text-right text-emerald-700 border-l border-emerald-200">{gstPicked ? fmt(thisPayBase) : <span className="text-slate-300">—</span>}</td>
+                            <td className="px-2 py-1 text-right text-emerald-700 border-l border-emerald-200">{gstPicked ? fmt(thisPayGst) : <span className="text-slate-300">—</span>}</td>
+                            <td className="px-2 py-1 text-[10px] font-sans">
+                              <span className="font-bold uppercase px-1 py-0.5 border border-emerald-400 bg-emerald-100 text-emerald-800">
+                                {gstPicked ? (poPayIncludeGst ? 'Incl. GST (new)' : 'Base only (new)') : 'Pending'}
+                              </span>
+                              {(toOtherPOs > 0 || toAdvanceWaterfall > 0) && (
+                                <div className="text-[9px] text-amber-700 font-mono mt-0.5">
+                                  + {fmt(toOtherPOs + toAdvanceWaterfall)} to {toOtherPOs > 0 && toAdvanceWaterfall > 0 ? 'other POs / advance' : toOtherPOs > 0 ? 'other POs' : 'advance'}
+                                </div>
+                              )}
+                            </td>
+                          </tr>
+                        )}
                       </tbody>
                       <tfoot>
                         <tr className="bg-slate-800 text-white font-semibold">
