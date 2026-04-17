@@ -775,8 +775,25 @@ router.get('/tds-summary', asyncHandler(async (req: AuthRequest, res: Response) 
   if (!from || !to) { res.status(400).json({ error: 'from and to required' }); return; }
   const dateFilter = { gte: new Date(from), lte: new Date(to + 'T23:59:59.999Z') };
   const [vendorPayments, contractorPayments] = await Promise.all([
-    prisma.vendorPayment.findMany({ where: { ...getCompanyFilter(req), paymentDate: dateFilter, tdsDeducted: { gt: 0 } }, select: { id: true, paymentDate: true, amount: true, tdsDeducted: true, tdsSection: true, vendor: { select: { name: true, pan: true, gstin: true } } }, orderBy: { paymentDate: 'desc' }, take: 500 }),
-    prisma.contractorPayment.findMany({ where: { paymentDate: dateFilter, tdsDeducted: { gt: 0 } }, select: { id: true, paymentDate: true, amount: true, tdsDeducted: true, bill: { select: { tdsPercent: true, contractor: { select: { name: true, pan: true, gstin: true, tdsSection: true } } } } }, orderBy: { paymentDate: 'desc' }, take: 500 }),
+    prisma.vendorPayment.findMany({
+      where: { ...getCompanyFilter(req), paymentDate: dateFilter, tdsDeducted: { gt: 0 } },
+      select: {
+        id: true, paymentNo: true, paymentDate: true, amount: true, tdsDeducted: true, tdsSection: true, reference: true,
+        vendor: { select: { name: true, pan: true, gstin: true } },
+        invoice: { select: { id: true, invoiceNo: true, vendorInvNo: true, poId: true, po: { select: { id: true, poNo: true } } } },
+      },
+      orderBy: { paymentDate: 'desc' },
+      take: 500,
+    }),
+    prisma.contractorPayment.findMany({
+      where: { paymentDate: dateFilter, tdsDeducted: { gt: 0 } },
+      select: {
+        id: true, paymentDate: true, amount: true, tdsDeducted: true, paymentRef: true,
+        bill: { select: { id: true, billNo: true, vendorBillNo: true, tdsPercent: true, contractor: { select: { name: true, pan: true, gstin: true, tdsSection: true } } } },
+      },
+      orderBy: { paymentDate: 'desc' },
+      take: 500,
+    }),
   ]);
   const sectionTotals: Record<string, { section: string; count: number; totalPayment: number; totalTds: number }> = {};
   for (const vp of vendorPayments) { const sec = vp.tdsSection || '194C'; if (!sectionTotals[sec]) sectionTotals[sec] = { section: sec, count: 0, totalPayment: 0, totalTds: 0 }; sectionTotals[sec].count++; sectionTotals[sec].totalPayment += vp.amount; sectionTotals[sec].totalTds += vp.tdsDeducted; }
@@ -789,9 +806,53 @@ router.get('/tds-summary', asyncHandler(async (req: AuthRequest, res: Response) 
   let tdsPayableBalance = 0;
   if (tdsAccount) { const agg = await prisma.journalLine.aggregate({ where: { accountId: tdsAccount.id }, _sum: { debit: true, credit: true } }); tdsPayableBalance = (agg._sum.credit || 0) - (agg._sum.debit || 0); }
   const round = (v: number): number => Math.round(v * 100) / 100;
-  const deductees: Array<{ name: string; pan: string | null; section: string; date: Date; paymentAmount: number; tdsAmount: number; source: string }> = [];
-  for (const vp of vendorPayments) { deductees.push({ name: vp.vendor?.name || 'Unknown', pan: vp.vendor?.pan || null, section: vp.tdsSection || '194C', date: vp.paymentDate, paymentAmount: vp.amount, tdsAmount: vp.tdsDeducted, source: 'VENDOR' }); }
-  for (const cp of contractorPayments) { deductees.push({ name: cp.bill?.contractor?.name || 'Unknown', pan: cp.bill?.contractor?.pan || null, section: cp.bill?.contractor?.tdsSection || '194C', date: cp.paymentDate, paymentAmount: cp.amount, tdsAmount: cp.tdsDeducted, source: 'CONTRACTOR' }); }
+  const deductees: Array<{
+    name: string; pan: string | null; section: string; date: Date;
+    paymentAmount: number; tdsAmount: number; source: string;
+    paymentId: string; paymentNo: number | null; paymentRef: string | null;
+    invoiceId: string | null; invoiceNo: number | null; vendorInvNo: string | null;
+    poId: string | null; poNo: number | null;
+    billId: string | null; billNo: number | null; vendorBillNo: string | null;
+  }> = [];
+  for (const vp of vendorPayments) {
+    deductees.push({
+      name: vp.vendor?.name || 'Unknown',
+      pan: vp.vendor?.pan || null,
+      section: vp.tdsSection || '194C',
+      date: vp.paymentDate,
+      paymentAmount: vp.amount,
+      tdsAmount: vp.tdsDeducted,
+      source: 'VENDOR',
+      paymentId: vp.id,
+      paymentNo: vp.paymentNo ?? null,
+      paymentRef: vp.reference || null,
+      invoiceId: vp.invoice?.id || null,
+      invoiceNo: vp.invoice?.invoiceNo ?? null,
+      vendorInvNo: vp.invoice?.vendorInvNo || null,
+      poId: vp.invoice?.po?.id || null,
+      poNo: vp.invoice?.po?.poNo ?? null,
+      billId: null, billNo: null, vendorBillNo: null,
+    });
+  }
+  for (const cp of contractorPayments) {
+    deductees.push({
+      name: cp.bill?.contractor?.name || 'Unknown',
+      pan: cp.bill?.contractor?.pan || null,
+      section: cp.bill?.contractor?.tdsSection || '194C',
+      date: cp.paymentDate,
+      paymentAmount: cp.amount,
+      tdsAmount: cp.tdsDeducted,
+      source: 'CONTRACTOR',
+      paymentId: cp.id,
+      paymentNo: null,
+      paymentRef: cp.paymentRef || null,
+      invoiceId: null, invoiceNo: null, vendorInvNo: null,
+      poId: null, poNo: null,
+      billId: cp.bill?.id || null,
+      billNo: cp.bill?.billNo ?? null,
+      vendorBillNo: cp.bill?.vendorBillNo || null,
+    });
+  }
   res.json({ period: { from, to }, bySections: Object.values(sectionTotals).map(s => ({ ...s, totalPayment: round(s.totalPayment), totalTds: round(s.totalTds) })), byQuarter: Object.values(quarterTotals).map(q => ({ ...q, totalTds: round(q.totalTds) })), deductees: deductees.sort((a, b) => b.date.getTime() - a.date.getTime()), tdsPayableBalance: round(tdsPayableBalance), totalDeducted: round(deductees.reduce((s, d) => s + d.tdsAmount, 0)) });
 }));
 

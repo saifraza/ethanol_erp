@@ -15,6 +15,7 @@
  * a few common code-prefix heuristics. Unmapped accounts go into "Other".
  */
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
+import { useNavigate } from 'react-router-dom';
 import api from '../../services/api';
 import { useHotkeys } from '../../hooks/useHotkeys';
 import {
@@ -141,10 +142,15 @@ function sumHeads(groups: Record<string, { accs: BSAccount[]; total: number }>, 
 }
 
 export default function BalanceSheet() {
+  const navigate = useNavigate();
   const [data, setData] = useState<BSData | null>(null);
   const [loading, setLoading] = useState(false);
   const [asOn, setAsOn] = useState(new Date().toISOString().split('T')[0]);
   const [showHelp, setShowHelp] = useState(false);
+
+  const openLedger = useCallback((accountId: string) => {
+    navigate(`/accounts/ledger?accountId=${accountId}&to=${asOn}`);
+  }, [navigate, asOn]);
 
   const fetchData = useCallback(async () => {
     try {
@@ -191,11 +197,17 @@ export default function BalanceSheet() {
           <td className="px-3 py-1.5 text-right font-mono tabular-nums text-slate-800 font-semibold">{fmtINR(group.total)}</td>
         </tr>
         {group.accs.map(a => (
-          <tr key={a.id} className="border-b border-slate-100 text-[11px]">
-            <td className="px-3 py-1 pl-10 text-slate-500 border-r border-slate-100">
+          <tr
+            key={a.id}
+            onClick={() => openLedger(a.id)}
+            className="border-b border-slate-100 text-[11px] cursor-pointer hover:bg-blue-50 group"
+            title="Click to view ledger"
+          >
+            <td className="px-3 py-1 pl-10 text-slate-500 border-r border-slate-100 group-hover:text-blue-700">
               <span className="font-mono text-[10px] text-slate-400 mr-2">{a.code}</span>{a.name}
+              <span className="ml-2 text-[9px] text-slate-300 group-hover:text-blue-500 uppercase tracking-widest">view &rarr;</span>
             </td>
-            <td className="px-3 py-1 text-right font-mono tabular-nums text-slate-500">{fmtINR(a.balance)}</td>
+            <td className="px-3 py-1 text-right font-mono tabular-nums text-slate-500 group-hover:text-blue-700 group-hover:underline">{fmtINR(a.balance)}</td>
           </tr>
         ))}
       </React.Fragment>
@@ -219,7 +231,7 @@ export default function BalanceSheet() {
 
         <TipBanner storageKey="bs_tip_dismissed">
           Tip: press <kbd className="px-1 bg-white border border-amber-300 font-mono">T</kbd> for today's BS.
-          Format follows Ind AS Schedule III of the Companies Act 2013.
+          Click any account row to drill down to its ledger (date, party, journal entry).
         </TipBanner>
 
         <FilterBar>

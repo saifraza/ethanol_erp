@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import api from '../../services/api';
 import AccountCombobox, { AccountComboboxHandle, ComboAccount } from '../../components/accounts/AccountCombobox';
 import QuickCreateAccountModal, { CreatedAccount } from '../../components/accounts/QuickCreateAccountModal';
@@ -45,12 +46,28 @@ function toISODate(d: Date): string {
 }
 
 export default function Ledger() {
+  const [searchParams, setSearchParams] = useSearchParams();
   const [accounts, setAccounts] = useState<ComboAccount[]>([]);
-  const [selectedAccountId, setSelectedAccountId] = useState('');
+  const [selectedAccountId, setSelectedAccountId] = useState(() => searchParams.get('accountId') || '');
   const [ledger, setLedger] = useState<LedgerData | null>(null);
   const [loading, setLoading] = useState(false);
-  const [dateRange, setDateRange] = useState({ from: '', to: '' });
-  const [divisionFilter, setDivisionFilter] = useState<DivisionFilter>('ALL');
+  const [dateRange, setDateRange] = useState(() => ({
+    from: searchParams.get('from') || '',
+    to: searchParams.get('to') || '',
+  }));
+  const [divisionFilter, setDivisionFilter] = useState<DivisionFilter>(() => {
+    const d = searchParams.get('division');
+    return (d === 'SUGAR' || d === 'POWER' || d === 'ETHANOL' || d === 'COMMON') ? d : 'ALL';
+  });
+
+  useEffect(() => {
+    const next = new URLSearchParams();
+    if (selectedAccountId) next.set('accountId', selectedAccountId);
+    if (dateRange.from) next.set('from', dateRange.from);
+    if (dateRange.to) next.set('to', dateRange.to);
+    if (divisionFilter !== 'ALL') next.set('division', divisionFilter);
+    setSearchParams(next, { replace: true });
+  }, [selectedAccountId, dateRange.from, dateRange.to, divisionFilter, setSearchParams]);
 
   // Client-side filters
   const [narrationSearch, setNarrationSearch] = useState('');

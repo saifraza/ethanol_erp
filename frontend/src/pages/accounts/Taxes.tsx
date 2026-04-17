@@ -248,13 +248,14 @@ function TDSTab({ from, to }: { from: string; to: string }) {
 
       {/* Deductee Detail */}
       <div className="-mx-3 md:-mx-6 border-x border-b border-slate-300 overflow-hidden">
-        <div className="bg-slate-200 border-b border-slate-300 px-3 py-1.5">
+        <div className="bg-slate-200 border-b border-slate-300 px-3 py-1.5 flex items-center justify-between">
           <span className="text-[10px] font-bold text-slate-600 uppercase tracking-widest">Deductee-wise Detail (Form 26Q)</span>
+          <span className="text-[10px] text-slate-500">Click Invoice / PO / Bill to open the source document</span>
         </div>
         <div className="overflow-x-auto">
           <table className="w-full text-xs">
             <thead><tr className="bg-slate-800 text-white">
-              {['Date', 'Deductee', 'PAN', 'Section', 'Source', 'Payment', 'TDS Deducted'].map(h => (
+              {['Date', 'Deductee', 'PAN', 'Section', 'Source', 'PO / Bill', 'Invoice', 'UTR / Ref', 'Payment', 'TDS Deducted'].map(h => (
                 <th key={h} className="px-3 py-2 font-semibold text-[10px] uppercase tracking-widest border-r border-slate-700 text-left last:border-r-0 last:text-right">{h}</th>
               ))}
             </tr></thead>
@@ -266,15 +267,36 @@ function TDSTab({ from, to }: { from: string; to: string }) {
                   <td className="px-3 py-1.5 font-mono text-[10px] border-r border-slate-100">{d.pan || '--'}</td>
                   <td className="px-3 py-1.5 border-r border-slate-100">{d.section}</td>
                   <td className="px-3 py-1.5 border-r border-slate-100"><span className={`text-[9px] font-bold uppercase px-1.5 py-0.5 border ${d.source === 'VENDOR' ? 'border-blue-300 bg-blue-50 text-blue-600' : 'border-amber-300 bg-amber-50 text-amber-600'}`}>{d.source}</span></td>
+                  <td className="px-3 py-1.5 border-r border-slate-100 font-mono text-[10px]">
+                    {d.source === 'VENDOR' && d.poNo ? (
+                      <a href={`/procurement/purchase-orders?search=${d.poNo}`} className="text-blue-600 hover:underline" title="Open PO">PO-{d.poNo}</a>
+                    ) : d.source === 'CONTRACTOR' && d.billNo ? (
+                      <a href={`/procurement/contractor-bills?search=${d.billNo}`} className="text-blue-600 hover:underline" title="Open Bill">BILL-{d.billNo}</a>
+                    ) : (
+                      <span className="text-slate-400">--</span>
+                    )}
+                  </td>
+                  <td className="px-3 py-1.5 border-r border-slate-100 font-mono text-[10px]">
+                    {d.source === 'VENDOR' && d.invoiceNo ? (
+                      <a href={`/procurement/vendor-invoices?search=${d.invoiceNo}`} className="text-blue-600 hover:underline" title="Open vendor invoice">
+                        INV-{d.invoiceNo}{d.vendorInvNo ? ` (${d.vendorInvNo})` : ''}
+                      </a>
+                    ) : d.source === 'CONTRACTOR' && d.vendorBillNo ? (
+                      <span className="text-slate-600">{d.vendorBillNo}</span>
+                    ) : (
+                      <span className="text-slate-400">--</span>
+                    )}
+                  </td>
+                  <td className="px-3 py-1.5 border-r border-slate-100 font-mono text-[10px] text-slate-600">{d.paymentRef || '--'}</td>
                   <td className="px-3 py-1.5 text-right font-mono tabular-nums border-r border-slate-100">{fmtCurrency(d.paymentAmount)}</td>
                   <td className="px-3 py-1.5 text-right font-mono tabular-nums font-semibold">{fmtCurrency(d.tdsAmount)}</td>
                 </tr>
               ))}
-              {data.deductees.length === 0 && <tr><td colSpan={7} className="px-3 py-8 text-center text-slate-400">No TDS deductions found in the selected period</td></tr>}
+              {data.deductees.length === 0 && <tr><td colSpan={10} className="px-3 py-8 text-center text-slate-400">No TDS deductions found in the selected period</td></tr>}
             </tbody>
             {data.deductees.length > 0 && (
               <tfoot><tr className="bg-slate-800 text-white font-semibold text-xs">
-                <td colSpan={5} className="px-3 py-2">Total</td>
+                <td colSpan={8} className="px-3 py-2">Total</td>
                 <td className="px-3 py-2 text-right font-mono tabular-nums">{fmtCurrency(data.deductees.reduce((s: number, d: any) => s + d.paymentAmount, 0))}</td>
                 <td className="px-3 py-2 text-right font-mono tabular-nums">{fmtCurrency(data.totalDeducted)}</td>
               </tr></tfoot>
