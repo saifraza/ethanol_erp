@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
-import { X, CreditCard, FileText, Upload, Download, Mail } from 'lucide-react';
+import { X, CreditCard, FileText, Upload, Download, Mail, Scan } from 'lucide-react';
 import api from '../../services/api';
 
 // Pulls the clean UTR/bank-ref out of a free-text payment reference.
@@ -11,6 +11,21 @@ function parseUtr(ref: string | null | undefined): { utr: string; prefix: string
   const m = trimmed.match(/^(.*?)\s*([A-Z]{4}[A-Z0-9]{8,})\s*$/);
   if (m) return { utr: m[2], prefix: m[1].trim() };
   return { utr: trimmed, prefix: '' };
+}
+
+async function scanBankReceipt(paymentId: string, file: File): Promise<{ ok: boolean; extracted?: Record<string, unknown> | null; warnings?: string[]; error?: string }> {
+  const fd = new FormData();
+  fd.append('file', file);
+  try {
+    const res = await api.post<{ extracted: Record<string, unknown> | null; warnings: string[] }>(`/vendor-payments/${paymentId}/scan-bank-receipt`, fd, {
+      headers: { 'Content-Type': 'multipart/form-data' },
+      timeout: 60000,
+    });
+    return { ok: true, extracted: res.data.extracted, warnings: res.data.warnings || [] };
+  } catch (err: unknown) {
+    const msg = (err as { response?: { data?: { error?: string } }; message?: string })?.response?.data?.error || (err as { message?: string })?.message || 'Scan failed';
+    return { ok: false, error: msg };
+  }
 }
 
 async function sendPaymentAdvice(paymentId: string, payee: string, vendorEmail: string | null | undefined): Promise<{ ok: boolean; sentTo?: string; error?: string }> {
@@ -105,6 +120,8 @@ interface OutPayment {
   adviceSentAt?: string | null;
   adviceSentTo?: string | null;
   hasGst?: boolean | null;
+  bankReceiptPath?: string | null;
+  bankReceiptScannedAt?: string | null;
 }
 
 interface CompletedSummary {
@@ -274,6 +291,12 @@ export default function PaymentsOut() {
   const [payForm, setPayForm] = useState({ amount: '', mode: 'NEFT', reference: '', paymentDate: todayStr(), tdsDeducted: '', tdsSection: '', tdsLedgerId: '', remarks: '' });
   // Compulsory GST choice for every payment (invoice pay, direct pay, split pay) — null = not picked yet
   const [payHasGst, setPayHasGst] = useState<boolean | null>(null);
+
+  // Scan Bank Receipt modal — upload the bank's payment confirmation (PDF/JPG) + AI extract
+  const [scanTarget, setScanTarget] = useState<{ paymentId: string; payee: string; amount: number; existing?: string | null } | null>(null);
+  const [scanFile, setScanFile] = useState<File | null>(null);
+  const [scanUploading, setScanUploading] = useState(false);
+  const [scanResult, setScanResult] = useState<{ extracted: Record<string, unknown> | null; warnings: string[] } | null>(null);
   const [tdsCalc, setTdsCalc] = useState<{ shouldDeduct: boolean; rate: number; tdsAmount: number; netAmount: number; ledgerId: string | null; sectionLabel: string; reason: string } | null>(null);
   const [tdsOverride, setTdsOverride] = useState(true); // true = apply TDS, false = skip
   const [tdsLoading, setTdsLoading] = useState(false);
@@ -1431,10 +1454,15 @@ export default function PaymentsOut() {
                           <td className="px-3 py-1.5 text-slate-400 text-[11px] max-w-[200px] truncate">{p.remarks || '--'}</td>
                           <td className="px-3 py-1.5 text-center">
                             {p.payeeType === 'VENDOR' && (
-                              <div className="flex gap-1 justify-center">
+                              <div className="flex gap-1 justify-center flex-wrap">
                                 <button onClick={(e) => { e.stopPropagation(); window.open(`/api/vendor-payments/${p.id}/pdf?token=${localStorage.getItem('token')}`, '_blank'); }}
                                   className="px-1.5 py-0.5 bg-slate-600 text-white text-[9px] font-bold uppercase hover:bg-slate-700" title="Download Payment Advice">
                                   ADVICE
+                                </button>
+                                <button onClick={(e) => { e.stopPropagation(); setScanTarget({ paymentId: p.id, payee: p.payee, amount: p.amount, existing: p.bankReceiptPath }); setScanFile(null); setScanResult(null); }}
+                                  className={`px-1.5 py-0.5 text-white text-[9px] font-bold uppercase inline-flex items-center gap-0.5 ${p.bankReceiptPath ? 'bg-purple-500 hover:bg-purple-600' : 'bg-purple-700 hover:bg-purple-800'}`}
+                                  title={p.bankReceiptPath ? 'Bank receipt already scanned — click to re-scan or view' : 'Upload bank confirmation (PDF/JPG) for AI extraction'}>
+                                  <Scan size={9} /> {p.bankReceiptPath ? 'RESCAN' : 'SCAN'}
                                 </button>
                                 {p.paymentStatus === 'CONFIRMED' && (
                                   <button
@@ -2648,6 +2676,102 @@ export default function PaymentsOut() {
                         ))}
                       </tbody>
                     </table>
+                  </div>
+                )}
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Scan Bank Receipt modal */}
+        {scanTarget && (
+          <div className="fixed inset-0 bg-black/50 flex items-start justify-center z-50 overflow-y-auto py-4" onClick={() => { setScanTarget(null); setScanFile(null); setScanResult(null); }}>
+            <div className="bg-white w-full max-w-2xl my-4 shadow-xl" onClick={e => e.stopPropagation()}>
+              <div className="bg-slate-800 text-white px-4 py-2 flex items-center justify-between">
+                <div className="text-sm font-bold uppercase tracking-widest flex items-center gap-2"><Scan size={14} /> Scan Bank Receipt</div>
+                <button onClick={() => { setScanTarget(null); setScanFile(null); setScanResult(null); }} className="text-slate-400 hover:text-white"><X size={16} /></button>
+              </div>
+              <div className="p-4 space-y-3">
+                <div className="grid grid-cols-2 gap-3 text-xs bg-slate-50 border border-slate-200 px-3 py-2">
+                  <div><span className="text-slate-500 uppercase tracking-widest text-[9px] font-bold">Payee</span><div className="text-slate-800 font-medium">{scanTarget.payee}</div></div>
+                  <div><span className="text-slate-500 uppercase tracking-widest text-[9px] font-bold">Amount on file</span><div className="text-slate-800 font-mono tabular-nums">{fmt(scanTarget.amount)}</div></div>
+                </div>
+
+                {scanTarget.existing && !scanResult && (
+                  <div className="text-[11px] text-blue-800 bg-blue-50 border border-blue-200 px-3 py-2">
+                    A receipt is already on file — <a href={`/uploads/${scanTarget.existing}?token=${localStorage.getItem('token')}`} target="_blank" rel="noopener noreferrer" className="font-bold underline">view existing</a>. Upload a new one to re-scan.
+                  </div>
+                )}
+
+                {!scanResult && (
+                  <>
+                    <div>
+                      <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest block mb-1">Bank Confirmation (PDF / JPG / PNG)</label>
+                      <input type="file" accept=".pdf,.jpg,.jpeg,.png" onChange={e => setScanFile(e.target.files?.[0] || null)}
+                        className="border border-slate-300 px-2 py-1.5 text-xs w-full" />
+                      <div className="text-[10px] text-slate-400 mt-1">AI will read UTR, amount, beneficiary, bank and cross-check against this payment.</div>
+                    </div>
+                    <div className="flex gap-2 pt-2 border-t border-slate-200">
+                      <button type="button" disabled={!scanFile || scanUploading}
+                        onClick={async () => {
+                          if (!scanFile) return;
+                          setScanUploading(true);
+                          const r = await scanBankReceipt(scanTarget.paymentId, scanFile);
+                          setScanUploading(false);
+                          if (r.ok) {
+                            setScanResult({ extracted: r.extracted || null, warnings: r.warnings || [] });
+                            fetchCompleted();
+                            if (selectedPOId) {
+                              try { const ref = await api.get(`/purchase-orders/${selectedPOId}`); setPODetail(ref.data); } catch { /* noop */ }
+                            }
+                          } else {
+                            alert(`Scan failed: ${r.error}`);
+                          }
+                        }}
+                        className="px-4 py-1.5 bg-purple-700 text-white text-[11px] font-bold uppercase hover:bg-purple-800 disabled:bg-slate-300 disabled:cursor-not-allowed inline-flex items-center gap-1">
+                        <Scan size={11} /> {scanUploading ? 'Scanning…' : 'Upload & Scan'}
+                      </button>
+                      <button type="button" onClick={() => { setScanTarget(null); setScanFile(null); setScanResult(null); }}
+                        className="px-4 py-1.5 bg-white border border-slate-300 text-slate-600 text-[11px] font-medium hover:bg-slate-50">Cancel</button>
+                    </div>
+                  </>
+                )}
+
+                {scanResult && (
+                  <div className="space-y-3">
+                    {scanResult.warnings.length > 0 ? (
+                      <div className="border border-amber-300 bg-amber-50 px-3 py-2">
+                        <div className="text-[10px] font-bold text-amber-800 uppercase tracking-widest mb-1">⚠ Cross-check warnings</div>
+                        <ul className="list-disc list-inside text-[11px] text-amber-900 space-y-0.5">
+                          {scanResult.warnings.map((w, i) => <li key={i}>{w}</li>)}
+                        </ul>
+                      </div>
+                    ) : (
+                      <div className="border border-green-300 bg-green-50 px-3 py-2 text-[11px] text-green-800">
+                        ✓ Receipt extracted cleanly and matches the payment record.
+                      </div>
+                    )}
+                    {scanResult.extracted && (
+                      <div className="border border-slate-200">
+                        <div className="bg-slate-800 text-white px-3 py-1.5 text-[10px] font-bold uppercase tracking-widest">Extracted fields</div>
+                        <table className="w-full text-[11px]">
+                          <tbody>
+                            {Object.entries(scanResult.extracted).filter(([, v]) => v !== null && v !== '' && v !== undefined).map(([k, v]) => (
+                              <tr key={k} className="border-b border-slate-100">
+                                <td className="px-3 py-1 text-slate-500 uppercase tracking-widest text-[9px] font-bold w-44">{k.replace(/_/g, ' ')}</td>
+                                <td className="px-3 py-1 text-slate-900 font-mono select-all">{String(v)}</td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+                    )}
+                    <div className="flex gap-2 pt-2 border-t border-slate-200">
+                      <button type="button" onClick={() => { setScanTarget(null); setScanFile(null); setScanResult(null); }}
+                        className="px-4 py-1.5 bg-green-600 text-white text-[11px] font-bold uppercase hover:bg-green-700">Done</button>
+                      <button type="button" onClick={() => { setScanFile(null); setScanResult(null); }}
+                        className="px-4 py-1.5 bg-white border border-slate-300 text-slate-600 text-[11px] font-medium hover:bg-slate-50">Scan another</button>
+                    </div>
                   </div>
                 )}
               </div>

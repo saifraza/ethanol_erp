@@ -2587,6 +2587,10 @@ model VendorPayment {
   adviceSentTo    String? // email address the advice was sent to
   // GST inclusion — captured at Pay time (compulsory user choice)
   hasGst          Boolean? // true = payment inclusive of GST, false = advance/GST excluded, null = legacy (not captured)
+  // Bank receipt — PDF/JPG uploaded by team, Gemini-extracted structured data, timestamp
+  bankReceiptPath      String? // uploads/bank-receipts/<filename> — original bank confirmation
+  bankReceiptExtracted Json? //   raw Gemini extraction (audit trail: UTR, beneficiary, amount, etc.)
+  bankReceiptScannedAt DateTime? // when the receipt was uploaded + scanned
   // Bank file tracking (UBI APPA integration)
   bankFileBatch   String? // batch ID when included in bank file
   bankFileSentAt  DateTime? // when bank file was generated

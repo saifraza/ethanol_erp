@@ -34,6 +34,8 @@ interface UnifiedPayment {
   adviceSentAt?: Date | null;       // when Payment Advice was emailed
   adviceSentTo?: string | null;     // email the advice was sent to
   hasGst?: boolean | null;          // true/false/null (null = legacy, before the field existed)
+  bankReceiptPath?: string | null;  // uploaded bank confirmation (relative path under /uploads)
+  bankReceiptScannedAt?: Date | null;
 }
 
 // ═══════════════════════════════════════════════
@@ -69,6 +71,7 @@ router.get('/outgoing', asyncHandler(async (req: AuthRequest, res: Response) => 
         id: true, paymentDate: true, amount: true, mode: true, reference: true,
         remarks: true, tdsDeducted: true, isAdvance: true, createdAt: true,
         paymentStatus: true, adviceSentAt: true, adviceSentTo: true, hasGst: true,
+        bankReceiptPath: true, bankReceiptScannedAt: true,
         vendor: { select: { name: true, email: true } },
         invoice: { select: { invoiceNo: true, vendorInvNo: true, poId: true, grnId: true, filePath: true, totalAmount: true } },
       },
@@ -99,6 +102,8 @@ router.get('/outgoing', asyncHandler(async (req: AuthRequest, res: Response) => 
         adviceSentAt: p.adviceSentAt || null,
         adviceSentTo: p.adviceSentTo || null,
         hasGst: p.hasGst,
+        bankReceiptPath: p.bankReceiptPath || null,
+        bankReceiptScannedAt: p.bankReceiptScannedAt || null,
       });
     }
   }

@@ -9,6 +9,10 @@ import { renderDocumentPdf } from '../services/documentRenderer';
 import { nextDocNo } from '../utils/docSequence';
 import { getCompanyForPdf } from '../utils/pdfCompanyHelper';
 import { sendEmail } from '../services/messaging';
+import multer from 'multer';
+import path from 'path';
+import fs from 'fs';
+import axios from 'axios';
 
 // ── Zod schemas ──
 const createVendorPaymentSchema = z.object({
@@ -46,6 +50,15 @@ const splitPaymentSchema = z.object({
 
 const router = Router();
 router.use(authenticate as any);
+
+// ── Multer for bank-receipt uploads (PDF/JPG of bank confirmation) ──
+const bankReceiptDir = path.join(__dirname, '../../uploads/bank-receipts');
+if (!fs.existsSync(bankReceiptDir)) fs.mkdirSync(bankReceiptDir, { recursive: true });
+const bankReceiptStorage = multer.diskStorage({
+  destination: (_req, _file, cb) => cb(null, bankReceiptDir),
+  filename: (_req, file, cb) => cb(null, `${Date.now()}-${Math.random().toString(36).slice(2, 8)}${path.extname(file.originalname)}`),
+});
+const bankReceiptUpload = multer({ storage: bankReceiptStorage, limits: { fileSize: 10 * 1024 * 1024 } });
 
 // ═══════════════════════════════════════════════
 // Build data payload for the Payment Advice template.
@@ -721,9 +734,29 @@ router.post('/:id/send-email', asyncHandler(async (req: AuthRequest, res: Respon
     `Accounts — Mahakaushal Sugar & Power Industries Ltd`,
   ].filter(Boolean).join('\n');
 
+  // Attach the bank's own confirmation receipt too (if scanned) — gives the vendor a 2-way proof
+  const attachments: Array<{ filename: string; content: Buffer; contentType?: string }> = [
+    { filename: fileName, content: pdfBuffer, contentType: 'application/pdf' },
+  ];
+  if (payment.bankReceiptPath) {
+    try {
+      const receiptAbs = path.join(__dirname, '../../uploads', payment.bankReceiptPath);
+      if (fs.existsSync(receiptAbs)) {
+        const receiptBuf = fs.readFileSync(receiptAbs);
+        const receiptExt = path.extname(payment.bankReceiptPath).toLowerCase();
+        const receiptMime = receiptExt === '.pdf' ? 'application/pdf' : (receiptExt === '.png' ? 'image/png' : 'image/jpeg');
+        attachments.push({
+          filename: `Bank-Receipt-PAY-${paymentNoStr}${receiptExt}`,
+          content: receiptBuf,
+          contentType: receiptMime,
+        });
+      }
+    } catch { /* best-effort — receipt missing on disk shouldn't block advice */ }
+  }
+
   const result = await sendEmail({
     to: toEmail, subject, text: body,
-    attachments: [{ filename: fileName, content: pdfBuffer, contentType: 'application/pdf' }],
+    attachments,
   });
 
   if (result.success) {
@@ -736,6 +769,132 @@ router.post('/:id/send-email', asyncHandler(async (req: AuthRequest, res: Respon
   } else {
     res.status(500).json({ error: result.error || 'Email send failed' });
   }
+}));
+
+// ═══════════════════════════════════════════════
+// POST /:id/scan-bank-receipt — Upload the bank's payment confirmation PDF/JPG,
+// run Gemini 2.5 Flash to extract { UTR, amount, beneficiary, bank, timestamp }.
+// Auto-fills / cross-checks the payment and persists the extraction for audit.
+// ═══════════════════════════════════════════════
+router.post('/:id/scan-bank-receipt', bankReceiptUpload.single('file'), asyncHandler(async (req: AuthRequest, res: Response) => {
+  if (!req.file) { res.status(400).json({ error: 'No file uploaded' }); return; }
+
+  const payment = await prisma.vendorPayment.findUnique({
+    where: { id: req.params.id },
+    include: { vendor: { select: { name: true, bankName: true, bankAccount: true, bankIfsc: true } } },
+  });
+  if (!payment) { res.status(404).json({ error: 'Payment not found' }); return; }
+
+  const relPath = `bank-receipts/${req.file.filename}`;
+  const mimeType = req.file.mimetype;
+  const fileBuffer = fs.readFileSync(req.file.path);
+  const base64 = fileBuffer.toString('base64');
+
+  const GEMINI_KEY = process.env.GEMINI_API_KEY;
+  if (!GEMINI_KEY) {
+    // Still save the file so team has the receipt, just no extraction
+    await prisma.vendorPayment.update({
+      where: { id: payment.id },
+      data: { bankReceiptPath: relPath, bankReceiptScannedAt: new Date() },
+    });
+    res.json({ filePath: relPath, extracted: null, warnings: ['AI extraction not configured (GEMINI_API_KEY missing) — receipt saved, extraction skipped'] });
+    return;
+  }
+
+  const prompt = `You are reading a bank transfer confirmation / receipt. Extract EXACTLY these fields as JSON. If a field is missing, use null.
+{
+  "utr": "string - UTR / IB Reference No / Transaction Reference (the longest bank-assigned alphanumeric code)",
+  "amount": number - transaction amount in rupees,
+  "amount_in_words": "string - amount in words if present",
+  "transaction_date": "string - ISO date YYYY-MM-DD",
+  "transaction_time": "string - HH:MM:SS if present",
+  "transaction_type": "string - NEFT / RTGS / IMPS / UPI / CHEQUE",
+  "from_account_no": "string - payer's account number",
+  "from_account_name": "string - payer's name (should be MSPIL / Mahakaushal)",
+  "beneficiary_name": "string - receiver name",
+  "beneficiary_account_no": "string - receiver account number",
+  "beneficiary_ifsc": "string - receiver IFSC code if present",
+  "bank_name": "string - the BANK that issued this receipt (e.g. Bank of Maharashtra, Union Bank of India, HDFC, SBI)",
+  "remarks": "string - narration / remarks if present",
+  "status": "string - transaction status (Success / Failed / etc.)"
+}
+Return ONLY the JSON object, no markdown, no prose.`;
+
+  let extracted: Record<string, unknown> | null = null;
+  let rawReply = '';
+  try {
+    const geminiRes = await axios.post(
+      `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${GEMINI_KEY}`,
+      {
+        contents: [{
+          parts: [
+            { text: prompt },
+            { inline_data: { mime_type: mimeType.startsWith('image/') ? mimeType : 'application/pdf', data: base64 } },
+          ],
+        }],
+      },
+      { timeout: 45000 }
+    );
+    rawReply = geminiRes.data?.candidates?.[0]?.content?.parts?.[0]?.text || '';
+    const jsonStr = rawReply.replace(/```json\n?/g, '').replace(/```\n?/g, '').trim();
+    try { extracted = JSON.parse(jsonStr); } catch { extracted = { raw: rawReply }; }
+  } catch (err: unknown) {
+    const msg = (err as { message?: string })?.message || 'Gemini extraction failed';
+    await prisma.vendorPayment.update({
+      where: { id: payment.id },
+      data: { bankReceiptPath: relPath, bankReceiptScannedAt: new Date() },
+    });
+    res.json({ filePath: relPath, extracted: null, warnings: [`Extraction failed: ${msg} — receipt file saved anyway`] });
+    return;
+  }
+
+  // Cross-check extracted data against the payment on file
+  const warnings: string[] = [];
+  const extractedAmount = typeof extracted?.amount === 'number' ? extracted.amount : parseFloat(String(extracted?.amount || '0')) || 0;
+  if (extractedAmount > 0 && Math.abs(extractedAmount - payment.amount) > 1) {
+    warnings.push(`Amount mismatch: receipt says ₹${extractedAmount.toLocaleString('en-IN')}, payment on file is ₹${payment.amount.toLocaleString('en-IN')}`);
+  }
+  const extractedBeneficiary = String(extracted?.beneficiary_name || '').toUpperCase().replace(/[^A-Z0-9 ]/g, '').trim();
+  const vendorNameUpper = String(payment.vendor.name || '').toUpperCase().replace(/[^A-Z0-9 ]/g, '').trim();
+  if (extractedBeneficiary && vendorNameUpper) {
+    // Fuzzy: every word in the shorter name must appear in the longer
+    const short = extractedBeneficiary.length < vendorNameUpper.length ? extractedBeneficiary : vendorNameUpper;
+    const long = extractedBeneficiary.length < vendorNameUpper.length ? vendorNameUpper : extractedBeneficiary;
+    const tokens = short.split(/\s+/).filter(t => t.length >= 3);
+    const matched = tokens.filter(t => long.includes(t)).length;
+    if (tokens.length > 0 && matched / tokens.length < 0.5) {
+      warnings.push(`Beneficiary name mismatch: receipt says "${extracted?.beneficiary_name}", vendor on file is "${payment.vendor.name}"`);
+    }
+  }
+  const extractedAccount = String(extracted?.beneficiary_account_no || '').replace(/\D/g, '');
+  const vendorAccount = String(payment.vendor.bankAccount || '').replace(/\D/g, '');
+  if (extractedAccount && vendorAccount && extractedAccount !== vendorAccount) {
+    warnings.push(`Account number mismatch: receipt says ${extracted?.beneficiary_account_no}, vendor on file is ${payment.vendor.bankAccount}`);
+  }
+
+  // Decide what to auto-update on the payment
+  const updates: Record<string, unknown> = {
+    bankReceiptPath: relPath,
+    bankReceiptExtracted: extracted as unknown as object,
+    bankReceiptScannedAt: new Date(),
+  };
+  // Clean UTR — always overwrite the messy ref with the bank-issued UTR when extracted cleanly
+  const extractedUtr = typeof extracted?.utr === 'string' ? extracted.utr.trim() : '';
+  if (extractedUtr && /^[A-Z]{4}[A-Z0-9]{8,}$/.test(extractedUtr)) {
+    updates.reference = extractedUtr;
+  }
+  // If payment was in INITIATED state and the cross-check is clean, auto-confirm it
+  if (payment.paymentStatus === 'INITIATED' && warnings.length === 0 && extractedUtr) {
+    updates.paymentStatus = 'CONFIRMED';
+    updates.confirmedAt = new Date();
+  }
+
+  const updated = await prisma.vendorPayment.update({
+    where: { id: payment.id },
+    data: updates,
+  });
+
+  res.json({ filePath: relPath, extracted, warnings, payment: updated });
 }));
 
 export default router;

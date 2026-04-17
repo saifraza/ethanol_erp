@@ -345,7 +345,7 @@ router.get('/:id', asyncHandler(async (req: AuthRequest, res: Response) => {
         ],
       },
       orderBy: { paymentDate: 'desc' },
-      select: { id: true, amount: true, mode: true, reference: true, paymentDate: true, tdsDeducted: true, remarks: true, paymentStatus: true, adviceSentAt: true, adviceSentTo: true, hasGst: true },
+      select: { id: true, amount: true, mode: true, reference: true, paymentDate: true, tdsDeducted: true, remarks: true, paymentStatus: true, adviceSentAt: true, adviceSentTo: true, hasGst: true, bankReceiptPath: true, bankReceiptScannedAt: true },
     });
     const directPaidTotal = directPayments.reduce((s, p) => s + p.amount, 0);
     totalPaid += directPaidTotal;
