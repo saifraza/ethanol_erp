@@ -342,15 +342,12 @@ export default function PaymentsOut() {
   const [scanUploading, setScanUploading] = useState(false);
   const [scanResult, setScanResult] = useState<{ extracted: Record<string, unknown> | null; warnings: string[] } | null>(null);
 
-  // Pay targets — ordered list of destinations for the typed amount. Click order = fill
-  // order (waterfall). Entries:
-  //   'current'  → pay the PO the modal was opened for (or the matching PO id)
-  //   <poId>     → a sibling open PO of the same vendor
-  //   'advance'  → hold as vendor advance (no PO attribution)
-  // The waterfall fills each selected PO up to its balance; any leftover at the tail
-  // auto-goes to Vendor Advance (even if 'advance' isn't explicitly selected — overflow
-  // must always have a destination).
-  const [payTargets, setPayTargets] = useState<string[]>(['current']);
+  // Pay allocations — per-target amount the team explicitly wants to send.
+  // Key: 'current' | <poId> | 'advance'.
+  // Ticking a tile adds the key with a smart default amount; unticking removes it.
+  // The team can edit each tile's amount directly — no auto-waterfall surprise.
+  // Any residual (typed total − sum of allocations) auto-goes to Vendor Advance.
+  const [payAllocations, setPayAllocations] = useState<Record<string, string>>({ current: '' });
   const [tdsCalc, setTdsCalc] = useState<{ shouldDeduct: boolean; rate: number; tdsAmount: number; netAmount: number; ledgerId: string | null; sectionLabel: string; reason: string } | null>(null);
   const [tdsOverride, setTdsOverride] = useState(true); // true = apply TDS, false = skip
   const [tdsLoading, setTdsLoading] = useState(false);
@@ -601,32 +598,32 @@ export default function PaymentsOut() {
     }
     const hasGstToSend: boolean = poHasGstOnPO ? !!poPayIncludeGst : false;
 
-    // Waterfall allocation: fill each selected target (in click order) up to its balance.
-    // Leftover lands in Vendor Advance — even if 'advance' wasn't explicitly selected.
+    // Direct per-target allocations from the UI. Any unallocated residual from the
+    // typed total auto-rolls into Vendor Advance so overflow always has a home.
     const totalAmt = parseFloat(poPayAmount);
     const currentBal = Math.max(0, (poReceivedValue || poPayItem.grnTotalValue) - poPayItem.totalPaid - poPendingCash);
     const allocations: Array<{ poId: string; amount: number }> = [];
     let advanceAmt = 0;
-    let remaining = totalAmt;
-    for (const target of payTargets) {
-      if (remaining <= 0) break;
-      if (target === 'advance') { advanceAmt += remaining; remaining = 0; break; }
+    let sumAllocated = 0;
+    for (const [key, str] of Object.entries(payAllocations)) {
+      const amt = parseFloat(str) || 0;
+      if (amt <= 0) continue;
+      if (key === 'advance') { advanceAmt += amt; sumAllocated += amt; continue; }
       let bal = 0, poId = '';
-      if (target === 'current') { bal = currentBal; poId = poPayItem.poId; }
+      if (key === 'current') { bal = currentBal; poId = poPayItem.poId; }
       else {
-        const sibling = pendingItems.find(p => p.poId === target);
+        const sibling = pendingItems.find(p => p.poId === key);
         if (!sibling) continue;
         bal = sibling.balance; poId = sibling.poId;
       }
-      const toPo = Math.min(remaining, bal);
-      if (toPo > 0) {
-        const existing = allocations.find(a => a.poId === poId);
-        if (existing) existing.amount += toPo; else allocations.push({ poId, amount: toPo });
-        remaining -= toPo;
-      }
+      if (amt > bal + 0.01) { alert(`Allocation to PO (${fmt(amt)}) exceeds that PO's balance (${fmt(bal)}).`); setPoPaySaving(false); return; }
+      allocations.push({ poId, amount: amt });
+      sumAllocated += amt;
     }
-    if (remaining > 0) advanceAmt += remaining; // overflow always lands here
-    if (allocations.length === 0 && advanceAmt <= 0) { alert('Select at least one target to pay against.'); setPoPaySaving(false); return; }
+    const residual = totalAmt - sumAllocated;
+    if (residual > 0.01) advanceAmt += residual; // unallocated amount → advance
+    if (residual < -0.01) { alert(`Allocations (${fmt(sumAllocated)}) exceed the typed amount (${fmt(totalAmt)}).`); setPoPaySaving(false); return; }
+    if (allocations.length === 0 && advanceAmt <= 0) { alert('Enter an allocation against at least one target.'); setPoPaySaving(false); return; }
 
     setPoPaySaving(true);
     try {
@@ -647,7 +644,7 @@ export default function PaymentsOut() {
       const closedStr = (res.data.closedPOs || []).length ? `\n\nPOs auto-closed: ${(res.data.closedPOs || []).map((n: number) => 'PO-' + n).join(', ')}` : '';
       alert(`Payment recorded (${res.data.status}):\n${summary.join('\n')}${closedStr}`);
       setPoPayItem(null);
-      setPayTargets(['current']);
+      setPayAllocations({ current: '' });
       await fetchPending();
     } catch (err: unknown) {
       alert((err as { response?: { data?: { error?: string } } })?.response?.data?.error || 'Payment failed');
@@ -1223,7 +1220,7 @@ export default function PaymentsOut() {
                                     const canAdvancePay = item.grnCount === 0 && item.invoices.length === 0 && isAdvance;
                                     if (canRunningPay || canAdvancePay) {
                                       return (
-                                        <button onClick={() => { setPoPayItem(item); setPoPayAmount(canAdvancePay ? String(item.poAmount || '') : ''); setPoPayMode('NEFT'); setPoPayRef(''); setPoPayRemarks(canAdvancePay ? 'Advance payment' : ''); setPoPayIncludeGst(null); setBankPendingPayment(null); setPayTargets(['current']); fetchPOPayments(item.poId); }}
+                                        <button onClick={() => { setPoPayItem(item); setPoPayAmount(canAdvancePay ? String(item.poAmount || '') : ''); setPoPayMode('NEFT'); setPoPayRef(''); setPoPayRemarks(canAdvancePay ? 'Advance payment' : ''); setPoPayIncludeGst(null); setBankPendingPayment(null); setPayAllocations({ current: '' }); fetchPOPayments(item.poId); }}
                                           className="px-2 py-0.5 bg-green-600 text-white text-[9px] font-bold uppercase hover:bg-green-700 flex items-center gap-1" title={canAdvancePay ? 'Pay in advance' : 'Pay against PO'}>
                                           <CreditCard size={10} /> {canAdvancePay ? 'ADV PAY' : 'PAY'}
                                         </button>
@@ -2608,27 +2605,19 @@ export default function PaymentsOut() {
           if (poPayIncludeGst === true && enteredAmt > 0) { enteredBase = enteredAmt * baseFraction; enteredGst = enteredAmt * gstFraction; }
           else if (poPayIncludeGst === false && enteredAmt > 0) { enteredBase = enteredAmt; enteredGst = 0; }
 
-          // Waterfall the typed amount across selected targets to know how much hits THIS PO
-          // (the current one the modal is open for), vs other POs, vs advance. The breakdown
-          // table's "This Payment / After This / Advance" rows use toCurrentPo only, since the
-          // table is scoped to the current PO.
-          const currentBalForWaterfall = Math.max(0, recvTotal - paidBase - paidGst - (poPendingCash || 0));
-          let toCurrentPo = 0, toOtherPOs = 0, toAdvanceWaterfall = 0;
-          let _remaining = enteredAmt;
-          for (const target of payTargets) {
-            if (_remaining <= 0) break;
-            if (target === 'advance') { toAdvanceWaterfall += _remaining; _remaining = 0; break; }
-            if (target === 'current') {
-              const take = Math.min(_remaining, currentBalForWaterfall);
-              toCurrentPo += take; _remaining -= take;
-            } else {
-              const sib = pendingItems.find(p => p.poId === target);
-              if (!sib) continue;
-              const take = Math.min(_remaining, sib.balance);
-              toOtherPOs += take; _remaining -= take;
-            }
+          // Direct allocations from the UI — team types how much goes to each target.
+          // Any unallocated residual from the typed total rolls into Advance automatically.
+          let toCurrentPo = 0, toOtherPOs = 0, toAdvanceWaterfall = 0, sumAllocPreview = 0;
+          for (const [key, str] of Object.entries(payAllocations)) {
+            const amt = parseFloat(str) || 0;
+            if (amt <= 0) continue;
+            sumAllocPreview += amt;
+            if (key === 'current') toCurrentPo += amt;
+            else if (key === 'advance') toAdvanceWaterfall += amt;
+            else toOtherPOs += amt;
           }
-          if (_remaining > 0) toAdvanceWaterfall += _remaining; // auto-spill to advance
+          const residualPreview = Math.max(0, enteredAmt - sumAllocPreview);
+          if (residualPreview > 0) toAdvanceWaterfall += residualPreview; // unallocated → advance
           // Base/GST split of the portion hitting CURRENT PO. If Tax Treatment not yet picked,
           // we still show the Total column so the preview is useful before the team picks a
           // treatment; Base/GST columns go blank until they pick.
@@ -2841,76 +2830,77 @@ export default function PaymentsOut() {
                   </div>
                 )}
 
-                {/* ═══ Pay Against — multi-select with fill-order + waterfall allocation ═══ */}
+                {/* ═══ Pay Against — tick + type exact amount per target ═══ */}
                 {(() => {
                   const totalAmt = parseFloat(poPayAmount) || 0;
                   const siblingPOs = pendingItems.filter(p => p.vendorId === poPayItem.vendorId && p.poId !== poPayItem.poId && p.balance > 0);
                   const currentBal = Math.max(0, (poReceivedValue || poPayItem.grnTotalValue) - poPayItem.totalPaid - poPendingCash);
 
-                  // Build the waterfall preview across ALL selected targets in fill order.
-                  type Step = { target: string; poAmt: number; poLabel: string };
-                  const steps: Step[] = [];
-                  let remaining = totalAmt;
-                  let overflowToAdvance = 0;
-                  for (const target of payTargets) {
-                    if (remaining <= 0) { steps.push({ target, poAmt: 0, poLabel: target }); continue; }
-                    if (target === 'advance') {
-                      steps.push({ target, poAmt: remaining, poLabel: 'Vendor Advance' });
-                      remaining = 0;
-                      continue;
-                    }
-                    let bal = 0, label = '';
-                    if (target === 'current') { bal = currentBal; label = `PO-${poPayItem.poNo}`; }
-                    else {
-                      const sib = siblingPOs.find(s => s.poId === target);
-                      if (!sib) { steps.push({ target, poAmt: 0, poLabel: target }); continue; }
-                      bal = sib.balance; label = `PO-${sib.poNo}`;
-                    }
-                    const toPo = Math.min(remaining, bal);
-                    steps.push({ target, poAmt: toPo, poLabel: label });
-                    remaining -= toPo;
-                  }
-                  if (remaining > 0) overflowToAdvance = remaining; // auto-spill
+                  // Sum of explicit allocations
+                  const sumEntered = Object.values(payAllocations).reduce((s, v) => s + (parseFloat(v) || 0), 0);
+                  const residualToAdvance = Math.max(0, totalAmt - sumEntered);
+                  const overAllocated = sumEntered > totalAmt + 0.01;
 
-                  const toggle = (value: string) => {
-                    setPayTargets(prev => prev.includes(value) ? prev.filter(t => t !== value) : [...prev, value]);
+                  const toggle = (value: string, defaultAmt: number) => {
+                    setPayAllocations(prev => {
+                      if (prev[value] !== undefined) {
+                        const next = { ...prev };
+                        delete next[value];
+                        return next;
+                      }
+                      return { ...prev, [value]: defaultAmt > 0 ? String(Math.round(defaultAmt)) : '' };
+                    });
+                  };
+                  const updateAmt = (value: string, amt: string) => {
+                    setPayAllocations(prev => ({ ...prev, [value]: amt }));
                   };
 
                   const Tile = ({ value, label, balance, material }: { value: string; label: string; balance?: number; material?: string }) => {
-                    const idx = payTargets.indexOf(value);
-                    const selected = idx !== -1;
-                    const step = selected ? steps.find(s => s.target === value) : null;
+                    const selected = payAllocations[value] !== undefined;
+                    const amtStr = payAllocations[value] || '';
+                    const amtNum = parseFloat(amtStr) || 0;
+                    const exceeds = balance !== undefined && amtNum > balance + 0.01;
+                    // Smart default when ticking: give this tile the remaining unallocated amount,
+                    // capped at balance. For advance, give all remaining.
+                    const remainingForDefault = Math.max(0, totalAmt - sumEntered);
+                    const defaultAmt = value === 'advance' ? remainingForDefault : Math.min(remainingForDefault, balance || 0);
                     return (
-                      <button type="button" onClick={() => toggle(value)}
-                        className={`text-left border p-2 transition relative ${selected ? 'border-indigo-600 bg-indigo-50' : 'border-slate-300 bg-white hover:bg-slate-50'}`}>
+                      <div className={`border p-2 transition ${selected ? (exceeds ? 'border-red-500 bg-red-50' : 'border-indigo-600 bg-indigo-50') : 'border-slate-300 bg-white'}`}>
+                        <button type="button" onClick={() => toggle(value, defaultAmt)} className="w-full text-left">
+                          <div className="flex items-start gap-2">
+                            <span className={`inline-block w-3.5 h-3.5 mt-0.5 flex-shrink-0 border-2 ${selected ? 'bg-indigo-600 border-indigo-600' : 'bg-white border-slate-300'}`}>
+                              {selected && <svg viewBox="0 0 16 16" className="w-full h-full text-white"><path d="M3 8l3 3 7-7" stroke="currentColor" strokeWidth="2.5" fill="none" strokeLinecap="round" strokeLinejoin="round"/></svg>}
+                            </span>
+                            <div className="flex-1 min-w-0">
+                              <div className="text-[11px] font-bold text-slate-800 truncate">{label}</div>
+                              {material && <div className="text-[10px] text-slate-500 truncate">{material}</div>}
+                              {balance !== undefined && <div className="text-[10px] text-slate-600 font-mono">Balance: <b>{fmt(balance)}</b></div>}
+                            </div>
+                          </div>
+                        </button>
                         {selected && (
-                          <span className="absolute top-1 right-1 w-5 h-5 bg-indigo-600 text-white text-[10px] font-bold flex items-center justify-center" title={`Fill order: ${idx + 1}`}>{idx + 1}</span>
-                        )}
-                        <div className="flex items-start gap-2">
-                          <span className={`inline-block w-3.5 h-3.5 mt-0.5 flex-shrink-0 border-2 ${selected ? 'bg-indigo-600 border-indigo-600' : 'bg-white border-slate-300'}`}>
-                            {selected && <svg viewBox="0 0 16 16" className="w-full h-full text-white"><path d="M3 8l3 3 7-7" stroke="currentColor" strokeWidth="2.5" fill="none" strokeLinecap="round" strokeLinejoin="round"/></svg>}
-                          </span>
-                          <div className="flex-1 min-w-0 pr-5">
-                            <div className="text-[11px] font-bold text-slate-800 truncate">{label}</div>
-                            {material && <div className="text-[10px] text-slate-500 truncate">{material}</div>}
-                            {balance !== undefined && <div className="text-[10px] text-slate-600 font-mono">Balance: <b>{fmt(balance)}</b></div>}
-                            {step && step.poAmt > 0 && (
-                              <div className="text-[10px] text-green-700 font-mono mt-1">→ {fmt(step.poAmt)}</div>
-                            )}
-                            {step && step.poAmt === 0 && selected && (
-                              <div className="text-[10px] text-slate-400 font-mono mt-1">→ nothing (amount already used)</div>
+                          <div className="mt-2 flex items-center gap-1.5" onClick={e => e.stopPropagation()}>
+                            <label className="text-[9px] font-bold text-slate-500 uppercase tracking-widest flex-shrink-0">Allocate:</label>
+                            <input type="number" step="0.01" value={amtStr}
+                              onChange={e => updateAmt(value, e.target.value)}
+                              placeholder="0"
+                              max={balance}
+                              className={`flex-1 border px-2 py-0.5 text-xs font-mono text-right focus:outline-none focus:ring-1 ${exceeds ? 'border-red-500 focus:ring-red-500 bg-white' : 'border-slate-300 focus:ring-indigo-500 bg-white'}`} />
+                            {balance !== undefined && amtNum < balance && amtNum > 0 && (
+                              <button type="button" onClick={() => updateAmt(value, String(Math.round(balance)))} className="text-[9px] text-blue-600 hover:underline flex-shrink-0" title="Fill to balance">max</button>
                             )}
                           </div>
-                        </div>
-                      </button>
+                        )}
+                        {exceeds && <div className="text-[9px] text-red-600 font-bold mt-1">Exceeds balance by {fmt(amtNum - (balance || 0))}</div>}
+                      </div>
                     );
                   };
 
                   return (
                     <div className="border border-slate-200 bg-slate-50 px-3 py-2 space-y-2">
                       <div className="text-[10px] font-bold text-slate-600 uppercase tracking-widest flex items-center justify-between gap-2 flex-wrap">
-                        <span>Pay Against — tick any (fills in tick order)</span>
-                        <span className="text-slate-400 font-normal normal-case text-[10px]">unused overflow → Vendor Advance</span>
+                        <span>Pay Against — tick a target and set the amount</span>
+                        <span className="text-slate-400 font-normal normal-case text-[10px]">unallocated residual → Vendor Advance</span>
                       </div>
                       <div className="grid grid-cols-2 gap-2">
                         <Tile value="current" label={`Current — PO-${poPayItem.poNo}`} balance={currentBal} material={poPayItem.material || undefined} />
@@ -2919,21 +2909,37 @@ export default function PaymentsOut() {
                         ))}
                         <Tile value="advance" label="Vendor Advance" material="Hold — adjust later against any invoice" />
                       </div>
-                      {/* Standalone allocation preview removed — same info already lives in the
-                          Payment Breakdown table at the top (green + amber rows) and in the
-                          Payment History ledger pending row below. */}
+                      {/* Live allocation status bar */}
+                      {totalAmt > 0 && (
+                        <div className={`border px-3 py-1.5 text-[11px] font-mono ${overAllocated ? 'border-red-400 bg-red-50' : 'border-slate-200 bg-white'}`}>
+                          <div className="flex items-center justify-between gap-3 flex-wrap">
+                            <span className="text-slate-600">
+                              Total <b>{fmt(totalAmt)}</b>
+                              <span className="mx-1 text-slate-300">=</span>
+                              Allocated <b className={overAllocated ? 'text-red-700' : 'text-green-700'}>{fmt(sumEntered)}</b>
+                              {residualToAdvance > 0 && !overAllocated && <>
+                                <span className="mx-1 text-slate-300">+</span>
+                                <span className="text-amber-700">Residual → Advance <b>{fmt(residualToAdvance)}</b></span>
+                              </>}
+                            </span>
+                            {overAllocated && <span className="text-red-700 font-bold">Over-allocated by {fmt(sumEntered - totalAmt)}</span>}
+                          </div>
+                        </div>
+                      )}
                     </div>
                   );
                 })()}
 
-                <button onClick={submitPOPayment} disabled={poPaySaving || !poPayAmount || payTargets.length === 0}
+                <button onClick={submitPOPayment} disabled={poPaySaving || !poPayAmount || Object.keys(payAllocations).length === 0}
                   className="w-full px-4 py-2 bg-green-600 text-white text-[11px] font-bold uppercase tracking-widest hover:bg-green-700 disabled:opacity-50">
                   {(() => {
                     if (poPaySaving) return 'Processing...';
                     const totalAmt = parseFloat(poPayAmount) || 0;
                     const gstSuffix = poPayItem.poGst > 0 ? (poPayIncludeGst ? ' (Incl. GST)' : ' (Ex. GST)') : '';
                     if (totalAmt === 0) return `Enter amount`;
-                    if (payTargets.length === 0) return `Tick a target to pay against`;
+                    if (Object.keys(payAllocations).length === 0) return `Tick a target to pay against`;
+                    const sum = Object.values(payAllocations).reduce((s, v) => s + (parseFloat(v) || 0), 0);
+                    if (sum > totalAmt + 0.01) return `Fix: allocations exceed total by ₹${(sum - totalAmt).toLocaleString('en-IN')}`;
                     return `Pay ₹${totalAmt.toLocaleString('en-IN')} via ${poPayMode}${gstSuffix}`;
                   })()}
                 </button>
