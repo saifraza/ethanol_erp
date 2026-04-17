@@ -2059,6 +2059,14 @@ model Invoice {
   ddgsContractDispatches  DDGSContractDispatch[]
   sugarContractDispatches SugarContractDispatch[]
 
+  // Snapshot — frozen at IRN-generation time. See .claude/skills/invoice-snapshot-immutability.md
+  // Phase 1 (shadow-write): populated alongside existing flow; read path still goes through live DB.
+  snapshotJsonPath  String? // e.g. snapshots/2026/04/INV-248.json (relative to SNAPSHOT_DIR)
+  snapshotPdfPath   String? // e.g. snapshots/2026/04/INV-248.pdf
+  snapshotJsonSha   String? // SHA256 hex of JSON bytes
+  snapshotPdfSha    String? // SHA256 hex of PDF bytes
+  snapshotAt        DateTime? // when frozen
+
   division String? @default("ETHANOL") // SUGAR | POWER | ETHANOL | COMMON
   companyId String? // FK → Company (null = MSPIL default)
   company   Company? @relation(fields: [companyId], references: [id])
@@ -2068,6 +2076,7 @@ model Invoice {
   @@index([shipmentId])
   @@index([division])
   @@index([companyId])
+  @@index([snapshotAt])
 }
 
 // ── Payment (against invoices) ──

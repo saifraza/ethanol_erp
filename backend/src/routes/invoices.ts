@@ -41,6 +41,7 @@ import { getCompanyForPdf } from '../utils/pdfCompanyHelper';
 // RAG indexing removed — only compliance docs go to RAG
 import { sendEmail } from '../services/messaging';
 import { generateIRN, cancelIRN, getIRNDetails } from '../services/eInvoice';
+import { freezeInvoice } from '../services/invoiceSnapshot';
 import { onSaleInvoiceCreated } from '../services/autoJournal';
 import { calcGstSplit } from '../utils/gstSplit';
 
@@ -611,6 +612,13 @@ router.post('/:id/e-invoice', asyncHandler(async (req: AuthRequest, res: Respons
         } as any,
       }).catch(() => {}); // Non-critical
     }
+
+    // Freeze snapshot (shadow-write Phase 1). Fire-and-forget — never blocks the response.
+    // IRN at NIC is already generated above; snapshot failure is logged, not surfaced to caller.
+    // See .claude/skills/invoice-snapshot-immutability.md
+    freezeInvoice(invoice.id).catch(err => {
+      console.error(`[Invoice] Snapshot freeze failed for INV-${invoice.invoiceNo}:`, err);
+    });
 
     res.json({
       success: true,
