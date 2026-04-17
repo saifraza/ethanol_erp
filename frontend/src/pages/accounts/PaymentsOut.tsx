@@ -190,6 +190,8 @@ export default function PaymentsOut() {
   const [pendingLoading, setPendingLoading] = useState(true);
   const [pendingSearch, setPendingSearch] = useState('');
   const [pendingCategory, setPendingCategory] = useState<string>('ALL');
+  const [pendingDateFrom, setPendingDateFrom] = useState('');
+  const [pendingDateTo, setPendingDateTo] = useState('');
 
   // Single source of truth: KPIs and table both render from this filtered list
   const filteredPending = useMemo(() => {
@@ -197,9 +199,19 @@ export default function PaymentsOut() {
     const FUEL_KW = ['coal', 'husk', 'bagasse', 'mustard', 'furnace', 'diesel', 'hsd', 'lfo', 'hfo', 'biomass'];
     const RAW_KW = ['maize', 'corn', 'broken rice', 'grain', 'sorghum', 'molasses'];
     const CHEM_KW = ['amylase', 'urea', 'acid', 'antifoam', 'yeast', 'chemical', 'caustic', 'soda', 'sulph', 'phosph'];
+    const fromTs = pendingDateFrom ? new Date(pendingDateFrom + 'T00:00:00').getTime() : null;
+    const toTs = pendingDateTo ? new Date(pendingDateTo + 'T23:59:59').getTime() : null;
     return pendingItems
       .filter(item => {
         if (search && !`PO-${item.poNo} ${item.vendorName} ${item.material || ''}`.toLowerCase().includes(search)) return false;
+        // Date filter — filter by the most relevant date: GRN date if delivered, else PO date
+        if (fromTs !== null || toTs !== null) {
+          const itemDateStr = item.grnDate || item.poDate;
+          if (!itemDateStr) return false;
+          const ts = new Date(itemDateStr).getTime();
+          if (fromTs !== null && ts < fromTs) return false;
+          if (toTs !== null && ts > toTs) return false;
+        }
         if (pendingCategory !== 'ALL') {
           const cat = (item.category || '').toUpperCase();
           const mat = (item.material || '').toLowerCase();
@@ -218,7 +230,7 @@ export default function PaymentsOut() {
         const bFuel = FUEL_KW.some(kw => (b.material || '').toLowerCase().includes(kw)) ? 0 : 1;
         return aFuel - bFuel;
       });
-  }, [pendingItems, pendingSearch, pendingCategory]);
+  }, [pendingItems, pendingSearch, pendingCategory, pendingDateFrom, pendingDateTo]);
 
   // --- PO Pay modal ---
   const [poPayItem, setPoPayItem] = useState<PendingPayable | null>(null);
@@ -230,6 +242,7 @@ export default function PaymentsOut() {
   const [poPaySaving, setPoPaySaving] = useState(false);
   const [bankPendingPayment, setBankPendingPayment] = useState<any>(null);
   const [bankUtrInput, setBankUtrInput] = useState('');
+  const [bankReceiptFile, setBankReceiptFile] = useState<File | null>(null);
   const [bankConfirming, setBankConfirming] = useState(false);
   const [poPayments, setPoPayments] = useState<Array<{ id: string; paymentDate: string; amount: number; mode: string; reference: string; runningTotal: number }>>([]);
 
@@ -1026,7 +1039,7 @@ export default function PaymentsOut() {
                   );
                 })()}
 
-                {/* Search + Category Filter */}
+                {/* Search + Category + Date Range Filter */}
                 <div className="-mx-3 md:-mx-6 border-x border-b border-slate-300 bg-slate-100 px-4 py-2 flex items-center gap-3 flex-wrap">
                   <input value={pendingSearch} onChange={e => setPendingSearch(e.target.value)} placeholder="Search PO#, vendor, material..."
                     className="border border-slate-300 px-2.5 py-1.5 text-xs w-64 focus:outline-none focus:ring-1 focus:ring-slate-400 bg-white" />
@@ -1036,6 +1049,18 @@ export default function PaymentsOut() {
                       {cat.replace('_', ' ')}
                     </button>
                   ))}
+                  <div className="flex items-center gap-1.5 ml-auto">
+                    <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">From</label>
+                    <input type="date" value={pendingDateFrom} onChange={e => setPendingDateFrom(e.target.value)}
+                      className="border border-slate-300 px-2 py-1 text-xs focus:outline-none focus:ring-1 focus:ring-slate-400 bg-white" />
+                    <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">To</label>
+                    <input type="date" value={pendingDateTo} onChange={e => setPendingDateTo(e.target.value)}
+                      className="border border-slate-300 px-2 py-1 text-xs focus:outline-none focus:ring-1 focus:ring-slate-400 bg-white" />
+                    {(pendingDateFrom || pendingDateTo) && (
+                      <button onClick={() => { setPendingDateFrom(''); setPendingDateTo(''); }}
+                        className="text-[10px] font-bold text-slate-500 uppercase tracking-widest hover:text-slate-800 px-1" title="Clear date filter">&times; clear</button>
+                    )}
+                  </div>
                 </div>
 
                 {/* Pending Table — same filteredPending used by KPIs above */}
@@ -1053,14 +1078,14 @@ export default function PaymentsOut() {
                             <th className="text-left px-3 py-2 font-semibold text-[10px] uppercase tracking-widest border-r border-slate-700">PO#</th>
                             <th className="text-left px-3 py-2 font-semibold text-[10px] uppercase tracking-widest border-r border-slate-700">Vendor</th>
                             <th className="text-left px-3 py-2 font-semibold text-[10px] uppercase tracking-widest border-r border-slate-700">Terms</th>
-                            <th className="text-right px-3 py-2 font-semibold text-[10px] uppercase tracking-widest border-r border-slate-700" title="Value of material received via GRN (delivered). If nothing delivered yet, shows the PO order value. Grey sublabel shows PO ceiling when different.">Received</th>
+                            <th className="text-right px-3 py-2 font-semibold text-[10px] uppercase tracking-widest border-r border-slate-700" title="Total PO order value (authorization ceiling). For fuel / open-ended POs this can be larger than what's been delivered.">Order Value</th>
+                            <th className="text-right px-3 py-2 font-semibold text-[10px] uppercase tracking-widest border-r border-slate-700" title="Value of material received via GRN (delivered). This is what can be owed to the vendor right now.">Received</th>
                             <th className="text-right px-3 py-2 font-semibold text-[10px] uppercase tracking-widest border-r border-slate-700">Invoiced</th>
                             <th className="text-right px-3 py-2 font-semibold text-[10px] uppercase tracking-widest border-r border-slate-700">Paid</th>
-                            <th className="text-right px-3 py-2 font-semibold text-[10px] uppercase tracking-widest border-r border-slate-700" title="Cash issued to team but not yet settled">Cash Out</th>
+                            <th className="text-right px-3 py-2 font-semibold text-[10px] uppercase tracking-widest border-r border-slate-700" title="Cash vouchers issued but not yet settled (cash team hasn't handed over the money yet)">Cash Out</th>
                             <th className="text-right px-3 py-2 font-semibold text-[10px] uppercase tracking-widest border-r border-slate-700">Balance</th>
                             <th className="text-left px-3 py-2 font-semibold text-[10px] uppercase tracking-widest border-r border-slate-700">Status</th>
-                            <th className="text-left px-3 py-2 font-semibold text-[10px] uppercase tracking-widest border-r border-slate-700">Due Date</th>
-                            <th className="text-right px-3 py-2 font-semibold text-[10px] uppercase tracking-widest border-r border-slate-700">Days</th>
+                            <th className="text-right px-3 py-2 font-semibold text-[10px] uppercase tracking-widest border-r border-slate-700" title="Days overdue relative to due date (GRN date + payment terms). Positive = overdue.">Days</th>
                             <th className="text-center px-3 py-2 font-semibold text-[10px] uppercase tracking-widest">Actions</th>
                           </tr>
                         </thead>
@@ -1078,21 +1103,11 @@ export default function PaymentsOut() {
                               <td className="px-3 py-1.5 border-r border-slate-100">
                                 <span className="text-[9px] font-bold uppercase px-1.5 py-0.5 border border-slate-300 bg-slate-50 text-slate-600">{item.paymentTerms || `NET${item.creditDays}`}</span>
                               </td>
+                              <td className="px-3 py-1.5 border-r border-slate-100 text-right font-mono tabular-nums text-slate-600">
+                                {(item.poAmount || 0) > 0 ? fmt(item.poAmount) : <span className="text-slate-300">--</span>}
+                              </td>
                               <td className="px-3 py-1.5 border-r border-slate-100 text-right font-mono tabular-nums">
-                                {(() => {
-                                  const grn = item.grnTotalValue || 0;
-                                  const po = item.poAmount || 0;
-                                  const hasGrn = grn > 0;
-                                  const main = hasGrn ? grn : po;
-                                  const showCap = hasGrn && po > grn + 100; // fuel / open — PO ceiling bigger than delivered
-                                  return <>
-                                    {fmt(main)}
-                                    <div className="text-[8px] text-slate-400 font-sans normal-case tracking-normal">
-                                      {hasGrn ? 'received' : (po > 0 ? 'ordered (nothing delivered yet)' : '')}
-                                      {showCap && <span className="text-slate-300"> &middot; cap {fmtCompactINR(po)}</span>}
-                                    </div>
-                                  </>;
-                                })()}
+                                {(item.grnTotalValue || 0) > 0 ? fmt(item.grnTotalValue || 0) : <span className="text-slate-300" title="Nothing delivered yet">--</span>}
                               </td>
                               <td className="px-3 py-1.5 border-r border-slate-100 text-right font-mono tabular-nums">{fmtAmt(item.totalInvoiced)}</td>
                               <td className={`px-3 py-1.5 border-r border-slate-100 text-right font-mono tabular-nums ${item.totalPaid > 0 ? 'text-green-700 font-medium' : 'text-slate-400'}`}>{fmtAmt(item.totalPaid)}</td>
@@ -1125,10 +1140,8 @@ export default function PaymentsOut() {
                                    'PAID'}
                                 </span>
                               </td>
-                              <td className={`px-3 py-1.5 border-r border-slate-100 whitespace-nowrap ${urgencyBg(item.urgency)}`}>
-                                {item.dueDate ? fmtDate(item.dueDate) : '--'}
-                              </td>
-                              <td className={`px-3 py-1.5 border-r border-slate-100 text-right font-mono tabular-nums font-bold ${item.daysOverdue !== null && item.daysOverdue > 0 ? 'text-red-600' : item.daysOverdue !== null && item.daysOverdue >= -7 ? 'text-amber-600' : 'text-green-600'}`}>
+                              <td className={`px-3 py-1.5 border-r border-slate-100 text-right font-mono tabular-nums font-bold ${item.daysOverdue !== null && item.daysOverdue > 0 ? 'text-red-600' : item.daysOverdue !== null && item.daysOverdue >= -7 ? 'text-amber-600' : 'text-green-600'}`}
+                                title={item.dueDate ? `Due ${fmtDate(item.dueDate)}` : 'No due date (no GRN yet)'}>
                                 {item.daysOverdue !== null ? (item.daysOverdue > 0 ? `+${item.daysOverdue}` : String(item.daysOverdue)) : '--'}
                               </td>
                               <td className="px-3 py-1.5 text-center">
@@ -1355,11 +1368,12 @@ export default function PaymentsOut() {
                         <tfoot>
                           <tr className="bg-slate-800 text-white font-semibold">
                             <td className="px-3 py-2 text-[10px] uppercase tracking-widest" colSpan={3}>Total ({filtered.length} POs)</td>
-                            <td className="px-3 py-2 text-right font-mono tabular-nums" title="Sum of material received (falls back to PO order value when nothing delivered yet)">{fmt(filtered.reduce((s, i) => s + ((i.grnTotalValue || 0) > 0 ? (i.grnTotalValue || 0) : (i.poAmount || 0)), 0))}</td>
+                            <td className="px-3 py-2 text-right font-mono tabular-nums text-slate-300" title="Sum of PO order values">{fmt(filtered.reduce((s, i) => s + (i.poAmount || 0), 0))}</td>
+                            <td className="px-3 py-2 text-right font-mono tabular-nums" title="Sum of material received via GRN">{fmt(filtered.reduce((s, i) => s + (i.grnTotalValue || 0), 0))}</td>
                             <td colSpan={2}></td>
                             <td className="px-3 py-2 text-right font-mono tabular-nums text-yellow-300">{fmt(filtered.reduce((s, i) => s + (i.pendingCash || 0), 0))}</td>
                             <td className="px-3 py-2 text-right font-mono tabular-nums">{fmt(filtered.reduce((s, i) => s + i.balance, 0))}</td>
-                            <td colSpan={4}></td>
+                            <td colSpan={3}></td>
                           </tr>
                         </tfoot>
                       </table>
@@ -2635,13 +2649,13 @@ export default function PaymentsOut() {
                     : `Pay ${poPayAmount ? '\u20B9' + parseFloat(poPayAmount).toLocaleString('en-IN') : ''} via ${poPayMode}${poPayItem.poGst > 0 ? (poPayIncludeGst ? ' (Incl. GST)' : ' (Ex. GST)') : ''}`}
                 </button>
 
-                {/* Pending bank payment — enter UTR to confirm */}
+                {/* Pending bank payment — enter UTR to confirm (+ optional: upload bank receipt to auto-fill UTR) */}
                 {bankPendingPayment && (
-                  <div className="bg-yellow-50 border border-yellow-300 p-3 mt-2">
-                    <div className="text-[10px] font-bold text-yellow-800 uppercase tracking-widest mb-2">
+                  <div className="bg-yellow-50 border border-yellow-300 p-3 mt-2 space-y-2">
+                    <div className="text-[10px] font-bold text-yellow-800 uppercase tracking-widest">
                       Pending Bank Transfer — Payment #{bankPendingPayment.paymentNo}
                     </div>
-                    <div className="text-xs text-slate-600 mb-2">
+                    <div className="text-xs text-slate-600">
                       Amount: <b className="font-mono">{fmt(bankPendingPayment.amount)}</b> via <b>{bankPendingPayment.mode}</b>
                     </div>
                     <div className="flex gap-2 items-end">
@@ -2655,9 +2669,14 @@ export default function PaymentsOut() {
                         setBankConfirming(true);
                         try {
                           await api.post(`/purchase-orders/payments/${bankPendingPayment.id}/confirm`, { reference: bankUtrInput.trim() });
+                          // If the team also uploaded the bank's receipt, scan+attach it now (best-effort, don't block confirm)
+                          if (bankReceiptFile) {
+                            try { await scanBankReceipt(bankPendingPayment.id, bankReceiptFile); } catch { /* non-fatal */ }
+                          }
                           setBankPendingPayment(null);
                           setBankUtrInput('');
-                          await fetchPending(); // Refresh list BEFORE closing modal
+                          setBankReceiptFile(null);
+                          await fetchPending();
                           setPoPayItem(null);
                         } catch (err: unknown) {
                           alert((err as { response?: { data?: { error?: string } } })?.response?.data?.error || 'Confirm failed');
@@ -2666,6 +2685,22 @@ export default function PaymentsOut() {
                         className="px-4 py-1.5 bg-green-600 text-white text-[11px] font-bold uppercase hover:bg-green-700 disabled:opacity-50">
                         {bankConfirming ? '...' : 'Confirm'}
                       </button>
+                    </div>
+                    {/* Optional: upload bank receipt (PDF/JPG) — will auto-scan after confirm */}
+                    <div className="pt-2 border-t border-yellow-200">
+                      <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest block mb-1 flex items-center gap-1">
+                        <Scan size={10} className="text-purple-700" /> Bank Receipt (optional) — PDF / JPG
+                      </label>
+                      <div className="flex items-center gap-2">
+                        <input type="file" accept=".pdf,.jpg,.jpeg,.png" onChange={e => setBankReceiptFile(e.target.files?.[0] || null)}
+                          className="text-[11px] flex-1" />
+                        {bankReceiptFile && (
+                          <button type="button" onClick={() => setBankReceiptFile(null)} className="text-[10px] text-slate-500 hover:text-red-600">&times; remove</button>
+                        )}
+                      </div>
+                      <div className="text-[10px] text-slate-500 mt-1">
+                        If attached, AI will extract UTR + beneficiary + amount from the receipt and attach the file to the Payment Advice email. Confirm still works without it.
+                      </div>
                     </div>
                   </div>
                 )}
