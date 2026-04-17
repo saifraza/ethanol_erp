@@ -8,10 +8,12 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Download, Eye, FileText, Loader2, Search } from 'lucide-react';
 import api from '../../services/api';
+import { invoiceDisplayNo } from '../../utils/invoiceDisplay';
 
 interface Invoice {
   id: string;
   invoiceNo: number;
+  remarks?: string | null; // holds the printed series number INV/ETH/NNN
   invoiceDate: string;
   customer: { id: string; name: string; shortName?: string };
   productName: string;
@@ -89,8 +91,11 @@ export default function InvoiceSeriesPage() {
     })();
   }, []);
 
-  const formatInvNo = (n: number): string =>
-    taxSeries ? `${taxSeries.prefix}${String(n).padStart(taxSeries.width, '0')}` : String(n);
+  // Display uses the actual printed number stored in Invoice.remarks (INV/ETH/NNN).
+  // The old taxSeries-based padding is kept only as a fallback for legacy rows
+  // that were never assigned a remarks doc number.
+  const legacyFmt = (n: number): string =>
+    taxSeries ? `${taxSeries.prefix}${String(n).padStart(taxSeries.width, '0')}` : `INV-${n}`;
 
   const fetchData = async () => {
     setLoading(true);
@@ -120,6 +125,7 @@ export default function InvoiceSeriesPage() {
     const q = search.trim().toLowerCase();
     return invoices.filter((i) =>
       String(i.invoiceNo).includes(q) ||
+      (i.remarks || '').toLowerCase().includes(q) ||
       i.customer?.name?.toLowerCase().includes(q) ||
       i.productName?.toLowerCase().includes(q) ||
       i.irn?.toLowerCase().includes(q),
@@ -157,14 +163,15 @@ export default function InvoiceSeriesPage() {
     }
   };
 
-  const downloadPdf = async (id: string, invoiceNo: number) => {
+  const downloadPdf = async (inv: Invoice) => {
     try {
-      const blob = await fetchPdfBlob(id);
+      const blob = await fetchPdfBlob(inv.id);
       const url = URL.createObjectURL(blob);
       const a = document.createElement('a');
       a.href = url;
-      // File-name safe version of formatted invoice number (replace slashes)
-      const safeName = formatInvNo(invoiceNo).replace(/[^\w-]/g, '_');
+      // File-name safe version of the printed invoice number (replace slashes)
+      const displayNo = invoiceDisplayNo(inv) || legacyFmt(inv.invoiceNo);
+      const safeName = displayNo.replace(/[^\w-]/g, '_');
       a.download = `Invoice-${safeName}.pdf`;
       document.body.appendChild(a);
       a.click();
@@ -258,7 +265,7 @@ export default function InvoiceSeriesPage() {
             )}
             {!loading && filtered.map((inv) => (
               <tr key={inv.id} className="hover:bg-slate-50">
-                <td className="px-2 py-1 font-mono font-bold whitespace-nowrap">{formatInvNo(inv.invoiceNo)}</td>
+                <td className="px-2 py-1 font-mono font-bold whitespace-nowrap">{invoiceDisplayNo(inv) || legacyFmt(inv.invoiceNo)}</td>
                 <td className="px-2 py-1 whitespace-nowrap">{fmtDate(inv.invoiceDate)}</td>
                 <td className="px-2 py-1 truncate max-w-[180px]" title={inv.customer?.name}>{inv.customer?.shortName || inv.customer?.name || '--'}</td>
                 <td className="px-2 py-1 truncate max-w-[140px]" title={inv.productName}>{inv.productName}</td>
@@ -296,7 +303,7 @@ export default function InvoiceSeriesPage() {
                       className="text-slate-600 hover:text-blue-600" title="View PDF"
                     ><Eye className="w-3.5 h-3.5" /></button>
                     <button
-                      onClick={() => downloadPdf(inv.id, inv.invoiceNo)}
+                      onClick={() => downloadPdf(inv)}
                       className="text-slate-600 hover:text-green-700" title="Download PDF"
                     ><Download className="w-3.5 h-3.5" /></button>
                   </div>
