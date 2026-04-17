@@ -524,14 +524,8 @@ router.post('/:id/dispatches', asyncHandler(async (req: AuthRequest, res: Respon
               data: { irn: irnRes.irn, irnDate: new Date(), irnStatus: 'GENERATED', ackNo: irnRes.ackNo ? String(irnRes.ackNo) : null, signedQRCode: irnRes.signedQRCode?.slice(0, 4000) || null } as any,
             });
 
-            // Generate EWB
-            const vehNo = (dispatch.vehicleNo || '').replace(/\s/g, '');
-            const autoEwbData: Record<string, any> = { Irn: irnRes.irn, Distance: 100, TransMode: '1', VehNo: vehNo, VehType: 'R' };
-            if (dispatch.transporterName && dispatch.transporterName.length >= 3) autoEwbData.TransName = dispatch.transporterName;
-            const ewbRes = await generateEWBByIRN(irnRes.irn, autoEwbData);
-            if (ewbRes.success && ewbRes.ewayBillNo) {
-              await prisma.invoice.update({ where: { id: inv.id }, data: { ewbNo: ewbRes.ewayBillNo, ewbDate: new Date(), ewbStatus: 'GENERATED' } as any });
-            }
+            // EWB auto-generation disabled: EWB amount often differs from invoice amount.
+            // User uploads EWB PDF manually via PATCH /dispatches/:id/manual-ewb.
           }
         }
       } catch (err: any) {

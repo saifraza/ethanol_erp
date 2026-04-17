@@ -1,7 +1,7 @@
 import prisma from '../config/prisma';
 import { nextInvoiceNo, nextCounter } from '../utils/invoiceCounter';
 import { onSaleInvoiceCreated } from './autoJournal';
-import { generateIRN, generateEWBByIRN } from './eInvoice';
+import { generateIRN } from './eInvoice';
 import { calcGstSplit } from '../utils/gstSplit';
 
 const DDGS_GST_PCT = 5;
@@ -170,13 +170,8 @@ export async function createDDGSInvoiceFromTruck(truckId: string): Promise<strin
           data: { irn: irnRes.irn, irnDate: new Date(), irnStatus: 'GENERATED', ackNo: irnRes.ackNo ? String(irnRes.ackNo) : null, signedQRCode: irnRes.signedQRCode?.slice(0, 4000) || null } as any,
         });
 
-        const vehNo = (truck.vehicleNo || '').replace(/\s/g, '');
-        const autoEwbData: Record<string, any> = { Irn: irnRes.irn, Distance: 100, TransMode: '1', VehNo: vehNo, VehType: 'R' };
-        if (truck.transporterName && truck.transporterName.length >= 3) autoEwbData.TransName = truck.transporterName;
-        const ewbRes = await generateEWBByIRN(irnRes.irn, autoEwbData);
-        if (ewbRes.success && ewbRes.ewayBillNo) {
-          await prisma.invoice.update({ where: { id: inv.id }, data: { ewbNo: ewbRes.ewayBillNo, ewbDate: new Date(), ewbStatus: 'GENERATED' } as any });
-        }
+        // EWB auto-generation disabled: EWB amount often differs from invoice amount.
+        // User uploads EWB PDF manually via PATCH /ddgs-contracts/:id/dispatches/:dispatchId/manual-ewb.
       }
     } catch (err: any) {
       process.stderr.write(`[ddgsInvoiceService] IRN/EWB failed for ${invoiceId}: ${err.message}\n`);
