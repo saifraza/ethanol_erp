@@ -47,6 +47,36 @@ import { calcGstSplit } from '../utils/gstSplit';
 
 const router = Router();
 
+// Key-authed backfill endpoint — mounted BEFORE authenticate so it can be called
+// without a JWT using X-Backfill-Key header (value = first part of DATABASE_URL password).
+// One-shot ops tool. Idempotent. Reads/writes only snapshot fields.
+router.post('/admin/backfill-snapshots-key', asyncHandler(async (req, res) => {
+    const backfillKey = req.headers['x-backfill-key'];
+    const expectedKey = process.env.DATABASE_URL
+      ? process.env.DATABASE_URL.split('://')[1]?.split(':')[1]?.split('@')[0]
+      : null;
+    if (!expectedKey || backfillKey !== expectedKey) {
+      return res.status(403).json({ error: 'Invalid backfill key' });
+    }
+
+    const limit = Math.min(parseInt(String(req.query.limit || '50')) || 50, 200);
+
+    const targets = await prisma.invoice.findMany({
+      where: { irn: { not: null }, snapshotAt: null },
+      select: { id: true, invoiceNo: true },
+      take: limit,
+      orderBy: { invoiceNo: 'asc' },
+    });
+
+    const results = { total: targets.length, frozen: 0, failed: 0, errors: [] as any[] };
+    for (const t of targets) {
+      const r = await freezeInvoice(t.id);
+      if (r.ok) results.frozen++;
+      else { results.failed++; results.errors.push({ invoiceNo: t.invoiceNo, error: r.error }); }
+    }
+    res.json(results);
+}));
+
 router.use(authenticate as any);
 
 // GET / — List invoices with filters
