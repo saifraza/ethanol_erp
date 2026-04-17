@@ -41,11 +41,27 @@ import { getCompanyForPdf } from '../utils/pdfCompanyHelper';
 // RAG indexing removed — only compliance docs go to RAG
 import { sendEmail } from '../services/messaging';
 import { generateIRN, cancelIRN, getIRNDetails } from '../services/eInvoice';
-import { freezeInvoice } from '../services/invoiceSnapshot';
+import { freezeInvoice, auditAllSnapshots } from '../services/invoiceSnapshot';
 import { onSaleInvoiceCreated } from '../services/autoJournal';
 import { calcGstSplit } from '../utils/gstSplit';
 
 const router = Router();
+
+// Key-authed audit endpoint — verifies SHA of every snapshot on disk vs DB.
+// Returns { totalChecked, ok, issues[], checkedAt }. Meant to be called by a daily cron.
+router.get('/admin/snapshot-audit-key', asyncHandler(async (req, res) => {
+    const backfillKey = req.headers['x-backfill-key'];
+    const expectedKey = process.env.DATABASE_URL
+      ? process.env.DATABASE_URL.split('://')[1]?.split(':')[1]?.split('@')[0]
+      : null;
+    if (!expectedKey || backfillKey !== expectedKey) {
+      return res.status(403).json({ error: 'Invalid audit key' });
+    }
+    const limit = Math.min(parseInt(String(req.query.limit || '500')) || 500, 2000);
+    const result = await auditAllSnapshots(limit);
+    // Always 200; caller inspects `issues.length` to decide alarm.
+    res.json(result);
+}));
 
 // Key-authed backfill endpoint — mounted BEFORE authenticate so it can be called
 // without a JWT using X-Backfill-Key header (value = first part of DATABASE_URL password).
@@ -365,8 +381,43 @@ router.put('/:id', validate(updateInvoiceSchema), asyncHandler(async (req: AuthR
     res.json(updated);
 }));
 
-// GET /:id/pdf — Generate Invoice PDF with letterhead
+// GET /:id/pdf — Serve Invoice PDF
+// Phase 2 (immutable snapshot):
+//   1. If snapshot exists + SHA matches → serve file from disk (fast, tamper-proof)
+//   2. If snapshot exists + SHA mismatch → log CRITICAL, fall back to live render
+//   3. If no snapshot → live render + background self-heal if IRN'd
 router.get('/:id/pdf', asyncHandler(async (req: AuthRequest, res: Response) => {
+    // Fast path: serve frozen snapshot if available
+    const snapInfo = await prisma.invoice.findUnique({
+      where: { id: req.params.id },
+      select: { invoiceNo: true, snapshotPdfPath: true, snapshotPdfSha: true, snapshotAt: true, remarks: true } as any,
+    });
+
+    const snap = snapInfo as any;
+    if (snap?.snapshotPdfPath && snap?.snapshotPdfSha) {
+      try {
+        const { promises: fsp } = await import('fs');
+        const pathMod = await import('path');
+        const { createHash } = await import('crypto');
+        const SNAPSHOT_DIR = process.env.SNAPSHOT_DIR || pathMod.resolve(__dirname, '..', '..', 'public', 'snapshots');
+        const absPath = pathMod.join(SNAPSHOT_DIR, snap.snapshotPdfPath);
+        const buf = await fsp.readFile(absPath);
+        const sha = createHash('sha256').update(buf).digest('hex');
+        if (sha === snap.snapshotPdfSha) {
+          const invLabel = snap.remarks || `INV-${snap.invoiceNo}`;
+          res.setHeader('Content-Type', 'application/pdf');
+          res.setHeader('Content-Disposition', `inline; filename="${String(invLabel).replace(/\//g, '-')}.pdf"`);
+          res.setHeader('X-Invoice-Source', 'snapshot');
+          res.setHeader('X-Invoice-Frozen-At', new Date(snap.snapshotAt).toISOString());
+          return res.send(buf);
+        }
+        console.error(`[Invoice] CRITICAL SHA MISMATCH on INV-${snap.invoiceNo}: file=${sha} db=${snap.snapshotPdfSha}. Falling back to live render.`);
+      } catch (err) {
+        console.error(`[Invoice] Snapshot read failed for INV-${snap.invoiceNo}, falling back to live render:`, err instanceof Error ? err.message : err);
+      }
+    }
+
+    // Fallback / legacy path: live render from DB
     const invoice = await prisma.invoice.findUnique({
       where: { id: req.params.id },
       include: {

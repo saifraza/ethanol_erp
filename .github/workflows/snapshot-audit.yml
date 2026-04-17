@@ -1,0 +1,62 @@
+name: Invoice Snapshot Audit
+
+on:
+  schedule:
+    - cron: '30 2 * * *'  # 08:00 IST daily (02:30 UTC)
+  workflow_dispatch:       # allow manual runs
+
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+
+    steps:
+      - name: Call snapshot audit endpoint
+        env:
+          BACKFILL_KEY: ${{ secrets.BACKFILL_KEY }}
+          APP_URL: ${{ secrets.APP_URL }}
+        run: |
+          if [ -z "$BACKFILL_KEY" ]; then
+            echo "::error::BACKFILL_KEY secret not set. Add it in repo Settings → Secrets."
+            exit 1
+          fi
+          APP_URL="${APP_URL:-https://app.mspil.in}"
+
+          echo "Calling $APP_URL/api/invoices/admin/snapshot-audit-key"
+          RESPONSE=$(curl -s -w '\n%{http_code}' \
+            -X GET "$APP_URL/api/invoices/admin/snapshot-audit-key?limit=2000" \
+            -H "X-Backfill-Key: $BACKFILL_KEY")
+
+          HTTP_CODE=$(echo "$RESPONSE" | tail -n1)
+          BODY=$(echo "$RESPONSE" | sed '$d')
+
+          echo "HTTP $HTTP_CODE"
+          echo "$BODY" | head -c 10000
+          echo ""
+
+          if [ "$HTTP_CODE" != "200" ]; then
+            echo "::error::Audit endpoint returned HTTP $HTTP_CODE"
+            exit 1
+          fi
+
+          ISSUES=$(echo "$BODY" | python3 -c "import sys, json; print(len(json.load(sys.stdin).get('issues', [])))")
+          TOTAL=$(echo "$BODY" | python3 -c "import sys, json; print(json.load(sys.stdin).get('totalChecked', 0))")
+          OK=$(echo "$BODY" | python3 -c "import sys, json; print(json.load(sys.stdin).get('ok', 0))")
+
+          echo "Total: $TOTAL | OK: $OK | Issues: $ISSUES"
+
+          if [ "$ISSUES" != "0" ]; then
+            echo "::error::$ISSUES snapshot integrity issues detected"
+            echo "$BODY" | python3 -m json.tool > audit-report.json
+            exit 1
+          fi
+
+          echo "✅ All $TOTAL snapshots verified clean"
+
+      - name: Upload audit report on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: snapshot-audit-${{ github.run_id }}
+          path: audit-report.json
+          retention-days: 30

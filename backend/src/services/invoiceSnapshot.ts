@@ -325,3 +325,64 @@ export async function loadSnapshotJson(invoiceId: string): Promise<Record<string
     return null;
   }
 }
+
+export interface AuditRow {
+  invoiceId: string;
+  invoiceNo: number;
+  status: 'ok' | 'json_sha_mismatch' | 'pdf_sha_mismatch' | 'json_missing' | 'pdf_missing' | 'read_error';
+  detail?: string;
+}
+
+/**
+ * Audit: walk every invoice with a snapshot, verify SHAs match disk.
+ * Returns list of problems (ok rows omitted from detail unless includeOk=true).
+ */
+export async function auditAllSnapshots(limit = 500): Promise<{
+  totalChecked: number;
+  ok: number;
+  issues: AuditRow[];
+  checkedAt: string;
+}> {
+  const invoices = await prisma.invoice.findMany({
+    where: { snapshotAt: { not: null } } as any,
+    select: {
+      id: true, invoiceNo: true,
+      snapshotJsonPath: true, snapshotJsonSha: true,
+      snapshotPdfPath: true, snapshotPdfSha: true,
+    } as any,
+    take: limit,
+    orderBy: { invoiceNo: 'asc' },
+  });
+
+  const issues: AuditRow[] = [];
+  let ok = 0;
+
+  for (const inv of invoices as any[]) {
+    const check = async (kind: 'json' | 'pdf', relPath: string, expectedSha: string): Promise<AuditRow['status'] | null> => {
+      const absPath = path.join(SNAPSHOT_DIR, relPath);
+      try {
+        const buf = await fs.readFile(absPath);
+        const sha = createHash('sha256').update(buf).digest('hex');
+        if (sha !== expectedSha) return kind === 'json' ? 'json_sha_mismatch' : 'pdf_sha_mismatch';
+        return null;
+      } catch (err: any) {
+        if (err?.code === 'ENOENT') return kind === 'json' ? 'json_missing' : 'pdf_missing';
+        return 'read_error';
+      }
+    };
+
+    const jsonStatus = await check('json', inv.snapshotJsonPath, inv.snapshotJsonSha);
+    const pdfStatus = await check('pdf', inv.snapshotPdfPath, inv.snapshotPdfSha);
+
+    if (jsonStatus) issues.push({ invoiceId: inv.id, invoiceNo: inv.invoiceNo, status: jsonStatus });
+    if (pdfStatus) issues.push({ invoiceId: inv.id, invoiceNo: inv.invoiceNo, status: pdfStatus });
+    if (!jsonStatus && !pdfStatus) ok++;
+  }
+
+  return {
+    totalChecked: invoices.length,
+    ok,
+    issues,
+    checkedAt: new Date().toISOString(),
+  };
+}
