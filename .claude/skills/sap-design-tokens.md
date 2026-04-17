@@ -20,7 +20,7 @@ All enterprise/back-office pages MUST use these exact tokens. Plant/process page
 | **Table container** | `-mx-3 md:-mx-6 border-x border-b border-slate-300 overflow-hidden` |
 | **Table header row** | `bg-slate-800 text-white` |
 | **Table header cell** | `px-3 py-2 font-semibold text-[10px] uppercase tracking-widest border-r border-slate-700` |
-| **Table body row** | `border-b border-slate-100 even:bg-slate-50/70 hover:bg-blue-50/60` |
+| **Table body row** | `border-b border-slate-100 even:bg-slate-50/70` — hover is handled globally by `index.css` (blue-200 bg + blue-600 left accent). Do NOT add `hover:bg-*` on rows; it dilutes the global rule. Use `.row-hover` on non-`<tr>` list items that should opt in. |
 | **Table body cell** | `px-3 py-1.5 text-xs border-r border-slate-100` |
 | **Table footer row** | `bg-slate-800 text-white font-semibold` |
 | **Currency** | `font-mono tabular-nums` |
@@ -41,4 +41,5 @@ All enterprise/back-office pages MUST use these exact tokens. Plant/process page
 - **Edge-to-edge** tables and KPI strips with `-mx-3 md:-mx-6`
 - **Vertical gridlines** in tables: `border-r border-slate-100` on cells, `border-r border-slate-700` on headers
 - **Row striping**: `even:bg-slate-50/70`
+- **Row hover**: global rule in `frontend/src/index.css` paints `tbody tr:hover` with `blue-200` + `blue-600` left accent bar. Do NOT override per-table.
 - **Group headers** in tables: `bg-slate-200 border-b border-slate-300` with `text-[10px] font-bold uppercase tracking-widest`
