@@ -214,23 +214,66 @@ router.get('/ledger/:accountId', asyncHandler(async (req: AuthRequest, res: Resp
           date: true,
           narration: true,
           refType: true,
+          refId: true,
         },
       },
     },
   });
 
+  // Resolve party name (customer/vendor) per journal entry from refType + refId.
+  // Batch-fetch once per ref type to keep this O(1) lookups.
+  const partyByRef = new Map<string, string>();
+  const collect = (type: string) => [...new Set(
+    lines.filter(l => l.journal.refType === type && l.journal.refId).map(l => l.journal.refId as string)
+  )];
+
+  const saleIds = collect('SALE');
+  const payIds = collect('PAYMENT');
+  const recvIds = collect('RECEIPT');
+  const purchIds = collect('PURCHASE');
+
+  const [sales, vendorPays, recvs, vendorInvs, stockMoves] = await Promise.all([
+    saleIds.length ? prisma.invoice.findMany({ where: { id: { in: saleIds } }, select: { id: true, customer: { select: { name: true } } } }) : [],
+    payIds.length ? prisma.vendorPayment.findMany({ where: { id: { in: payIds } }, select: { id: true, vendor: { select: { name: true } } } }) : [],
+    recvIds.length ? prisma.payment.findMany({ where: { id: { in: recvIds } }, select: { id: true, invoice: { select: { customer: { select: { name: true } } } } } }).catch(() => []) : [],
+    purchIds.length ? prisma.vendorInvoice.findMany({ where: { id: { in: purchIds } }, select: { id: true, vendor: { select: { name: true } } } }) : [],
+    purchIds.length ? prisma.stockMovement.findMany({
+      where: { id: { in: purchIds } },
+      select: { id: true, refId: true, refType: true },
+    }) : [],
+  ]);
+  for (const s of sales)       if (s.customer?.name) partyByRef.set(`SALE:${s.id}`, s.customer.name);
+  for (const v of vendorPays)  if (v.vendor?.name)   partyByRef.set(`PAYMENT:${v.id}`, v.vendor.name);
+  for (const r of recvs)       if (r.invoice?.customer?.name) partyByRef.set(`RECEIPT:${r.id}`, r.invoice.customer.name);
+  for (const vi of vendorInvs) if (vi.vendor?.name)  partyByRef.set(`PURCHASE:${vi.id}`, vi.vendor.name);
+  // StockMovement (GRN_RECEIPT) → follow refId to GoodsReceipt → po.vendor
+  const grnIds = stockMoves.filter(m => m.refType === 'GRN').map(m => m.refId).filter(Boolean) as string[];
+  if (grnIds.length) {
+    const grns = await prisma.goodsReceipt.findMany({
+      where: { id: { in: grnIds } },
+      select: { id: true, po: { select: { vendor: { select: { name: true } } } } },
+    });
+    const grnVendor = new Map(grns.map(g => [g.id, g.po?.vendor?.name || null]));
+    for (const sm of stockMoves) {
+      const v = sm.refId ? grnVendor.get(sm.refId) : null;
+      if (v) partyByRef.set(`PURCHASE:${sm.id}`, v);
+    }
+  }
+
   // Calculate running balance
   const isDebitNormal = account.type === 'ASSET' || account.type === 'EXPENSE';
   let runningBalance = account.openingBalance;
 
-  const ledgerLines = lines.map((l: { debit: number; credit: number; id: string; narration: string | null; costCenter: string | null; division: string | null; journal: { id: string; entryNo: number; date: Date; narration: string; refType: string | null } }) => {
+  const ledgerLines = lines.map((l: { debit: number; credit: number; id: string; narration: string | null; costCenter: string | null; division: string | null; journal: { id: string; entryNo: number; date: Date; narration: string; refType: string | null; refId: string | null } }) => {
     if (isDebitNormal) {
       runningBalance += l.debit - l.credit;
     } else {
       runningBalance += l.credit - l.debit;
     }
+    const party = l.journal.refType && l.journal.refId ? partyByRef.get(`${l.journal.refType}:${l.journal.refId}`) ?? null : null;
     return {
       ...l,
+      party,
       balance: Math.round(runningBalance * 100) / 100,
     };
   });

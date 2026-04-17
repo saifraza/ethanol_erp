@@ -52,6 +52,7 @@ interface LedgerLine {
   costCenter: string | null;
   division: string | null;
   balance: number;
+  party: string | null;
   journal: { id: string; entryNo: number; date: string; narration: string; refType: string | null };
 }
 
@@ -496,6 +497,7 @@ export default function BalanceSheet() {
                     <th className="px-2 py-1 text-left font-semibold w-6"></th>
                     <th className="px-2 py-1 text-left font-semibold w-20">Date</th>
                     <th className="px-2 py-1 text-left font-semibold w-16">Entry</th>
+                    <th className="px-2 py-1 text-left font-semibold w-40">Party</th>
                     <th className="px-2 py-1 text-left font-semibold">Narration</th>
                     <th className="px-2 py-1 text-left font-semibold w-20">Ref</th>
                     <th className="px-2 py-1 text-right font-semibold w-24">Debit</th>
@@ -512,6 +514,9 @@ export default function BalanceSheet() {
                           <td className="px-2 py-1 text-[10px] text-slate-500 font-mono">{isOpen ? '▾' : '▸'}</td>
                           <td className="px-2 py-1">{fmtShortDate(line.journal.date)}</td>
                           <td className="px-2 py-1 font-mono text-[10px] text-slate-500">#{line.journal.entryNo}</td>
+                          <td className="px-2 py-1 text-slate-700 truncate" title={line.party || ''}>
+                            {line.party ? <span className="font-medium">{line.party}</span> : <span className="text-slate-300">—</span>}
+                          </td>
                           <td className="px-2 py-1 text-slate-700 truncate max-w-md" title={line.journal.narration}>
                             {line.journal.narration}
                             {line.narration && line.narration !== line.journal.narration && <span className="text-slate-400 ml-1">({line.narration})</span>}
@@ -523,14 +528,14 @@ export default function BalanceSheet() {
                             {line.balance < 0 ? '-' : ''}{fmtAmt(line.balance)}
                           </td>
                         </tr>
-                        {isOpen && <tr><td colSpan={8} className="p-0">{renderEntryDetail(line.journal.id)}</td></tr>}
+                        {isOpen && <tr><td colSpan={9} className="p-0">{renderEntryDetail(line.journal.id)}</td></tr>}
                       </React.Fragment>
                     );
                   })}
                 </tbody>
                 <tfoot>
                   <tr className="bg-slate-100 text-[10px] text-slate-700 border-t border-slate-200">
-                    <td colSpan={5} className="px-2 py-1 text-right uppercase tracking-widest font-bold">Totals</td>
+                    <td colSpan={6} className="px-2 py-1 text-right uppercase tracking-widest font-bold">Totals</td>
                     <td className="px-2 py-1 text-right font-mono tabular-nums font-bold">{fmtAmt(ledger.totalDebit)}</td>
                     <td className="px-2 py-1 text-right font-mono tabular-nums font-bold">{fmtAmt(ledger.totalCredit)}</td>
                     <td className="px-2 py-1 text-right font-mono tabular-nums font-bold">{fmtAmt(ledger.closingBalance) || '0.00'}</td>
