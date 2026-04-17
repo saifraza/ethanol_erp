@@ -3,6 +3,7 @@ import prisma from '../config/prisma';
 import { authenticate, authorize, AuthRequest, getCompanyFilter, getActiveCompanyId } from '../middleware/auth';
 import { asyncHandler, validate } from '../shared/middleware';
 import { z } from 'zod';
+import { invoiceDisplayNo } from '../utils/invoiceDisplay';
 
 const createInvoiceSchema = z.object({
   customerId: z.string().min(1),
@@ -708,11 +709,13 @@ router.post('/:id/e-invoice', asyncHandler(async (req: AuthRequest, res: Respons
       return res.status(400).json({ error: 'Invoice rate is zero. Update the invoice first.' });
     }
 
-    console.log(`[Invoice] Generating e-invoice for INV-${invoice.invoiceNo}`);
+    const displayNo = invoiceDisplayNo(invoice);
+    console.log(`[Invoice] Generating e-invoice for ${displayNo}`);
 
-    // Build proper payload from Invoice record
+    // Build proper payload from Invoice record — must use the PRINTED doc number (INV/ETH/NNN)
+    // so the IRN returned by GSTN matches what the customer sees on the PDF.
     const invoiceData = {
-      invoiceNo: `INV-${invoice.invoiceNo}`,
+      invoiceNo: displayNo,
       invoiceDate: invoice.invoiceDate,
       productName: invoice.productName,
       quantity: invoice.quantity,

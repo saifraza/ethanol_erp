@@ -6,6 +6,8 @@ import prisma from '../config/prisma';
 import { authenticate, AuthRequest, getCompanyFilter, getActiveCompanyId } from '../middleware/auth';
 import { asyncHandler } from '../shared/middleware';
 import { recomputeEthanolEntryByDate } from './ethanolProduct';
+import { nextInvoiceNo } from '../utils/invoiceCounter';
+import { invoiceDisplayNo } from '../utils/invoiceDisplay';
 
 const router = Router();
 
@@ -324,24 +326,29 @@ router.post('/', authenticate, upload.single('photo'), asyncHandler(async (req: 
                 const isInter = cust.state && cust.state !== 'Madhya Pradesh';
                 const total = Math.round((amount! + gstAmt) * 100) / 100;
 
-                const inv = await prisma.invoice.create({
-                  data: {
-                    customerId: cust.id, invoiceDate: dispatchDate, productName: 'ETHANOL',
-                    quantity: qtyBL, unit: 'LTR', rate: rate!, amount: amount!,
-                    gstPercent: gstPct, gstAmount: gstAmt,
-                    supplyType: isInter ? 'INTER_STATE' : 'INTRA_STATE',
-                    cgstPercent: isInter ? 0 : gstPct / 2, cgstAmount: isInter ? 0 : Math.round(gstAmt / 2 * 100) / 100,
-                    sgstPercent: isInter ? 0 : gstPct / 2, sgstAmount: isInter ? 0 : Math.round(gstAmt / 2 * 100) / 100,
-                    igstPercent: isInter ? gstPct : 0, igstAmount: isInter ? gstAmt : 0,
-                    totalAmount: total, balanceAmount: total, status: 'UNPAID', userId: 'system',
-                  },
+                const inv = await prisma.$transaction(async (tx) => {
+                  const customInvNo = await nextInvoiceNo(tx, 'ETH');
+                  const created = await tx.invoice.create({
+                    data: {
+                      customerId: cust.id, invoiceDate: dispatchDate, productName: 'ETHANOL',
+                      quantity: qtyBL, unit: 'LTR', rate: rate!, amount: amount!,
+                      gstPercent: gstPct, gstAmount: gstAmt,
+                      supplyType: isInter ? 'INTER_STATE' : 'INTRA_STATE',
+                      cgstPercent: isInter ? 0 : gstPct / 2, cgstAmount: isInter ? 0 : Math.round(gstAmt / 2 * 100) / 100,
+                      sgstPercent: isInter ? 0 : gstPct / 2, sgstAmount: isInter ? 0 : Math.round(gstAmt / 2 * 100) / 100,
+                      igstPercent: isInter ? gstPct : 0, igstAmount: isInter ? gstAmt : 0,
+                      totalAmount: total, balanceAmount: total, status: 'UNPAID', userId: 'system',
+                      remarks: customInvNo, // INV/ETH/NNN — printed number used everywhere for display
+                    },
+                  });
+                  await tx.ethanolLifting.update({ where: { id: lifting.id }, data: { invoiceId: created.id, invoiceNo: customInvNo } });
+                  return created;
                 });
-                await prisma.ethanolLifting.update({ where: { id: lifting.id }, data: { invoiceId: inv.id, invoiceNo: `INV-${inv.invoiceNo}` } });
 
                 // Generate IRN
                 if (cust.gstNo && cust.state && cust.pincode && cust.address) {
                   const irnRes = await generateIRN({
-                    invoiceNo: `INV-${inv.invoiceNo}`, invoiceDate: inv.invoiceDate,
+                    invoiceNo: invoiceDisplayNo(inv), invoiceDate: inv.invoiceDate,
                     productName: 'ETHANOL', quantity: inv.quantity, unit: 'LTR', rate: inv.rate, amount: inv.amount, gstPercent: inv.gstPercent,
                     customer: { gstin: cust.gstNo, name: cust.name, address: cust.address, city: cust.city || '', pincode: cust.pincode, state: cust.state, phone: cust.phone || '', email: cust.email || '' },
                   });

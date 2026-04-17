@@ -2,6 +2,7 @@ import { Router, Request, Response } from 'express';
 import prisma from '../config/prisma';
 import { authenticate, authorize, AuthRequest, getCompanyFilter, getActiveCompanyId } from '../middleware/auth';
 import { asyncHandler } from '../shared/middleware';
+import { invoiceDisplayNo } from '../utils/invoiceDisplay';
 import {
   generateEwayBill, buildEwayBillPayload, MSPIL,
   getStateCode, getHsnCode, getUnitCode, formatDateDDMMYYYY,
@@ -643,7 +644,7 @@ router.post('/:id/eway-bill', asyncHandler(async (req: AuthRequest, res: Respons
     // ── Sandbox Mode: Skip IRN, generate mock EWB ──
     if (mode === 'sandbox') {
       const custAddress = [customer.address, customer.city, customer.state, customer.pincode].filter(Boolean).join(', ');
-      const docNo = `INV-${invoice.invoiceNo}`;
+      const docNo = invoiceDisplayNo(invoice);
       const docDate = formatDateDDMMYYYY(invoice.invoiceDate || new Date());
       const isInterState = getStateCode(customer.state || '') !== '23';
       const gstHalf = (invoice.gstPercent || 18) / 2;
@@ -709,11 +710,13 @@ router.post('/:id/eway-bill', asyncHandler(async (req: AuthRequest, res: Respons
     let irn = invoice.irn as string | null;
 
     if (!irn) {
-      console.log(`[Shipment ${shipment.shipmentNo}] Step 1: Generating e-Invoice (IRN) from Invoice INV-${invoice.invoiceNo}...`);
+      const displayNo = invoiceDisplayNo(invoice);
+      console.log(`[Shipment ${shipment.shipmentNo}] Step 1: Generating e-Invoice (IRN) from Invoice ${displayNo}...`);
 
-      // Build IRN payload from the actual Invoice record
+      // Build IRN payload from the actual Invoice record — MUST use the printed
+      // doc number so GSTN registers the IRN against the same number the customer sees.
       const invoiceData = {
-        invoiceNo: `INV-${invoice.invoiceNo}`,
+        invoiceNo: displayNo,
         invoiceDate: invoice.invoiceDate,
         productName: invoice.productName,
         quantity: invoice.quantity,
@@ -771,9 +774,9 @@ router.post('/:id/eway-bill', asyncHandler(async (req: AuthRequest, res: Respons
         } as any,
       });
 
-      console.log(`[Shipment ${shipment.shipmentNo}] IRN generated: ${irn} (stored on Invoice INV-${invoice.invoiceNo})`);
+      console.log(`[Shipment ${shipment.shipmentNo}] IRN generated: ${irn} (stored on Invoice ${invoiceDisplayNo(invoice)})`);
     } else {
-      console.log(`[Shipment ${shipment.shipmentNo}] Step 1: IRN already exists on Invoice INV-${invoice.invoiceNo}: ${irn}`);
+      console.log(`[Shipment ${shipment.shipmentNo}] Step 1: IRN already exists on Invoice ${invoiceDisplayNo(invoice)}: ${irn}`);
     }
 
     // ── Step 2: Generate E-Way Bill from IRN ──

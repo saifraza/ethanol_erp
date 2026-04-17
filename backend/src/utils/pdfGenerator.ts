@@ -2,6 +2,7 @@ import { PDFDocument, rgb, StandardFonts } from 'pdf-lib';
 import * as fs from 'fs';
 import * as path from 'path';
 import { getTemplate, generateBarcode } from './templateHelper';
+import { invoiceDisplayNo } from './invoiceDisplay';
 
 const LOGO_PNG = path.join(__dirname, '../../assets/MSPIL_logo_transparent.png');
 
@@ -498,7 +499,7 @@ export async function generateInvoicePdf(inv: InvoiceData): Promise<Buffer> {
   // ═══ INVOICE DETAILS — 2 column grid ═══
   const col2 = width / 2 + 10;
   text('Invoice No:', mL, y, 9, fontBold, lightGray);
-  text(`INV-${inv.invoiceNo}`, mL + 62, y, 9, fontBold);
+  text(invoiceDisplayNo(inv), mL + 62, y, 9, fontBold);
   text('Date:', col2, y, 9, fontBold, lightGray);
   text(formatDate(inv.invoiceDate), col2 + 32, y, 9, fontBold);
   y -= 13;

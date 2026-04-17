@@ -8,6 +8,7 @@ import { generateIRN, generateEWBByIRN, generateStandaloneEWB } from '../service
 import { onSaleInvoiceCreated } from '../services/autoJournal';
 import { getStateCode, getHsnCode, MSPIL } from '../services/ewayBill';
 import { nextInvoiceNo, getInvoiceSeries } from '../utils/invoiceCounter';
+import { invoiceDisplayNo } from '../utils/invoiceDisplay';
 import { nextEthanolContractNo } from '../utils/contractNoGenerator';
 import fs from 'fs';
 import path from 'path';
@@ -313,6 +314,8 @@ router.post('/:id/liftings', asyncHandler(async (req: AuthRequest, res: Response
         const gst = calcGstSplit(amount!, contract.gstPercent || 18, cust.state, cust.gstNo);
         const total = Math.round((amount! + gst.gstAmount) * 100) / 100;
         const inv = await prisma.$transaction(async (tx) => {
+          // Atomic next invoice number from the global counter (INV/ETH/NNN)
+          const customInvNo = await nextInvoiceNo(tx, 'ETH');
           const created = await tx.invoice.create({
             data: {
               customerId: cust.id, invoiceDate: lifting.liftingDate,
@@ -322,9 +325,10 @@ router.post('/:id/liftings', asyncHandler(async (req: AuthRequest, res: Response
               cgstPercent: gst.cgstPercent, cgstAmount: gst.cgstAmount, sgstPercent: gst.sgstPercent, sgstAmount: gst.sgstAmount,
               igstPercent: gst.igstPercent, igstAmount: gst.igstAmount,
               totalAmount: total, balanceAmount: total, status: 'UNPAID', userId: 'system',
+              remarks: customInvNo, // INV/ETH/NNN — printed number, used everywhere for display
             },
           });
-          await tx.ethanolLifting.update({ where: { id: lifting.id }, data: { invoiceId: created.id, invoiceNo: `INV-${created.invoiceNo}`, status: 'DELIVERED', deliveredQtyKL: qtyBL / 1000 } });
+          await tx.ethanolLifting.update({ where: { id: lifting.id }, data: { invoiceId: created.id, invoiceNo: customInvNo, status: 'DELIVERED', deliveredQtyKL: qtyBL / 1000 } });
           return created;
         });
         createdInvoice = inv;
@@ -346,7 +350,7 @@ router.post('/:id/liftings', asyncHandler(async (req: AuthRequest, res: Response
           setImmediate(async () => {
             try {
               const irnRes = await generateIRN({
-                invoiceNo: `INV-${inv.invoiceNo}`, invoiceDate: inv.invoiceDate,
+                invoiceNo: invoiceDisplayNo(inv), invoiceDate: inv.invoiceDate,
                 productName: inv.productName, quantity: inv.quantity, unit: 'LTR', rate: inv.rate, amount: inv.amount, gstPercent: inv.gstPercent,
                 customer: { gstin: cust.gstNo!, name: cust.name, address: cust.address!, city: cust.city || '', pincode: cust.pincode!, state: cust.state!, phone: cust.phone || '', email: cust.email || '' },
               });
@@ -908,7 +912,7 @@ router.post('/:id/liftings/:liftingId/e-invoice', asyncHandler(async (req: AuthR
 
     if (!irnAlreadyExists) {
       const invoiceData = {
-        invoiceNo: lifting.invoiceNo || (isJobWork ? `MSPIL/ETH/${String(invoice.invoiceNo).padStart(3, '0')}` : `INV-${invoice.invoiceNo}`),
+        invoiceNo: lifting.invoiceNo || invoiceDisplayNo(invoice),
         invoiceDate: invoice.invoiceDate,
         productName: invoice.productName,
         quantity: invoice.quantity,
@@ -1085,7 +1089,7 @@ router.post('/:id/liftings/:liftingId/e-invoice', asyncHandler(async (req: AuthR
       success: true,
       irn,
       ackNo,
-      invoiceNo: `INV-${invoice.invoiceNo}`,
+      invoiceNo: invoiceDisplayNo(invoice),
       ewayBillNo,
       ewayBillDate,
       ewbError,

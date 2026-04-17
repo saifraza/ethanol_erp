@@ -5,6 +5,7 @@ import {
   Clock, MapPin, Trash2, Plus, ClipboardList, Mail
 } from 'lucide-react';
 import api from '../../services/api';
+import { invoiceDisplayNo } from '../../utils/invoiceDisplay';
 
 interface Shipment {
   id: string; vehicleNo: string;
@@ -173,7 +174,7 @@ export default function Shipments() {
     setEwbLoading(s.id);
     try {
       const r = await api.post(`/shipments/${s.id}/eway-bill`);
-      const invMsg = r.data.invoiceNo ? `INV-${r.data.invoiceNo}` : '';
+      const invMsg = r.data.invoiceNo || '';
       const irnMsg = r.data.irn ? ` → IRN ✓` : '';
       const sandbox = r.data.message?.includes('SANDBOX') ? ' (sandbox)' : '';
       flash('ok', `${invMsg}${irnMsg} → EWB: ${r.data.ewayBillNo}${sandbox}`);
@@ -410,11 +411,12 @@ export default function Shipments() {
 
       const res = await api.post('/invoices', invoiceData);
       const inv = res.data;
-      // Update shipment invoiceRef
+      // Update shipment invoiceRef — use printed doc number if stored in remarks
+      const displayNo = invoiceDisplayNo(inv);
       if (inv.invoiceNo) {
-        await api.put(`/shipments/${billShipment.id}`, { invoiceRef: `INV-${inv.invoiceNo}` });
+        await api.put(`/shipments/${billShipment.id}`, { invoiceRef: displayNo });
       }
-      flash('ok', `Bill #${inv.invoiceNo} created — ₹${inv.totalAmount?.toLocaleString('en-IN')}`);
+      flash('ok', `Bill ${displayNo} created — ₹${inv.totalAmount?.toLocaleString('en-IN')}`);
       setBillShipment(null);
       load();
     } catch (e: any) {
