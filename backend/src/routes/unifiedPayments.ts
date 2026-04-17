@@ -904,15 +904,15 @@ router.get('/outgoing/pending', asyncHandler(async (req: AuthRequest, res: Respo
     }
 
     // Payment status — clearer lifecycle tracking
+    // For no-invoice flows (fuel / direct PO payments), the real benchmark is the received
+    // GRN value — not the PO ceiling. If the team has paid up to what's been delivered,
+    // there's nothing owed right now, so mark it PAID (even if the PO has more capacity).
     let paymentStatus: PendingPayable['paymentStatus'] = 'PO_APPROVED';
     if (grns.length === 0 && invoices.length === 0 && totalPaid === 0) paymentStatus = 'PO_APPROVED';
     else if (grns.length === 0) paymentStatus = 'NO_GRN';
     else if (invoices.length === 0 && totalPaid === 0) paymentStatus = 'GRN_RECEIVED';
     else if (invoices.length === 0 && totalPaid > 0) {
-      // Direct PO payments (no invoice): check if fully paid
-      const effectiveAmt = (po.dealType === 'OPEN')
-        ? grns.reduce((s, g) => s + (g.totalAmount || 0), 0)
-        : po.grandTotal;
+      const effectiveAmt = grns.reduce((s, g) => s + (g.totalAmount || 0), 0);
       paymentStatus = (totalPaid >= effectiveAmt - 0.01 && effectiveAmt > 0) ? 'PAID' : 'PARTIAL_PAID';
     }
     else if (totalPaid > 0 && invoiceBalance > 0) paymentStatus = 'PARTIAL_PAID';
@@ -932,6 +932,13 @@ router.get('/outgoing/pending', asyncHandler(async (req: AuthRequest, res: Respo
     // Balance: received value - paid (only SETTLED payments count)
     const payableBase = invoices.length > 0 ? invoiceBalance : receivedValue;
     const balance = invoices.length > 0 ? invoiceBalance : Math.max(0, payableBase - totalPaid);
+
+    // Nothing owed right now → don't flag overdue. Row stays on the list (PO still open),
+    // but the due-date chip goes neutral and the row shows as PAID-up-to-date.
+    if (balance <= 0.01) {
+      urgency = 'none';
+      daysOverdue = null;
+    }
 
     pending.push({
       poId: po.id,

@@ -1071,8 +1071,13 @@ export default function PaymentsOut() {
                                 <span className="text-[9px] font-bold uppercase px-1.5 py-0.5 border border-slate-300 bg-slate-50 text-slate-600">{item.paymentTerms || `NET${item.creditDays}`}</span>
                               </td>
                               <td className="px-3 py-1.5 border-r border-slate-100 text-right font-mono tabular-nums">
-                                {fmt(item.dealType === 'OPEN' ? item.grnTotalValue : item.poAmount)}
-                                {item.dealType === 'OPEN' && <div className="text-[8px] text-slate-400">GRN value</div>}
+                                {(() => {
+                                  const useGrnValue = item.dealType === 'OPEN' || !item.poAmount;
+                                  return <>
+                                    {fmt(useGrnValue ? (item.grnTotalValue || 0) : item.poAmount)}
+                                    {useGrnValue && (item.grnTotalValue || 0) > 0 && <div className="text-[8px] text-slate-400">GRN value</div>}
+                                  </>;
+                                })()}
                               </td>
                               <td className="px-3 py-1.5 border-r border-slate-100 text-right font-mono tabular-nums">{fmtAmt(item.totalInvoiced)}</td>
                               <td className={`px-3 py-1.5 border-r border-slate-100 text-right font-mono tabular-nums ${item.totalPaid > 0 ? 'text-green-700 font-medium' : 'text-slate-400'}`}>{fmtAmt(item.totalPaid)}</td>
