@@ -2607,6 +2607,35 @@ export default function PaymentsOut() {
           let enteredBase = 0, enteredGst = 0;
           if (poPayIncludeGst === true && enteredAmt > 0) { enteredBase = enteredAmt * baseFraction; enteredGst = enteredAmt * gstFraction; }
           else if (poPayIncludeGst === false && enteredAmt > 0) { enteredBase = enteredAmt; enteredGst = 0; }
+
+          // Waterfall the typed amount across selected targets to know how much hits THIS PO
+          // (the current one the modal is open for), vs other POs, vs advance. The breakdown
+          // table's "This Payment / After This / Advance" rows use toCurrentPo only, since the
+          // table is scoped to the current PO.
+          const currentBalForWaterfall = Math.max(0, recvTotal - paidBase - paidGst - (poPendingCash || 0));
+          let toCurrentPo = 0, toOtherPOs = 0, toAdvanceWaterfall = 0;
+          let _remaining = enteredAmt;
+          for (const target of payTargets) {
+            if (_remaining <= 0) break;
+            if (target === 'advance') { toAdvanceWaterfall += _remaining; _remaining = 0; break; }
+            if (target === 'current') {
+              const take = Math.min(_remaining, currentBalForWaterfall);
+              toCurrentPo += take; _remaining -= take;
+            } else {
+              const sib = pendingItems.find(p => p.poId === target);
+              if (!sib) continue;
+              const take = Math.min(_remaining, sib.balance);
+              toOtherPOs += take; _remaining -= take;
+            }
+          }
+          if (_remaining > 0) toAdvanceWaterfall += _remaining; // auto-spill to advance
+          // Base/GST split of the portion hitting CURRENT PO
+          const thisPayBase = (poPayIncludeGst === true ? toCurrentPo * baseFraction : toCurrentPo);
+          const thisPayGst = (poPayIncludeGst === true ? toCurrentPo * gstFraction : 0);
+          const newBalBase = Math.max(0, balBase - thisPayBase);
+          const newBalGst = Math.max(0, balGst - thisPayGst);
+          const newBalTotal = newBalBase + newBalGst;
+          const showPreview = enteredAmt > 0 && poPayIncludeGst !== null;
           return (
           <div className="fixed inset-0 bg-black/50 flex items-start justify-center z-50 overflow-y-auto py-4" onClick={() => setPoPayItem(null)}>
             <div className="bg-white shadow-2xl w-full max-w-4xl mx-4" onClick={e => e.stopPropagation()}>
@@ -2672,6 +2701,37 @@ export default function PaymentsOut() {
                       <td className={`text-right px-2 py-1.5 font-bold border-l border-slate-200 ${balGst > 0 ? 'text-red-700' : 'text-slate-400'}`}>{fmt(balGst)}</td>
                       <td className={`text-right px-2 py-1.5 font-bold border-l border-slate-200 ${balTotal > 0 ? 'text-red-800 text-sm' : 'text-green-700'}`}>{balTotal > 0 ? fmt(balTotal) : '— SETTLED —'}</td>
                     </tr>
+                    {/* ═══ LIVE PREVIEW — shows the effect of the amount being typed ═══ */}
+                    {showPreview && (
+                      <>
+                        <tr className="border-t-2 border-emerald-400 bg-emerald-50">
+                          <td className="px-2 py-1.5 text-emerald-800 font-bold font-sans uppercase tracking-widest text-[10px]">
+                            ↓ If confirmed · This Payment {toCurrentPo < enteredAmt && <span className="normal-case font-normal text-[9px] text-slate-500">(to this PO only)</span>}
+                          </td>
+                          <td className="text-right px-2 py-1.5 text-emerald-700 font-bold border-l border-emerald-200">{fmt(thisPayBase)}</td>
+                          <td className="text-right px-2 py-1.5 text-emerald-700 font-bold border-l border-emerald-200">{fmt(thisPayGst)}</td>
+                          <td className="text-right px-2 py-1.5 text-emerald-800 font-bold border-l border-emerald-200">{fmt(toCurrentPo)}</td>
+                        </tr>
+                        <tr className="border-b border-emerald-200 bg-emerald-50/70">
+                          <td className="px-2 py-1.5 text-slate-700 font-bold font-sans uppercase tracking-widest text-[10px]">
+                            = Balance After This
+                          </td>
+                          <td className={`text-right px-2 py-1.5 font-bold border-l border-emerald-200 ${newBalBase > 0 ? 'text-orange-700' : 'text-green-700'}`}>{fmt(newBalBase)}</td>
+                          <td className={`text-right px-2 py-1.5 font-bold border-l border-emerald-200 ${newBalGst > 0 ? 'text-orange-700' : 'text-green-700'}`}>{fmt(newBalGst)}</td>
+                          <td className={`text-right px-2 py-1.5 font-bold border-l border-emerald-200 ${newBalTotal > 0 ? 'text-orange-700' : 'text-green-700 text-sm'}`}>{newBalTotal > 0 ? fmt(newBalTotal) : '— WILL BE SETTLED ✓'}</td>
+                        </tr>
+                        {(toOtherPOs > 0 || toAdvanceWaterfall > 0) && (
+                          <tr className="bg-amber-50 border-b border-amber-200">
+                            <td className="px-2 py-1.5 text-amber-800 font-sans text-[10px] font-bold uppercase tracking-widest" colSpan={3}>
+                              {toOtherPOs > 0 && <>Other POs in this transfer: <b className="font-mono normal-case">{fmt(toOtherPOs)}</b></>}
+                              {toOtherPOs > 0 && toAdvanceWaterfall > 0 && <span className="mx-2 text-amber-400">·</span>}
+                              {toAdvanceWaterfall > 0 && <>New Vendor Advance: <b className="font-mono normal-case">{fmt(toAdvanceWaterfall)}</b></>}
+                            </td>
+                            <td className="text-right px-2 py-1.5 text-amber-900 font-bold border-l border-amber-200">{fmt(toOtherPOs + toAdvanceWaterfall)}</td>
+                          </tr>
+                        )}
+                      </>
+                    )}
                   </tbody>
                 </table>
               </div>
