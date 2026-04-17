@@ -83,8 +83,9 @@ export default function Fermentation() {
  const [showNewBatch, setShowNewBatch] = useState(false);
  const [pfHistory, setPfHistory] = useState<any[]>([]);
  const [fermHistory, setFermHistory] = useState<any[]>([]);
- const [historyTab, setHistoryTab] = useState<'ferm' | 'pf' | 'bw'>('ferm');
+ const [historyTab, setHistoryTab] = useState<'ferm' | 'pf' | 'bw' | 'fills'>('ferm');
  const [bwHistory, setBwHistory] = useState<BeerWellReading[]>([]);
+ const [fillEvents, setFillEvents] = useState<any[]>([]);
  const [opcLoading, setOpcLoading] = useState(false);
  const [expandedHist, setExpandedHist] = useState<string | null>(null);
 
@@ -127,6 +128,9 @@ export default function Fermentation() {
  api.get('/fermentation/beer-well').then(h => {
  setBwHistory(h.data.readings || []);
  }).catch(() => {});
+ api.get('/fermentation/fills?take=200').then(h => {
+ setFillEvents(Array.isArray(h.data) ? h.data : []);
+ }).catch(() => setFillEvents([]));
  } catch { flash('err', 'Failed to load'); }
  finally { setLoading(false); }
  }, []);
@@ -1701,6 +1705,7 @@ export default function Fermentation() {
  <button onClick={() => setHistoryTab('ferm')} className={`px-3 py-1 text-xs font-semibold ${historyTab === 'ferm' ? 'bg-indigo-100 text-indigo-700' : 'text-gray-400 hover:text-gray-600'}`}>Fermenters</button>
  <button onClick={() => setHistoryTab('pf')} className={`px-3 py-1 text-xs font-semibold ${historyTab === 'pf' ? 'bg-violet-100 text-violet-700' : 'text-gray-400 hover:text-gray-600'}`}>Pre-Ferm</button>
  <button onClick={() => setHistoryTab('bw')} className={`px-3 py-1 text-xs font-semibold ${historyTab === 'bw' ? 'bg-amber-100 text-amber-700' : 'text-gray-400 hover:text-gray-600'}`}>Beer Well</button>
+ <button onClick={() => setHistoryTab('fills')} className={`px-3 py-1 text-xs font-semibold ${historyTab === 'fills' ? 'bg-sky-100 text-sky-700' : 'text-gray-400 hover:text-gray-600'}`}>Fill Events</button>
  </div>
  </div>
  <div className="overflow-x-auto">
@@ -2058,6 +2063,65 @@ export default function Fermentation() {
  </table>
  ) : (
  <div className="text-center text-gray-400 py-8 text-sm">No beer well readings yet</div>
+ )
+ ) : historyTab === 'fills' ? (
+ fillEvents.length > 0 ? (
+ <div>
+ <div className="px-4 py-2 bg-sky-50 border-b border-sky-100 text-[11px] text-sky-900">
+ <b>Detected fill events</b> — computed from OPC level + lab readings, not operator buttons.
+ Start = level &lt;20% rising; End = sustained plateau ≥40%. CIP (temp &gt;40°C) is rejected.
+ Matched batches shown with #; unmatched orphans surface as review candidates.
+ </div>
+ <table className="w-full text-xs">
+ <thead>
+ <tr className="bg-gray-50 text-gray-500 border-b">
+ <th className="text-left px-3 py-2 font-semibold">F#</th>
+ <th className="text-left px-3 py-2 font-semibold">Batch</th>
+ <th className="text-left px-3 py-2 font-semibold">Start</th>
+ <th className="text-left px-3 py-2 font-semibold">End</th>
+ <th className="text-right px-3 py-2 font-semibold">Duration</th>
+ <th className="text-right px-3 py-2 font-semibold">Start %</th>
+ <th className="text-right px-3 py-2 font-semibold">Peak %</th>
+ <th className="text-center px-3 py-2 font-semibold">Conf</th>
+ <th className="text-center px-3 py-2 font-semibold">Src</th>
+ <th className="text-center px-3 py-2 font-semibold">Checks</th>
+ </tr>
+ </thead>
+ <tbody>
+ {fillEvents.map((e: any) => {
+ const cc = e.crossChecks || {};
+ const inProgress = e.endTime == null;
+ const confColor = e.confidence === 'HIGH' ? 'bg-emerald-100 text-emerald-700' : e.confidence === 'MEDIUM' ? 'bg-amber-100 text-amber-700' : 'bg-gray-100 text-gray-600';
+ const srcColor = e.source === 'OPC' ? 'bg-sky-100 text-sky-700' : e.source === 'HYBRID' ? 'bg-violet-100 text-violet-700' : 'bg-slate-100 text-slate-600';
+ const fmt = (t: string | null) => t ? new Date(t).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit', hour12: true }) : '—';
+ return (
+ <tr key={e.id} className={`border-b border-gray-50 hover:bg-gray-50 ${inProgress ? 'bg-sky-50/40' : ''}`}>
+ <td className="px-3 py-2 font-semibold text-indigo-700">F-{e.fermenterNo}</td>
+ <td className="px-3 py-2 font-bold text-gray-800">{e.batchNo != null ? `#${e.batchNo}` : <span className="text-amber-600">ORPHAN</span>}</td>
+ <td className="px-3 py-2 text-gray-600">{fmt(e.startTime)}</td>
+ <td className="px-3 py-2 text-gray-600">{inProgress ? <span className="text-sky-700 font-semibold">in progress</span> : fmt(e.endTime)}</td>
+ <td className="px-3 py-2 text-right font-mono tabular-nums">{e.durationHours != null ? `${e.durationHours.toFixed(1)} h` : '—'}</td>
+ <td className="px-3 py-2 text-right font-mono tabular-nums">{e.startLevel?.toFixed(1)}</td>
+ <td className="px-3 py-2 text-right font-mono tabular-nums font-semibold">{e.peakLevel?.toFixed(1)}</td>
+ <td className="px-3 py-2 text-center"><span className={`px-2 py-0.5 text-[10px] font-bold ${confColor}`}>{e.confidence}</span></td>
+ <td className="px-3 py-2 text-center"><span className={`px-2 py-0.5 text-[10px] font-bold ${srcColor}`}>{e.source}</span></td>
+ <td className="px-3 py-2 text-center">
+ <div className="flex items-center justify-center gap-1 text-[10px]" title={`startOk=${!!cc.startOk} endOk=${!!cc.endOk} tempOk=${!!cc.tempOk} pfDropped=${!!cc.pfDropped} labWithin2h=${!!cc.labWithin2h}`}>
+ <span className={cc.startOk ? 'text-emerald-600' : 'text-gray-300'}>S</span>
+ <span className={cc.endOk ? 'text-emerald-600' : 'text-gray-300'}>E</span>
+ <span className={cc.tempOk ? 'text-emerald-600' : 'text-gray-300'}>T</span>
+ <span className={cc.pfDropped ? 'text-emerald-600' : 'text-gray-300'}>P</span>
+ <span className={cc.labWithin2h ? 'text-emerald-600' : 'text-gray-300'}>L</span>
+ </div>
+ </td>
+ </tr>
+ );
+ })}
+ </tbody>
+ </table>
+ </div>
+ ) : (
+ <div className="text-center text-gray-400 py-8 text-sm">No fill events detected yet — run the backfill or wait for the live cron (every 5 min)</div>
  )
  ) : null}
  </div>
