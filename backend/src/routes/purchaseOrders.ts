@@ -899,7 +899,7 @@ router.get('/:id/payments', asyncHandler(async (req: AuthRequest, res: Response)
       ],
     },
     orderBy: { paymentDate: 'asc' },
-    select: { id: true, paymentDate: true, amount: true, mode: true, reference: true, remarks: true, isAdvance: true },
+    select: { id: true, paymentDate: true, amount: true, mode: true, reference: true, remarks: true, isAdvance: true, paymentStatus: true, paymentNo: true, bankReceiptPath: true, adviceSentAt: true },
   });
 
   let running = 0;

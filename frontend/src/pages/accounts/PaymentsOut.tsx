@@ -540,10 +540,19 @@ export default function PaymentsOut() {
   const fetchPOPayments = async (poId: string) => {
     try {
       const res = await api.get(`/purchase-orders/${poId}/payments`);
-      setPoPayments(res.data.payments || []);
+      const payments = res.data.payments || [];
+      setPoPayments(payments);
       setPoPendingCash(res.data.pendingCash || 0);
       setPoPendingCashVouchers(res.data.pendingCashVouchers || []);
       setPoReceivedValue(res.data.receivedValue || 0);
+      // If there's a pending INITIATED bank payment (no UTR yet), auto-surface the
+      // yellow "Enter UTR" block so any team member reopening the modal sees it.
+      const initiated = payments.find((p: { paymentStatus?: string; reference?: string }) =>
+        p.paymentStatus === 'INITIATED' || (!p.reference && p.paymentStatus !== 'CANCELLED')
+      );
+      setBankPendingPayment(initiated || null);
+      setBankUtrInput('');
+      setBankReceiptFile(null);
     } catch { setPoPayments([]); setPoPendingCash(0); setPoPendingCashVouchers([]); setPoReceivedValue(0); }
   };
 
