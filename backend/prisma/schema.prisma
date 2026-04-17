@@ -2307,6 +2307,14 @@ model PurchaseOrder {
   transportBy          String? // BY_US, BY_SUPPLIER
   // Deal type
   dealType             String               @default("STANDARD") // STANDARD (fixed qty PO), OPEN (running account, no qty limit)
+  // What kind of procurement is this PO for?
+  // GOODS      — physical inventory items (default, full HSN + GRN flow)
+  // SERVICE    — service engagement (SAC code, no GRN / service completion note)
+  // CONTRACTOR — contractor work (labour, civil, electrical) — may link to Contractor master
+  // RENT       — premises / equipment / vehicle rent (recurring)
+  // UTILITY    — electricity, water, internet, phone, subscription
+  // OTHER      — anything else that needs a PO umbrella
+  poType               String               @default("GOODS") // GOODS | SERVICE | CONTRACTOR | RENT | UTILITY | OTHER
   // Status
   status               String               @default("DRAFT") // DRAFT, APPROVED, SENT, PARTIAL_RECEIVED, RECEIVED, CLOSED, CANCELLED
   approvedBy           String?

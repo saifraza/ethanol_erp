@@ -42,6 +42,8 @@ const createPOSchema = z.object({
   termsAccepted: z.array(z.string()).optional(),
   // Per-PO TDS section override (e.g., 194Q for grain purchase)
   overrideTdsSectionId: z.string().optional().nullable(),
+  // What kind of procurement this PO is for — expands PO to cover services, contractors, rent, utilities
+  poType: z.enum(['GOODS', 'SERVICE', 'CONTRACTOR', 'RENT', 'UTILITY', 'OTHER']).optional().default('GOODS'),
 });
 
 const updatePOSchema = z.object({
@@ -62,6 +64,7 @@ const updatePOSchema = z.object({
   lines: z.array(poLineSchema).optional(),
   termsAccepted: z.array(z.string()).optional(),
   overrideTdsSectionId: z.string().optional().nullable(),
+  poType: z.enum(['GOODS', 'SERVICE', 'CONTRACTOR', 'RENT', 'UTILITY', 'OTHER']).optional(),
 });
 import { generatePOPdf } from '../utils/pdfGenerator';
 // RAG indexing removed — only compliance docs go to RAG
@@ -381,12 +384,24 @@ router.get('/:id', asyncHandler(async (req: AuthRequest, res: Response) => {
 // POST / — create PO with lines in a transaction
 router.post('/', validate(createPOSchema), asyncHandler(async (req: AuthRequest, res: Response) => {
     const b = req.body;
+    const poType = (b.poType as string) || 'GOODS';
 
-    // Validate every line has an inventory item linked
-    const missingItem = (b.lines || []).some((l: any) => !l.inventoryItemId && !l.materialId);
-    if (missingItem) {
-      res.status(400).json({ error: 'Every PO line must have an inventory item selected' });
-      return;
+    // Validate every line has an inventory item linked — ONLY for GOODS POs.
+    // SERVICE / CONTRACTOR / RENT / UTILITY / OTHER POs use free-text descriptions
+    // (no inventory master needed; line.description + quantity + rate is enough).
+    if (poType === 'GOODS') {
+      const missingItem = (b.lines || []).some((l: any) => !l.inventoryItemId && !l.materialId);
+      if (missingItem) {
+        res.status(400).json({ error: 'Every PO line must have an inventory item selected' });
+        return;
+      }
+    } else {
+      // Non-GOODS PO: description is required on every line
+      const missingDesc = (b.lines || []).some((l: any) => !(l.description || '').trim());
+      if (missingDesc) {
+        res.status(400).json({ error: 'Every line on a non-goods PO must have a description' });
+        return;
+      }
     }
 
     // Process lines via shared helper — HSN master is source of truth for GST
@@ -467,6 +482,7 @@ router.post('/', validate(createPOSchema), asyncHandler(async (req: AuthRequest,
         tdsComputedAt: new Date(),
         overrideTdsSectionId: b.overrideTdsSectionId || null,
         termsAccepted,
+        poType,
         status: 'DRAFT',
         userId: req.user!.id,
         companyId,

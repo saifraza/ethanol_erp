@@ -39,7 +39,7 @@ interface Material {
 }
 
 interface POLine {
-  inventoryItemId: string;
+  inventoryItemId: string | null; // null allowed for SERVICE / CONTRACTOR / RENT / UTILITY / OTHER POs
   description: string;
   hsnCode: string;
   quantity: number;
@@ -76,6 +76,8 @@ interface PurchaseOrder {
   totalInvoiced: number;
   totalPaid: number;
   paymentStatus: string;
+  poType?: 'GOODS' | 'SERVICE' | 'CONTRACTOR' | 'RENT' | 'UTILITY' | 'OTHER';
+  dealType?: string;
 }
 
 interface APIResponse {
@@ -181,6 +183,8 @@ const PurchaseOrders: React.FC = () => {
     lines: [] as POLine[],
     termsAccepted: [] as string[],
     overrideTdsSectionId: null as string | null,
+    // PO type — expands PO coverage to services, contractors, rent, utilities
+    poType: 'GOODS' as 'GOODS' | 'SERVICE' | 'CONTRACTOR' | 'RENT' | 'UTILITY' | 'OTHER',
   });
 
   // RM contract T&C catalog + 194Q section ID (loaded once)
@@ -367,6 +371,7 @@ const PurchaseOrders: React.FC = () => {
           })),
           termsAccepted: po.termsAccepted || [],
           overrideTdsSectionId: po.overrideTdsSectionId || null,
+          poType: po.poType || 'GOODS',
         });
         setTermsUserEdited(true); // keep their saved choices on edit
       }
@@ -427,23 +432,29 @@ const PurchaseOrders: React.FC = () => {
   };
 
   const handleAddLine = async () => {
-    if (!newLine.inventoryItemId) {
+    const isGoods = formData.poType === 'GOODS';
+    // Goods: inventory item required. Non-goods: description required.
+    if (isGoods && !newLine.inventoryItemId) {
       setError('Please select a material');
       return;
     }
+    if (!isGoods && !(newLine.description || '').trim()) {
+      setError('Please enter a line description');
+      return;
+    }
 
-    const material = materials.find((m) => m.id === newLine.inventoryItemId);
-    if (!material) return;
+    const material = isGoods ? materials.find((m) => m.id === newLine.inventoryItemId) : null;
+    if (isGoods && !material) return;
 
     const lineToAdd: POLine = {
-      inventoryItemId: newLine.inventoryItemId,
-      description: material.name || material.description || '',
-      hsnCode: material.hsnCode,
-      quantity: newLine.quantity || 0,
-      unit: material.unit,
+      inventoryItemId: isGoods ? (newLine.inventoryItemId || null) : null,
+      description: isGoods ? (material?.name || material?.description || '') : (newLine.description || ''),
+      hsnCode: isGoods ? (material?.hsnCode || '') : (newLine.hsnCode || ''),
+      quantity: newLine.quantity || (isGoods ? 0 : 1),
+      unit: isGoods ? (material?.unit || 'NOS') : (newLine.unit || 'NOS'),
       rate: newLine.rate || 0,
       discountPercent: newLine.discountPercent || 0,
-      gstPercent: material.gstPercent,
+      gstPercent: isGoods ? (material?.gstPercent || 0) : (newLine.gstPercent || 0),
       isRCM: newLine.isRCM || false,
     };
 
@@ -452,14 +463,16 @@ const PurchaseOrders: React.FC = () => {
       lines: [...formData.lines, lineToAdd],
     });
 
-    // Auto-save vendor-specific rate silently (no blocking dialog)
-    const enteredRate = newLine.rate || 0;
-    const defaultRate = material.defaultRate || 0;
-    if (formData.vendorId && enteredRate > 0 && enteredRate !== defaultRate) {
-      api.post(`/vendors/${formData.vendorId}/items`, {
-        inventoryItemId: newLine.inventoryItemId,
-        rate: enteredRate,
-      }).catch(() => { /* silent */ });
+    // Auto-save vendor-specific rate silently (goods only — non-goods have no master item)
+    if (isGoods && material) {
+      const enteredRate = newLine.rate || 0;
+      const defaultRate = (material as { defaultRate?: number }).defaultRate || 0;
+      if (formData.vendorId && enteredRate > 0 && enteredRate !== defaultRate) {
+        api.post(`/vendors/${formData.vendorId}/items`, {
+          inventoryItemId: newLine.inventoryItemId,
+          rate: enteredRate,
+        }).catch(() => { /* silent */ });
+      }
     }
 
     setNewLine({
@@ -577,6 +590,7 @@ const PurchaseOrders: React.FC = () => {
         lines: [],
         termsAccepted: [],
         overrideTdsSectionId: null,
+        poType: 'GOODS',
       });
       setTermsUserEdited(false);
       setShowCreateForm(false);
@@ -781,6 +795,37 @@ const PurchaseOrders: React.FC = () => {
               </div>
 
               <form onSubmit={handleSubmitPO} className="p-4 space-y-4 max-h-[80vh] overflow-y-auto">
+                {/* ═══ PO Type picker ═══ */}
+                <div className="border border-slate-200 bg-slate-50 px-3 py-2">
+                  <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest block mb-1.5">What is this PO for? *</label>
+                  <div className="grid grid-cols-3 md:grid-cols-6 gap-2">
+                    {[
+                      { key: 'GOODS',      label: 'Goods',      hint: 'Physical inventory items (HSN + GRN)' },
+                      { key: 'SERVICE',    label: 'Service',    hint: 'Services (SAC code, no physical delivery)' },
+                      { key: 'CONTRACTOR', label: 'Contractor', hint: 'Labour / civil / electrical work' },
+                      { key: 'RENT',       label: 'Rent',       hint: 'Premises / equipment / vehicle rent' },
+                      { key: 'UTILITY',    label: 'Utility',    hint: 'Electricity, water, internet, phone' },
+                      { key: 'OTHER',      label: 'Other',      hint: 'Anything else that needs a PO umbrella' },
+                    ].map(t => (
+                      <button type="button" key={t.key}
+                        onClick={() => setFormData(f => ({ ...f, poType: t.key as typeof f.poType }))}
+                        className={`px-2 py-1.5 border text-left ${formData.poType === t.key ? 'border-indigo-600 bg-indigo-50' : 'border-slate-300 bg-white hover:bg-slate-50'}`}
+                        title={t.hint}>
+                        <div className="flex items-center gap-1.5">
+                          <span className={`inline-block w-2.5 h-2.5 rounded-full flex-shrink-0 ${formData.poType === t.key ? 'bg-indigo-600' : 'bg-white border-2 border-slate-300'}`}></span>
+                          <span className="text-[11px] font-bold text-slate-800">{t.label}</span>
+                        </div>
+                        <div className="text-[9px] text-slate-500 mt-0.5 leading-tight">{t.hint}</div>
+                      </button>
+                    ))}
+                  </div>
+                  {formData.poType !== 'GOODS' && (
+                    <div className="mt-1.5 text-[10px] text-amber-700 bg-amber-50 border border-amber-200 px-2 py-1">
+                      <b>Non-goods PO:</b> line items use free-text descriptions (no inventory master needed). HSN optional — use SAC code if applicable.
+                    </div>
+                  )}
+                </div>
+
                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-3">
                   <div>
                     <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-0.5 block">Vendor *</label>
@@ -1158,8 +1203,13 @@ const PurchaseOrders: React.FC = () => {
                 {filteredPOs.map((po) => (
                   <React.Fragment key={po.id}>
                   <tr className="border-b border-slate-100 even:bg-slate-50/70 hover:bg-blue-50/60">
-                    <td className="px-3 py-1.5 text-xs border-r border-slate-100">
+                    <td className="px-3 py-1.5 text-xs border-r border-slate-100 whitespace-nowrap">
                       <button onClick={() => setSelectedPOId(selectedPOId === po.id ? null : po.id)} className="font-bold text-blue-700 hover:underline">PO-{po.poNo}</button>
+                      {po.poType && po.poType !== 'GOODS' && (
+                        <span className="ml-1 text-[8px] font-bold uppercase px-1 py-0.5 border border-indigo-300 bg-indigo-50 text-indigo-700" title={`Non-goods PO · ${po.poType}`}>
+                          {po.poType}
+                        </span>
+                      )}
                     </td>
                     <td className="px-3 py-1.5 text-xs border-r border-slate-100">{po.vendor?.name || 'Unknown'}</td>
                     <td className="px-3 py-1.5 text-xs border-r border-slate-100">
