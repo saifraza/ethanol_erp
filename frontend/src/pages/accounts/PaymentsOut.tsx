@@ -342,12 +342,15 @@ export default function PaymentsOut() {
   const [scanUploading, setScanUploading] = useState(false);
   const [scanResult, setScanResult] = useState<{ extracted: Record<string, unknown> | null; warnings: string[] } | null>(null);
 
-  // Pay target — one-click destination for the typed amount. Overflow (when the typed
-  // amount exceeds the target PO's balance) automatically spills over into vendor advance.
-  //   'current'  → pay the PO the modal was opened for
-  //   <poId>     → pay a sibling open PO of the same vendor
-  //   'advance'  → hold entirely as vendor advance (no PO attribution)
-  const [payTarget, setPayTarget] = useState<string>('current');
+  // Pay targets — ordered list of destinations for the typed amount. Click order = fill
+  // order (waterfall). Entries:
+  //   'current'  → pay the PO the modal was opened for (or the matching PO id)
+  //   <poId>     → a sibling open PO of the same vendor
+  //   'advance'  → hold as vendor advance (no PO attribution)
+  // The waterfall fills each selected PO up to its balance; any leftover at the tail
+  // auto-goes to Vendor Advance (even if 'advance' isn't explicitly selected — overflow
+  // must always have a destination).
+  const [payTargets, setPayTargets] = useState<string[]>(['current']);
   const [tdsCalc, setTdsCalc] = useState<{ shouldDeduct: boolean; rate: number; tdsAmount: number; netAmount: number; ledgerId: string | null; sectionLabel: string; reason: string } | null>(null);
   const [tdsOverride, setTdsOverride] = useState(true); // true = apply TDS, false = skip
   const [tdsLoading, setTdsLoading] = useState(false);
@@ -598,109 +601,54 @@ export default function PaymentsOut() {
     }
     const hasGstToSend: boolean = poHasGstOnPO ? !!poPayIncludeGst : false;
 
-    // Derive allocation from the single target picker. Overflow auto-spills to advance.
+    // Waterfall allocation: fill each selected target (in click order) up to its balance.
+    // Leftover lands in Vendor Advance — even if 'advance' wasn't explicitly selected.
     const totalAmt = parseFloat(poPayAmount);
     const currentBal = Math.max(0, (poReceivedValue || poPayItem.grnTotalValue) - poPayItem.totalPaid - poPendingCash);
-    let allocations: Array<{ poId: string; amount: number }> = [];
+    const allocations: Array<{ poId: string; amount: number }> = [];
     let advanceAmt = 0;
-    if (payTarget === 'advance') {
-      advanceAmt = totalAmt;
-    } else if (payTarget === 'current') {
-      const toPo = Math.min(totalAmt, currentBal);
-      if (toPo > 0) allocations.push({ poId: poPayItem.poId, amount: toPo });
-      advanceAmt = Math.max(0, totalAmt - toPo);
-    } else {
-      // payTarget is a sibling PO id
-      const sibling = pendingItems.find(p => p.poId === payTarget);
-      if (!sibling) { alert('Selected PO not found — please re-select.'); setPoPaySaving(false); return; }
-      const toSib = Math.min(totalAmt, sibling.balance);
-      if (toSib > 0) allocations.push({ poId: sibling.poId, amount: toSib });
-      advanceAmt = Math.max(0, totalAmt - toSib);
+    let remaining = totalAmt;
+    for (const target of payTargets) {
+      if (remaining <= 0) break;
+      if (target === 'advance') { advanceAmt += remaining; remaining = 0; break; }
+      let bal = 0, poId = '';
+      if (target === 'current') { bal = currentBal; poId = poPayItem.poId; }
+      else {
+        const sibling = pendingItems.find(p => p.poId === target);
+        if (!sibling) continue;
+        bal = sibling.balance; poId = sibling.poId;
+      }
+      const toPo = Math.min(remaining, bal);
+      if (toPo > 0) {
+        const existing = allocations.find(a => a.poId === poId);
+        if (existing) existing.amount += toPo; else allocations.push({ poId, amount: toPo });
+        remaining -= toPo;
+      }
     }
-    const useAllocate = allocations.length !== 1 || advanceAmt > 0 || (allocations.length === 1 && allocations[0].poId !== poPayItem.poId);
+    if (remaining > 0) advanceAmt += remaining; // overflow always lands here
+    if (allocations.length === 0 && advanceAmt <= 0) { alert('Select at least one target to pay against.'); setPoPaySaving(false); return; }
 
     setPoPaySaving(true);
     try {
-      if (useAllocate) {
-        const res = await api.post('/vendor-payments/allocate', {
-          vendorId: poPayItem.vendorId,
-          mode: poPayMode,
-          reference: poPayRef,
-          remarks: poPayRemarks,
-          hasGst: hasGstToSend,
-          allocations,
-          advanceAmount: advanceAmt,
-        });
-        const summary: string[] = [];
-        for (const p of res.data.payments || []) {
-          if (p.type === 'PO_PAYMENT') summary.push(`PO-${p.poNo}: ₹${p.amount.toLocaleString('en-IN')}`);
-          else if (p.type === 'ADVANCE') summary.push(`Vendor Advance: ₹${p.amount.toLocaleString('en-IN')}`);
-        }
-        const closedStr = (res.data.closedPOs || []).length ? `\n\nPOs auto-closed: ${(res.data.closedPOs || []).map((n: number) => 'PO-' + n).join(', ')}` : '';
-        alert(`Payment recorded (${res.data.status}):\n${summary.join('\n')}${closedStr}`);
-        setPoPayItem(null);
-        setPayTarget('current');
-        await fetchPending();
-        return;
-      }
-      const res = await api.post(`/purchase-orders/${poPayItem.poId}/pay`, {
-        amount: parseFloat(poPayAmount),
+      const res = await api.post('/vendor-payments/allocate', {
+        vendorId: poPayItem.vendorId,
         mode: poPayMode,
         reference: poPayRef,
         remarks: poPayRemarks,
         hasGst: hasGstToSend,
+        allocations,
+        advanceAmount: advanceAmt,
       });
-
-      // Cash payments create a voucher
-      if (res.data.type === 'CASH_VOUCHER') {
-        alert(`Cash Voucher #${res.data.voucher.voucherNo} created.\n\nCash team will see it in Cash Vouchers.\nPO balance updates after they settle it.`);
-        setPoPayItem(null);
-        fetchPending();
-        return;
+      const summary: string[] = [];
+      for (const p of res.data.payments || []) {
+        if (p.type === 'PO_PAYMENT') summary.push(`PO-${p.poNo}: ₹${p.amount.toLocaleString('en-IN')}`);
+        else if (p.type === 'ADVANCE') summary.push(`Vendor Advance: ₹${p.amount.toLocaleString('en-IN')}`);
       }
-
-      // Bank payment initiated (no UTR yet) — open payment slip as PDF in new tab
-      if (res.data.type === 'BANK_INITIATED') {
-        const v = res.data.vendor;
-        const p = res.data.payment;
-        const slipHtml = `<!DOCTYPE html><html><head><title>Payment Slip — PO-${res.data.poNo}</title>
-          <style>body{font-family:Arial,sans-serif;margin:40px;color:#1e293b}
-          .hdr{background:#1e293b;color:#fff;padding:12px 20px;font-size:14px;font-weight:bold;text-transform:uppercase;letter-spacing:2px}
-          table{width:100%;border-collapse:collapse;margin:16px 0}td{padding:8px 12px;border:1px solid #cbd5e1;font-size:13px}
-          .lbl{font-weight:bold;background:#f1f5f9;width:180px;text-transform:uppercase;font-size:10px;letter-spacing:1px}
-          .amt{font-size:22px;font-weight:bold;font-family:monospace}.foot{text-align:center;margin-top:30px;font-size:10px;color:#94a3b8}
-          @media print{body{margin:20px}}</style></head><body>
-          <div class="hdr">Payment Slip — PO-${res.data.poNo}</div>
-          <table><tr><td class="lbl">Pay To</td><td>${v?.name || 'Unknown'}</td></tr>
-          <tr><td class="lbl">Amount</td><td class="amt">\u20B9${p.amount.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</td></tr>
-          <tr><td class="lbl">Mode</td><td>${p.mode}</td></tr>
-          <tr><td class="lbl">Payment #</td><td>${p.paymentNo}</td></tr>
-          <tr><td class="lbl">Status</td><td style="color:#b45309;font-weight:bold">PENDING UTR</td></tr></table>
-          <div class="hdr" style="font-size:11px">Beneficiary Bank Details</div>
-          <table><tr><td class="lbl">Bank</td><td>${v?.bankName || 'N/A'}</td></tr>
-          <tr><td class="lbl">Account No</td><td style="font-family:monospace;font-size:15px;letter-spacing:1px">${v?.bankAccount || 'N/A'}</td></tr>
-          <tr><td class="lbl">IFSC Code</td><td style="font-family:monospace;font-weight:bold">${v?.bankIfsc || 'N/A'}</td></tr></table>
-          <div class="foot">MSPIL Distillery ERP | Generated ${new Date().toLocaleString('en-IN')}<br>Enter UTR after bank transfer to confirm payment.</div>
-          <script>window.print();</script></body></html>`;
-        const slipWindow = window.open('', '_blank');
-        if (slipWindow) { slipWindow.document.write(slipHtml); slipWindow.document.close(); }
-        setBankPendingPayment(res.data.payment);
-        fetchPOPayments(poPayItem.poId);
-        setPoPayAmount('');
-        setPoPayRemarks('');
-        fetchPending();
-        return;
-      }
-
-      // Confirmed payment (UTR was provided)
-      fetchPOPayments(poPayItem.poId);
-      setPoPayAmount('');
-      setPoPayRef('');
-      setPoPayRemarks('');
+      const closedStr = (res.data.closedPOs || []).length ? `\n\nPOs auto-closed: ${(res.data.closedPOs || []).map((n: number) => 'PO-' + n).join(', ')}` : '';
+      alert(`Payment recorded (${res.data.status}):\n${summary.join('\n')}${closedStr}`);
+      setPoPayItem(null);
+      setPayTargets(['current']);
       await fetchPending();
-      if (res.data.fullyPaid) {
-        setPoPayItem(null);
-      }
     } catch (err: unknown) {
       alert((err as { response?: { data?: { error?: string } } })?.response?.data?.error || 'Payment failed');
     } finally { setPoPaySaving(false); }
@@ -1275,7 +1223,7 @@ export default function PaymentsOut() {
                                     const canAdvancePay = item.grnCount === 0 && item.invoices.length === 0 && isAdvance;
                                     if (canRunningPay || canAdvancePay) {
                                       return (
-                                        <button onClick={() => { setPoPayItem(item); setPoPayAmount(canAdvancePay ? String(item.poAmount || '') : ''); setPoPayMode('NEFT'); setPoPayRef(''); setPoPayRemarks(canAdvancePay ? 'Advance payment' : ''); setPoPayIncludeGst(null); setBankPendingPayment(null); setPayTarget('current'); fetchPOPayments(item.poId); }}
+                                        <button onClick={() => { setPoPayItem(item); setPoPayAmount(canAdvancePay ? String(item.poAmount || '') : ''); setPoPayMode('NEFT'); setPoPayRef(''); setPoPayRemarks(canAdvancePay ? 'Advance payment' : ''); setPoPayIncludeGst(null); setBankPendingPayment(null); setPayTargets(['current']); fetchPOPayments(item.poId); }}
                                           className="px-2 py-0.5 bg-green-600 text-white text-[9px] font-bold uppercase hover:bg-green-700 flex items-center gap-1" title={canAdvancePay ? 'Pay in advance' : 'Pay against PO'}>
                                           <CreditCard size={10} /> {canAdvancePay ? 'ADV PAY' : 'PAY'}
                                         </button>
@@ -2825,45 +2773,64 @@ export default function PaymentsOut() {
                   </div>
                 )}
 
-                {/* ═══ Pay Against — single target picker with auto-overflow to advance ═══ */}
+                {/* ═══ Pay Against — multi-select with fill-order + waterfall allocation ═══ */}
                 {(() => {
                   const totalAmt = parseFloat(poPayAmount) || 0;
                   const siblingPOs = pendingItems.filter(p => p.vendorId === poPayItem.vendorId && p.poId !== poPayItem.poId && p.balance > 0);
                   const currentBal = Math.max(0, (poReceivedValue || poPayItem.grnTotalValue) - poPayItem.totalPaid - poPendingCash);
 
-                  // Compute preview split for a given target
-                  const preview = (target: string): { poAmt: number; poLabel: string; advAmt: number } => {
-                    if (target === 'advance') return { poAmt: 0, poLabel: '', advAmt: totalAmt };
-                    if (target === 'current') {
-                      const toPo = Math.min(totalAmt, currentBal);
-                      return { poAmt: toPo, poLabel: `PO-${poPayItem.poNo}`, advAmt: Math.max(0, totalAmt - toPo) };
+                  // Build the waterfall preview across ALL selected targets in fill order.
+                  type Step = { target: string; poAmt: number; poLabel: string };
+                  const steps: Step[] = [];
+                  let remaining = totalAmt;
+                  let overflowToAdvance = 0;
+                  for (const target of payTargets) {
+                    if (remaining <= 0) { steps.push({ target, poAmt: 0, poLabel: target }); continue; }
+                    if (target === 'advance') {
+                      steps.push({ target, poAmt: remaining, poLabel: 'Vendor Advance' });
+                      remaining = 0;
+                      continue;
                     }
-                    const sib = siblingPOs.find(s => s.poId === target);
-                    if (!sib) return { poAmt: 0, poLabel: '', advAmt: totalAmt };
-                    const toPo = Math.min(totalAmt, sib.balance);
-                    return { poAmt: toPo, poLabel: `PO-${sib.poNo}`, advAmt: Math.max(0, totalAmt - toPo) };
+                    let bal = 0, label = '';
+                    if (target === 'current') { bal = currentBal; label = `PO-${poPayItem.poNo}`; }
+                    else {
+                      const sib = siblingPOs.find(s => s.poId === target);
+                      if (!sib) { steps.push({ target, poAmt: 0, poLabel: target }); continue; }
+                      bal = sib.balance; label = `PO-${sib.poNo}`;
+                    }
+                    const toPo = Math.min(remaining, bal);
+                    steps.push({ target, poAmt: toPo, poLabel: label });
+                    remaining -= toPo;
+                  }
+                  if (remaining > 0) overflowToAdvance = remaining; // auto-spill
+
+                  const toggle = (value: string) => {
+                    setPayTargets(prev => prev.includes(value) ? prev.filter(t => t !== value) : [...prev, value]);
                   };
 
                   const Tile = ({ value, label, balance, material }: { value: string; label: string; balance?: number; material?: string }) => {
-                    const selected = payTarget === value;
-                    const prev = selected && totalAmt > 0 ? preview(value) : null;
+                    const idx = payTargets.indexOf(value);
+                    const selected = idx !== -1;
+                    const step = selected ? steps.find(s => s.target === value) : null;
                     return (
-                      <button type="button" onClick={() => setPayTarget(value)}
-                        className={`text-left border p-2 transition ${selected ? 'border-indigo-600 bg-indigo-50' : 'border-slate-300 bg-white hover:bg-slate-50'}`}>
+                      <button type="button" onClick={() => toggle(value)}
+                        className={`text-left border p-2 transition relative ${selected ? 'border-indigo-600 bg-indigo-50' : 'border-slate-300 bg-white hover:bg-slate-50'}`}>
+                        {selected && (
+                          <span className="absolute top-1 right-1 w-5 h-5 bg-indigo-600 text-white text-[10px] font-bold flex items-center justify-center" title={`Fill order: ${idx + 1}`}>{idx + 1}</span>
+                        )}
                         <div className="flex items-start gap-2">
-                          <span className={`inline-block w-3 h-3 rounded-full mt-0.5 flex-shrink-0 ${selected ? 'bg-indigo-600 ring-2 ring-indigo-200' : 'bg-white border-2 border-slate-300'}`}></span>
-                          <div className="flex-1 min-w-0">
+                          <span className={`inline-block w-3.5 h-3.5 mt-0.5 flex-shrink-0 border-2 ${selected ? 'bg-indigo-600 border-indigo-600' : 'bg-white border-slate-300'}`}>
+                            {selected && <svg viewBox="0 0 16 16" className="w-full h-full text-white"><path d="M3 8l3 3 7-7" stroke="currentColor" strokeWidth="2.5" fill="none" strokeLinecap="round" strokeLinejoin="round"/></svg>}
+                          </span>
+                          <div className="flex-1 min-w-0 pr-5">
                             <div className="text-[11px] font-bold text-slate-800 truncate">{label}</div>
                             {material && <div className="text-[10px] text-slate-500 truncate">{material}</div>}
                             {balance !== undefined && <div className="text-[10px] text-slate-600 font-mono">Balance: <b>{fmt(balance)}</b></div>}
-                            {prev && prev.poAmt > 0 && (
-                              <div className="text-[10px] text-green-700 font-mono mt-1">→ {fmt(prev.poAmt)} to {prev.poLabel}</div>
+                            {step && step.poAmt > 0 && (
+                              <div className="text-[10px] text-green-700 font-mono mt-1">→ {fmt(step.poAmt)}</div>
                             )}
-                            {prev && prev.advAmt > 0 && (
-                              <div className="text-[10px] text-amber-700 font-mono">→ {fmt(prev.advAmt)} to Advance (overflow)</div>
-                            )}
-                            {prev && prev.poAmt === 0 && value !== 'advance' && (
-                              <div className="text-[10px] text-amber-700 font-mono mt-1">→ all to Advance (no PO balance)</div>
+                            {step && step.poAmt === 0 && selected && (
+                              <div className="text-[10px] text-slate-400 font-mono mt-1">→ nothing (amount already used)</div>
                             )}
                           </div>
                         </div>
@@ -2873,39 +2840,44 @@ export default function PaymentsOut() {
 
                   return (
                     <div className="border border-slate-200 bg-slate-50 px-3 py-2 space-y-2">
-                      <div className="text-[10px] font-bold text-slate-600 uppercase tracking-widest">
-                        Pay Against (pick one) {totalAmt > 0 && <span className="text-slate-400 font-normal normal-case">· overflow auto-goes to Vendor Advance</span>}
+                      <div className="text-[10px] font-bold text-slate-600 uppercase tracking-widest flex items-center justify-between gap-2 flex-wrap">
+                        <span>Pay Against — tick any (fills in tick order)</span>
+                        <span className="text-slate-400 font-normal normal-case text-[10px]">unused overflow → Vendor Advance</span>
                       </div>
                       <div className="grid grid-cols-2 gap-2">
                         <Tile value="current" label={`Current — PO-${poPayItem.poNo}`} balance={currentBal} material={poPayItem.material || undefined} />
                         {siblingPOs.map(sib => (
                           <Tile key={sib.poId} value={sib.poId} label={`PO-${sib.poNo}`} balance={sib.balance} material={sib.material || undefined} />
                         ))}
-                        <Tile value="advance" label="Vendor Advance only" material="Hold as advance — adjust later against any invoice" />
+                        <Tile value="advance" label="Vendor Advance" material="Hold — adjust later against any invoice" />
                       </div>
+                      {totalAmt > 0 && (
+                        <div className="bg-white border border-slate-200 px-3 py-1.5 text-[11px] font-mono">
+                          <div className="text-[9px] font-bold uppercase tracking-widest text-slate-500 mb-0.5 font-sans">Allocation preview</div>
+                          {steps.filter(s => s.poAmt > 0).map((s, i) => (
+                            <div key={i} className="flex justify-between text-slate-700"><span>{i + 1}. {s.poLabel}</span><span className="text-green-700 font-bold">{fmt(s.poAmt)}</span></div>
+                          ))}
+                          {overflowToAdvance > 0 && (
+                            <div className="flex justify-between text-amber-700 font-bold border-t border-slate-200 mt-1 pt-1"><span>↳ Overflow → Vendor Advance</span><span>{fmt(overflowToAdvance)}</span></div>
+                          )}
+                          {steps.filter(s => s.poAmt > 0).length === 0 && overflowToAdvance === 0 && (
+                            <div className="text-slate-400">Tick at least one target above.</div>
+                          )}
+                        </div>
+                      )}
                     </div>
                   );
                 })()}
 
-                <button onClick={submitPOPayment} disabled={poPaySaving || !poPayAmount || !payTarget}
+                <button onClick={submitPOPayment} disabled={poPaySaving || !poPayAmount || payTargets.length === 0}
                   className="w-full px-4 py-2 bg-green-600 text-white text-[11px] font-bold uppercase tracking-widest hover:bg-green-700 disabled:opacity-50">
                   {(() => {
                     if (poPaySaving) return 'Processing...';
                     const totalAmt = parseFloat(poPayAmount) || 0;
                     const gstSuffix = poPayItem.poGst > 0 ? (poPayIncludeGst ? ' (Incl. GST)' : ' (Ex. GST)') : '';
                     if (totalAmt === 0) return `Enter amount`;
-                    const currentBal = Math.max(0, (poReceivedValue || poPayItem.grnTotalValue) - poPayItem.totalPaid - poPendingCash);
-                    let poAmt = 0, advAmt = 0, poLabel = '';
-                    if (payTarget === 'advance') { advAmt = totalAmt; }
-                    else if (payTarget === 'current') { poAmt = Math.min(totalAmt, currentBal); advAmt = totalAmt - poAmt; poLabel = `PO-${poPayItem.poNo}`; }
-                    else {
-                      const sib = pendingItems.find(p => p.poId === payTarget);
-                      if (sib) { poAmt = Math.min(totalAmt, sib.balance); advAmt = totalAmt - poAmt; poLabel = `PO-${sib.poNo}`; }
-                    }
-                    const parts: string[] = [];
-                    if (poAmt > 0) parts.push(`${fmt(poAmt)} → ${poLabel}`);
-                    if (advAmt > 0) parts.push(`${fmt(advAmt)} → Advance`);
-                    return `Pay ₹${totalAmt.toLocaleString('en-IN')} via ${poPayMode}${gstSuffix} · ${parts.join(' + ') || 'select target'}`;
+                    if (payTargets.length === 0) return `Tick a target to pay against`;
+                    return `Pay ₹${totalAmt.toLocaleString('en-IN')} via ${poPayMode}${gstSuffix}`;
                   })()}
                 </button>
 
