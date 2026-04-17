@@ -87,7 +87,7 @@ async function backfillOne(fermenterNo: number): Promise<BackfillStat> {
         ],
       },
       orderBy: { fillingStartTime: 'desc' },
-      select: { id: true, batchNo: true, fillingStartTime: true, fillingEndTime: true, remarks: true },
+      select: { id: true, batchNo: true, fillingStartTime: true, fillingEndTime: true, fermentationEndTime: true, remarks: true },
     });
 
     if (batch) stat.matched++;
@@ -138,12 +138,18 @@ async function backfillOne(fermenterNo: number): Promise<BackfillStat> {
         ? batch.remarks
         : [batch.remarks, originalFooter].filter(Boolean).join(' | ');
 
+      // totalHours = full cycle: fillStart → fermentationEndTime (SG ≤ 1.0). null while reaction still running.
+      const cycleEnd = batch.fermentationEndTime;
+      const totalHours = cycleEnd
+        ? Number(((cycleEnd.getTime() - ev.startTime.getTime()) / 3_600_000).toFixed(2))
+        : null;
+
       await prisma.fermentationBatch.update({
         where: { id: batch.id },
         data: {
           fillingStartTime: ev.startTime,
           fillingEndTime: ev.endTime,
-          totalHours: ev.durationHours,
+          totalHours,
           remarks: newRemarks,
         },
       });

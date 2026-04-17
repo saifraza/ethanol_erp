@@ -1721,7 +1721,7 @@ export default function Fermentation() {
  <div className="col-span-1 text-right">Setup SG</div>
  <div className="col-span-1 text-right">Final Alc%</div>
  <div className="col-span-1 text-right">Volume</div>
- <div className="col-span-1 text-right">Cycle Time</div>
+ <div className="col-span-1 text-right" title="Fill h + Reaction h / Total h">Fill+Rxn / Total</div>
  <div className="col-span-2">Transferred</div>
  <div className="col-span-1 text-right"></div>
  </div>
@@ -1750,10 +1750,16 @@ export default function Fermentation() {
  return h > 0 ? `${h}h ${m}m` : `${m}m`;
  };
 
- // Cycle time: PF transfer → fermentation end (gravity ≤ 1.0), NOT transfer to BW
- const cycleStart = b.pfTransferTime || b.fillingStartTime;
- const cycleEnd = b.fermentationEndTime || null; // only show when gravity hit 1.0
- const cycleTime = cycleStart ? elapsedStr(cycleStart, cycleEnd) : (b.totalHours ? `${b.totalHours}h` : '—');
+ // Cycle breakdown: fill (start→plateau), reaction (plateau→SG=1.0), total (start→SG=1.0)
+ const fillStart = b.fillingStartTime || null;
+ const fillEnd = b.fillingEndTime || null;
+ const cycleEnd = b.fermentationEndTime || null; // only when SG ≤ 1.0
+ const hrs = (a: string | null, c: string | null) => a && c ? (new Date(c).getTime() - new Date(a).getTime()) / 3_600_000 : null;
+ const fillHrs = hrs(fillStart, fillEnd);
+ const reactionHrs = hrs(fillEnd, cycleEnd);
+ const totalHrs = hrs(fillStart, cycleEnd);
+ const cycleTime = totalHrs != null ? `${totalHrs.toFixed(1)}h` : (fillStart ? elapsedStr(fillStart, cycleEnd) : (b.totalHours ? `${b.totalHours}h` : '—'));
+ const cycleStart = fillStart || b.pfTransferTime;
 
  // Volume from last level reading (fermenter ~250 M³ capacity, level is %)
  const lastLevel = readings.filter((r: any) => r.level != null).slice(-1)[0]?.level;
@@ -1781,7 +1787,10 @@ export default function Fermentation() {
  <div className="col-span-1 text-right font-medium">{setupSG ? Number(setupSG).toFixed(3) : '—'}</div>
  <div className="col-span-1 text-right font-bold text-emerald-700">{b.finalAlcohol ? `${b.finalAlcohol}%` : '—'}</div>
  <div className="col-span-1 text-right">{volM3 ? `${volM3} M³` : (b.transferVolume ? `${(b.transferVolume / 1000).toFixed(1)} KL` : '—')}</div>
- <div className="col-span-1 text-right font-medium text-gray-700">{cycleTime}</div>
+ <div className="col-span-1 text-right font-mono tabular-nums leading-tight" title={`Fill ${fillHrs != null ? fillHrs.toFixed(1)+'h' : '—'} + Reaction ${reactionHrs != null ? reactionHrs.toFixed(1)+'h' : '—'} = Total ${totalHrs != null ? totalHrs.toFixed(1)+'h' : '—'}`}>
+ <div className="text-[10px] text-sky-600">{fillHrs != null ? `${fillHrs.toFixed(1)}` : '—'}<span className="text-gray-300 mx-0.5">+</span><span className="text-emerald-600">{reactionHrs != null ? `${reactionHrs.toFixed(1)}` : '—'}</span></div>
+ <div className="text-xs font-bold text-indigo-700">{cycleTime}</div>
+ </div>
  <div className="col-span-2 text-gray-500">{b.transferTime ? new Date(b.transferTime).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' }) : '—'}</div>
  <div className="col-span-1 text-right flex items-center justify-end gap-1">
  {isAdmin && b.phase === 'DONE' && <button title="Reactivate batch" onClick={async (e) => { e.stopPropagation(); if (!confirm(`Reactivate Batch #${b.batchNo} on F-${b.fermenterNo}? It will go back to REACTION phase.`)) return; try { await api.patch(`/fermentation/batches/${b.id}`, { phase: 'REACTION', cipEndTime: null, cipStartTime: null }); flash('ok', `Batch #${b.batchNo} reactivated`); load(); } catch { flash('err', 'Reactivate failed'); } }} className="opacity-0 group-hover:opacity-100 text-blue-400 hover:text-blue-600 transition-all"><RotateCcw size={13} /></button>}
@@ -1792,19 +1801,55 @@ export default function Fermentation() {
  {/* Expanded detail */}
  {isExp && (
  <div className="px-4 pb-4 bg-gray-50/50 space-y-3 border-b border-gray-200">
- {/* Phase timeline with elapsed times */}
- <div className="flex flex-wrap gap-1 text-[10px]">
- {b.pfTransferTime && <div className="bg-blue-50 px-2 py-1"><span className="text-blue-400">PF→F</span> <span className="font-bold text-blue-700">{new Date(b.pfTransferTime).toLocaleString('en-IN', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit', hour12: true })}</span></div>}
- {b.pfTransferTime && b.fillingEndTime && <div className="text-gray-300 self-center">→ {elapsedStr(b.pfTransferTime, b.fillingEndTime)}</div>}
- {b.fillingEndTime && <div className="bg-amber-50 px-2 py-1"><span className="text-amber-400">Rxn</span> <span className="font-bold text-amber-700">{new Date(b.fillingEndTime).toLocaleString('en-IN', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit', hour12: true })}</span></div>}
- {b.fillingEndTime && b.retentionStartTime && <div className="text-gray-300 self-center">→ {elapsedStr(b.fillingEndTime, b.retentionStartTime)}</div>}
- {b.retentionStartTime && <div className="bg-orange-50 px-2 py-1"><span className="text-orange-400">Ret</span> <span className="font-bold text-orange-700">{new Date(b.retentionStartTime).toLocaleString('en-IN', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit', hour12: true })}</span></div>}
- {b.retentionStartTime && (b.fermentationEndTime || b.transferTime) && <div className="text-gray-300 self-center">→ {elapsedStr(b.retentionStartTime, b.fermentationEndTime || b.transferTime || null)}</div>}
- {b.fermentationEndTime && <div className="bg-green-50 px-2 py-1"><span className="text-green-500">SG=1.0</span> <span className="font-bold text-green-700">{new Date(b.fermentationEndTime).toLocaleString('en-IN', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit', hour12: true })}</span></div>}
- {b.fermentationEndTime && b.transferTime && <div className="text-gray-300 self-center">→ {elapsedStr(b.fermentationEndTime, b.transferTime)}</div>}
- {b.transferTime && <div className="bg-purple-50 px-2 py-1"><span className="text-purple-400">→BW</span> <span className="font-bold text-purple-700">{new Date(b.transferTime).toLocaleString('en-IN', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit', hour12: true })}</span></div>}
- {cycleStart && <div className="bg-indigo-50 px-2 py-1 ml-2"><span className="text-indigo-400">Ferm Time</span> <span className="font-bold text-indigo-700">{cycleTime}</span></div>}
+ {/* ═══ CYCLE BREAKDOWN — the only three numbers that matter ═══ */}
+ <div className="grid grid-cols-3 bg-white border border-gray-200">
+ {/* FILL */}
+ <div className="p-3 border-r border-gray-100">
+ <div className="flex items-center justify-between mb-1">
+ <div className="text-[10px] font-bold text-sky-600 uppercase tracking-wide">Fill</div>
+ <div className="text-[9px] text-gray-400">level &lt;20 → plateau</div>
  </div>
+ <div className="text-2xl font-bold text-sky-700 tabular-nums leading-none">{fillHrs != null ? fillHrs.toFixed(1) : (fillStart && !fillEnd ? '…' : '—')}<span className="text-sm text-gray-400 ml-0.5">h</span></div>
+ <div className="text-[10px] text-gray-500 mt-1.5 space-y-0.5">
+ <div>start <span className="font-mono text-gray-700">{fillStart ? new Date(fillStart).toLocaleString('en-IN', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit', hour12: true }) : '—'}</span></div>
+ <div>end <span className="font-mono text-gray-700">{fillEnd ? new Date(fillEnd).toLocaleString('en-IN', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit', hour12: true }) : (fillStart ? 'filling…' : '—')}</span></div>
+ </div>
+ </div>
+ {/* REACTION */}
+ <div className="p-3 border-r border-gray-100">
+ <div className="flex items-center justify-between mb-1">
+ <div className="text-[10px] font-bold text-emerald-600 uppercase tracking-wide">Reaction</div>
+ <div className="text-[9px] text-gray-400">plateau → SG ≤ 1.0</div>
+ </div>
+ <div className="text-2xl font-bold text-emerald-700 tabular-nums leading-none">{reactionHrs != null ? reactionHrs.toFixed(1) : (fillEnd && !cycleEnd ? '…' : '—')}<span className="text-sm text-gray-400 ml-0.5">h</span></div>
+ <div className="text-[10px] text-gray-500 mt-1.5 space-y-0.5">
+ <div>from <span className="font-mono text-gray-700">{fillEnd ? new Date(fillEnd).toLocaleString('en-IN', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit', hour12: true }) : '—'}</span></div>
+ <div>SG=1.0 <span className="font-mono text-gray-700">{cycleEnd ? new Date(cycleEnd).toLocaleString('en-IN', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit', hour12: true }) : (fillEnd ? 'reacting…' : '—')}</span></div>
+ </div>
+ </div>
+ {/* TOTAL CYCLE */}
+ <div className="p-3 bg-indigo-50/30">
+ <div className="flex items-center justify-between mb-1">
+ <div className="text-[10px] font-bold text-indigo-700 uppercase tracking-wide">Total Cycle</div>
+ <div className="text-[9px] text-gray-400">fill + reaction</div>
+ </div>
+ <div className="text-2xl font-bold text-indigo-700 tabular-nums leading-none">{totalHrs != null ? totalHrs.toFixed(1) : (fillStart && !cycleEnd ? '…' : '—')}<span className="text-sm text-gray-400 ml-0.5">h</span></div>
+ <div className="text-[10px] text-gray-500 mt-1.5 space-y-0.5">
+ <div>Final Alc <span className="font-bold text-emerald-700">{b.finalAlcohol != null ? `${Number(b.finalAlcohol).toFixed(2)}%` : '—'}</span></div>
+ <div>Final SG <span className="font-mono text-gray-700">{b.finalRsGravity != null ? Number(b.finalRsGravity).toFixed(3) : (cycleEnd ? '≤1.000' : '—')}</span></div>
+ </div>
+ </div>
+ </div>
+
+ {/* Secondary phase markers — compact row, only populated steps */}
+ {(b.pfTransferTime || b.retentionStartTime || b.transferTime || b.cipStartTime) && (
+ <div className="flex flex-wrap gap-1 text-[10px] text-gray-500">
+ {b.pfTransferTime && <div className="px-2 py-0.5 bg-gray-100">PF→F <span className="font-mono text-gray-700">{new Date(b.pfTransferTime).toLocaleString('en-IN', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit', hour12: true })}</span></div>}
+ {b.retentionStartTime && <div className="px-2 py-0.5 bg-gray-100">Retention <span className="font-mono text-gray-700">{new Date(b.retentionStartTime).toLocaleString('en-IN', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit', hour12: true })}</span></div>}
+ {b.transferTime && <div className="px-2 py-0.5 bg-gray-100">→BW <span className="font-mono text-gray-700">{new Date(b.transferTime).toLocaleString('en-IN', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit', hour12: true })}</span></div>}
+ {b.cipStartTime && <div className="px-2 py-0.5 bg-gray-100">CIP <span className="font-mono text-gray-700">{new Date(b.cipStartTime).toLocaleString('en-IN', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit', hour12: true })}</span></div>}
+ </div>
+ )}
 
  {/* Setup Data — all fields from batch setup */}
  <div className="bg-white border p-2.5 space-y-2">
@@ -1831,7 +1876,6 @@ export default function Fermentation() {
  {b.beerWellNo != null && <div><span className="text-gray-400">Beer Well: </span><span className="font-medium">BW-{b.beerWellNo}</span></div>}
  {b.setupDate && <div><span className="text-gray-400">Setup Date: </span><span className="font-medium">{new Date(b.setupDate).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: '2-digit' })}</span></div>}
  {b.setupTime && <div><span className="text-gray-400">Setup Time: </span><span className="font-medium">{b.setupTime}</span></div>}
- {b.totalHours != null && <div><span className="text-gray-400">Total Hours: </span><span className="font-medium">{b.totalHours}h</span></div>}
  </div>
  {/* Chemicals from setup */}
  {(b.yeast || b.enzyme || b.formolin || b.booster || b.urea) && (
@@ -2069,51 +2113,47 @@ export default function Fermentation() {
  <div>
  <div className="px-4 py-2 bg-sky-50 border-b border-sky-100 text-[11px] text-sky-900">
  <b>Detected fill events</b> — computed from OPC level + lab readings, not operator buttons.
- Start = level &lt;20% rising; End = sustained plateau ≥40%. CIP (temp &gt;40°C) is rejected.
- Matched batches shown with #; unmatched orphans surface as review candidates.
+ Cycle = <b>Fill</b> (start→plateau) + <b>Reaction</b> (plateau→SG≤1.0). CIP (temp&gt;40°C) rejected.
+ Orphans = fills with no matched batch (review candidates).
  </div>
  <table className="w-full text-xs">
  <thead>
  <tr className="bg-gray-50 text-gray-500 border-b">
  <th className="text-left px-3 py-2 font-semibold">F#</th>
  <th className="text-left px-3 py-2 font-semibold">Batch</th>
- <th className="text-left px-3 py-2 font-semibold">Start</th>
- <th className="text-left px-3 py-2 font-semibold">End</th>
- <th className="text-right px-3 py-2 font-semibold">Duration</th>
- <th className="text-right px-3 py-2 font-semibold">Start %</th>
+ <th className="text-left px-3 py-2 font-semibold">Fill Start</th>
+ <th className="text-left px-3 py-2 font-semibold">Fill End</th>
+ <th className="text-left px-3 py-2 font-semibold">SG≤1.0</th>
+ <th className="text-right px-3 py-2 font-semibold text-sky-700">Fill h</th>
+ <th className="text-right px-3 py-2 font-semibold text-emerald-700">Reaction h</th>
+ <th className="text-right px-3 py-2 font-semibold text-indigo-700">Total h</th>
  <th className="text-right px-3 py-2 font-semibold">Peak %</th>
+ <th className="text-right px-3 py-2 font-semibold">Alc %</th>
  <th className="text-center px-3 py-2 font-semibold">Conf</th>
  <th className="text-center px-3 py-2 font-semibold">Src</th>
- <th className="text-center px-3 py-2 font-semibold">Checks</th>
  </tr>
  </thead>
  <tbody>
  {fillEvents.map((e: any) => {
- const cc = e.crossChecks || {};
- const inProgress = e.endTime == null;
+ const fillInProgress = e.endTime == null;
+ const reactionInProgress = !fillInProgress && e.fermentationEndTime == null;
  const confColor = e.confidence === 'HIGH' ? 'bg-emerald-100 text-emerald-700' : e.confidence === 'MEDIUM' ? 'bg-amber-100 text-amber-700' : 'bg-gray-100 text-gray-600';
  const srcColor = e.source === 'OPC' ? 'bg-sky-100 text-sky-700' : e.source === 'HYBRID' ? 'bg-violet-100 text-violet-700' : 'bg-slate-100 text-slate-600';
  const fmt = (t: string | null) => t ? new Date(t).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit', hour12: true }) : '—';
  return (
- <tr key={e.id} className={`border-b border-gray-50 hover:bg-gray-50 ${inProgress ? 'bg-sky-50/40' : ''}`}>
+ <tr key={e.id} className={`border-b border-gray-50 hover:bg-gray-50 ${fillInProgress ? 'bg-sky-50/40' : reactionInProgress ? 'bg-emerald-50/40' : ''}`}>
  <td className="px-3 py-2 font-semibold text-indigo-700">F-{e.fermenterNo}</td>
  <td className="px-3 py-2 font-bold text-gray-800">{e.batchNo != null ? `#${e.batchNo}` : <span className="text-amber-600">ORPHAN</span>}</td>
  <td className="px-3 py-2 text-gray-600">{fmt(e.startTime)}</td>
- <td className="px-3 py-2 text-gray-600">{inProgress ? <span className="text-sky-700 font-semibold">in progress</span> : fmt(e.endTime)}</td>
- <td className="px-3 py-2 text-right font-mono tabular-nums">{e.durationHours != null ? `${e.durationHours.toFixed(1)} h` : '—'}</td>
- <td className="px-3 py-2 text-right font-mono tabular-nums">{e.startLevel?.toFixed(1)}</td>
- <td className="px-3 py-2 text-right font-mono tabular-nums font-semibold">{e.peakLevel?.toFixed(1)}</td>
+ <td className="px-3 py-2 text-gray-600">{fillInProgress ? <span className="text-sky-700 font-semibold">filling…</span> : fmt(e.endTime)}</td>
+ <td className="px-3 py-2 text-gray-600">{reactionInProgress ? <span className="text-emerald-700 font-semibold">reacting…</span> : fmt(e.fermentationEndTime)}</td>
+ <td className="px-3 py-2 text-right font-mono tabular-nums text-sky-700">{e.fillHours != null ? e.fillHours.toFixed(1) : '—'}</td>
+ <td className="px-3 py-2 text-right font-mono tabular-nums text-emerald-700">{e.reactionHours != null ? e.reactionHours.toFixed(1) : '—'}</td>
+ <td className="px-3 py-2 text-right font-mono tabular-nums font-bold text-indigo-700">{e.cycleHours != null ? e.cycleHours.toFixed(1) : '—'}</td>
+ <td className="px-3 py-2 text-right font-mono tabular-nums">{e.peakLevel?.toFixed(1)}</td>
+ <td className="px-3 py-2 text-right font-mono tabular-nums">{e.finalAlcohol != null ? e.finalAlcohol.toFixed(2) : '—'}</td>
  <td className="px-3 py-2 text-center"><span className={`px-2 py-0.5 text-[10px] font-bold ${confColor}`}>{e.confidence}</span></td>
  <td className="px-3 py-2 text-center"><span className={`px-2 py-0.5 text-[10px] font-bold ${srcColor}`}>{e.source}</span></td>
- <td className="px-3 py-2 text-center">
- <div className="flex items-center justify-center gap-1 text-[10px]" title={`startOk=${!!cc.startOk} endOk=${!!cc.endOk} tempOk=${!!cc.tempOk} pfDropped=${!!cc.pfDropped} labWithin2h=${!!cc.labWithin2h}`}>
- <span className={cc.startOk ? 'text-emerald-600' : 'text-gray-300'}>S</span>
- <span className={cc.endOk ? 'text-emerald-600' : 'text-gray-300'}>E</span>
- <span className={cc.tempOk ? 'text-emerald-600' : 'text-gray-300'}>T</span>
- <span className={cc.pfDropped ? 'text-emerald-600' : 'text-gray-300'}>P</span>
- <span className={cc.labWithin2h ? 'text-emerald-600' : 'text-gray-300'}>L</span>
- </div>
- </td>
  </tr>
  );
  })}
