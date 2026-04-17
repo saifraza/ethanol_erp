@@ -6,6 +6,7 @@
 
 ## 🚨 READ FIRST — Before ANY bulk SQL, schema change, or `prisma db push` on prod
 - **[incident-2026-04-16-db-damage.md](incident-2026-04-16-db-damage.md)** — DB damage postmortem + hard rules. Factory runs 24/7, no safe window. `pg_dump` locally before every destructive op. Never `prisma db push` on prod from laptop. Never `--accept-data-loss` on prod. Never `pg_restore --clean` without a local dump first.
+- **[invoice-snapshot-immutability.md](invoice-snapshot-immutability.md)** — Spec (not built yet). Freeze invoice as JSON + PDF at IRN-generation time, serve from disk, never re-render from live DB. Protects against future DB damage invalidating printed invoices. Build in 4 phases.
 
 ## Factory & Hardware (safety-critical)
 - **[factory-operations.md](factory-operations.md)** — **READ FIRST before ANY factory work.** Incidents postmortem (Part A) + architecture + deploy runbook (Part B). All 7 factory outages documented.
