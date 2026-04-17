@@ -2566,45 +2566,115 @@ export default function PaymentsOut() {
         {/* ═══════════════════════════════════════ */}
         {/* PO PAY MODAL (Running Account) */}
         {/* ═══════════════════════════════════════ */}
-        {poPayItem && (
+        {poPayItem && (() => {
+          // ═══════════════════════════════════════════════
+          // Compute the Base / GST / Total split for this PO across all lifecycle stages.
+          // Base = non-taxable component. GST = tax component. Total = Base + GST.
+          // Historical payments carry `hasGst` (true = amount includes GST, false = base only,
+          // null = legacy unknown). We split each payment proportionally using the PO's rate.
+          // ═══════════════════════════════════════════════
+          const poBase = poPayItem.poSubtotal || Math.max(0, (poPayItem.poAmount || 0) - (poPayItem.poGst || 0));
+          const poGst = poPayItem.poGst || 0;
+          const poTotal = poBase + poGst;
+          const gstPct = poBase > 0 ? (poGst / poBase) * 100 : 0;
+          const baseFraction = poTotal > 0 ? poBase / poTotal : 1;
+          const gstFraction = poTotal > 0 ? poGst / poTotal : 0;
+          // Received value split
+          const recvTotal = poReceivedValue || poPayItem.grnTotalValue || 0;
+          const recvBase = recvTotal * baseFraction;
+          const recvGst = recvTotal * gstFraction;
+          // Split each historical payment
+          interface PaymentSplit { id: string; paymentDate: string; amount: number; mode: string; reference: string | null; remarks?: string | null; hasGst?: boolean | null; paymentStatus?: string; baseAmt: number; gstAmt: number; label: string; runningBase: number; runningGst: number }
+          let runningBase = 0, runningGst = 0;
+          const splits: PaymentSplit[] = (poPayments as Array<{ id: string; paymentDate: string; amount: number; mode: string; reference: string | null; remarks?: string; hasGst?: boolean | null; paymentStatus?: string }>).map(p => {
+            let baseAmt = 0, gstAmt = 0, label = 'Incl. GST';
+            if (p.hasGst === false) { baseAmt = p.amount; gstAmt = 0; label = 'Base only'; }
+            else if (p.hasGst === true) { baseAmt = p.amount * baseFraction; gstAmt = p.amount * gstFraction; label = 'Incl. GST'; }
+            else { baseAmt = p.amount * baseFraction; gstAmt = p.amount * gstFraction; label = 'Legacy'; }
+            runningBase += baseAmt; runningGst += gstAmt;
+            return { ...p, baseAmt, gstAmt, label, runningBase, runningGst };
+          });
+          const paidBase = runningBase;
+          const paidGst = runningGst;
+          // Pending cash (awaiting settlement) — treat as full base by default (cash advances)
+          const pendingCashBase = poPendingCash || 0;
+          const pendingCashGst = 0;
+          // Balance split (received minus paid minus pending cash)
+          const balBase = Math.max(0, recvBase - paidBase - pendingCashBase);
+          const balGst = Math.max(0, recvGst - paidGst - pendingCashGst);
+          const balTotal = balBase + balGst;
+          // Live allocation preview for the amount being entered
+          const enteredAmt = parseFloat(poPayAmount) || 0;
+          let enteredBase = 0, enteredGst = 0;
+          if (poPayIncludeGst === true && enteredAmt > 0) { enteredBase = enteredAmt * baseFraction; enteredGst = enteredAmt * gstFraction; }
+          else if (poPayIncludeGst === false && enteredAmt > 0) { enteredBase = enteredAmt; enteredGst = 0; }
+          return (
           <div className="fixed inset-0 bg-black/50 flex items-start justify-center z-50 overflow-y-auto py-4" onClick={() => setPoPayItem(null)}>
-            <div className="bg-white shadow-2xl w-full max-w-lg mx-4" onClick={e => e.stopPropagation()}>
+            <div className="bg-white shadow-2xl w-full max-w-4xl mx-4" onClick={e => e.stopPropagation()}>
               <div className="bg-slate-800 text-white px-4 py-2.5 flex items-center justify-between">
-                <span className="text-xs font-bold uppercase tracking-widest">Pay Against PO-{poPayItem.poNo}</span>
+                <span className="text-xs font-bold uppercase tracking-widest">Pay Against PO-{poPayItem.poNo} — {poPayItem.vendorName}</span>
                 <button onClick={() => setPoPayItem(null)} className="text-slate-400 hover:text-white"><X size={16} /></button>
               </div>
-              <div className="bg-slate-100 px-4 py-3 text-xs border-b border-slate-300 space-y-2">
-                <div className="flex gap-6">
-                  <span>Vendor: <b>{poPayItem.vendorName}</b></span>
-                  {poPayItem.vendorPhone && <span>Ph: <b>{poPayItem.vendorPhone}</b></span>}
-                  {poPayItem.material && <span>Material: <b>{poPayItem.material}</b></span>}
-                </div>
-                <div className="flex gap-6">
-                  <span>PO Total: <b className="font-mono">{fmt(poPayItem.poAmount)}</b></span>
-                  <span>Received: <b className="font-mono text-blue-700">{fmt(poReceivedValue || poPayItem.grnTotalValue)}</b></span>
-                  <span>Paid: <b className="font-mono text-green-700">{fmt(poPayItem.totalPaid)}</b></span>
-                  {poPendingCash > 0 && <span>Pending: <b className="font-mono text-yellow-600">{fmt(poPendingCash)}</b></span>}
-                  <span>Payable Now: <b className="font-mono text-red-600 text-sm">{fmt(Math.max(0, (poReceivedValue || poPayItem.grnTotalValue) - poPayItem.totalPaid - poPendingCash))}</b></span>
-                  {poPayItem.dueDate && <span>Due: <b>{fmtDate(poPayItem.dueDate)}</b></span>}
-                </div>
-                <div className="flex gap-6 text-[11px] bg-white border border-slate-200 px-3 py-1.5">
-                  <span className="text-slate-500 uppercase tracking-widest text-[9px] font-bold self-center">PO Breakdown</span>
-                  <span>Base: <b className="font-mono">{fmt(poPayItem.poSubtotal || (poPayItem.poAmount - (poPayItem.poGst || 0)))}</b></span>
-                  <span>+ GST: <b className="font-mono text-blue-700">{fmt(poPayItem.poGst || 0)}</b>
-                    {poPayItem.poGst > 0 && poPayItem.poSubtotal ? <span className="text-[9px] text-slate-400 ml-1">({((poPayItem.poGst / poPayItem.poSubtotal) * 100).toFixed(0)}%)</span> : null}
-                  </span>
-                  <span>= Total: <b className="font-mono">{fmt(poPayItem.poAmount)}</b></span>
-                </div>
-                {poPayItem.vendorBank && (
-                  <div className="bg-white border border-slate-200 px-3 py-1.5 flex gap-6">
-                    <span>Bank: <b>{poPayItem.vendorBank}</b></span>
-                    {poPayItem.vendorAccount && <span>A/C: <b className="font-mono">{poPayItem.vendorAccount}</b></span>}
-                    {poPayItem.vendorIfsc && <span>IFSC: <b className="font-mono">{poPayItem.vendorIfsc}</b></span>}
-                  </div>
+
+              {/* Vendor / Bank strip */}
+              <div className="bg-slate-50 px-4 py-2 text-[11px] border-b border-slate-200 flex flex-wrap gap-x-6 gap-y-1">
+                {poPayItem.material && <span className="text-slate-600">Material: <b>{poPayItem.material}</b></span>}
+                {poPayItem.vendorPhone && <span className="text-slate-600">Phone: <b>{poPayItem.vendorPhone}</b></span>}
+                {poPayItem.dueDate && <span className="text-slate-600">Due: <b>{fmtDate(poPayItem.dueDate)}</b></span>}
+                {poPayItem.vendorBank ? (
+                  <span className="text-slate-600">Bank: <b>{poPayItem.vendorBank}</b>{poPayItem.vendorAccount && <> · A/C <b className="font-mono">{poPayItem.vendorAccount}</b></>}{poPayItem.vendorIfsc && <> · IFSC <b className="font-mono">{poPayItem.vendorIfsc}</b></>}</span>
+                ) : (
+                  <span className="text-orange-600 font-bold">⚠ No bank details on file — update vendor master</span>
                 )}
-                {!poPayItem.vendorBank && (
-                  <div className="text-[10px] text-orange-600 font-bold uppercase">No bank details on file — update vendor master</div>
-                )}
+              </div>
+
+              {/* ═══ BASE / GST / TOTAL BREAKDOWN ═══ */}
+              <div className="px-4 py-3 border-b border-slate-200 bg-white">
+                <div className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-1.5">Payment Breakdown {poGst > 0 && <span className="text-slate-400 normal-case font-normal">· GST @ {gstPct.toFixed(0)}% on base</span>}</div>
+                <table className="w-full text-xs border border-slate-200">
+                  <thead className="bg-slate-800 text-white">
+                    <tr>
+                      <th className="text-left px-2 py-1.5 font-semibold text-[10px] uppercase tracking-widest border-r border-slate-700 w-40">Stage</th>
+                      <th className="text-right px-2 py-1.5 font-semibold text-[10px] uppercase tracking-widest border-r border-slate-700">Base (Non-GST)</th>
+                      <th className="text-right px-2 py-1.5 font-semibold text-[10px] uppercase tracking-widest border-r border-slate-700">GST</th>
+                      <th className="text-right px-2 py-1.5 font-semibold text-[10px] uppercase tracking-widest">Total</th>
+                    </tr>
+                  </thead>
+                  <tbody className="font-mono tabular-nums">
+                    <tr className="border-b border-slate-100">
+                      <td className="px-2 py-1 text-slate-600 font-sans">PO Order Value</td>
+                      <td className="text-right px-2 py-1 text-slate-700 border-l border-slate-100">{fmt(poBase)}</td>
+                      <td className="text-right px-2 py-1 text-slate-700 border-l border-slate-100">{fmt(poGst)}</td>
+                      <td className="text-right px-2 py-1 text-slate-800 font-bold border-l border-slate-100">{fmt(poTotal)}</td>
+                    </tr>
+                    <tr className="border-b border-slate-100 bg-blue-50/40">
+                      <td className="px-2 py-1 text-slate-600 font-sans">Received (GRN)</td>
+                      <td className="text-right px-2 py-1 text-blue-700 border-l border-slate-100">{fmt(recvBase)}</td>
+                      <td className="text-right px-2 py-1 text-blue-700 border-l border-slate-100">{fmt(recvGst)}</td>
+                      <td className="text-right px-2 py-1 text-blue-800 font-bold border-l border-slate-100">{fmt(recvTotal)}</td>
+                    </tr>
+                    <tr className="border-b border-slate-100 bg-green-50/40">
+                      <td className="px-2 py-1 text-slate-600 font-sans">Paid So Far</td>
+                      <td className="text-right px-2 py-1 text-green-700 border-l border-slate-100">{fmt(paidBase)}</td>
+                      <td className="text-right px-2 py-1 text-green-700 border-l border-slate-100">{fmt(paidGst)}</td>
+                      <td className="text-right px-2 py-1 text-green-800 font-bold border-l border-slate-100">{fmt(paidBase + paidGst)}</td>
+                    </tr>
+                    {poPendingCash > 0 && (
+                      <tr className="border-b border-slate-100 bg-yellow-50/40">
+                        <td className="px-2 py-1 text-slate-600 font-sans">Pending Cash Vouchers</td>
+                        <td className="text-right px-2 py-1 text-yellow-700 border-l border-slate-100">{fmt(pendingCashBase)}</td>
+                        <td className="text-right px-2 py-1 text-yellow-700 border-l border-slate-100">{fmt(pendingCashGst)}</td>
+                        <td className="text-right px-2 py-1 text-yellow-800 font-bold border-l border-slate-100">{fmt(poPendingCash)}</td>
+                      </tr>
+                    )}
+                    <tr className="border-t-2 border-slate-400 bg-red-50/50">
+                      <td className="px-2 py-1.5 font-bold text-slate-800 font-sans uppercase tracking-widest text-[10px]">Balance (Payable Now)</td>
+                      <td className={`text-right px-2 py-1.5 font-bold border-l border-slate-200 ${balBase > 0 ? 'text-red-700' : 'text-slate-400'}`}>{fmt(balBase)}</td>
+                      <td className={`text-right px-2 py-1.5 font-bold border-l border-slate-200 ${balGst > 0 ? 'text-red-700' : 'text-slate-400'}`}>{fmt(balGst)}</td>
+                      <td className={`text-right px-2 py-1.5 font-bold border-l border-slate-200 ${balTotal > 0 ? 'text-red-800 text-sm' : 'text-green-700'}`}>{balTotal > 0 ? fmt(balTotal) : '— SETTLED —'}</td>
+                    </tr>
+                  </tbody>
+                </table>
               </div>
               <div className="p-4 space-y-3">
                 {poPendingCash > 0 && (
@@ -2632,6 +2702,13 @@ export default function PaymentsOut() {
                         <input value={poPayAmount} onChange={e => setPoPayAmount(e.target.value)} type="number" autoFocus max={maxPayable}
                           className="w-full border border-slate-300 px-2.5 py-1.5 text-sm font-mono focus:outline-none focus:ring-1 focus:ring-slate-400" placeholder={String(Math.round(maxPayable))} />
                         <div className="text-[9px] text-slate-400 mt-0.5">Max payable: {fmt(maxPayable)}</div>
+                        {enteredAmt > 0 && poPayIncludeGst !== null && (
+                          <div className="mt-1 text-[10px] bg-indigo-50 border border-indigo-200 px-2 py-1">
+                            <span className="text-indigo-700 font-bold">This payment allocates:</span>
+                            <span className="ml-2 font-mono">Base <b>{fmt(enteredBase)}</b></span>
+                            <span className="ml-2 font-mono">GST <b>{fmt(enteredGst)}</b></span>
+                          </div>
+                        )}
                       </>;
                     })()}
                   </div>
@@ -2768,38 +2845,62 @@ export default function PaymentsOut() {
                   </div>
                 )}
 
-                {/* Payment history ledger */}
-                {poPayments.length > 0 && (
+                {/* Payment history ledger — Base / GST breakdown */}
+                {splits.length > 0 && (
                   <div className="mt-3">
-                    <div className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-1">Payment History</div>
+                    <div className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-1">
+                      Payment History ({splits.length}) — Base / GST Ledger
+                    </div>
                     <table className="w-full text-[11px] border border-slate-200">
                       <thead>
-                        <tr className="bg-slate-100">
-                          <th className="text-left px-2 py-1 text-[9px] font-bold uppercase border-r border-slate-200">Date</th>
-                          <th className="text-right px-2 py-1 text-[9px] font-bold uppercase border-r border-slate-200">Amount</th>
-                          <th className="text-left px-2 py-1 text-[9px] font-bold uppercase border-r border-slate-200">Mode</th>
-                          <th className="text-left px-2 py-1 text-[9px] font-bold uppercase border-r border-slate-200">Ref</th>
-                          <th className="text-right px-2 py-1 text-[9px] font-bold uppercase">Running</th>
+                        <tr className="bg-slate-800 text-white">
+                          <th className="text-left px-2 py-1.5 text-[9px] font-bold uppercase tracking-widest border-r border-slate-700">Date</th>
+                          <th className="text-left px-2 py-1.5 text-[9px] font-bold uppercase tracking-widest border-r border-slate-700">Mode</th>
+                          <th className="text-left px-2 py-1.5 text-[9px] font-bold uppercase tracking-widest border-r border-slate-700">UTR / Ref</th>
+                          <th className="text-right px-2 py-1.5 text-[9px] font-bold uppercase tracking-widest border-r border-slate-700">Amount</th>
+                          <th className="text-right px-2 py-1.5 text-[9px] font-bold uppercase tracking-widest border-r border-slate-700">Base Paid</th>
+                          <th className="text-right px-2 py-1.5 text-[9px] font-bold uppercase tracking-widest border-r border-slate-700">GST Paid</th>
+                          <th className="text-left px-2 py-1.5 text-[9px] font-bold uppercase tracking-widest">Type</th>
                         </tr>
                       </thead>
-                      <tbody>
-                        {poPayments.map((p, j) => (
-                          <tr key={p.id} className={j % 2 ? 'bg-slate-50' : ''}>
-                            <td className="px-2 py-1 font-mono text-slate-500 border-r border-slate-100">{fmtDate(p.paymentDate)}</td>
-                            <td className="px-2 py-1 text-right font-mono tabular-nums text-green-700 border-r border-slate-100">{fmt(p.amount)}</td>
-                            <td className="px-2 py-1 text-slate-600 border-r border-slate-100">{p.mode}</td>
-                            <td className="px-2 py-1 text-slate-500 font-mono border-r border-slate-100">{p.reference || '--'}</td>
-                            <td className="px-2 py-1 text-right font-mono tabular-nums font-bold">{fmt(p.runningTotal)}</td>
-                          </tr>
-                        ))}
+                      <tbody className="font-mono tabular-nums">
+                        {splits.map((p, j) => {
+                          const { utr, prefix } = parseUtr(p.reference);
+                          const isPending = p.paymentStatus === 'INITIATED' || !p.reference;
+                          return (
+                            <tr key={p.id} className={`${j % 2 ? 'bg-slate-50' : ''} ${isPending ? 'bg-yellow-50/50' : ''} border-b border-slate-100`}>
+                              <td className="px-2 py-1 text-slate-600 border-r border-slate-100 font-sans">{fmtDate(p.paymentDate)}</td>
+                              <td className="px-2 py-1 text-slate-700 border-r border-slate-100 text-[10px] font-bold">{p.mode}</td>
+                              <td className="px-2 py-1 text-slate-600 border-r border-slate-100 max-w-[160px] truncate" title={p.reference || ''}>
+                                {isPending ? <span className="text-yellow-800 font-bold">UTR pending</span> : (utr || prefix || '--')}
+                              </td>
+                              <td className="px-2 py-1 text-right text-green-700 font-bold border-r border-slate-100">{fmt(p.amount)}</td>
+                              <td className="px-2 py-1 text-right text-slate-700 border-r border-slate-100">{fmt(p.baseAmt)}</td>
+                              <td className="px-2 py-1 text-right text-slate-700 border-r border-slate-100">{fmt(p.gstAmt)}</td>
+                              <td className="px-2 py-1 text-[10px] font-sans">
+                                <span className={`font-bold uppercase px-1 py-0.5 border ${p.label === 'Incl. GST' ? 'border-green-300 bg-green-50 text-green-800' : p.label === 'Base only' ? 'border-orange-300 bg-orange-50 text-orange-800' : 'border-slate-300 bg-slate-50 text-slate-600'}`}>{p.label}</span>
+                              </td>
+                            </tr>
+                          );
+                        })}
                       </tbody>
+                      <tfoot>
+                        <tr className="bg-slate-800 text-white font-semibold">
+                          <td className="px-2 py-1.5 text-[10px] uppercase tracking-widest" colSpan={3}>Total Paid ({splits.length})</td>
+                          <td className="px-2 py-1.5 text-right font-mono tabular-nums">{fmt(splits.reduce((s, p) => s + p.amount, 0))}</td>
+                          <td className="px-2 py-1.5 text-right font-mono tabular-nums">{fmt(paidBase)}</td>
+                          <td className="px-2 py-1.5 text-right font-mono tabular-nums">{fmt(paidGst)}</td>
+                          <td></td>
+                        </tr>
+                      </tfoot>
                     </table>
                   </div>
                 )}
               </div>
             </div>
           </div>
-        )}
+          );
+        })()}
 
         {/* Scan Bank Receipt modal */}
         {scanTarget && (
