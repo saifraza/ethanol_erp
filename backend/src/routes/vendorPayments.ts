@@ -48,6 +48,22 @@ const splitPaymentSchema = z.object({
   hasGst: z.boolean({ required_error: 'Select whether this payment includes GST' }),
 });
 
+// Vendor-level multi-allocation: one lump-sum transfer spread across N POs
+// of the same vendor with optional "rest as advance". Captures compulsory GST.
+const allocateSchema = z.object({
+  vendorId: z.string().min(1),
+  mode: z.string().optional().default('NEFT'),
+  reference: z.string().optional().default(''),
+  remarks: z.string().optional().nullable(),
+  paymentDate: z.string().optional(),
+  hasGst: z.boolean({ required_error: 'Select whether this payment includes GST' }),
+  allocations: z.array(z.object({
+    poId: z.string().min(1),
+    amount: z.coerce.number().positive(),
+  })).default([]),
+  advanceAmount: z.coerce.number().nonnegative().default(0),
+});
+
 const router = Router();
 router.use(authenticate as any);
 
@@ -898,6 +914,147 @@ Return ONLY the JSON object, no markdown, no prose.`;
   });
 
   res.json({ filePath: relPath, extracted, warnings, payment: updated });
+}));
+
+// ═══════════════════════════════════════════════
+// POST /allocate — Vendor-level payment allocation.
+// Single bank transfer spread across N open POs of the same vendor, with the
+// remainder optionally held as a vendor ADVANCE. Creates one VendorPayment
+// row per allocation + one more for the advance. All in a single transaction.
+// Auto-closes each PO when its receivable is fully covered.
+// ═══════════════════════════════════════════════
+router.post('/allocate', validate(allocateSchema), asyncHandler(async (req: AuthRequest, res: Response) => {
+  const b = req.body as {
+    vendorId: string;
+    mode: string;
+    reference: string;
+    remarks?: string | null;
+    paymentDate?: string;
+    hasGst: boolean;
+    allocations: Array<{ poId: string; amount: number }>;
+    advanceAmount: number;
+  };
+  if ((b.allocations?.length || 0) === 0 && (b.advanceAmount || 0) === 0) {
+    res.status(400).json({ error: 'Provide at least one PO allocation or an advance amount.' });
+    return;
+  }
+  const totalAmount = (b.allocations || []).reduce((s, a) => s + a.amount, 0) + (b.advanceAmount || 0);
+  if (totalAmount <= 0) { res.status(400).json({ error: 'Total amount must be positive.' }); return; }
+
+  const vendor = await prisma.vendor.findUnique({ where: { id: b.vendorId }, select: { id: true, name: true } });
+  if (!vendor) { res.status(404).json({ error: 'Vendor not found' }); return; }
+
+  const paymentDate = b.paymentDate ? new Date(b.paymentDate) : new Date();
+  const companyId = getActiveCompanyId(req);
+  const userId = req.user!.id;
+  const baseRemarks = (b.remarks || '').trim();
+
+  // Per-allocation PO must belong to the vendor; we fetch them up-front
+  const poIds = (b.allocations || []).map(a => a.poId);
+  const pos = poIds.length > 0 ? await prisma.purchaseOrder.findMany({
+    where: { id: { in: poIds } },
+    select: { id: true, poNo: true, vendorId: true, status: true, lines: { select: { receivedQty: true, rate: true, gstPercent: true } } },
+  }) : [];
+  const poById = new Map(pos.map(p => [p.id, p]));
+  for (const a of b.allocations) {
+    const po = poById.get(a.poId);
+    if (!po) { res.status(400).json({ error: `PO ${a.poId} not found` }); return; }
+    if (po.vendorId !== b.vendorId) { res.status(400).json({ error: `PO-${po.poNo} does not belong to the selected vendor` }); return; }
+  }
+
+  const created: Array<{ id: string; poNo?: number; amount: number; type: 'PO_PAYMENT' | 'ADVANCE'; paymentStatus: string }> = [];
+  const closedPOs: number[] = [];
+
+  await prisma.$transaction(async (tx: any) => {
+    // One VendorPayment per PO allocation
+    for (const alloc of b.allocations) {
+      const po = poById.get(alloc.poId)!;
+      const payment = await tx.vendorPayment.create({
+        data: {
+          vendorId: b.vendorId,
+          paymentDate,
+          amount: alloc.amount,
+          mode: b.mode || 'NEFT',
+          reference: b.reference || '',
+          paymentStatus: b.reference ? 'CONFIRMED' : 'INITIATED',
+          confirmedAt: b.reference ? paymentDate : null,
+          isAdvance: false,
+          hasGst: b.hasGst,
+          remarks: `Payment against PO-${po.poNo}${baseRemarks ? ' | ' + baseRemarks : ''}`,
+          userId,
+          companyId,
+        },
+      });
+      created.push({ id: payment.id, poNo: po.poNo, amount: alloc.amount, type: 'PO_PAYMENT', paymentStatus: payment.paymentStatus });
+
+      // Auto-close PO when all received material is now covered (only confirmed payments count)
+      if (payment.paymentStatus === 'CONFIRMED' && po.status !== 'CLOSED') {
+        const receivable = Math.round(po.lines.reduce((s, l) => {
+          const base = (l.receivedQty || 0) * l.rate;
+          return s + base + base * (l.gstPercent || 0) / 100;
+        }, 0) * 100) / 100;
+        const allPaid = await tx.vendorPayment.aggregate({
+          where: {
+            vendorId: b.vendorId,
+            paymentStatus: 'CONFIRMED',
+            invoiceId: null,
+            OR: [
+              { remarks: { contains: `PO-${po.poNo} ` } },
+              { remarks: { endsWith: `PO-${po.poNo}` } },
+            ],
+          },
+          _sum: { amount: true },
+        });
+        const totalPaidForPo = allPaid._sum.amount || 0;
+        if (totalPaidForPo >= receivable - 0.01) {
+          await tx.purchaseOrder.update({ where: { id: po.id }, data: { status: 'CLOSED' } });
+          closedPOs.push(po.poNo);
+        }
+      }
+    }
+
+    // Optional advance — one more VendorPayment, isAdvance=true, no PO ref in remarks
+    if (b.advanceAmount > 0) {
+      const advPayment = await tx.vendorPayment.create({
+        data: {
+          vendorId: b.vendorId,
+          paymentDate,
+          amount: b.advanceAmount,
+          mode: b.mode || 'NEFT',
+          reference: b.reference || '',
+          paymentStatus: b.reference ? 'CONFIRMED' : 'INITIATED',
+          confirmedAt: b.reference ? paymentDate : null,
+          isAdvance: true,
+          hasGst: b.hasGst,
+          remarks: `Vendor advance${baseRemarks ? ' | ' + baseRemarks : ''}`,
+          userId,
+          companyId,
+        },
+      });
+      created.push({ id: advPayment.id, amount: b.advanceAmount, type: 'ADVANCE', paymentStatus: advPayment.paymentStatus });
+    }
+  });
+
+  // Fire auto-journal entries for confirmed payments (best-effort, outside txn)
+  for (const c of created) {
+    if (c.paymentStatus === 'CONFIRMED') {
+      try {
+        await onVendorPaymentMade(prisma as Parameters<typeof onVendorPaymentMade>[0], {
+          id: c.id, amount: c.amount, mode: b.mode, reference: b.reference,
+          tdsDeducted: 0, vendorId: b.vendorId, userId, paymentDate,
+        });
+      } catch { /* best effort */ }
+    }
+  }
+
+  res.json({
+    ok: true,
+    totalAmount,
+    vendorName: vendor.name,
+    payments: created,
+    closedPOs,
+    status: b.reference ? 'CONFIRMED' : 'INITIATED',
+  });
 }));
 
 export default router;

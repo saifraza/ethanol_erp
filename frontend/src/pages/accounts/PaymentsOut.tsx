@@ -341,6 +341,12 @@ export default function PaymentsOut() {
   const [scanFile, setScanFile] = useState<File | null>(null);
   const [scanUploading, setScanUploading] = useState(false);
   const [scanResult, setScanResult] = useState<{ extracted: Record<string, unknown> | null; warnings: string[] } | null>(null);
+
+  // Multi-PO allocation state — in the PO Pay modal, if the typed amount exceeds the
+  // current PO balance, team can either spread the excess across other open POs of the
+  // same vendor OR park it as a vendor advance. Map: poId → amount (string for input binding).
+  const [poAllocExtras, setPoAllocExtras] = useState<Record<string, string>>({});
+  const [poAllocAdvance, setPoAllocAdvance] = useState<string>('');
   const [tdsCalc, setTdsCalc] = useState<{ shouldDeduct: boolean; rate: number; tdsAmount: number; netAmount: number; ledgerId: string | null; sectionLabel: string; reason: string } | null>(null);
   const [tdsOverride, setTdsOverride] = useState(true); // true = apply TDS, false = skip
   const [tdsLoading, setTdsLoading] = useState(false);
@@ -590,8 +596,44 @@ export default function PaymentsOut() {
       return;
     }
     const hasGstToSend: boolean = poHasGstOnPO ? !!poPayIncludeGst : false;
+
+    // Multi-allocation path — if team is distributing across multiple POs or holding some as advance,
+    // hit the /vendor-payments/allocate endpoint. Otherwise stick with single-PO /:id/pay for backwards compat.
+    const extraPoAllocs = Object.entries(poAllocExtras)
+      .map(([poId, str]) => ({ poId, amount: parseFloat(str) || 0 }))
+      .filter(a => a.amount > 0);
+    const advanceAmt = parseFloat(poAllocAdvance) || 0;
+    const useAllocate = extraPoAllocs.length > 0 || advanceAmt > 0;
+
     setPoPaySaving(true);
     try {
+      if (useAllocate) {
+        const allocations = [
+          { poId: poPayItem.poId, amount: parseFloat(poPayAmount) },
+          ...extraPoAllocs,
+        ];
+        const res = await api.post('/vendor-payments/allocate', {
+          vendorId: poPayItem.vendorId,
+          mode: poPayMode,
+          reference: poPayRef,
+          remarks: poPayRemarks,
+          hasGst: hasGstToSend,
+          allocations,
+          advanceAmount: advanceAmt,
+        });
+        const summary: string[] = [];
+        for (const p of res.data.payments || []) {
+          if (p.type === 'PO_PAYMENT') summary.push(`PO-${p.poNo}: ₹${p.amount.toLocaleString('en-IN')}`);
+          else if (p.type === 'ADVANCE') summary.push(`Advance: ₹${p.amount.toLocaleString('en-IN')}`);
+        }
+        const closedStr = (res.data.closedPOs || []).length ? `\n\nPOs auto-closed: ${(res.data.closedPOs || []).map((n: number) => 'PO-' + n).join(', ')}` : '';
+        alert(`Allocation saved (${res.data.status}):\n${summary.join('\n')}${closedStr}`);
+        setPoPayItem(null);
+        setPoAllocExtras({});
+        setPoAllocAdvance('');
+        await fetchPending();
+        return;
+      }
       const res = await api.post(`/purchase-orders/${poPayItem.poId}/pay`, {
         amount: parseFloat(poPayAmount),
         mode: poPayMode,
@@ -1224,7 +1266,7 @@ export default function PaymentsOut() {
                                     const canAdvancePay = item.grnCount === 0 && item.invoices.length === 0 && isAdvance;
                                     if (canRunningPay || canAdvancePay) {
                                       return (
-                                        <button onClick={() => { setPoPayItem(item); setPoPayAmount(canAdvancePay ? String(item.poAmount || '') : ''); setPoPayMode('NEFT'); setPoPayRef(''); setPoPayRemarks(canAdvancePay ? 'Advance payment' : ''); setPoPayIncludeGst(null); setBankPendingPayment(null); fetchPOPayments(item.poId); }}
+                                        <button onClick={() => { setPoPayItem(item); setPoPayAmount(canAdvancePay ? String(item.poAmount || '') : ''); setPoPayMode('NEFT'); setPoPayRef(''); setPoPayRemarks(canAdvancePay ? 'Advance payment' : ''); setPoPayIncludeGst(null); setBankPendingPayment(null); setPoAllocExtras({}); setPoAllocAdvance(''); fetchPOPayments(item.poId); }}
                                           className="px-2 py-0.5 bg-green-600 text-white text-[9px] font-bold uppercase hover:bg-green-700 flex items-center gap-1" title={canAdvancePay ? 'Pay in advance' : 'Pay against PO'}>
                                           <CreditCard size={10} /> {canAdvancePay ? 'ADV PAY' : 'PAY'}
                                         </button>
@@ -2773,11 +2815,98 @@ export default function PaymentsOut() {
                     Cash payment will auto-create a Cash Voucher entry
                   </div>
                 )}
+
+                {/* ═══ Other Open POs for this Vendor — multi-allocation ═══ */}
+                {(() => {
+                  const siblingPOs = pendingItems.filter(p => p.vendorId === poPayItem.vendorId && p.poId !== poPayItem.poId && p.balance > 0);
+                  const currentAmt = parseFloat(poPayAmount) || 0;
+                  const extraAlloc = Object.values(poAllocExtras).reduce((s, str) => s + (parseFloat(str) || 0), 0);
+                  const advAlloc = parseFloat(poAllocAdvance) || 0;
+                  const grandTotal = currentAmt + extraAlloc + advAlloc;
+                  if (siblingPOs.length === 0 && !advAlloc) {
+                    // No other open POs — still offer the advance option
+                    return (
+                      <div className="border border-slate-200 bg-slate-50 px-3 py-2 text-xs">
+                        <div className="flex items-center justify-between gap-3">
+                          <label className="text-[10px] font-bold text-slate-600 uppercase tracking-widest">Or pay extra as Vendor Advance</label>
+                          <input type="number" value={poAllocAdvance} onChange={e => setPoAllocAdvance(e.target.value)}
+                            placeholder="0" className="border border-slate-300 px-2 py-1 text-xs w-32 font-mono text-right focus:outline-none focus:ring-1 focus:ring-slate-400" />
+                        </div>
+                        <div className="text-[10px] text-slate-500 mt-1">Overpayment held as vendor advance — can be adjusted against a future PO invoice.</div>
+                      </div>
+                    );
+                  }
+                  return (
+                    <div className="border border-indigo-200 bg-indigo-50/40 px-3 py-2 text-xs space-y-2">
+                      <div className="text-[10px] font-bold text-indigo-800 uppercase tracking-widest">
+                        Other Open POs for {poPayItem.vendorName} · {siblingPOs.length} running
+                      </div>
+                      <table className="w-full text-[11px]">
+                        <thead>
+                          <tr className="text-slate-500 text-[9px] uppercase tracking-widest">
+                            <th className="text-left px-1 py-1">PO#</th>
+                            <th className="text-left px-1 py-1">Material</th>
+                            <th className="text-right px-1 py-1">Balance</th>
+                            <th className="text-right px-1 py-1">Allocate</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {siblingPOs.map(sib => (
+                            <tr key={sib.poId} className="border-t border-indigo-100">
+                              <td className="px-1 py-1 font-mono text-blue-700 font-medium">PO-{sib.poNo}</td>
+                              <td className="px-1 py-1 text-slate-600 max-w-[180px] truncate" title={sib.material || ''}>{sib.material || '--'}</td>
+                              <td className="px-1 py-1 text-right font-mono text-red-600">{fmt(sib.balance)}</td>
+                              <td className="px-1 py-1 text-right">
+                                <input type="number" value={poAllocExtras[sib.poId] || ''}
+                                  onChange={e => setPoAllocExtras(prev => ({ ...prev, [sib.poId]: e.target.value }))}
+                                  placeholder="0" max={sib.balance}
+                                  className="border border-slate-300 px-1.5 py-0.5 text-xs w-28 font-mono text-right focus:outline-none focus:ring-1 focus:ring-indigo-500" />
+                                {parseFloat(poAllocExtras[sib.poId] || '0') > sib.balance && (
+                                  <div className="text-[9px] text-red-600 font-bold">Exceeds balance</div>
+                                )}
+                              </td>
+                            </tr>
+                          ))}
+                          <tr className="border-t border-indigo-200 bg-indigo-50">
+                            <td className="px-1 py-1 text-slate-700 font-bold italic" colSpan={2}>Vendor Advance (rest)</td>
+                            <td className="px-1 py-1 text-right text-slate-400">—</td>
+                            <td className="px-1 py-1 text-right">
+                              <input type="number" value={poAllocAdvance} onChange={e => setPoAllocAdvance(e.target.value)}
+                                placeholder="0" className="border border-slate-300 px-1.5 py-0.5 text-xs w-28 font-mono text-right focus:outline-none focus:ring-1 focus:ring-amber-500" />
+                            </td>
+                          </tr>
+                        </tbody>
+                      </table>
+                      <div className="flex items-center justify-between pt-1 border-t border-indigo-200 text-[11px]">
+                        <span className="text-slate-600">
+                          Current PO: <b className="font-mono">{fmt(currentAmt)}</b>
+                          <span className="mx-2 text-slate-300">+</span>
+                          Other POs: <b className="font-mono">{fmt(extraAlloc)}</b>
+                          <span className="mx-2 text-slate-300">+</span>
+                          Advance: <b className="font-mono text-amber-700">{fmt(advAlloc)}</b>
+                        </span>
+                        <span className="font-bold text-indigo-800">
+                          = {fmt(grandTotal)} total
+                        </span>
+                      </div>
+                    </div>
+                  );
+                })()}
+
                 <button onClick={submitPOPayment} disabled={poPaySaving || !poPayAmount}
                   className="w-full px-4 py-2 bg-green-600 text-white text-[11px] font-bold uppercase tracking-widest hover:bg-green-700 disabled:opacity-50">
-                  {poPaySaving
-                    ? 'Processing...'
-                    : `Pay ${poPayAmount ? '\u20B9' + parseFloat(poPayAmount).toLocaleString('en-IN') : ''} via ${poPayMode}${poPayItem.poGst > 0 ? (poPayIncludeGst ? ' (Incl. GST)' : ' (Ex. GST)') : ''}`}
+                  {(() => {
+                    if (poPaySaving) return 'Processing...';
+                    const cur = parseFloat(poPayAmount) || 0;
+                    const extra = Object.values(poAllocExtras).reduce((s, v) => s + (parseFloat(v) || 0), 0);
+                    const adv = parseFloat(poAllocAdvance) || 0;
+                    const total = cur + extra + adv;
+                    const gstSuffix = poPayItem.poGst > 0 ? (poPayIncludeGst ? ' (Incl. GST)' : ' (Ex. GST)') : '';
+                    if (extra > 0 || adv > 0) {
+                      return `Pay ₹${total.toLocaleString('en-IN')} via ${poPayMode}${gstSuffix} — ${1 + Object.keys(poAllocExtras).filter(k => parseFloat(poAllocExtras[k] || '0') > 0).length} PO(s)${adv > 0 ? ' + Advance' : ''}`;
+                    }
+                    return `Pay ${cur > 0 ? '₹' + cur.toLocaleString('en-IN') : ''} via ${poPayMode}${gstSuffix}`;
+                  })()}
                 </button>
 
                 {/* Pending bank payment — enter UTR to confirm (+ optional: upload bank receipt to auto-fill UTR) */}
