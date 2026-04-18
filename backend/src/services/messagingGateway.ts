@@ -83,7 +83,7 @@ function parseRouting(json: string | null): Record<string, string> {
   if (!json) return { ...DEFAULT_MODULE_ROUTING };
   try {
     const parsed = JSON.parse(json);
-    if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) return parsed;
+    if (typeof parsed === 'object' && !Array.isArray(parsed)) return parsed;
   } catch { /* ignore */ }
   return { ...DEFAULT_MODULE_ROUTING };
 }

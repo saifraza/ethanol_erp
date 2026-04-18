@@ -38,7 +38,7 @@ function getModuleRouting(settings: any): Record<string, string> {
     const raw = settings?.telegramModuleRouting;
     if (raw) {
       const parsed = JSON.parse(raw);
-      if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) return parsed;
+      if (typeof parsed === 'object' && !Array.isArray(parsed)) return parsed;
     }
   } catch { /* ignore */ }
   return { ...DEFAULT_MODULE_ROUTING };
