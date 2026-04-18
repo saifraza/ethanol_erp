@@ -206,24 +206,17 @@ export default function GateEntry() {
     return defaultCompany ? selectedCompanyId === defaultCompany.id : true;
   }).filter(p => !supplierName || p.vendor_name.toLowerCase().includes(supplierName.toLowerCase()));
 
-  // Show JOB_WORK button when EITHER a JOB_WORK PO (MSPIL-as-buyer raw-material PO)
-  // OR a JOB_WORK EthanolContract (MSPIL-as-processor inbound corn from MASH etc) exists.
-  // 90% of MSPIL RM/DDGS flow is via ethContract, not PO — so PO-only check was hiding the button.
-  const hasJobWorkPOs = pos.some(p => {
+  // Hide JOB_WORK button entirely when no JOB_WORK POs exist for the current
+  // company. Prevents operators from clicking into an empty mode where they
+  // can't do anything but get confused. If a JOB_WORK PO is later created
+  // and cached, the button reappears automatically on next master-data refresh.
+  const hasJobWorkDeals = pos.some(p => {
     if (p.deal_type !== 'JOB_WORK') return false;
     if (!selectedCompanyId) return true;
     if (p.company_id) return p.company_id === selectedCompanyId;
     const defaultCompany = companies.find(c => c.isDefault);
     return defaultCompany ? selectedCompanyId === defaultCompany.id : true;
   });
-  const hasJobWorkEthContracts = ethContracts.some(c => {
-    if (c.contractType !== 'JOB_WORK') return false;
-    if (!selectedCompanyId) return true;
-    if (c.company_id) return c.company_id === selectedCompanyId;
-    const defaultCompany = companies.find(c2 => c2.isDefault);
-    return defaultCompany ? selectedCompanyId === defaultCompany.id : true;
-  });
-  const hasJobWorkDeals = hasJobWorkPOs || hasJobWorkEthContracts;
   const selectedPO = pos.find(p => p.id === selectedPoId);
 
   // Filter suppliers and materials by selected company
@@ -343,12 +336,7 @@ export default function GateEntry() {
         body.poId = selectedPoId || undefined;
         body.poLineId = selectedPoLineId || undefined;
         body.poNumber = poNumber || undefined;
-        if (purchaseType === 'JOB_WORK') {
-          body.purchaseType = 'JOB_WORK';
-          // When the JW flow is driven by EthanolContract (not a PO), forward the contract id
-          // so the cloud handler can tie the inbound truck to the right JW agreement.
-          if (!selectedPoId && ethContractId) body.cloudContractId = ethContractId;
-        }
+        if (purchaseType === 'JOB_WORK') body.purchaseType = 'JOB_WORK';
       }
       if (direction === 'INBOUND' && purchaseType === 'SPOT') {
         body.sellerPhone = sellerPhone;
@@ -621,10 +609,7 @@ export default function GateEntry() {
                     vendor = traders.find(t => t.name.toLowerCase() === supplierName.toLowerCase());
                   }
                   const vendorTypes = vendor?.productTypes?.split(',').filter(Boolean) || [];
-                  // 'TRADER' is a vendor role, NOT a material category — skip the fallback in that case.
-                  // Otherwise traders with no productTypes set end up showing an empty list.
-                  const fallback = vendor?.category && vendor.category !== 'TRADER' ? [vendor.category] : [];
-                  const filterTypes = vendorTypes.length > 0 ? vendorTypes : fallback;
+                  const filterTypes = vendorTypes.length > 0 ? vendorTypes : (vendor?.category ? [vendor.category] : []);
                   const filtered = filterTypes.length > 0
                     ? filteredMaterials.filter(m => m.category && filterTypes.includes(m.category))
                     : filteredMaterials;
@@ -638,43 +623,8 @@ export default function GateEntry() {
             )}
           </div>
 
-          {/* JOB_WORK Contract Selector (INBOUND) — uses EthanolContract when no JOB_WORK PO exists.
-              90% of MSPIL's raw-material inbound comes via a JW contract with MASH/SM PRIMAL, not a PO. */}
-          {direction === 'INBOUND' && purchaseType === 'JOB_WORK' && filteredPOs.length === 0 && (() => {
-            const jwEthContracts = filteredEthContracts.filter(c => c.contractType === 'JOB_WORK');
-            return (
-              <div className="md:col-span-3">
-                <label className="text-xs font-bold text-slate-700 uppercase tracking-widest block mb-1">
-                  Job Work Contract
-                  <span className="ml-2 px-2 py-0.5 bg-amber-500 text-white text-[9px] font-bold uppercase">JOB WORK</span>
-                  {masterLoading && <span className="text-yellow-500 animate-pulse ml-1">loading contracts...</span>}
-                  {!masterLoading && jwEthContracts.length === 0 && <span className="text-slate-400 ml-1">(no active JW contracts found)</span>}
-                </label>
-                {jwEthContracts.length > 0 ? (
-                  <select value={ethContractId} onChange={e => {
-                    setEthContractId(e.target.value);
-                    const c = jwEthContracts.find(x => x.id === e.target.value);
-                    if (c) { setSupplierName(c.buyerName); }
-                  }}
-                    className="w-full border border-slate-300 px-3 py-2.5 text-sm focus:outline-none focus:ring-1 focus:ring-amber-400">
-                    <option value="">-- Select JW Contract --</option>
-                    {jwEthContracts.map(c => (
-                      <option key={c.id} value={c.id}>
-                        {c.contractNo} | {c.buyerName}
-                      </option>
-                    ))}
-                  </select>
-                ) : (
-                  <div className="text-xs text-slate-500 border border-slate-200 bg-slate-50 px-3 py-2">
-                    No active JOB_WORK ethanol contracts. Create one on cloud ERP first, or use PO Purchase mode with a JOB_WORK PO.
-                  </div>
-                )}
-              </div>
-            );
-          })()}
-
-          {/* PO Selector (for PO purchase, or JOB_WORK when a JW PO exists) */}
-          {direction === 'INBOUND' && isPOLike && !(purchaseType === 'JOB_WORK' && filteredPOs.length === 0) && (
+          {/* PO Selector (only for PO purchase) */}
+          {direction === 'INBOUND' && isPOLike && (
             <div className="md:col-span-3">
               <label className="text-xs font-bold text-slate-700 uppercase tracking-widest block mb-1">
                 {purchaseType === 'JOB_WORK' ? 'Job Work Contract' : 'Purchase Order'}
