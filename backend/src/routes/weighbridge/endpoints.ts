@@ -521,12 +521,20 @@ export function registerOtherRoutes(router: Router): void {
       orderBy: { date: 'desc' },
     });
 
+    // Companies — needed for factory's company switcher (added 2026-04-18)
+    const companies = await prisma.company.findMany({
+      where: { isActive: true },
+      select: { id: true, code: true, name: true, shortName: true, isDefault: true },
+      orderBy: { name: 'asc' },
+    });
+
     res.json({
       suppliers: Array.from(supplierMap.values()),
       materials: materials.map(m => ({ id: m.id, name: m.name, category: m.category })),
       pos,
       customers: customers.map(c => ({ id: c.id, name: c.name, short_name: c.shortName })),
       vehicles: recentVehicles.map(v => v.vehicleNo),
+      companies,
     });
   }));
 
