@@ -6,6 +6,9 @@ import prisma from '../prisma';
 import { getCloudPrisma } from '../cloudPrisma';
 import { asyncHandler, requireWbKey, requireWbKeyOrAuth, requireAuth, requireRole, AuthRequest } from '../middleware';
 import { captureSnapshots } from '../services/cameraCapture';
+// Note: video capture is now WEIGHT-TRIGGERED (see services/weightTriggeredCapture.ts).
+// Button-trigger video was removed 2026-04-18 — captures of stationary trucks are
+// useless for direction/motion training. We trigger on weight rise/fall instead.
 import { getMasterData } from '../services/masterDataCache';
 import { enforceWeighmentRules, getNumericRule, getRuleValue } from '../services/ruleEngine';
 import { registerPC, fetchLiveWeight, getLastScaleZeroAt } from '../services/pcMonitor';
@@ -1297,20 +1300,32 @@ router.post('/wb-push', requireWbKey, asyncHandler(async (req: Request, res: Res
 router.get('/master-data', requireWbKey, asyncHandler(async (_req: Request, res: Response) => {
   const data = getMasterData();
 
-  const suppliers = (data.suppliers || []).map(s => ({ id: s.id, name: s.name }));
-  const materials = (data.materials || []).map(m => ({ id: m.id, name: m.name, category: m.category || '' }));
+  // Include company_id on every record — frontend filters records by selected company.
+  // `null` means legacy/MSPIL-default (pre-multi-company data).
+  const suppliers = (data.suppliers || []).map(s => ({ id: s.id, name: s.name, company_id: (s as any).company_id ?? null }));
+  const materials = (data.materials || []).map(m => ({ id: m.id, name: m.name, category: m.category || '', company_id: (m as any).company_id ?? null }));
   const pos = (data.pos || []).map(po => ({
     id: po.id,
     po_no: po.po_no,
     vendor_id: po.vendor_id,
     vendor_name: po.vendor_name,
     status: po.status,
+    deal_type: (po as any).deal_type ?? 'STANDARD',
+    company_id: (po as any).company_id ?? null,
     lines: po.lines || [],
   }));
-  const customers = (data.customers || []).map(c => ({ id: c.id, name: c.name, short_name: c.shortName || '' }));
+  const customers = (data.customers || []).map(c => ({ id: c.id, name: c.name, short_name: c.shortName || '', company_id: (c as any).company_id ?? null }));
   const vehicles = data.vehicles || [];
 
-  res.json({ suppliers, materials, pos, customers, vehicles });
+  // Additive: forward contracts / companies / traders so frontend JOB-WORK filters + company switcher populate.
+  const traders = data.traders || [];
+  const ethContracts = (data.ethContracts || []).map(c => ({ ...c, company_id: (c as any).company_id ?? null }));
+  const ddgsContracts = data.ddgsContracts || [];
+  const scrapOrders = data.scrapOrders || [];
+  const companies = data.companies || [];
+  const outboundProducts = (data as any).outboundProducts || [];
+
+  res.json({ suppliers, materials, pos, customers, vehicles, traders, ethContracts, ddgsContracts, scrapOrders, companies, outboundProducts });
 }));
 
 /**

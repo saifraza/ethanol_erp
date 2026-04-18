@@ -642,9 +642,25 @@ router.get('/:id/supply-summary', asyncHandler(async (req: AuthRequest, res: Res
       lastTransporterName: liftings.find(l => l.transporterName)?.transporterName || null,
     };
 
-    // In-progress trucks at site (not yet released = no lifting yet)
+    // In-progress trucks at site (not yet released = no lifting yet).
+    // Factory gate entry often doesn't set contractId (operator doesn't pick one),
+    // so ALSO match trucks where contractId is null AND partyName matches this contract's buyer.
+    // Only consider trucks created TODAY (IST) — prevents stale GATE_IN rows from past days
+    // showing up forever. The liftingId guard excludes already-released trucks.
+    const IST_MS = 5.5 * 60 * 60 * 1000;
+    const todayIST = new Date(Date.now() + IST_MS);
+    const todayStart = new Date(Date.UTC(todayIST.getUTCFullYear(), todayIST.getUTCMonth(), todayIST.getUTCDate()) - IST_MS);
+    const buyerName = contract.buyerName || '';
     const activeTrucks = await prisma.dispatchTruck.findMany({
-      where: { contractId: contract.id, status: { in: ['GATE_IN', 'TARE_WEIGHED', 'GROSS_WEIGHED'] } },
+      where: {
+        status: { in: ['GATE_IN', 'TARE_WEIGHED', 'GROSS_WEIGHED'] },
+        liftingId: null,
+        createdAt: { gte: todayStart },
+        OR: [
+          { contractId: contract.id },
+          { contractId: null, partyName: buyerName },
+        ],
+      },
       orderBy: { createdAt: 'desc' },
       take: 50,
       select: {

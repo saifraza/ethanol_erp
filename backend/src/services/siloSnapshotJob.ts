@@ -167,19 +167,21 @@ export async function computeSnapshot(opts?: { force?: boolean }): Promise<void>
     const grainPct = await getGrainPct();
     const caps = await getCapacities();
 
-    // Shift date: the date of the shift END (9 AM today)
-    const shiftDateIST = new Date(shiftEndUTC.getTime() + 5.5 * 3600 * 1000);
+    // Date label = production day = shift START (9 AM IST yesterday).
+    // A snapshot computed at 9 AM IST Apr 18 covers the 9 AM Apr 17 → 9 AM Apr 18 cycle,
+    // i.e. Apr 17's production. Aligns with EthanolProductEntry semantics (dip date - 1).
+    const shiftStartIST = new Date(shiftStartUTC.getTime() + 5.5 * 3600 * 1000);
     const shiftDate = new Date(Date.UTC(
-      shiftDateIST.getUTCFullYear(),
-      shiftDateIST.getUTCMonth(),
-      shiftDateIST.getUTCDate(),
+      shiftStartIST.getUTCFullYear(),
+      shiftStartIST.getUTCMonth(),
+      shiftStartIST.getUTCDate(),
       0, 0, 0, 0,
     ));
 
     // Idempotency: skip if AUTO snapshot already exists (unless force=true)
     const existing = await prisma.siloSnapshot.findUnique({ where: { date: shiftDate } });
     if (existing && !force) {
-      console.log(`[Silo Snapshot] Already exists for ${istDateStr(shiftDateIST)}, skipping (use force to override)`);
+      console.log(`[Silo Snapshot] Already exists for ${istDateStr(shiftStartIST)}, skipping (use force to override)`);
       return;
     }
 
@@ -287,7 +289,7 @@ export async function computeSnapshot(opts?: { force?: boolean }): Promise<void>
       update: snapshotData,
     });
 
-    console.log(`[Silo Snapshot] ${existing ? 'Updated' : 'Created'} for ${istDateStr(shiftDateIST)}: closing=${siloClosing} MT, consumed=${grainConsumed} MT, received=${grainReceivedMT} MT, wash=${washDistilledKL} KL`);
+    console.log(`[Silo Snapshot] ${existing ? 'Updated' : 'Created'} for production day ${istDateStr(shiftStartIST)}: closing=${siloClosing} MT, consumed=${grainConsumed} MT, received=${grainReceivedMT} MT, wash=${washDistilledKL} KL`);
   } finally {
     await opc.$disconnect();
   }

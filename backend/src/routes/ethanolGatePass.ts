@@ -185,11 +185,13 @@ router.post('/:id/release', asyncHandler(async (req: AuthRequest, res: Response)
     const challanNo = await nextCounter(tx, 'DCH/ETH');
     const invoiceNo = await nextInvoiceNo(tx, 'ETH');
 
+    // Use release/load time as the business date — truck.date is gate-entry (can be previous day)
+    const businessDate = truck.grossTime ?? truck.releaseTime ?? ist;
     const invoice = await tx.invoice.create({
       data: {
         customerId: customer.id,
-        invoiceDate: truck.date,
-        dueDate: contract.paymentTermsDays ? new Date(truck.date.getTime() + contract.paymentTermsDays * 86400000) : null,
+        invoiceDate: businessDate,
+        dueDate: contract.paymentTermsDays ? new Date(businessDate.getTime() + contract.paymentTermsDays * 86400000) : null,
         productName: contract.contractType === 'JOB_WORK' ? 'Job Work Charges for Ethanol Production' : 'ETHANOL',
         quantity: truck.quantityBL, unit: 'BL', rate, amount,
         gstPercent, gstAmount: gst.gstAmount, supplyType: gst.supplyType,
@@ -204,7 +206,7 @@ router.post('/:id/release', asyncHandler(async (req: AuthRequest, res: Response)
 
     const lifting = await tx.ethanolLifting.create({
       data: {
-        contractId: contract.id, liftingDate: truck.date,
+        contractId: contract.id, liftingDate: businessDate,
         vehicleNo: truck.vehicleNo, driverName: truck.driverName, driverPhone: truck.driverPhone,
         transporterName: truck.transporterName, destination: truck.destination,
         quantityBL: truck.quantityBL, quantityKL: truck.quantityBL / 1000,
