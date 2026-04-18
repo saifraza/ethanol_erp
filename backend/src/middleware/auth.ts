@@ -18,8 +18,14 @@ export interface AuthRequest extends Request {
 /** Returns Prisma where-clause for company scoping.
  *  Priority: X-Company-Id header (company switcher) > JWT companyId.
  *  SUPER_ADMIN/ADMIN on MSPIL can switch to any company.
- *  Other users are locked to their JWT companyId. */
-export function getCompanyFilter(req: AuthRequest): { companyId?: string } {
+ *  Other users are locked to their JWT companyId.
+ *
+ *  Legacy data with companyId=NULL belongs to MSPIL by design — when the filter
+ *  matches MSPIL_ID, we must also include NULL rows or 1500+ legacy rows hide.
+ */
+const MSPIL_COMPANY_ID = 'b499264a-8c73-4595-ab9b-7dc58f58c4d2';
+
+export function getCompanyFilter(req: AuthRequest): Record<string, unknown> {
   const headerCompanyId = req.headers['x-company-id'] as string | undefined;
 
   // If header present and user is allowed to switch companies
@@ -27,7 +33,13 @@ export function getCompanyFilter(req: AuthRequest): { companyId?: string } {
     const isMspilAdmin = (!req.user?.companyId || req.user.companyCode === 'MSPIL') &&
       (req.user?.role === 'ADMIN' || req.user?.role === 'SUPER_ADMIN');
     // MSPIL admins can switch to any company
-    if (isMspilAdmin) return { companyId: headerCompanyId };
+    if (isMspilAdmin) {
+      // When viewing MSPIL, include legacy NULL rows (NULL = MSPIL by design).
+      if (headerCompanyId === MSPIL_COMPANY_ID) {
+        return { OR: [{ companyId: MSPIL_COMPANY_ID }, { companyId: null }] };
+      }
+      return { companyId: headerCompanyId };
+    }
     // Non-MSPIL users can only use their own companyId
     if (headerCompanyId === req.user?.companyId) return { companyId: headerCompanyId };
   }
