@@ -553,18 +553,8 @@ const PurchaseOrders: React.FC = () => {
   const handleSubmitPO = async (e: React.FormEvent) => {
     e.preventDefault();
 
-    const needsVendor = formData.poType !== 'CONTRACTOR';
-    const needsContractor = formData.poType === 'CONTRACTOR';
-    if (needsVendor && !formData.vendorId) {
-      setError('Please select a vendor');
-      return;
-    }
-    if (needsContractor && !formData.contractorId) {
-      setError('Please select a contractor');
-      return;
-    }
-    if (formData.lines.length === 0) {
-      setError('Please add line items');
+    if (!formData.vendorId || formData.lines.length === 0) {
+      setError('Please select vendor and add line items');
       return;
     }
     if (!formData.deliveryDate) {
@@ -865,32 +855,25 @@ const PurchaseOrders: React.FC = () => {
                 </div>
 
                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-3">
-                  {formData.poType === 'CONTRACTOR' ? (
-                    <div>
-                      <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-0.5 block">
-                        Contractor * <span className="text-indigo-600 font-normal normal-case">· from Contractor Master</span>
-                      </label>
-                      <select value={formData.contractorId} onChange={(e) => setFormData({ ...formData, contractorId: e.target.value })} required className="border border-slate-300 px-2.5 py-1.5 text-xs w-full focus:outline-none focus:ring-1 focus:ring-slate-400">
-                        <option value="">Select Contractor</option>
-                        {contractorsList.map((c) => (
-                          <option key={c.id} value={c.id}>{c.contractorCode} · {c.name} · {c.contractorType} · TDS {c.tdsPercent}%</option>
-                        ))}
-                      </select>
-                      <div className="text-[9px] text-slate-500 mt-0.5 italic">
-                        OPEN deal type · bills accumulate as lines · TDS auto-set from contractor master
+                  {(() => {
+                    const contractorVendors = vendors.filter(v => (v.category || '').toUpperCase().startsWith('CONTRACTOR'));
+                    const list = formData.poType === 'CONTRACTOR' && contractorVendors.length > 0 ? contractorVendors : vendors;
+                    const hint = formData.poType === 'CONTRACTOR'
+                      ? (contractorVendors.length > 0 ? `${contractorVendors.length} contractor vendor(s)` : 'No CONTRACTOR_* vendors — showing all')
+                      : '';
+                    return (
+                      <div>
+                        <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-0.5 block">
+                          Vendor * {formData.poType !== 'GOODS' && <span className="text-indigo-600 font-normal normal-case">· {formData.poType}</span>}
+                        </label>
+                        <select value={formData.vendorId} onChange={(e) => { setFormData({ ...formData, vendorId: e.target.value }); loadVendorContext(e.target.value); }} required className="border border-slate-300 px-2.5 py-1.5 text-xs w-full focus:outline-none focus:ring-1 focus:ring-slate-400">
+                          <option value="">Select Vendor</option>
+                          {list.map((v) => (<option key={v.id} value={v.id}>{v.name}{v.category ? ` · ${v.category}` : ''}</option>))}
+                        </select>
+                        {hint && <div className="text-[9px] text-slate-500 mt-0.5 italic">{hint}</div>}
                       </div>
-                    </div>
-                  ) : (
-                    <div>
-                      <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-0.5 block">
-                        Vendor * {formData.poType !== 'GOODS' && <span className="text-indigo-600 font-normal normal-case">· {formData.poType}</span>}
-                      </label>
-                      <select value={formData.vendorId} onChange={(e) => { setFormData({ ...formData, vendorId: e.target.value }); loadVendorContext(e.target.value); }} required className="border border-slate-300 px-2.5 py-1.5 text-xs w-full focus:outline-none focus:ring-1 focus:ring-slate-400">
-                        <option value="">Select Vendor</option>
-                        {vendors.map((v) => (<option key={v.id} value={v.id}>{v.name}{v.category ? ` · ${v.category}` : ''}</option>))}
-                      </select>
-                    </div>
-                  )}
+                    );
+                  })()}
                   <div>
                     <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-0.5 block">PO Date *</label>
                     <input type="date" value={formData.poDate} onChange={(e) => setFormData({ ...formData, poDate: e.target.value })} required className="border border-slate-300 px-2.5 py-1.5 text-xs w-full focus:outline-none focus:ring-1 focus:ring-slate-400" />

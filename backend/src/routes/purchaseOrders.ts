@@ -389,63 +389,10 @@ router.post('/', validate(createPOSchema), asyncHandler(async (req: AuthRequest,
     const poType = (b.poType as string) || 'GOODS';
     const dealType = (b.dealType as string) || 'STANDARD';
 
-    // ── Contractor PO: resolve vendorId from Contractor master ──
     let resolvedVendorId = b.vendorId;
-    let contractorId: string | null = null;
+    const contractorId = b.contractorId || null;
 
-    if (poType === 'CONTRACTOR') {
-      if (!b.contractorId) {
-        res.status(400).json({ error: 'Contractor is required for CONTRACTOR PO type' });
-        return;
-      }
-      const contractor = await prisma.contractor.findUnique({ where: { id: b.contractorId } });
-      if (!contractor) {
-        res.status(404).json({ error: 'Contractor not found' });
-        return;
-      }
-      contractorId = contractor.id;
-
-      // Auto-find or create shadow vendor for this contractor
-      if (contractor.vendorId) {
-        resolvedVendorId = contractor.vendorId;
-      } else {
-        // Try matching by PAN first
-        let vendor = await prisma.vendor.findFirst({
-          where: { pan: contractor.pan, isActive: true },
-          select: { id: true },
-        });
-        if (!vendor) {
-          const code = `CON-V-${contractor.contractorCode}`;
-          vendor = await prisma.vendor.create({
-            data: {
-              vendorCode: code,
-              name: contractor.name,
-              tradeName: contractor.tradeName,
-              category: `CONTRACTOR_${contractor.contractorType}`,
-              pan: contractor.pan,
-              gstin: contractor.gstin,
-              gstState: contractor.gstState,
-              phone: contractor.phone,
-              email: contractor.email,
-              address: contractor.address,
-              bankName: contractor.bankName,
-              bankBranch: contractor.bankBranch,
-              bankAccount: contractor.bankAccount,
-              bankIfsc: contractor.bankIfsc,
-              tdsApplicable: true,
-              tdsSection: contractor.tdsSection,
-              tdsPercent: contractor.tdsPercent,
-              companyId: contractor.companyId,
-            },
-          });
-        }
-        await prisma.contractor.update({
-          where: { id: contractor.id },
-          data: { vendorId: vendor.id },
-        });
-        resolvedVendorId = vendor.id;
-      }
-    } else if (!resolvedVendorId) {
+    if (!resolvedVendorId) {
       res.status(400).json({ error: 'Vendor is required' });
       return;
     }
