@@ -836,22 +836,20 @@ const PurchaseOrders: React.FC = () => {
                       <b>Non-goods PO:</b> line items use free-text descriptions (no inventory master needed). HSN optional — use SAC code if applicable.
                     </div>
                   )}
-                  {formData.poType !== 'CONTRACTOR' && (
-                    <div className="mt-2 flex items-center gap-3">
-                      <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">Deal Type</label>
-                      <div className="flex gap-2">
-                        {[
-                          { key: 'STANDARD', label: 'Standard', hint: 'Fixed qty PO' },
-                          { key: 'OPEN', label: 'Open / Running', hint: 'Running account, bills accumulate' },
-                        ].map(d => (
-                          <button type="button" key={d.key}
-                            onClick={() => setFormData(f => ({ ...f, dealType: d.key as typeof f.dealType }))}
-                            className={`px-2 py-1 border text-[10px] font-bold ${formData.dealType === d.key ? 'border-indigo-600 bg-indigo-50 text-indigo-700' : 'border-slate-300 bg-white text-slate-600 hover:bg-slate-50'}`}
-                            title={d.hint}>{d.label}</button>
-                        ))}
-                      </div>
+                  <div className="mt-2 flex items-center gap-3">
+                    <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">Deal Type</label>
+                    <div className="flex gap-2">
+                      {[
+                        { key: 'STANDARD', label: 'Standard', hint: 'Fixed qty PO' },
+                        { key: 'OPEN', label: 'Open / Running', hint: 'Running account, pay as you go, no fixed value' },
+                      ].map(d => (
+                        <button type="button" key={d.key}
+                          onClick={() => setFormData(f => ({ ...f, dealType: d.key as typeof f.dealType }))}
+                          className={`px-2 py-1 border text-[10px] font-bold ${formData.dealType === d.key ? 'border-indigo-600 bg-indigo-50 text-indigo-700' : 'border-slate-300 bg-white text-slate-600 hover:bg-slate-50'}`}
+                          title={d.hint}>{d.label}</button>
+                      ))}
                     </div>
-                  )}
+                  </div>
                 </div>
 
                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-3">
