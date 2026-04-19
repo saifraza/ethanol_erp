@@ -1238,16 +1238,23 @@ const PurchaseOrders: React.FC = () => {
                 </tr>
               </thead>
               <tbody>
-                {filteredPOs.map((po) => (
+                {filteredPOs.map((po) => {
+                  const typeStyle: Record<string, { border: string; badge: string; label: string }> = {
+                    GOODS:      { border: 'border-l-blue-500',   badge: 'border-blue-300 bg-blue-50 text-blue-700',       label: 'GOODS' },
+                    SERVICE:    { border: 'border-l-violet-500', badge: 'border-violet-300 bg-violet-50 text-violet-700', label: 'SERVICE' },
+                    CONTRACTOR: { border: 'border-l-amber-500',  badge: 'border-amber-300 bg-amber-50 text-amber-700',   label: 'CONTRACTOR' },
+                    RENT:       { border: 'border-l-teal-500',   badge: 'border-teal-300 bg-teal-50 text-teal-700',       label: 'RENT' },
+                    UTILITY:    { border: 'border-l-rose-500',   badge: 'border-rose-300 bg-rose-50 text-rose-700',       label: 'UTILITY' },
+                    OTHER:      { border: 'border-l-slate-400',  badge: 'border-slate-300 bg-slate-50 text-slate-600',    label: 'OTHER' },
+                  };
+                  const ts = typeStyle[po.poType || 'GOODS'] || typeStyle.GOODS;
+                  return (
                   <React.Fragment key={po.id}>
-                  <tr className="border-b border-slate-100 even:bg-slate-50/70 hover:bg-blue-50/60">
+                  <tr className={`border-b border-slate-100 even:bg-slate-50/70 hover:bg-blue-50/60 border-l-4 ${ts.border}`}>
                     <td className="px-3 py-1.5 text-xs border-r border-slate-100 whitespace-nowrap">
                       <button onClick={() => setSelectedPOId(selectedPOId === po.id ? null : po.id)} className="font-bold text-blue-700 hover:underline">PO-{po.poNo}</button>
-                      {po.poType && po.poType !== 'GOODS' && (
-                        <span className="ml-1 text-[8px] font-bold uppercase px-1 py-0.5 border border-indigo-300 bg-indigo-50 text-indigo-700" title={`Non-goods PO · ${po.poType}`}>
-                          {po.poType}
-                        </span>
-                      )}
+                      <span className={`ml-1.5 text-[8px] font-bold uppercase px-1 py-0.5 border ${ts.badge}`}>{ts.label}</span>
+                      {po.dealType === 'OPEN' && <span className="ml-1 text-[8px] font-bold uppercase px-1 py-0.5 border border-green-300 bg-green-50 text-green-700">OPEN</span>}
                     </td>
                     <td className="px-3 py-1.5 text-xs border-r border-slate-100">{po.vendor?.name || 'Unknown'}</td>
                     <td className="px-3 py-1.5 text-xs border-r border-slate-100">
@@ -1536,7 +1543,8 @@ const PurchaseOrders: React.FC = () => {
                     </tr>
                   )}
                   </React.Fragment>
-                ))}
+                  );
+                })}
               </tbody>
               <tfoot>
                 {(() => {
