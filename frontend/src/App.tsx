@@ -102,7 +102,7 @@ const DDGSContracts = React.lazy(() => import('./pages/sales/DDGSContracts'));
 const SugarContracts = React.lazy(() => import('./pages/sales/SugarContracts'));
 // Procurement (P2P)
 const Vendors = React.lazy(() => import('./pages/procurement/Vendors'));
-const ContractorManagement = React.lazy(() => import('./pages/procurement/ContractorManagement'));
+
 const Materials = React.lazy(() => import('./pages/procurement/Materials'));
 const PurchaseOrders = React.lazy(() => import('./pages/procurement/PurchaseOrders'));
 const GoodsReceipts = React.lazy(() => import('./pages/procurement/GoodsReceipts'));
@@ -264,7 +264,7 @@ export default function App() {
         {/* Procurement (P2P) */}
         <Route path="procurement/vendors" element={<Vendors />} />
         <Route path="procurement/traders" element={<Navigate to="/procurement/vendors" replace />} />
-        <Route path="procurement/contractors" element={<ContractorManagement />} />
+        <Route path="procurement/contractors" element={<Navigate to="/procurement/vendors" replace />} />
         <Route path="procurement/materials" element={<Navigate to="/inventory" replace />} />
         <Route path="procurement/purchase-orders" element={<PurchaseOrders />} />
         <Route path="procurement/goods-receipts" element={<Navigate to="/store/receipts" replace />} />
