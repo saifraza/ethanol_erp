@@ -290,7 +290,7 @@ const PurchaseOrders: React.FC = () => {
         if (Object.keys(updates).length > 0) {
           setFormData((f: any) => ({ ...f, ...updates }));
         }
-        setVendorTds(v.tdsSection || v.tdsPercent ? { section: v.tdsSection || '194C', percent: v.tdsPercent || 0, pan: v.pan || null } : null);
+        setVendorTds({ section: v.tdsSection || '', percent: v.tdsPercent || 0, pan: v.pan || null });
       }
     } catch {
       setVendorItemsList([]);
@@ -895,15 +895,19 @@ const PurchaseOrders: React.FC = () => {
                       <option value="INTER_STATE">Inter State</option>
                     </select>
                   </div>
-                  {vendorTds && (
+                  {formData.vendorId && vendorTds && (
                   <div className="md:col-span-2 lg:col-span-4">
-                    <div className="border border-slate-300 bg-slate-50 px-3 py-2 flex items-center gap-4">
-                      <div className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">TDS Applicable</div>
-                      <span className="text-[10px] font-bold px-1.5 py-0.5 border border-blue-300 bg-blue-50 text-blue-700">u/s {vendorTds.section} @ {vendorTds.percent}%</span>
+                    <div className="border border-slate-300 bg-slate-50 px-3 py-2 flex items-center gap-4 flex-wrap">
+                      <div className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">TDS</div>
+                      {vendorTds.section && vendorTds.percent > 0 ? (
+                        <span className="text-[10px] font-bold px-1.5 py-0.5 border border-blue-300 bg-blue-50 text-blue-700">u/s {vendorTds.section} @ {vendorTds.percent}%</span>
+                      ) : (
+                        <span className="text-[10px] font-bold px-1.5 py-0.5 border border-slate-300 bg-white text-slate-500">Not configured</span>
+                      )}
                       {vendorTds.pan ? (
                         <span className="text-[10px] text-slate-600">PAN: <span className="font-mono font-bold">{vendorTds.pan}</span></span>
                       ) : (
-                        <span className="text-[10px] font-bold text-red-600 border border-red-300 bg-red-50 px-1.5 py-0.5">PAN MISSING — 20% TDS may apply</span>
+                        <span className="text-[10px] font-bold text-red-600 border border-red-300 bg-red-50 px-1.5 py-0.5">NO PAN — 20% TDS risk</span>
                       )}
                     </div>
                   </div>
