@@ -98,6 +98,7 @@ function getExpenseAccountCode(category: string): string {
 function getPoTypeExpenseCode(poType: string): string {
   switch (poType) {
     case 'CONTRACTOR': return ACCT.CONTRACTOR_EXPENSE;
+    case 'TRANSPORT': return ACCT.TRANSPORT_EXPENSE;
     case 'RENT': return ACCT.RENT_EXPENSE;
     case 'SERVICE': return ACCT.SERVICE_EXPENSE;
     case 'UTILITY': return ACCT.UTILITY_EXPENSE;

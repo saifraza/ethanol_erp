@@ -77,7 +77,7 @@ interface PurchaseOrder {
   totalInvoiced: number;
   totalPaid: number;
   paymentStatus: string;
-  poType?: 'GOODS' | 'SERVICE' | 'CONTRACTOR' | 'RENT' | 'UTILITY' | 'OTHER';
+  poType?: 'GOODS' | 'SERVICE' | 'CONTRACTOR' | 'TRANSPORT' | 'RENT' | 'UTILITY' | 'OTHER';
   dealType?: string;
 }
 
@@ -189,7 +189,7 @@ const PurchaseOrders: React.FC = () => {
     lines: [] as POLine[],
     termsAccepted: [] as string[],
     overrideTdsSectionId: null as string | null,
-    poType: 'GOODS' as 'GOODS' | 'SERVICE' | 'CONTRACTOR' | 'RENT' | 'UTILITY' | 'OTHER',
+    poType: 'GOODS' as 'GOODS' | 'SERVICE' | 'CONTRACTOR' | 'TRANSPORT' | 'RENT' | 'UTILITY' | 'OTHER',
     dealType: 'STANDARD' as 'STANDARD' | 'OPEN',
   });
 
@@ -815,6 +815,7 @@ const PurchaseOrders: React.FC = () => {
                       { key: 'GOODS',      label: 'Goods',      hint: 'Physical inventory items (HSN + GRN)' },
                       { key: 'SERVICE',    label: 'Service',    hint: 'Services (SAC code, no physical delivery)' },
                       { key: 'CONTRACTOR', label: 'Contractor', hint: 'Labour / civil / electrical work' },
+                      { key: 'TRANSPORT',  label: 'Transport',  hint: 'Freight / vehicle hire / logistics' },
                       { key: 'RENT',       label: 'Rent',       hint: 'Premises / equipment / vehicle rent' },
                       { key: 'UTILITY',    label: 'Utility',    hint: 'Electricity, water, internet, phone' },
                       { key: 'OTHER',      label: 'Other',      hint: 'Anything else that needs a PO umbrella' },
@@ -854,10 +855,12 @@ const PurchaseOrders: React.FC = () => {
 
                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-3">
                   {(() => {
-                    const contractorVendors = vendors.filter(v => (v.category || '').toUpperCase().startsWith('CONTRACTOR'));
-                    const list = formData.poType === 'CONTRACTOR' && contractorVendors.length > 0 ? contractorVendors : vendors;
-                    const hint = formData.poType === 'CONTRACTOR'
-                      ? (contractorVendors.length > 0 ? `${contractorVendors.length} contractor vendor(s)` : 'No CONTRACTOR_* vendors — showing all')
+                    const categoryPrefix: Record<string, string> = { CONTRACTOR: 'CONTRACTOR', TRANSPORT: 'TRANSPORT' };
+                    const prefix = categoryPrefix[formData.poType];
+                    const filtered = prefix ? vendors.filter(v => (v.category || '').toUpperCase().startsWith(prefix)) : [];
+                    const list = prefix && filtered.length > 0 ? filtered : vendors;
+                    const hint = prefix
+                      ? (filtered.length > 0 ? `${filtered.length} ${prefix.toLowerCase()} vendor(s)` : `No ${prefix}_* vendors — showing all`)
                       : '';
                     return (
                       <div>
@@ -965,6 +968,7 @@ const PurchaseOrders: React.FC = () => {
                   {/* Credit Days removed — payment terms already define the timeline */}
                 </div>
 
+                {['GOODS', 'TRANSPORT'].includes(formData.poType) && (
                 <div className="grid grid-cols-1 md:grid-cols-4 gap-3">
                   <div className="md:col-span-2">
                     <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-0.5 block">Delivery Address</label>
@@ -995,18 +999,29 @@ const PurchaseOrders: React.FC = () => {
                     <textarea value={formData.remarks} onChange={(e) => setFormData({ ...formData, remarks: e.target.value })} rows={4} className="border border-slate-300 px-2.5 py-1.5 text-xs w-full focus:outline-none focus:ring-1 focus:ring-slate-400" />
                   </div>
                 </div>
+                )}
+                {!['GOODS', 'TRANSPORT'].includes(formData.poType) && (
+                <div className="grid grid-cols-1 gap-3">
+                  <div>
+                    <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-0.5 block">Remarks</label>
+                    <textarea value={formData.remarks} onChange={(e) => setFormData({ ...formData, remarks: e.target.value })} rows={2} placeholder="Work scope, terms, notes..." className="border border-slate-300 px-2.5 py-1.5 text-xs w-full focus:outline-none focus:ring-1 focus:ring-slate-400" />
+                  </div>
+                </div>
+                )}
 
                 {/* Line Items */}
                 <div className="border-t border-slate-200 pt-4">
-                  <div className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-3">Line Items</div>
+                  <div className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-3">
+                    {formData.poType === 'GOODS' ? 'Line Items' : formData.poType === 'TRANSPORT' ? 'Trip / Route Details' : formData.poType === 'CONTRACTOR' ? 'Work Items' : formData.poType === 'RENT' ? 'Rental Items' : formData.poType === 'UTILITY' ? 'Utility Charges' : 'Service Items'}
+                  </div>
 
                   {formData.lines.length > 0 && (
                     <div className="border border-slate-300 mb-4">
                       <table className="w-full">
                         <thead>
                           <tr className="bg-slate-800 text-white">
-                            <th className="text-[10px] uppercase tracking-widest font-semibold px-3 py-1.5 text-left border-r border-slate-700">Material</th>
-                            <th className="text-[10px] uppercase tracking-widest font-semibold px-3 py-1.5 text-left border-r border-slate-700">HSN</th>
+                            <th className="text-[10px] uppercase tracking-widest font-semibold px-3 py-1.5 text-left border-r border-slate-700">{formData.poType === 'GOODS' ? 'Material' : 'Description'}</th>
+                            <th className="text-[10px] uppercase tracking-widest font-semibold px-3 py-1.5 text-left border-r border-slate-700">{formData.poType === 'GOODS' ? 'HSN' : 'SAC / HSN'}</th>
                             <th className="text-[10px] uppercase tracking-widest font-semibold px-3 py-1.5 text-right border-r border-slate-700">Qty</th>
                             <th className="text-[10px] uppercase tracking-widest font-semibold px-3 py-1.5 text-right border-r border-slate-700">Rate</th>
                             <th className="text-[10px] uppercase tracking-widest font-semibold px-3 py-1.5 text-right border-r border-slate-700">Disc %</th>
@@ -1051,8 +1066,9 @@ const PurchaseOrders: React.FC = () => {
 
                   {/* Add Line */}
                   <div className="bg-slate-100 border border-slate-300 p-3">
-                    <div className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-2">Add Line Item</div>
+                    <div className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-2">{formData.poType === 'GOODS' ? 'Add Line Item' : 'Add Item'}</div>
                     <div className="grid grid-cols-1 md:grid-cols-4 gap-3">
+                      {formData.poType === 'GOODS' ? (
                       <div>
                         <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-0.5 block">Material</label>
                         <select value={newLine.inventoryItemId || ''} onChange={handleMaterialSelect} className="border border-slate-300 px-2.5 py-1.5 text-xs w-full focus:outline-none focus:ring-1 focus:ring-slate-400">
@@ -1060,6 +1076,14 @@ const PurchaseOrders: React.FC = () => {
                           {materials.map((m) => (<option key={m.id} value={m.id}>{m.name || m.description}</option>))}
                         </select>
                       </div>
+                      ) : (
+                      <div>
+                        <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-0.5 block">
+                          {formData.poType === 'TRANSPORT' ? 'Route / Trip' : formData.poType === 'CONTRACTOR' ? 'Work Description' : formData.poType === 'RENT' ? 'Rental Item' : 'Description'}
+                        </label>
+                        <input type="text" value={newLine.description || ''} onChange={(e) => setNewLine({ ...newLine, description: e.target.value })} placeholder={formData.poType === 'TRANSPORT' ? 'e.g. Bachai to Jabalpur, 10MT grain' : formData.poType === 'CONTRACTOR' ? 'e.g. Civil repair work - boiler room' : 'Description of service'} className="border border-slate-300 px-2.5 py-1.5 text-xs w-full focus:outline-none focus:ring-1 focus:ring-slate-400" />
+                      </div>
+                      )}
                       <div>
                         <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-0.5 block">Quantity</label>
                         <input type="number" value={newLine.quantity || ''} onChange={(e) => setNewLine({ ...newLine, quantity: e.target.value === '' ? 0 : parseFloat(e.target.value) })} className="border border-slate-300 px-2.5 py-1.5 text-xs w-full focus:outline-none focus:ring-1 focus:ring-slate-400" />
@@ -1243,6 +1267,7 @@ const PurchaseOrders: React.FC = () => {
                     GOODS:      { border: 'border-l-blue-500',   badge: 'border-blue-300 bg-blue-50 text-blue-700',       label: 'GOODS' },
                     SERVICE:    { border: 'border-l-violet-500', badge: 'border-violet-300 bg-violet-50 text-violet-700', label: 'SERVICE' },
                     CONTRACTOR: { border: 'border-l-amber-500',  badge: 'border-amber-300 bg-amber-50 text-amber-700',   label: 'CONTRACTOR' },
+                    TRANSPORT:  { border: 'border-l-cyan-500',   badge: 'border-cyan-300 bg-cyan-50 text-cyan-700',       label: 'TRANSPORT' },
                     RENT:       { border: 'border-l-teal-500',   badge: 'border-teal-300 bg-teal-50 text-teal-700',       label: 'RENT' },
                     UTILITY:    { border: 'border-l-rose-500',   badge: 'border-rose-300 bg-rose-50 text-rose-700',       label: 'UTILITY' },
                     OTHER:      { border: 'border-l-slate-400',  badge: 'border-slate-300 bg-slate-50 text-slate-600',    label: 'OTHER' },

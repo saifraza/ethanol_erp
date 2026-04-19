@@ -41,7 +41,7 @@ const createPOSchema = z.object({
   lines: z.array(poLineSchema).min(1),
   termsAccepted: z.array(z.string()).optional(),
   overrideTdsSectionId: z.string().optional().nullable(),
-  poType: z.enum(['GOODS', 'SERVICE', 'CONTRACTOR', 'RENT', 'UTILITY', 'OTHER']).optional().default('GOODS'),
+  poType: z.enum(['GOODS', 'SERVICE', 'CONTRACTOR', 'TRANSPORT', 'RENT', 'UTILITY', 'OTHER']).optional().default('GOODS'),
   dealType: z.enum(['STANDARD', 'OPEN']).optional().default('STANDARD'),
 });
 
