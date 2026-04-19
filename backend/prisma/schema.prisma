@@ -2199,6 +2199,7 @@ model Vendor {
   vendorInvoices VendorInvoice[]
   vendorPayments VendorPayment[]
   vendorItems    VendorItem[]
+  contractor     Contractor?
 
   divisions String[] @default([]) // empty = available to all divisions
 
@@ -2328,10 +2329,15 @@ model PurchaseOrder {
   createdAt            DateTime             @default(now())
   updatedAt            DateTime             @updatedAt
 
+  // Contractor link (when poType = CONTRACTOR)
+  contractorId         String?
+  contractor           Contractor?          @relation(fields: [contractorId], references: [id])
+
   lines          POLine[]
   grns           GoodsReceipt[]
   vendorInvoices VendorInvoice[]
   grainTrucks    GrainTruck[]
+  contractorBills ContractorBill[]
 
   division  String?  @default("ETHANOL") // SUGAR | POWER | ETHANOL | COMMON
   companyId String? // FK → Company (null = MSPIL default)
@@ -2340,6 +2346,7 @@ model PurchaseOrder {
   @@index([vendorId])
   @@index([status])
   @@index([vendorId, dealType, status])
+  @@index([contractorId])
   @@index([requisitionId])
   @@index([division])
   @@index([companyId])
@@ -2647,13 +2654,17 @@ model Contractor {
   tdsPercent     Float    @default(1) // 1% individual, 2% company
   isActive       Boolean  @default(true)
   remarks        String?
+  // Shadow vendor for PO integration (auto-created on first contractor PO)
+  vendorId       String?  @unique
+  vendor         Vendor?  @relation(fields: [vendorId], references: [id])
   createdAt      DateTime @default(now())
   updatedAt      DateTime @updatedAt
 
-  bills       ContractorBill[]
-  payments    ContractorPayment[]
-  storeIssues ContractorStoreIssue[]
-  employees   Employee[]
+  bills          ContractorBill[]
+  payments       ContractorPayment[]
+  storeIssues    ContractorStoreIssue[]
+  employees      Employee[]
+  purchaseOrders PurchaseOrder[]
 
   divisions String[] @default([]) // empty = available to all divisions
   companyId String? // FK → Company (null = MSPIL default)
@@ -2666,12 +2677,14 @@ model Contractor {
 }
 
 model ContractorBill {
-  id                String     @id @default(uuid())
-  billNo            Int        @default(autoincrement())
+  id                String          @id @default(uuid())
+  billNo            Int             @default(autoincrement())
   contractorId      String
-  contractor        Contractor @relation(fields: [contractorId], references: [id])
-  billDate          DateTime   @default(now())
-  billPath          String     @default("CREATED") // CREATED | UPLOADED
+  contractor        Contractor      @relation(fields: [contractorId], references: [id])
+  purchaseOrderId   String?
+  purchaseOrder     PurchaseOrder?  @relation(fields: [purchaseOrderId], references: [id])
+  billDate          DateTime        @default(now())
+  billPath          String          @default("CREATED") // CREATED | UPLOADED
   description       String // Summary of work done
   // Amounts
   subtotal          Float      @default(0) // Sum of line items (base before GST)
@@ -2711,6 +2724,7 @@ model ContractorBill {
   company   Company? @relation(fields: [companyId], references: [id])
 
   @@index([contractorId])
+  @@index([purchaseOrderId])
   @@index([status])
   @@index([billDate])
   @@index([division])

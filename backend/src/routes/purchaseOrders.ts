@@ -23,7 +23,8 @@ const poLineSchema = z.object({
 });
 
 const createPOSchema = z.object({
-  vendorId: z.string().min(1),
+  vendorId: z.string().optional().default(''),
+  contractorId: z.string().optional(),
   poDate: z.string().optional(),
   deliveryDate: z.string().optional().nullable(),
   supplyType: z.enum(['INTRA_STATE', 'INTER_STATE']).optional().default('INTRA_STATE'),
@@ -38,16 +39,15 @@ const createPOSchema = z.object({
   otherCharges: z.coerce.number().nonnegative().optional().default(0),
   roundOff: z.coerce.number().optional().default(0),
   lines: z.array(poLineSchema).min(1),
-  // Contract T&C — frontend ticks the clause keys; server auto-pre-ticks all for RM if not provided
   termsAccepted: z.array(z.string()).optional(),
-  // Per-PO TDS section override (e.g., 194Q for grain purchase)
   overrideTdsSectionId: z.string().optional().nullable(),
-  // What kind of procurement this PO is for — expands PO to cover services, contractors, rent, utilities
   poType: z.enum(['GOODS', 'SERVICE', 'CONTRACTOR', 'RENT', 'UTILITY', 'OTHER']).optional().default('GOODS'),
+  dealType: z.enum(['STANDARD', 'OPEN']).optional().default('STANDARD'),
 });
 
 const updatePOSchema = z.object({
   vendorId: z.string().optional(),
+  contractorId: z.string().optional().nullable(),
   poDate: z.string().optional(),
   deliveryDate: z.string().optional().nullable(),
   supplyType: z.enum(['INTRA_STATE', 'INTER_STATE']).optional(),
@@ -65,6 +65,7 @@ const updatePOSchema = z.object({
   termsAccepted: z.array(z.string()).optional(),
   overrideTdsSectionId: z.string().optional().nullable(),
   poType: z.enum(['GOODS', 'SERVICE', 'CONTRACTOR', 'RENT', 'UTILITY', 'OTHER']).optional(),
+  dealType: z.enum(['STANDARD', 'OPEN']).optional(),
 });
 import { generatePOPdf } from '../utils/pdfGenerator';
 // RAG indexing removed — only compliance docs go to RAG
@@ -259,6 +260,7 @@ router.get('/', asyncHandler(async (req: AuthRequest, res: Response) => {
       where,
       include: {
         vendor: { select: { id: true, name: true, email: true } },
+        contractor: { select: { id: true, name: true, contractorCode: true, contractorType: true } },
         lines: true,
         grns: { select: { id: true, status: true } },
         vendorInvoices: { select: { id: true, status: true, totalAmount: true, payments: { select: { amount: true, tdsDeducted: true } } } },
@@ -385,31 +387,87 @@ router.get('/:id', asyncHandler(async (req: AuthRequest, res: Response) => {
 router.post('/', validate(createPOSchema), asyncHandler(async (req: AuthRequest, res: Response) => {
     const b = req.body;
     const poType = (b.poType as string) || 'GOODS';
+    const dealType = (b.dealType as string) || 'STANDARD';
 
-    // Validate every line has an inventory item linked — ONLY for GOODS POs.
-    // SERVICE / CONTRACTOR / RENT / UTILITY / OTHER POs use free-text descriptions
-    // (no inventory master needed; line.description + quantity + rate is enough).
+    // ── Contractor PO: resolve vendorId from Contractor master ──
+    let resolvedVendorId = b.vendorId;
+    let contractorId: string | null = null;
+
+    if (poType === 'CONTRACTOR') {
+      if (!b.contractorId) {
+        res.status(400).json({ error: 'Contractor is required for CONTRACTOR PO type' });
+        return;
+      }
+      const contractor = await prisma.contractor.findUnique({ where: { id: b.contractorId } });
+      if (!contractor) {
+        res.status(404).json({ error: 'Contractor not found' });
+        return;
+      }
+      contractorId = contractor.id;
+
+      // Auto-find or create shadow vendor for this contractor
+      if (contractor.vendorId) {
+        resolvedVendorId = contractor.vendorId;
+      } else {
+        // Try matching by PAN first
+        let vendor = await prisma.vendor.findFirst({
+          where: { pan: contractor.pan, isActive: true },
+          select: { id: true },
+        });
+        if (!vendor) {
+          const code = `CON-V-${contractor.contractorCode}`;
+          vendor = await prisma.vendor.create({
+            data: {
+              vendorCode: code,
+              name: contractor.name,
+              tradeName: contractor.tradeName,
+              category: `CONTRACTOR_${contractor.contractorType}`,
+              pan: contractor.pan,
+              gstin: contractor.gstin,
+              gstState: contractor.gstState,
+              phone: contractor.phone,
+              email: contractor.email,
+              address: contractor.address,
+              bankName: contractor.bankName,
+              bankBranch: contractor.bankBranch,
+              bankAccount: contractor.bankAccount,
+              bankIfsc: contractor.bankIfsc,
+              tdsApplicable: true,
+              tdsSection: contractor.tdsSection,
+              tdsPercent: contractor.tdsPercent,
+              companyId: contractor.companyId,
+            },
+          });
+        }
+        await prisma.contractor.update({
+          where: { id: contractor.id },
+          data: { vendorId: vendor.id },
+        });
+        resolvedVendorId = vendor.id;
+      }
+    } else if (!resolvedVendorId) {
+      res.status(400).json({ error: 'Vendor is required' });
+      return;
+    }
+
     if (poType === 'GOODS') {
-      const missingItem = (b.lines || []).some((l: any) => !l.inventoryItemId && !l.materialId);
+      const missingItem = (b.lines || []).some((l: Record<string, unknown>) => !l.inventoryItemId && !l.materialId);
       if (missingItem) {
         res.status(400).json({ error: 'Every PO line must have an inventory item selected' });
         return;
       }
     } else {
-      // Non-GOODS PO: description is required on every line
-      const missingDesc = (b.lines || []).some((l: any) => !(l.description || '').trim());
+      const missingDesc = (b.lines || []).some((l: Record<string, unknown>) => !(l.description as string || '').trim());
       if (missingDesc) {
         res.status(400).json({ error: 'Every line on a non-goods PO must have a description' });
         return;
       }
     }
 
-    // Process lines via shared helper — HSN master is source of truth for GST
     const poDate = b.poDate ? new Date(b.poDate) : new Date();
     const supplyType = (b.supplyType || 'INTRA_STATE') as 'INTRA_STATE' | 'INTER_STATE';
     const processedLines = await processPOLines({ lines: b.lines || [], supplyType, poDate });
 
-    // Header totals
     const subtotal = processedLines.reduce((s, l) => s + l.taxableAmount, 0);
     const totalCgst = processedLines.reduce((s, l) => s + l.cgstAmount, 0);
     const totalSgst = processedLines.reduce((s, l) => s + l.sgstAmount, 0);
@@ -420,22 +478,12 @@ router.post('/', validate(createPOSchema), asyncHandler(async (req: AuthRequest,
     const roundOff = parseFloat(b.roundOff) || 0;
     const grandTotal = subtotal + totalGst + freightCharge + otherCharges + roundOff;
 
-    // TDS — via the Phase 2 calculator (threshold, PAN, 206AB, LDC all handled).
-    // Base = contract value excluding GST, but including freight/other ancillary.
-    // Per-PO override (e.g., 194Q tick on RM contract) takes precedence over vendor default.
     const tdsBase = subtotal + freightCharge + otherCharges + roundOff;
-    const tds = await calculateTds(b.vendorId, tdsBase, { overrideSectionId: b.overrideTdsSectionId });
+    const tds = await calculateTds(resolvedVendorId, tdsBase, { overrideSectionId: b.overrideTdsSectionId });
 
-    // RM Contract T&C: if this PO has any RAW_MATERIAL line and client didn't specify
-    // termsAccepted, pre-tick all default terms. (User requested pre-tick all 11.)
-    const hasRmLine = processedLines.some((l) => {
-      // Line-level category isn't on POLine; use InventoryItem if we loaded it
-      // (we only selected a minimal set). Fallback: true if line.inventoryItemId present.
-      return !!l.inventoryItemId;
-    });
+    const hasRmLine = processedLines.some((l) => !!l.inventoryItemId);
     let termsAccepted: string[] = b.termsAccepted ?? [];
     if (!b.termsAccepted && hasRmLine) {
-      // Resolve categories for the involved items — only auto-tick if any is RAW_MATERIAL
       const ids = processedLines.map((l) => l.inventoryItemId).filter((x): x is string => !!x);
       if (ids.length > 0) {
         const cats = await prisma.inventoryItem.findMany({
@@ -448,13 +496,13 @@ router.post('/', validate(createPOSchema), asyncHandler(async (req: AuthRequest,
       }
     }
 
-    // Create PO with lines in transaction
     const companyId = getActiveCompanyId(req);
     const poNo = await nextDocNo('PurchaseOrder', 'poNo', companyId);
     const po = await prisma.purchaseOrder.create({
       data: {
         poNo,
-        vendorId: b.vendorId,
+        vendorId: resolvedVendorId,
+        contractorId,
         poDate,
         deliveryDate: b.deliveryDate ? new Date(b.deliveryDate) : null,
         supplyType,
@@ -483,14 +531,15 @@ router.post('/', validate(createPOSchema), asyncHandler(async (req: AuthRequest,
         overrideTdsSectionId: b.overrideTdsSectionId || null,
         termsAccepted,
         poType,
-        status: 'DRAFT',
+        dealType,
+        status: poType === 'CONTRACTOR' && dealType === 'OPEN' ? 'APPROVED' : 'DRAFT',
         userId: req.user!.id,
         companyId,
         lines: {
           create: processedLines,
         },
       },
-      include: { lines: true },
+      include: { lines: true, contractor: { select: { id: true, name: true, contractorCode: true } } },
     });
 
     res.status(201).json(po);

@@ -250,4 +250,56 @@ router.get('/:id/ledger', asyncHandler(async (req: AuthRequest, res: Response) =
   res.json({ ledger: entries, closingBalance: balance });
 }));
 
+// GET /:id/running-pos — active OPEN/contractor POs for this contractor
+router.get('/:id/running-pos', asyncHandler(async (req: AuthRequest, res: Response) => {
+  const pos = await prisma.purchaseOrder.findMany({
+    where: {
+      contractorId: req.params.id,
+      poType: 'CONTRACTOR',
+      status: { in: ['DRAFT', 'APPROVED', 'SENT', 'PARTIAL_RECEIVED'] },
+    },
+    select: {
+      id: true, poNo: true, poDate: true, status: true, dealType: true,
+      subtotal: true, totalGst: true, grandTotal: true, remarks: true,
+      tdsPercent: true, tdsAmount: true,
+      lines: {
+        select: {
+          id: true, lineNo: true, description: true, quantity: true,
+          unit: true, rate: true, amount: true, createdAt: true,
+        },
+        orderBy: { lineNo: 'asc' },
+      },
+      _count: { select: { contractorBills: true } },
+    },
+    orderBy: { poDate: 'desc' },
+    take: 50,
+  });
+  res.json({ runningPOs: pos });
+}));
+
+// POST /:id/close-po/:poId — close a running contractor PO
+router.post('/:id/close-po/:poId', asyncHandler(async (req: AuthRequest, res: Response) => {
+  const po = await prisma.purchaseOrder.findFirst({
+    where: { id: req.params.poId, contractorId: req.params.id },
+    include: { lines: true },
+  });
+  if (!po) throw new NotFoundError('PurchaseOrder', req.params.poId);
+
+  const subtotal = po.lines.reduce((s, l) => s + l.amount, 0);
+  const totalGst = po.lines.reduce((s, l) => s + (l.cgstAmount || 0) + (l.sgstAmount || 0) + (l.igstAmount || 0), 0);
+
+  await prisma.purchaseOrder.update({
+    where: { id: po.id },
+    data: {
+      status: 'CLOSED',
+      subtotal,
+      totalGst,
+      grandTotal: subtotal + totalGst + po.freightCharge + po.otherCharges + po.roundOff,
+      remarks: `${po.remarks || ''} | Closed manually`.trim(),
+    },
+  });
+
+  res.json({ success: true });
+}));
+
 export default router;

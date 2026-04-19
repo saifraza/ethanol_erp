@@ -34,15 +34,13 @@ const lineSchema = z.object({
 
 const createBillSchema = z.object({
   contractorId: z.string().uuid(),
+  purchaseOrderId: z.string().optional().nullable(),
   billDate: z.string().optional(),
   billPath: z.enum(['CREATED', 'UPLOADED']),
   description: z.string().min(1),
-  // For CREATED path
   lines: z.array(lineSchema).optional(),
-  // For UPLOADED path
   vendorBillNo: z.string().optional().nullable(),
-  subtotal: z.number().optional(), // Required for UPLOADED if no lines
-  // GST
+  subtotal: z.number().optional(),
   cgstPercent: z.number().min(0).default(0),
   sgstPercent: z.number().min(0).default(0),
   igstPercent: z.number().min(0).default(0),
@@ -74,6 +72,7 @@ router.get('/', asyncHandler(async (req: AuthRequest, res: Response) => {
     where,
     include: {
       contractor: { select: { id: true, name: true, contractorCode: true, panType: true, contractorType: true } },
+      purchaseOrder: { select: { id: true, poNo: true, status: true, dealType: true } },
       lines: true,
       _count: { select: { payments: true } },
     },
@@ -114,7 +113,7 @@ router.get('/:id', asyncHandler(async (req: AuthRequest, res: Response) => {
 
 // POST / — create bill (Path A: CREATED with lines, Path B: UPLOADED with amounts)
 router.post('/', validate(createBillSchema), asyncHandler(async (req: AuthRequest, res: Response) => {
-  const { contractorId, billPath, lines, vendorBillNo, cgstPercent, sgstPercent, igstPercent, description, billDate } = req.body;
+  const { contractorId, purchaseOrderId, billPath, lines, vendorBillNo, cgstPercent, sgstPercent, igstPercent, description, billDate } = req.body;
 
   const contractor = await prisma.contractor.findUnique({ where: { id: contractorId } });
   if (!contractor) throw new NotFoundError('Contractor', contractorId);
@@ -144,6 +143,7 @@ router.post('/', validate(createBillSchema), asyncHandler(async (req: AuthReques
   const bill = await prisma.contractorBill.create({
     data: {
       contractorId,
+      purchaseOrderId: purchaseOrderId || null,
       billDate: billDate ? new Date(billDate) : new Date(),
       billPath,
       description,

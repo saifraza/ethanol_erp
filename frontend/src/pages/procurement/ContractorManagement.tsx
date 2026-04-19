@@ -35,7 +35,7 @@ interface Bill {
   id: string;
   billNo: number;
   contractorId: string;
-  contractor: { id: string; name: string; contractorCode: string; panType: string; contractorType: string };
+  contractor: { id: string; name: string; contractorCode: string; panType: string; contractorType: string; pan?: string; gstin?: string | null };
   billDate: string;
   billPath: string;
   description: string;
@@ -122,7 +122,8 @@ export default function ContractorManagement() {
   // Bill form
   const [showBillForm, setShowBillForm] = useState(false);
   const [billPath, setBillPath] = useState<'CREATED' | 'UPLOADED'>('CREATED');
-  const [billForm, setBillForm] = useState({ contractorId: '', description: '', billDate: new Date().toISOString().slice(0, 10), vendorBillNo: '', subtotal: 0, cgstPercent: 0, sgstPercent: 0, igstPercent: 0 });
+  const [billForm, setBillForm] = useState({ contractorId: '', purchaseOrderId: '', description: '', billDate: new Date().toISOString().slice(0, 10), vendorBillNo: '', subtotal: 0, cgstPercent: 0, sgstPercent: 0, igstPercent: 0 });
+  const [contractorPOs, setContractorPOs] = useState<{ id: string; poNo: number; status: string; grandTotal: number }[]>([]);
   const [billLines, setBillLines] = useState<BillLine[]>([{ description: '', quantity: 1, unit: 'NOS', rate: 0, amount: 0 }]);
 
   // Pay modal
@@ -136,6 +137,39 @@ export default function ContractorManagement() {
 
   const fileRef = useRef<HTMLInputElement>(null);
   const [uploadBillId, setUploadBillId] = useState<string | null>(null);
+
+  // Ledger modal (like Traders)
+  interface LedgerEntry { date: string; type: 'BILL' | 'PAYMENT'; ref: string; description: string; debit: number; credit: number; balance: number; }
+  interface RunningPO { id: string; poNo: number; poDate: string; status: string; dealType: string; subtotal: number; totalGst: number; grandTotal: number; remarks: string | null; tdsPercent: number; tdsAmount: number; lines: { id: string; lineNo: number; description: string; quantity: number; unit: string; rate: number; amount: number; createdAt: string }[]; _count: { contractorBills: number } }
+  const [ledgerContractor, setLedgerContractor] = useState<Contractor | null>(null);
+  const [ledger, setLedger] = useState<{ ledger: LedgerEntry[]; closingBalance: number } | null>(null);
+  const [runningPOs, setRunningPOs] = useState<RunningPO[]>([]);
+  const [ledgerLoading, setLedgerLoading] = useState(false);
+  const [ledgerTab, setLedgerTab] = useState<'ledger' | 'running'>('ledger');
+
+  const openLedger = async (c: Contractor) => {
+    setLedgerContractor(c);
+    setLedgerTab('ledger');
+    setLedgerLoading(true);
+    try {
+      const [ledgerRes, posRes] = await Promise.all([
+        api.get(`/contractors/${c.id}/ledger`),
+        api.get(`/contractors/${c.id}/running-pos`),
+      ]);
+      setLedger(ledgerRes.data);
+      setRunningPOs(posRes.data.runningPOs || []);
+    } catch { /* ignore */ }
+    setLedgerLoading(false);
+  };
+
+  const closePO = async (poId: string) => {
+    if (!ledgerContractor) return;
+    try {
+      await api.post(`/contractors/${ledgerContractor.id}/close-po/${poId}`);
+      const posRes = await api.get(`/contractors/${ledgerContractor.id}/running-pos`);
+      setRunningPOs(posRes.data.runningPOs || []);
+    } catch { /* ignore */ }
+  };
 
   // ── Fetchers ────────────────────────────────────────────
   const fetchContractors = useCallback(async () => {
@@ -197,7 +231,8 @@ export default function ContractorManagement() {
 
   // ── Bill CRUD ────────────────────────────────────────────
   const resetBillForm = () => {
-    setBillForm({ contractorId: '', description: '', billDate: new Date().toISOString().slice(0, 10), vendorBillNo: '', subtotal: 0, cgstPercent: 0, sgstPercent: 0, igstPercent: 0 });
+    setBillForm({ contractorId: '', purchaseOrderId: '', description: '', billDate: new Date().toISOString().slice(0, 10), vendorBillNo: '', subtotal: 0, cgstPercent: 0, sgstPercent: 0, igstPercent: 0 });
+    setContractorPOs([]);
     setBillLines([{ description: '', quantity: 1, unit: 'NOS', rate: 0, amount: 0 }]);
     setBillPath('CREATED');
   };
@@ -227,6 +262,7 @@ export default function ContractorManagement() {
     try {
       const payload: Record<string, unknown> = {
         contractorId: billForm.contractorId,
+        purchaseOrderId: billForm.purchaseOrderId || null,
         billPath,
         description: billForm.description,
         billDate: billForm.billDate,
@@ -384,7 +420,8 @@ export default function ContractorManagement() {
                       <td className="px-3 py-1.5 border-r border-slate-100 text-[10px]">{c.bankAccount ? `${c.bankName || ''} ...${c.bankAccount.slice(-4)}` : '--'}</td>
                       <td className={`px-3 py-1.5 font-mono tabular-nums border-r border-slate-100 ${c.outstanding > 0 ? 'text-red-600 font-semibold' : 'text-slate-400'}`}>{fmt(c.outstanding)}</td>
                       <td className="px-3 py-1.5 text-center border-r border-slate-100">{c._count.bills}</td>
-                      <td className="px-3 py-1.5">
+                      <td className="px-3 py-1.5 flex gap-1">
+                        <button onClick={() => openLedger(c)} className="px-2 py-0.5 bg-blue-600 text-white text-[10px] hover:bg-blue-700">Ledger</button>
                         <button onClick={() => openEdit(c)} className="px-2 py-0.5 bg-white border border-slate-300 text-slate-600 text-[10px] hover:bg-slate-50">Edit</button>
                       </td>
                     </tr>
@@ -622,7 +659,16 @@ export default function ContractorManagement() {
                 <div className="grid grid-cols-3 gap-3">
                   <div>
                     <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-0.5 block">Contractor *</label>
-                    <select value={billForm.contractorId} onChange={e => setBillForm({ ...billForm, contractorId: e.target.value })} className="w-full border border-slate-300 px-2.5 py-1.5 text-xs focus:outline-none focus:ring-1 focus:ring-slate-400">
+                    <select value={billForm.contractorId} onChange={async e => {
+                      const cid = e.target.value;
+                      setBillForm({ ...billForm, contractorId: cid, purchaseOrderId: '' });
+                      if (cid) {
+                        try {
+                          const res = await api.get(`/contractors/${cid}/running-pos`);
+                          setContractorPOs(res.data.runningPOs || []);
+                        } catch { setContractorPOs([]); }
+                      } else { setContractorPOs([]); }
+                    }} className="w-full border border-slate-300 px-2.5 py-1.5 text-xs focus:outline-none focus:ring-1 focus:ring-slate-400">
                       <option value="">Select...</option>
                       {contractors.filter(c => c.isActive).map(c => (
                         <option key={c.id} value={c.id}>{c.name} ({c.contractorCode})</option>
@@ -636,6 +682,17 @@ export default function ContractorManagement() {
                       </div>
                     )}
                   </div>
+                  <div>
+                    <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-0.5 block">Against PO</label>
+                    <select value={billForm.purchaseOrderId} onChange={e => setBillForm({ ...billForm, purchaseOrderId: e.target.value })} className="w-full border border-slate-300 px-2.5 py-1.5 text-xs focus:outline-none focus:ring-1 focus:ring-slate-400">
+                      <option value="">No PO (standalone bill)</option>
+                      {contractorPOs.map(p => (
+                        <option key={p.id} value={p.id}>PO-{p.poNo} · {p.status} · {fmt(p.grandTotal)}</option>
+                      ))}
+                    </select>
+                  </div>
+                </div>
+                <div className="grid grid-cols-3 gap-3">
                   <div>
                     <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-0.5 block">Bill Date</label>
                     <input type="date" value={billForm.billDate} onChange={e => setBillForm({ ...billForm, billDate: e.target.value })} className="w-full border border-slate-300 px-2.5 py-1.5 text-xs focus:outline-none focus:ring-1 focus:ring-slate-400" />
@@ -901,6 +958,129 @@ export default function ContractorManagement() {
                   </div>
                 </div>
               </div>
+            </div>
+          </div>
+        )}
+        {/* ══════════ LEDGER MODAL ══════════ */}
+        {ledgerContractor && (
+          <div className="fixed inset-0 bg-black/50 flex items-start justify-center z-50 overflow-y-auto py-4">
+            <div className="bg-white shadow-2xl w-full max-w-5xl mx-4">
+              <div className="bg-slate-800 text-white px-4 py-2.5 flex items-center justify-between">
+                <span className="text-sm font-bold tracking-wide uppercase">{ledgerContractor.contractorCode} · {ledgerContractor.name} — Ledger</span>
+                <button onClick={() => setLedgerContractor(null)} className="text-slate-400 hover:text-white text-lg">X</button>
+              </div>
+
+              {ledgerLoading ? (
+                <div className="px-4 py-8 text-center text-xs text-slate-400 uppercase tracking-widest">Loading...</div>
+              ) : (
+                <>
+                  {/* Summary strip */}
+                  <div className="grid grid-cols-3 border-b border-slate-300">
+                    <div className="px-4 py-2 border-r border-slate-300 border-l-4 border-l-red-500">
+                      <div className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Total Billed</div>
+                      <div className="text-lg font-bold text-slate-800 font-mono tabular-nums">
+                        {fmt(ledger?.ledger.filter(e => e.type === 'BILL').reduce((s, e) => s + e.debit, 0) || 0)}
+                      </div>
+                    </div>
+                    <div className="px-4 py-2 border-r border-slate-300 border-l-4 border-l-green-500">
+                      <div className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Total Paid</div>
+                      <div className="text-lg font-bold text-slate-800 font-mono tabular-nums">
+                        {fmt(ledger?.ledger.filter(e => e.type === 'PAYMENT').reduce((s, e) => s + e.credit, 0) || 0)}
+                      </div>
+                    </div>
+                    <div className="px-4 py-2 border-l-4 border-l-amber-500">
+                      <div className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Balance Due</div>
+                      <div className={`text-lg font-bold font-mono tabular-nums ${(ledger?.closingBalance || 0) > 0 ? 'text-red-600' : 'text-slate-400'}`}>
+                        {fmt(ledger?.closingBalance || 0)}
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Tabs */}
+                  <div className="flex gap-4 border-b border-slate-300 px-4">
+                    {(['ledger', 'running'] as const).map(t => (
+                      <button key={t} onClick={() => setLedgerTab(t)}
+                        className={`py-2 text-[11px] font-bold uppercase tracking-widest ${ledgerTab === t ? 'border-b-2 border-blue-600 text-blue-700' : 'text-slate-400 hover:text-slate-600'}`}>
+                        {t === 'ledger' ? 'Ledger' : `Running POs (${runningPOs.length})`}
+                      </button>
+                    ))}
+                  </div>
+
+                  {ledgerTab === 'ledger' && (
+                    <div className="overflow-x-auto max-h-[60vh] overflow-y-auto">
+                      <table className="w-full text-xs">
+                        <thead><tr className="bg-slate-100 sticky top-0">
+                          {['Date', 'Type', 'Ref', 'Description', 'Debit', 'Credit', 'Balance'].map(h => (
+                            <th key={h} className="text-left px-3 py-2 font-semibold text-[10px] uppercase tracking-widest border-b border-slate-200 whitespace-nowrap">{h}</th>
+                          ))}
+                        </tr></thead>
+                        <tbody>
+                          {(ledger?.ledger || []).map((e, i) => (
+                            <tr key={i} className={`border-b border-slate-100 ${i % 2 ? 'bg-slate-50/70' : ''}`}>
+                              <td className="px-3 py-1.5 font-mono text-slate-500">{fmtDate(e.date)}</td>
+                              <td className="px-3 py-1.5">
+                                <span className={`text-[9px] font-bold uppercase px-1.5 py-0.5 border ${e.type === 'BILL' ? 'border-red-300 bg-red-50 text-red-700' : 'border-green-300 bg-green-50 text-green-700'}`}>{e.type}</span>
+                              </td>
+                              <td className="px-3 py-1.5 font-mono text-slate-600">{e.ref}</td>
+                              <td className="px-3 py-1.5 text-slate-700 max-w-[200px] truncate">{e.description}</td>
+                              <td className={`px-3 py-1.5 font-mono tabular-nums ${e.debit > 0 ? 'text-red-600' : 'text-slate-300'}`}>{e.debit > 0 ? fmt(e.debit) : '--'}</td>
+                              <td className={`px-3 py-1.5 font-mono tabular-nums ${e.credit > 0 ? 'text-green-600' : 'text-slate-300'}`}>{e.credit > 0 ? fmt(e.credit) : '--'}</td>
+                              <td className={`px-3 py-1.5 font-mono tabular-nums font-semibold ${e.balance > 0 ? 'text-red-600' : 'text-green-600'}`}>{fmt(e.balance)}</td>
+                            </tr>
+                          ))}
+                          {(ledger?.ledger || []).length === 0 && (
+                            <tr><td colSpan={7} className="px-3 py-8 text-center text-xs text-slate-400 uppercase tracking-widest">No ledger entries</td></tr>
+                          )}
+                        </tbody>
+                      </table>
+                    </div>
+                  )}
+
+                  {ledgerTab === 'running' && (
+                    <div className="p-4 space-y-3 max-h-[60vh] overflow-y-auto">
+                      {runningPOs.length === 0 && (
+                        <div className="text-center text-xs text-slate-400 uppercase tracking-widest py-8">No active POs</div>
+                      )}
+                      {runningPOs.map(po => (
+                        <div key={po.id} className="border border-slate-300">
+                          <div className="bg-slate-100 px-3 py-2 flex items-center justify-between border-b border-slate-300">
+                            <div className="flex items-center gap-3">
+                              <span className="font-mono font-bold text-slate-700 text-sm">PO-{po.poNo}</span>
+                              <StatusBadge status={po.status} />
+                              <span className="text-[10px] text-slate-500">{fmtDate(po.poDate)}</span>
+                              <span className="text-[10px] text-slate-500">{po.lines.length} line(s) · {po._count.contractorBills} bill(s)</span>
+                            </div>
+                            <div className="flex items-center gap-3">
+                              <span className="font-mono font-bold text-slate-800">{fmt(po.grandTotal)}</span>
+                              <button onClick={() => closePO(po.id)} className="px-2 py-0.5 bg-red-50 border border-red-300 text-red-700 text-[10px] font-bold hover:bg-red-100">Close PO</button>
+                            </div>
+                          </div>
+                          <table className="w-full text-xs">
+                            <thead><tr className="bg-slate-50">
+                              {['#', 'Description', 'Qty', 'Unit', 'Rate', 'Amount', 'Date'].map(h => (
+                                <th key={h} className="text-left px-3 py-1.5 font-semibold text-[10px] uppercase tracking-widest border-b border-slate-200">{h}</th>
+                              ))}
+                            </tr></thead>
+                            <tbody>
+                              {po.lines.map((l, i) => (
+                                <tr key={l.id} className={`border-b border-slate-100 ${i % 2 ? 'bg-slate-50/50' : ''}`}>
+                                  <td className="px-3 py-1 font-mono text-slate-400">{l.lineNo}</td>
+                                  <td className="px-3 py-1 text-slate-700">{l.description}</td>
+                                  <td className="px-3 py-1 font-mono">{l.quantity}</td>
+                                  <td className="px-3 py-1 text-slate-500">{l.unit}</td>
+                                  <td className="px-3 py-1 font-mono">{fmt(l.rate)}</td>
+                                  <td className="px-3 py-1 font-mono font-medium">{fmt(l.amount)}</td>
+                                  <td className="px-3 py-1 text-slate-500">{fmtDate(l.createdAt)}</td>
+                                </tr>
+                              ))}
+                            </tbody>
+                          </table>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </>
+              )}
             </div>
           </div>
         )}

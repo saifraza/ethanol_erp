@@ -166,8 +166,13 @@ const PurchaseOrders: React.FC = () => {
   }, [location.search, location.pathname, navigate]);
   const [submitting, setSubmitting] = useState(false);
 
+  // Contractor list for CONTRACTOR PO type
+  interface ContractorOption { id: string; contractorCode: string; name: string; contractorType: string; tdsPercent: number; pan: string; gstin: string | null; phone: string | null; }
+  const [contractorsList, setContractorsList] = useState<ContractorOption[]>([]);
+
   const [formData, setFormData] = useState({
     vendorId: '',
+    contractorId: '',
     poDate: new Date().toISOString().split('T')[0],
     deliveryDate: '',
     supplyType: 'INTRA_STATE',
@@ -184,8 +189,8 @@ const PurchaseOrders: React.FC = () => {
     lines: [] as POLine[],
     termsAccepted: [] as string[],
     overrideTdsSectionId: null as string | null,
-    // PO type — expands PO coverage to services, contractors, rent, utilities
     poType: 'GOODS' as 'GOODS' | 'SERVICE' | 'CONTRACTOR' | 'RENT' | 'UTILITY' | 'OTHER',
+    dealType: 'STANDARD' as 'STANDARD' | 'OPEN',
   });
 
   // RM contract T&C catalog + 194Q section ID (loaded once)
@@ -373,6 +378,8 @@ const PurchaseOrders: React.FC = () => {
           termsAccepted: po.termsAccepted || [],
           overrideTdsSectionId: po.overrideTdsSectionId || null,
           poType: po.poType || 'GOODS',
+          contractorId: po.contractorId || '',
+          dealType: po.dealType || 'STANDARD',
         });
         setTermsUserEdited(true); // keep their saved choices on edit
       }
@@ -382,15 +389,17 @@ const PurchaseOrders: React.FC = () => {
   const fetchData = async () => {
     try {
       setLoading(true);
-      const [posResponse, vendorsResponse, materialsResponse] = await Promise.all([
+      const [posResponse, vendorsResponse, materialsResponse, contractorsResponse] = await Promise.all([
         api.get(`/purchase-orders${categoryFilter !== 'ALL' ? `?category=${categoryFilter}` : ''}`),
         api.get('/vendors'),
         api.get('/materials'),
+        api.get('/contractors?active=true'),
       ]);
 
       setPos(posResponse.data.pos || []);
       setVendors(vendorsResponse.data.vendors || []);
       setMaterials(materialsResponse.data.materials || []);
+      setContractorsList(contractorsResponse.data.contractors || []);
       setError('');
     } catch (err: any) {
       setError(err.response?.data?.message || 'Failed to fetch data');
@@ -544,8 +553,18 @@ const PurchaseOrders: React.FC = () => {
   const handleSubmitPO = async (e: React.FormEvent) => {
     e.preventDefault();
 
-    if (!formData.vendorId || formData.lines.length === 0) {
-      setError('Please select vendor and add line items');
+    const needsVendor = formData.poType !== 'CONTRACTOR';
+    const needsContractor = formData.poType === 'CONTRACTOR';
+    if (needsVendor && !formData.vendorId) {
+      setError('Please select a vendor');
+      return;
+    }
+    if (needsContractor && !formData.contractorId) {
+      setError('Please select a contractor');
+      return;
+    }
+    if (formData.lines.length === 0) {
+      setError('Please add line items');
       return;
     }
     if (!formData.deliveryDate) {
@@ -555,7 +574,7 @@ const PurchaseOrders: React.FC = () => {
 
     try {
       setSubmitting(true);
-      let response;
+      let response: { data: PurchaseOrder };
       if (editingPoId) {
         response = await api.put(`/purchase-orders/${editingPoId}`, formData);
         setPos(prev => prev.map(p => p.id === editingPoId ? response.data : p));
@@ -575,6 +594,7 @@ const PurchaseOrders: React.FC = () => {
       }
       setFormData({
         vendorId: '',
+        contractorId: '',
         poDate: new Date().toISOString().split('T')[0],
         deliveryDate: '',
         supplyType: 'INTRA_STATE',
@@ -592,6 +612,7 @@ const PurchaseOrders: React.FC = () => {
         termsAccepted: [],
         overrideTdsSectionId: null,
         poType: 'GOODS',
+        dealType: 'STANDARD',
       });
       setTermsUserEdited(false);
       setShowCreateForm(false);
@@ -809,7 +830,7 @@ const PurchaseOrders: React.FC = () => {
                       { key: 'OTHER',      label: 'Other',      hint: 'Anything else that needs a PO umbrella' },
                     ].map(t => (
                       <button type="button" key={t.key}
-                        onClick={() => setFormData(f => ({ ...f, poType: t.key as typeof f.poType }))}
+                        onClick={() => setFormData(f => ({ ...f, poType: t.key as typeof f.poType, dealType: t.key === 'CONTRACTOR' ? 'OPEN' : 'STANDARD', contractorId: t.key !== 'CONTRACTOR' ? '' : f.contractorId }))}
                         className={`px-2 py-1.5 border text-left ${formData.poType === t.key ? 'border-indigo-600 bg-indigo-50' : 'border-slate-300 bg-white hover:bg-slate-50'}`}
                         title={t.hint}>
                         <div className="flex items-center gap-1.5">
@@ -825,37 +846,51 @@ const PurchaseOrders: React.FC = () => {
                       <b>Non-goods PO:</b> line items use free-text descriptions (no inventory master needed). HSN optional — use SAC code if applicable.
                     </div>
                   )}
+                  {formData.poType !== 'CONTRACTOR' && (
+                    <div className="mt-2 flex items-center gap-3">
+                      <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">Deal Type</label>
+                      <div className="flex gap-2">
+                        {[
+                          { key: 'STANDARD', label: 'Standard', hint: 'Fixed qty PO' },
+                          { key: 'OPEN', label: 'Open / Running', hint: 'Running account, bills accumulate' },
+                        ].map(d => (
+                          <button type="button" key={d.key}
+                            onClick={() => setFormData(f => ({ ...f, dealType: d.key as typeof f.dealType }))}
+                            className={`px-2 py-1 border text-[10px] font-bold ${formData.dealType === d.key ? 'border-indigo-600 bg-indigo-50 text-indigo-700' : 'border-slate-300 bg-white text-slate-600 hover:bg-slate-50'}`}
+                            title={d.hint}>{d.label}</button>
+                        ))}
+                      </div>
+                    </div>
+                  )}
                 </div>
 
                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-3">
-                  {(() => {
-                    // Filter vendors by PO type when category tagging exists in the Vendor master.
-                    // CONTRACTOR      → any vendor whose category starts with "CONTRACTOR_"
-                    // SERVICE/RENT/UTILITY — no category convention yet; show all with a hint
-                    // GOODS / OTHER   → all vendors
-                    const typeFilter = formData.poType;
-                    const contractorVendors = vendors.filter(v => (v.category || '').toUpperCase().startsWith('CONTRACTOR'));
-                    let list = vendors;
-                    let filterLabel = '';
-                    if (typeFilter === 'CONTRACTOR' && contractorVendors.length > 0) {
-                      list = contractorVendors;
-                      filterLabel = `${contractorVendors.length} contractor vendor(s) by category`;
-                    } else if (typeFilter === 'CONTRACTOR') {
-                      filterLabel = 'No vendors tagged as CONTRACTOR_* yet — showing all. Tag them in Vendor master for auto-filter.';
-                    }
-                    return (
-                      <div>
-                        <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-0.5 block">
-                          Vendor * {typeFilter !== 'GOODS' && <span className="text-indigo-600 font-normal normal-case">· {typeFilter}</span>}
-                        </label>
-                        <select value={formData.vendorId} onChange={(e) => { setFormData({ ...formData, vendorId: e.target.value }); loadVendorContext(e.target.value); }} required className="border border-slate-300 px-2.5 py-1.5 text-xs w-full focus:outline-none focus:ring-1 focus:ring-slate-400">
-                          <option value="">Select Vendor</option>
-                          {list.map((v) => (<option key={v.id} value={v.id}>{v.name}{v.category ? ` · ${v.category}` : ''}</option>))}
-                        </select>
-                        {filterLabel && <div className="text-[9px] text-slate-500 mt-0.5 italic">{filterLabel}</div>}
+                  {formData.poType === 'CONTRACTOR' ? (
+                    <div>
+                      <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-0.5 block">
+                        Contractor * <span className="text-indigo-600 font-normal normal-case">· from Contractor Master</span>
+                      </label>
+                      <select value={formData.contractorId} onChange={(e) => setFormData({ ...formData, contractorId: e.target.value })} required className="border border-slate-300 px-2.5 py-1.5 text-xs w-full focus:outline-none focus:ring-1 focus:ring-slate-400">
+                        <option value="">Select Contractor</option>
+                        {contractorsList.map((c) => (
+                          <option key={c.id} value={c.id}>{c.contractorCode} · {c.name} · {c.contractorType} · TDS {c.tdsPercent}%</option>
+                        ))}
+                      </select>
+                      <div className="text-[9px] text-slate-500 mt-0.5 italic">
+                        OPEN deal type · bills accumulate as lines · TDS auto-set from contractor master
                       </div>
-                    );
-                  })()}
+                    </div>
+                  ) : (
+                    <div>
+                      <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-0.5 block">
+                        Vendor * {formData.poType !== 'GOODS' && <span className="text-indigo-600 font-normal normal-case">· {formData.poType}</span>}
+                      </label>
+                      <select value={formData.vendorId} onChange={(e) => { setFormData({ ...formData, vendorId: e.target.value }); loadVendorContext(e.target.value); }} required className="border border-slate-300 px-2.5 py-1.5 text-xs w-full focus:outline-none focus:ring-1 focus:ring-slate-400">
+                        <option value="">Select Vendor</option>
+                        {vendors.map((v) => (<option key={v.id} value={v.id}>{v.name}{v.category ? ` · ${v.category}` : ''}</option>))}
+                      </select>
+                    </div>
+                  )}
                   <div>
                     <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-0.5 block">PO Date *</label>
                     <input type="date" value={formData.poDate} onChange={(e) => setFormData({ ...formData, poDate: e.target.value })} required className="border border-slate-300 px-2.5 py-1.5 text-xs w-full focus:outline-none focus:ring-1 focus:ring-slate-400" />
