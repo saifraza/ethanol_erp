@@ -12,6 +12,7 @@ interface LedgerLine {
   debit: number;
   credit: number;
   narration: string | null;
+  party: string | null;
   costCenter: string | null;
   division: string | null;
   balance: number;
@@ -472,6 +473,7 @@ export default function Ledger() {
                     <th className="text-left px-3 py-2 font-semibold text-[10px] uppercase tracking-widest border-r border-slate-700">Date</th>
                     <th className="text-left px-3 py-2 font-semibold text-[10px] uppercase tracking-widest border-r border-slate-700">Entry #</th>
                     <th className="text-left px-3 py-2 font-semibold text-[10px] uppercase tracking-widest border-r border-slate-700">Narration</th>
+                    <th className="text-left px-3 py-2 font-semibold text-[10px] uppercase tracking-widest border-r border-slate-700">Party</th>
                     <th className="text-left px-3 py-2 font-semibold text-[10px] uppercase tracking-widest border-r border-slate-700">Ref</th>
                     <th className="text-left px-3 py-2 font-semibold text-[10px] uppercase tracking-widest border-r border-slate-700">Div</th>
                     <th className="text-right px-3 py-2 font-semibold text-[10px] uppercase tracking-widest border-r border-slate-700">Debit</th>
@@ -481,7 +483,7 @@ export default function Ledger() {
                 </thead>
                 <tbody>
                   <tr className="bg-slate-200 border-b border-slate-300">
-                    <td colSpan={5} className="px-3 py-1.5 text-[10px] font-bold text-slate-600 uppercase tracking-widest">Opening Balance</td>
+                    <td colSpan={6} className="px-3 py-1.5 text-[10px] font-bold text-slate-600 uppercase tracking-widest">Opening Balance</td>
                     <td className="px-3 py-1.5 border-r border-slate-100"></td>
                     <td className="px-3 py-1.5 border-r border-slate-100"></td>
                     <td className="px-3 py-1.5 text-right font-mono tabular-nums font-bold text-slate-700">
@@ -498,6 +500,7 @@ export default function Ledger() {
                           <span className="text-[10px] text-slate-400 ml-1">({line.narration})</span>
                         )}
                       </td>
+                      <td className="px-3 py-1.5 text-slate-700 text-[11px] border-r border-slate-100 max-w-[140px] truncate">{line.party || <span className="text-slate-300">--</span>}</td>
                       <td className="px-3 py-1.5 text-[10px] text-slate-500 border-r border-slate-100">{line.journal.refType || '--'}</td>
                       <td className="px-3 py-1.5 text-[10px] border-r border-slate-100">
                         {line.division && (
@@ -513,12 +516,12 @@ export default function Ledger() {
                     </tr>
                   ))}
                   {filtered.lines.length === 0 && (
-                    <tr><td colSpan={8} className="text-center py-8 text-xs text-slate-400 uppercase tracking-widest">No transactions match filters</td></tr>
+                    <tr><td colSpan={9} className="text-center py-8 text-xs text-slate-400 uppercase tracking-widest">No transactions match filters</td></tr>
                   )}
                 </tbody>
                 <tfoot>
                   <tr className="bg-slate-800 text-white font-semibold">
-                    <td colSpan={5} className="px-3 py-2 text-right text-[10px] uppercase tracking-widest border-r border-slate-700">Closing Balance</td>
+                    <td colSpan={6} className="px-3 py-2 text-right text-[10px] uppercase tracking-widest border-r border-slate-700">Closing Balance</td>
                     <td className="px-3 py-2 text-right font-mono tabular-nums border-r border-slate-700">{fmtCurrency(filtered.totalDebit)}</td>
                     <td className="px-3 py-2 text-right font-mono tabular-nums border-r border-slate-700">{fmtCurrency(filtered.totalCredit)}</td>
                     <td className="px-3 py-2 text-right font-mono tabular-nums font-bold">
