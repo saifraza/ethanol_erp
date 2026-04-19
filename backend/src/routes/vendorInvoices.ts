@@ -467,9 +467,14 @@ router.put('/:id/status', asyncHandler(async (req: AuthRequest, res: Response) =
       data: { status: newStatus },
     });
 
-    // On PENDING → VERIFIED, post the Input GST journal (fire-and-forget).
-    // GRN already posted Dr Inventory / Cr Payable at base; this tops up the GST portion.
-    if (invoice.status === 'PENDING' && newStatus === 'VERIFIED' && updated.totalGst > 0) {
+    // On PENDING → VERIFIED, post journal entries (fire-and-forget).
+    // GOODS POs: GRN already posted Dr Inventory / Cr Payable; this tops up GST.
+    // Non-GOODS POs (SERVICE/CONTRACTOR/RENT/UTILITY/OTHER): no GRN, so this posts
+    // BOTH the base expense (Dr Expense) AND GST (Dr GST Input), Cr Trade Payable.
+    if (invoice.status === 'PENDING' && newStatus === 'VERIFIED') {
+      const poType = invoice.poId
+        ? (await prisma.purchaseOrder.findUnique({ where: { id: invoice.poId }, select: { poType: true } }))?.poType
+        : undefined;
       onVendorInvoiceBooked(prisma, {
         id: updated.id,
         invoiceNo: updated.invoiceNo,
@@ -478,12 +483,15 @@ router.put('/:id/status', asyncHandler(async (req: AuthRequest, res: Response) =
         sgstAmount: updated.sgstAmount,
         igstAmount: updated.igstAmount,
         totalGst: updated.totalGst,
+        subtotal: updated.subtotal,
+        totalAmount: updated.totalAmount,
         isRCM: updated.isRCM,
         itcEligible: updated.itcEligible,
         invoiceDate: updated.invoiceDate,
         userId: updated.userId,
         companyId: updated.companyId || undefined,
-      }).catch(err => console.error('[VI] Input GST journal failed:', err));
+        poType: poType || undefined,
+      }).catch(err => console.error('[VI] Invoice journal failed:', err));
     }
 
     res.json(updated);

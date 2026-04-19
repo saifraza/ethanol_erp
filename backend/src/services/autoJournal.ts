@@ -55,6 +55,8 @@ const ACCT = {
   SALARY_EXPENSE: '4020',
   MAINTENANCE_EXPENSE: '4030',
   CONTRACTOR_EXPENSE: '4035',
+  RENT_EXPENSE: '4036',
+  SERVICE_EXPENSE: '4037',
   OTHER_EXPENSE: '4040',
   DEPRECIATION: '4050',
   INTEREST_EXPENSE: '4090',
@@ -90,6 +92,17 @@ function getExpenseAccountCode(category: string): string {
   if (c.includes('SPARE') || c.includes('MAINTENANCE')) return ACCT.MAINTENANCE_EXPENSE;
   if (c.includes('UTILITY')) return ACCT.UTILITY_EXPENSE;
   return ACCT.OTHER_EXPENSE;
+}
+
+// PO type → expense account for non-GOODS POs (no GRN, so expense posts at invoice verification)
+function getPoTypeExpenseCode(poType: string): string {
+  switch (poType) {
+    case 'CONTRACTOR': return ACCT.CONTRACTOR_EXPENSE;
+    case 'RENT': return ACCT.RENT_EXPENSE;
+    case 'SERVICE': return ACCT.SERVICE_EXPENSE;
+    case 'UTILITY': return ACCT.UTILITY_EXPENSE;
+    default: return ACCT.OTHER_EXPENSE;
+  }
 }
 
 interface AccountCache {
@@ -483,54 +496,74 @@ export async function onVendorInvoiceBooked(
     sgstAmount: number;
     igstAmount: number;
     totalGst: number;
+    subtotal: number;
+    totalAmount: number;
     isRCM: boolean;
     itcEligible: boolean;
     invoiceDate: Date;
     userId: string;
     companyId?: string;
+    poType?: string;
   }
 ): Promise<string | null> {
   try {
-    if (invoice.totalGst <= 0) return null;
-    if (invoice.isRCM) return null; // RCM has its own reverse-charge flow (phase C)
-    if (!invoice.itcEligible) return null; // blocked credits — GST stays in cost
+    const isNonGoods = invoice.poType && invoice.poType !== 'GOODS';
+    const hasGst = invoice.totalGst > 0 && !invoice.isRCM && invoice.itcEligible;
 
-    const accts = await resolveAccounts(
-      prisma,
-      [ACCT.GST_INPUT_CGST, ACCT.GST_INPUT_SGST, ACCT.GST_INPUT_IGST, ACCT.TRADE_PAYABLE],
-      invoice.companyId
-    );
+    if (!isNonGoods && !hasGst) return null;
+
+    const expenseCode = isNonGoods ? getPoTypeExpenseCode(invoice.poType!) : null;
+    const accountCodes: string[] = [ACCT.GST_INPUT_CGST, ACCT.GST_INPUT_SGST, ACCT.GST_INPUT_IGST, ACCT.TRADE_PAYABLE];
+    if (expenseCode) accountCodes.push(expenseCode);
+
+    const accts = await resolveAccounts(prisma, accountCodes, invoice.companyId);
     if (!accts[ACCT.TRADE_PAYABLE]) return null;
 
     const lines: { accountId: string; debit: number; credit: number; narration?: string }[] = [];
+    const vendorRef = invoice.vendorInvNo ? ` (${invoice.vendorInvNo})` : '';
 
-    if (invoice.cgstAmount > 0) {
-      if (!accts[ACCT.GST_INPUT_CGST]) return null;
-      lines.push({ accountId: accts[ACCT.GST_INPUT_CGST], debit: invoice.cgstAmount, credit: 0, narration: `Input CGST on VI-${invoice.invoiceNo}` });
+    // Non-GOODS POs: post base expense (Dr Expense, Cr Payable) since there's no GRN step
+    if (isNonGoods && invoice.subtotal > 0 && expenseCode && accts[expenseCode]) {
+      lines.push({
+        accountId: accts[expenseCode],
+        debit: invoice.subtotal,
+        credit: 0,
+        narration: `${invoice.poType} expense on VI-${invoice.invoiceNo}${vendorRef}`,
+      });
     }
-    if (invoice.sgstAmount > 0) {
-      if (!accts[ACCT.GST_INPUT_SGST]) return null;
-      lines.push({ accountId: accts[ACCT.GST_INPUT_SGST], debit: invoice.sgstAmount, credit: 0, narration: `Input SGST on VI-${invoice.invoiceNo}` });
-    }
-    if (invoice.igstAmount > 0) {
-      if (!accts[ACCT.GST_INPUT_IGST]) return null;
-      lines.push({ accountId: accts[ACCT.GST_INPUT_IGST], debit: invoice.igstAmount, credit: 0, narration: `Input IGST on VI-${invoice.invoiceNo}` });
+
+    // GST Input (all PO types)
+    if (hasGst) {
+      if (invoice.cgstAmount > 0 && accts[ACCT.GST_INPUT_CGST]) {
+        lines.push({ accountId: accts[ACCT.GST_INPUT_CGST], debit: invoice.cgstAmount, credit: 0, narration: `Input CGST on VI-${invoice.invoiceNo}` });
+      }
+      if (invoice.sgstAmount > 0 && accts[ACCT.GST_INPUT_SGST]) {
+        lines.push({ accountId: accts[ACCT.GST_INPUT_SGST], debit: invoice.sgstAmount, credit: 0, narration: `Input SGST on VI-${invoice.invoiceNo}` });
+      }
+      if (invoice.igstAmount > 0 && accts[ACCT.GST_INPUT_IGST]) {
+        lines.push({ accountId: accts[ACCT.GST_INPUT_IGST], debit: invoice.igstAmount, credit: 0, narration: `Input IGST on VI-${invoice.invoiceNo}` });
+      }
     }
 
     if (lines.length === 0) return null;
 
-    const vendorRef = invoice.vendorInvNo ? ` (${invoice.vendorInvNo})` : '';
+    // Credit side: total to Trade Payable
+    const totalCredit = lines.reduce((s, l) => s + l.debit, 0);
     lines.push({
       accountId: accts[ACCT.TRADE_PAYABLE],
       debit: 0,
-      credit: invoice.totalGst,
-      narration: `VI-${invoice.invoiceNo}${vendorRef} GST add-on`,
+      credit: totalCredit,
+      narration: `VI-${invoice.invoiceNo}${vendorRef} payable`,
     });
+
+    const label = isNonGoods
+      ? `Vendor Invoice VI-${invoice.invoiceNo}${vendorRef} — ${invoice.poType} Expense + GST`
+      : `Vendor Invoice VI-${invoice.invoiceNo}${vendorRef} — Input GST`;
 
     return await prisma.$transaction(async (tx: any) => {
       return createJournalEntry(tx, {
         date: invoice.invoiceDate,
-        narration: `Vendor Invoice VI-${invoice.invoiceNo}${vendorRef} — Input GST`,
+        narration: label,
         refType: 'PURCHASE',
         refId: invoice.id,
         userId: invoice.userId,
@@ -539,7 +572,7 @@ export async function onVendorInvoiceBooked(
       });
     });
   } catch (err) {
-    console.error('[AutoJournal] Failed to create vendor invoice GST journal:', err);
+    console.error('[AutoJournal] Failed to create vendor invoice journal:', err);
     return null;
   }
 }

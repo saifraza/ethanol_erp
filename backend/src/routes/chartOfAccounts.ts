@@ -366,6 +366,8 @@ router.post('/seed', asyncHandler(async (req: AuthRequest, res: Response) => {
     { code: '4020', name: 'Salary & Wages', type: 'EXPENSE', subType: 'INDIRECT_EXPENSE', isSystem: false },
     { code: '4030', name: 'Repairs & Maintenance', type: 'EXPENSE', subType: 'INDIRECT_EXPENSE', isSystem: false },
     { code: '4035', name: 'Contractor Expense', type: 'EXPENSE', subType: 'INDIRECT_EXPENSE', isSystem: false },
+    { code: '4036', name: 'Rent Expense', type: 'EXPENSE', subType: 'INDIRECT_EXPENSE', isSystem: false },
+    { code: '4037', name: 'Service Expense', type: 'EXPENSE', subType: 'INDIRECT_EXPENSE', isSystem: false },
     { code: '4040', name: 'Administrative Expenses', type: 'EXPENSE', subType: 'INDIRECT_EXPENSE', isSystem: false },
     { code: '4050', name: 'Depreciation', type: 'EXPENSE', subType: 'INDIRECT_EXPENSE', isSystem: false },
     { code: '4060', name: 'Insurance', type: 'EXPENSE', subType: 'INDIRECT_EXPENSE', isSystem: false },
