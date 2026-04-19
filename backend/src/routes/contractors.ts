@@ -118,37 +118,59 @@ router.get('/:id', asyncHandler(async (req: AuthRequest, res: Response) => {
   res.json({ ...contractor, outstanding: outstanding._sum.balanceAmount || 0 });
 }));
 
-// POST / — create contractor
+function vendorDataFromContractor(c: { name: string; tradeName?: string | null; contractorType: string; pan: string; gstin?: string | null; gstState?: string | null; phone?: string | null; email?: string | null; address?: string | null; bankName?: string | null; bankBranch?: string | null; bankAccount?: string | null; bankIfsc?: string | null; tdsSection: string; tdsPercent: number; companyId?: string | null }) {
+  return {
+    name: c.name,
+    tradeName: c.tradeName || null,
+    category: `CONTRACTOR_${c.contractorType}`,
+    pan: c.pan,
+    gstin: c.gstin || null,
+    gstState: c.gstState || null,
+    phone: c.phone || null,
+    email: c.email || null,
+    address: c.address || null,
+    bankName: c.bankName || null,
+    bankBranch: c.bankBranch || null,
+    bankAccount: c.bankAccount || null,
+    bankIfsc: c.bankIfsc || null,
+    tdsApplicable: true,
+    tdsSection: c.tdsSection,
+    tdsPercent: c.tdsPercent,
+    companyId: c.companyId || null,
+  };
+}
+
+// POST / — create contractor + auto-create synced vendor
 router.post('/', validate(createSchema), asyncHandler(async (req: AuthRequest, res: Response) => {
   const { panType, tdsPercent } = detectPanType(req.body.pan);
 
-  // Auto-generate contractor code
   const last = await prisma.contractor.findFirst({ orderBy: { contractorCode: 'desc' }, select: { contractorCode: true } });
   const nextNum = last ? parseInt(last.contractorCode.replace('CON-', ''), 10) + 1 : 1;
   const contractorCode = `CON-${String(nextNum).padStart(3, '0')}`;
+  const companyId = getActiveCompanyId(req);
+
+  const contractorData = { ...req.body, contractorCode, panType, tdsPercent, tdsSection: '194C', companyId };
+
+  // Auto-create vendor mirror
+  const vendorCode = `CON-V-${contractorCode}`;
+  const vendor = await prisma.vendor.create({
+    data: { vendorCode, ...vendorDataFromContractor({ ...contractorData, tdsSection: '194C', tdsPercent }) },
+  });
 
   const contractor = await prisma.contractor.create({
-    data: {
-      ...req.body,
-      contractorCode,
-      panType,
-      tdsPercent,
-      tdsSection: '194C',
-      companyId: getActiveCompanyId(req),
-    },
+    data: { ...contractorData, vendorId: vendor.id },
   });
 
   res.status(201).json(contractor);
 }));
 
-// PUT /:id — update contractor
+// PUT /:id — update contractor + sync vendor
 router.put('/:id', validate(updateSchema), asyncHandler(async (req: AuthRequest, res: Response) => {
   const existing = await prisma.contractor.findUnique({ where: { id: req.params.id } });
   if (!existing) throw new NotFoundError('Contractor', req.params.id);
 
   const data: Record<string, unknown> = { ...req.body };
 
-  // Recalculate PAN type if PAN changed
   if (req.body.pan && req.body.pan !== existing.pan) {
     const { panType, tdsPercent } = detectPanType(req.body.pan);
     data.panType = panType;
@@ -159,6 +181,14 @@ router.put('/:id', validate(updateSchema), asyncHandler(async (req: AuthRequest,
     where: { id: req.params.id },
     data,
   });
+
+  // Sync to linked vendor
+  if (contractor.vendorId) {
+    await prisma.vendor.update({
+      where: { id: contractor.vendorId },
+      data: vendorDataFromContractor(contractor as Parameters<typeof vendorDataFromContractor>[0]),
+    }).catch(() => {});
+  }
 
   res.json(contractor);
 }));
