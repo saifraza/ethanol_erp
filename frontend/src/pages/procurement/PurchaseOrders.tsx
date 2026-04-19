@@ -242,11 +242,13 @@ const PurchaseOrders: React.FC = () => {
   const [vendorItemsList, setVendorItemsList] = useState<{ inventoryItemId: string; itemName: string; itemCode: string; unit: string; rate: number; hsnCode: string; gstPercent: number }[]>([]);
   const [vendorRecentPOs, setVendorRecentPOs] = useState<PurchaseOrder[]>([]);
   const [vendorContextLoading, setVendorContextLoading] = useState(false);
+  const [vendorTds, setVendorTds] = useState<{ section: string; percent: number; pan: string | null } | null>(null);
 
   const loadVendorContext = async (vendorId: string) => {
     if (!vendorId) {
       setVendorItemsList([]);
       setVendorRecentPOs([]);
+      setVendorTds(null);
       return;
     }
     setVendorContextLoading(true);
@@ -288,6 +290,7 @@ const PurchaseOrders: React.FC = () => {
         if (Object.keys(updates).length > 0) {
           setFormData((f: any) => ({ ...f, ...updates }));
         }
+        setVendorTds(v.tdsSection || v.tdsPercent ? { section: v.tdsSection || '194C', percent: v.tdsPercent || 0, pan: v.pan || null } : null);
       }
     } catch {
       setVendorItemsList([]);
@@ -557,7 +560,7 @@ const PurchaseOrders: React.FC = () => {
       setError('Please select vendor and add line items');
       return;
     }
-    if (!formData.deliveryDate) {
+    if (formData.dealType !== 'OPEN' && !formData.deliveryDate) {
       setError('PO expiry / delivery date is required');
       return;
     }
@@ -879,10 +882,12 @@ const PurchaseOrders: React.FC = () => {
                     <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-0.5 block">PO Date *</label>
                     <input type="date" value={formData.poDate} onChange={(e) => setFormData({ ...formData, poDate: e.target.value })} required className="border border-slate-300 px-2.5 py-1.5 text-xs w-full focus:outline-none focus:ring-1 focus:ring-slate-400" />
                   </div>
+                  {formData.dealType !== 'OPEN' && (
                   <div>
                     <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-0.5 block">PO Expiry Date *</label>
                     <input type="date" value={formData.deliveryDate} onChange={(e) => setFormData({ ...formData, deliveryDate: e.target.value })} required className="border border-slate-300 px-2.5 py-1.5 text-xs w-full focus:outline-none focus:ring-1 focus:ring-slate-400" />
                   </div>
+                  )}
                   <div>
                     <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-0.5 block">Supply Type</label>
                     <select value={formData.supplyType} onChange={(e) => setFormData({ ...formData, supplyType: e.target.value })} className="border border-slate-300 px-2.5 py-1.5 text-xs w-full focus:outline-none focus:ring-1 focus:ring-slate-400">
@@ -890,6 +895,19 @@ const PurchaseOrders: React.FC = () => {
                       <option value="INTER_STATE">Inter State</option>
                     </select>
                   </div>
+                  {vendorTds && (
+                  <div className="md:col-span-2 lg:col-span-4">
+                    <div className="border border-slate-300 bg-slate-50 px-3 py-2 flex items-center gap-4">
+                      <div className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">TDS Applicable</div>
+                      <span className="text-[10px] font-bold px-1.5 py-0.5 border border-blue-300 bg-blue-50 text-blue-700">u/s {vendorTds.section} @ {vendorTds.percent}%</span>
+                      {vendorTds.pan ? (
+                        <span className="text-[10px] text-slate-600">PAN: <span className="font-mono font-bold">{vendorTds.pan}</span></span>
+                      ) : (
+                        <span className="text-[10px] font-bold text-red-600 border border-red-300 bg-red-50 px-1.5 py-0.5">PAN MISSING — 20% TDS may apply</span>
+                      )}
+                    </div>
+                  </div>
+                  )}
                 </div>
 
                 {/* Vendor Context Panel — items they supply + recent POs */}
