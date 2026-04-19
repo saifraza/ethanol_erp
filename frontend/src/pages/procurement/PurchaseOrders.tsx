@@ -137,6 +137,7 @@ const PurchaseOrders: React.FC = () => {
   const [success, setSuccess] = useState('');
   const [searchTerm, setSearchTerm] = useState('');
   const [categoryFilter, setCategoryFilter] = useState('ALL');
+  const [typeFilter, setTypeFilter] = useState('ALL');
   const [statusFilter, setStatusFilter] = useState('ALL');
   const [sortField, setSortField] = useState<string>('poNo');
   const [sortDir, setSortDir] = useState<'asc' | 'desc'>('desc');
@@ -706,10 +707,11 @@ const PurchaseOrders: React.FC = () => {
 
   const filteredPOs = pos.filter((po) => {
     const matchesStatus = statusFilter === 'ALL' ? po.status !== 'ARCHIVED' : po.status === statusFilter;
+    const matchesType = typeFilter === 'ALL' || (po.poType || 'GOODS') === typeFilter;
     const matchesSearch =
       po.poNo.toString().includes(searchTerm) ||
       (po.vendor?.name || '').toLowerCase().includes(searchTerm.toLowerCase());
-    return matchesStatus && matchesSearch;
+    return matchesStatus && matchesType && matchesSearch;
   }).sort((a, b) => {
     let av: any, bv: any;
     switch (sortField) {
@@ -1238,6 +1240,35 @@ const PurchaseOrders: React.FC = () => {
                 {cat.label}
               </button>
             ))}
+          </div>
+          {/* PO Type filter */}
+          <div className="flex gap-0 overflow-x-auto border-b border-slate-200 pb-1 mb-1">
+            {[
+              { key: 'ALL', label: 'All Types', color: 'slate' },
+              { key: 'GOODS', label: 'Goods', color: 'blue' },
+              { key: 'SERVICE', label: 'Service', color: 'violet' },
+              { key: 'CONTRACTOR', label: 'Contractor', color: 'amber' },
+              { key: 'TRANSPORT', label: 'Transport', color: 'cyan' },
+              { key: 'RENT', label: 'Rent', color: 'teal' },
+              { key: 'UTILITY', label: 'Utility', color: 'rose' },
+              { key: 'OTHER', label: 'Other', color: 'slate' },
+            ].map((t) => {
+              const active = typeFilter === t.key;
+              const colorMap: Record<string, string> = {
+                slate: 'bg-slate-700 text-white border-slate-700',
+                blue: 'bg-blue-600 text-white border-blue-600',
+                violet: 'bg-violet-600 text-white border-violet-600',
+                amber: 'bg-amber-500 text-white border-amber-500',
+                cyan: 'bg-cyan-600 text-white border-cyan-600',
+                teal: 'bg-teal-600 text-white border-teal-600',
+                rose: 'bg-rose-600 text-white border-rose-600',
+              };
+              return (
+                <button key={t.key} onClick={() => setTypeFilter(t.key)} className={`px-3 py-1 text-[10px] font-bold uppercase tracking-widest whitespace-nowrap border transition mr-1 ${active ? (colorMap[t.color] || colorMap.slate) : 'bg-white text-slate-500 border-slate-300 hover:bg-slate-50'}`}>
+                  {t.label}
+                </button>
+              );
+            })}
           </div>
           {/* Status tabs */}
           <div className="flex gap-0 overflow-x-auto">
