@@ -1,1 +1,1 @@
-web: cd backend && node dist/server.js
+web: cd backend && npx prisma db push --skip-generate && node dist/server.js
