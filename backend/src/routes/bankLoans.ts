@@ -218,25 +218,44 @@ router.get('/summary', asyncHandler(async (_req: AuthRequest, res: Response) => 
     return { band: b.band, count: matching.length, outstanding: matching.reduce((s, l) => s + l.outstandingAmount, 0) };
   });
 
-  // Upcoming 3-month outflow (synthetic — no LoanRepayment rows needed)
+  // Upcoming 12-month outflow — REAL data from LoanRepayment schedule, broken down by loan type
   const now = new Date();
-  const upcomingOutflows: Array<{ month: string; totalOutflow: number }> = [];
-  for (let m = 0; m < 3; m++) {
+  const horizonStart = new Date(now.getFullYear(), now.getMonth(), 1);
+  const horizonEnd = new Date(now.getFullYear(), now.getMonth() + 12, 1);
+  const upcomingRepayments = await prisma.loanRepayment.findMany({
+    where: {
+      status: { in: ['SCHEDULED', 'OVERDUE'] },
+      dueDate: { gte: horizonStart, lt: horizonEnd },
+    },
+    select: { dueDate: true, totalAmount: true, principalAmount: true, interestAmount: true, loan: { select: { loanType: true, bankName: true, loanNo: true } } },
+  });
+  const monthBucket: Record<string, { month: string; totalOutflow: number; principal: number; interest: number; TERM_LOAN: number; WORKING_CAPITAL: number; EQUIPMENT: number; CC_LIMIT: number; count: number }> = {};
+  for (let m = 0; m < 12; m++) {
     const target = new Date(now.getFullYear(), now.getMonth() + m, 1);
-    const monthLabel = target.toLocaleDateString('en-IN', { month: 'short', year: 'numeric' });
-    let outflow = 0;
-    for (const l of active) {
-      if (l.repaymentFrequency === 'MONTHLY') {
-        outflow += l.emiAmount;
-      } else if (l.repaymentFrequency === 'QUARTERLY' && l.maturityDate) {
-        // Quarterly: check if this month aligns with disbursement quarter cycle
-        // Simplified: assume quarterly means every 3 months from disbursal
-        outflow += l.emiAmount / 3; // average per month
-      }
-      // NONE/BULLET: 0 principal outflow
-    }
-    upcomingOutflows.push({ month: monthLabel, totalOutflow: Math.round(outflow) });
+    const key = `${target.getFullYear()}-${String(target.getMonth() + 1).padStart(2, '0')}`;
+    monthBucket[key] = { month: target.toLocaleDateString('en-IN', { month: 'short', year: '2-digit' }), totalOutflow: 0, principal: 0, interest: 0, TERM_LOAN: 0, WORKING_CAPITAL: 0, EQUIPMENT: 0, CC_LIMIT: 0, count: 0 };
   }
+  for (const r of upcomingRepayments) {
+    const key = `${r.dueDate.getFullYear()}-${String(r.dueDate.getMonth() + 1).padStart(2, '0')}`;
+    const bucket = monthBucket[key];
+    if (!bucket) continue;
+    bucket.totalOutflow += r.totalAmount;
+    bucket.principal += r.principalAmount;
+    bucket.interest += r.interestAmount;
+    bucket.count++;
+    const t = r.loan.loanType as 'TERM_LOAN' | 'WORKING_CAPITAL' | 'EQUIPMENT' | 'CC_LIMIT';
+    if (t in bucket) bucket[t] += r.totalAmount;
+  }
+  const upcomingOutflows = Object.values(monthBucket).map(b => ({
+    ...b,
+    totalOutflow: Math.round(b.totalOutflow),
+    principal: Math.round(b.principal),
+    interest: Math.round(b.interest),
+    TERM_LOAN: Math.round(b.TERM_LOAN),
+    WORKING_CAPITAL: Math.round(b.WORKING_CAPITAL),
+    EQUIPMENT: Math.round(b.EQUIPMENT),
+    CC_LIMIT: Math.round(b.CC_LIMIT),
+  }));
 
   // Next payment (from repayment schedule if any, otherwise null)
   const nextRepayment = await prisma.loanRepayment.findFirst({

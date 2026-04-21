@@ -197,7 +197,7 @@ async function main() {
   let willInsert = 0, willSkip = 0, totalScheduleRows = 0, totalSanctioned = 0, totalOutstanding = 0;
 
   for (const l of loans) {
-    const exists = APPLY ? await prisma.bankLoan.findUnique({ where: { loanNo: l.loanNo } }) : null;
+    const exists = APPLY ? await prisma.bankLoan.findUnique({ where: { loanNo: l.loanNo }, include: { _count: { select: { repayments: true } } } }) : null;
     const sched = NO_SCHEDULE ? [] : genSchedule(l, today);
     const paidCount = sched.filter(s => s.status === 'PAID').length;
     const upcomingCount = sched.length - paidCount;
@@ -206,7 +206,22 @@ async function main() {
     console.log(`        type=${l.loanType} freq=${l.freq} sanc=₹${l.sanctionAmount.toLocaleString('en-IN')} OS=₹${l.outstanding.toLocaleString('en-IN')} EMI=₹${l.emiAmount.toLocaleString('en-IN')} ROI=${l.roiPercent}% tenure=${l.tenureMonths}m`);
     console.log(`        disbursal=${l.disbursalDate?.toISOString().slice(0, 10) || 'UNKNOWN'}  schedule=${sched.length} (paid=${paidCount} upcoming=${upcomingCount})`);
     if (l.notes.length) console.log(`        notes: ${l.notes.join('; ')}`);
-    if (exists) { console.log(`        ⏩ EXISTS — skipping`); willSkip++; continue; }
+
+    // Zombie repair: loan exists but has zero repayments (failed mid-tx earlier) → fill schedule
+    if (exists && exists._count.repayments === 0 && sched.length > 0 && APPLY) {
+      console.log(`        🛠 ZOMBIE — loan exists but has 0 repayments. Filling schedule (${sched.length} rows).`);
+      const CHUNK = 60;
+      for (let i = 0; i < sched.length; i += CHUNK) {
+        await prisma.loanRepayment.createMany({
+          data: sched.slice(i, i + CHUNK).map(s => ({ ...s, loanId: exists.id, userId: 'system-debt-import' })),
+        });
+      }
+      totalScheduleRows += sched.length;
+      willSkip++;
+      continue;
+    }
+
+    if (exists) { console.log(`        ⏩ EXISTS (with ${exists._count.repayments} repayments) — skipping`); willSkip++; continue; }
 
     willInsert++;
     totalScheduleRows += sched.length;
@@ -214,38 +229,42 @@ async function main() {
     totalOutstanding += l.outstanding;
 
     if (APPLY) {
-      await prisma.$transaction(async (tx) => {
-        const newLoan = await tx.bankLoan.create({
-          data: {
-            loanNo: l.loanNo,
-            bankName: l.lenderName,
-            loanType: l.loanType,
-            repaymentFrequency: l.freq,
-            sanctionAmount: l.sanctionAmount,
-            disbursedAmount: l.disbursedAmount,
-            outstandingAmount: l.outstanding,
-            interestRate: l.roiPercent,
-            tenure: l.tenureMonths,
-            emiAmount: l.emiAmount,
-            sanctionDate: l.disbursalDate || new Date(),
-            disbursementDate: l.disbursalDate || new Date(),
-            maturityDate: l.disbursalDate ? addMonths(l.disbursalDate, l.tenureMonths || 12) : null,
-            status: l.outstanding === 0 ? 'CLOSED' : 'ACTIVE',
-            securityDetails: [l.collateral, l.security].filter(Boolean).join(' | '),
-            remarks: l.notes.join('; ') || null,
-            userId: 'system-debt-import',
-          },
-        });
-        if (sched.length) {
-          await tx.loanRepayment.createMany({
-            data: sched.map(s => ({
+      // Split into 2 ops (NOT a transaction) — long schedules (120m) blow Prisma's 5s
+      // interactive-tx timeout. Re-running the script will fill in any missing schedules.
+      const newLoan = await prisma.bankLoan.create({
+        data: {
+          loanNo: l.loanNo,
+          bankName: l.lenderName,
+          loanType: l.loanType,
+          repaymentFrequency: l.freq,
+          sanctionAmount: l.sanctionAmount,
+          disbursedAmount: l.disbursedAmount,
+          outstandingAmount: l.outstanding,
+          interestRate: l.roiPercent,
+          tenure: l.tenureMonths,
+          emiAmount: l.emiAmount,
+          sanctionDate: l.disbursalDate || new Date(),
+          disbursementDate: l.disbursalDate || new Date(),
+          maturityDate: l.disbursalDate ? addMonths(l.disbursalDate, l.tenureMonths || 12) : null,
+          status: l.outstanding === 0 ? 'CLOSED' : 'ACTIVE',
+          securityDetails: [l.collateral, l.security].filter(Boolean).join(' | '),
+          remarks: l.notes.join('; ') || null,
+          userId: 'system-debt-import',
+        },
+      });
+      if (sched.length) {
+        // Chunk to keep each createMany small + fast
+        const CHUNK = 60;
+        for (let i = 0; i < sched.length; i += CHUNK) {
+          await prisma.loanRepayment.createMany({
+            data: sched.slice(i, i + CHUNK).map(s => ({
               ...s,
               loanId: newLoan.id,
               userId: 'system-debt-import',
             })),
           });
         }
-      });
+      }
     }
   }
 

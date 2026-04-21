@@ -64,7 +64,7 @@ interface LoanSummary {
   unsecuredOutstanding: number;
   byType: TypeBreakdown[];
   rateBands: Array<{ band: string; count: number; outstanding: number }>;
-  upcomingOutflows: Array<{ month: string; totalOutflow: number }>;
+  upcomingOutflows: Array<{ month: string; totalOutflow: number; principal: number; interest: number; TERM_LOAN: number; WORKING_CAPITAL: number; EQUIPMENT: number; CC_LIMIT: number; count: number }>;
   nextPayment: { dueDate: string; amount: number; bankName: string; loanNo: string; frequency: string } | null;
 }
 
@@ -234,6 +234,26 @@ function ChartTooltip({ active, payload, label }: any) {
     <div className="bg-slate-800 text-white px-3 py-1.5 text-[10px] shadow-lg border border-slate-700">
       <div className="font-bold">{label || payload[0]?.name}</div>
       <div className="font-mono">{fmtINR(payload[0]?.value || 0)}</div>
+    </div>
+  );
+}
+
+function StackedTooltip({ active, payload, label }: any) {
+  if (!active || !payload?.length) return null;
+  const total = payload.reduce((s: number, p: any) => s + (p.value || 0), 0);
+  return (
+    <div className="bg-slate-800 text-white px-3 py-2 text-[10px] shadow-lg border border-slate-700 min-w-[180px]">
+      <div className="font-bold mb-1 border-b border-slate-600 pb-1">{label}</div>
+      {payload.filter((p: any) => p.value > 0).map((p: any) => (
+        <div key={p.dataKey} className="flex justify-between gap-4">
+          <span style={{ color: p.color }}>● {p.dataKey.replace('_', ' ')}</span>
+          <span className="font-mono">{fmtINR(p.value)}</span>
+        </div>
+      ))}
+      <div className="border-t border-slate-600 mt-1 pt-1 flex justify-between font-bold">
+        <span>Total</span>
+        <span className="font-mono">{fmtINR(total)}</span>
+      </div>
     </div>
   );
 }
@@ -486,19 +506,44 @@ export default function BankLoans() {
               ))}
             </div>
 
-            {/* Upcoming 3-month outflows bar chart */}
+            {/* Upcoming 12-month cash-flow chart — stacked by loan type */}
             {s && s.upcomingOutflows.length > 0 && (
               <div className="px-4 py-3">
-                <div className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-2">Upcoming Monthly Outflow</div>
-                <div className="h-[100px]">
+                <div className="flex items-center justify-between mb-2">
+                  <div>
+                    <div className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">EMI Cash-Flow — Next 12 Months</div>
+                    <div className="text-[9px] text-slate-400">Stacked by loan type · from actual repayment schedule</div>
+                  </div>
+                  <div className="text-right">
+                    <div className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">12-Month Total</div>
+                    <div className="text-sm font-bold text-slate-800 font-mono">{fmtINR(s.upcomingOutflows.reduce((a, m) => a + m.totalOutflow, 0))}</div>
+                  </div>
+                </div>
+                <div className="h-[200px]">
                   <ResponsiveContainer width="100%" height="100%">
                     <BarChart data={s.upcomingOutflows} barSize={28}>
                       <XAxis dataKey="month" tick={{ fontSize: 10, fill: '#94a3b8' }} axisLine={false} tickLine={false} />
                       <YAxis tick={{ fontSize: 9, fill: '#94a3b8' }} axisLine={false} tickLine={false} tickFormatter={(v: number) => fmtINR(v)} width={70} />
-                      <Tooltip content={<ChartTooltip />} />
-                      <Bar dataKey="totalOutflow" fill="#f59e0b" radius={0} />
+                      <Tooltip content={<StackedTooltip />} />
+                      <Bar dataKey="TERM_LOAN" stackId="a" fill="#334155" />
+                      <Bar dataKey="WORKING_CAPITAL" stackId="a" fill="#f59e0b" />
+                      <Bar dataKey="EQUIPMENT" stackId="a" fill="#3b82f6" />
+                      <Bar dataKey="CC_LIMIT" stackId="a" fill="#6366f1" />
                     </BarChart>
                   </ResponsiveContainer>
+                </div>
+                <div className="flex flex-wrap gap-x-4 gap-y-1 mt-2">
+                  {[
+                    { k: 'TERM_LOAN', label: 'Term Loan', color: '#334155' },
+                    { k: 'WORKING_CAPITAL', label: 'Working Capital', color: '#f59e0b' },
+                    { k: 'EQUIPMENT', label: 'Vehicle / Equipment', color: '#3b82f6' },
+                    { k: 'CC_LIMIT', label: 'CC Limit', color: '#6366f1' },
+                  ].map(d => (
+                    <div key={d.k} className="flex items-center gap-1.5 text-[10px] text-slate-600">
+                      <span className="w-3 h-3 inline-block" style={{ background: d.color }} />
+                      <span>{d.label}</span>
+                    </div>
+                  ))}
                 </div>
               </div>
             )}
