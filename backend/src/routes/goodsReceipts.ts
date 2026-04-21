@@ -146,7 +146,12 @@ router.get('/', asyncHandler(async (req: AuthRequest, res: Response) => {
       include: {
         po: { select: { id: true, poNo: true, status: true } },
         vendor: { select: { id: true, name: true, email: true } },
-        lines: true,
+        // Cap lines payload — list view shows line count + totals, not each line.
+        // Detail view fetches lines via its own query. Avoids 200 × 20 = 4000 nested rows.
+        lines: {
+          select: { id: true, receivedQty: true, rate: true, description: true, inventoryItemId: true },
+          take: 50,
+        },
       },
       orderBy: { grnDate: 'desc' },
       take: 200,

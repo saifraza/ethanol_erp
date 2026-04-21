@@ -35,11 +35,13 @@ router.get('/analytics', authenticate, asyncHandler(async (req: AuthRequest, res
         where: { createdAt: { gte: from } },
         include: { dosings: true },
         orderBy: { createdAt: 'desc' },
+        take: 1000,
       }),
       prisma.pFBatch.findMany({
         where: { createdAt: { gte: from } },
         include: { dosings: true, labReadings: true },
         orderBy: { createdAt: 'desc' },
+        take: 1000,
       }),
       prisma.rawMaterialEntry.findMany({ where: { date: { gte: from, lte: now } }, orderBy: { date: 'asc' } }),
       prisma.settings.findFirst(),
@@ -79,8 +81,8 @@ router.get('/analytics', authenticate, asyncHandler(async (req: AuthRequest, res
     // DDGS production: use DDGSStockEntry.productionToday (manual daily summary)
     // OR DDGSProductionEntry.totalProduction (auto-collected hourly entries), whichever is greater
     // Both sources store values in Tons/MT — convert to kg (*1000) for consistency with dispatch (kg)
-    const ddgsFromStock = ddgsStock.reduce((s: number, e: any) => s + (e.productionToday || 0), 0) * 1000;
-    const ddgsFromProd = ddgsProduction.reduce((s: number, e: any) => s + (e.totalProduction || 0), 0) * 1000;
+    const ddgsFromStock = ddgsStock.reduce((s, e) => s + (e.productionToday || 0), 0) * 1000;
+    const ddgsFromProd = ddgsProduction.reduce((s, e) => s + (e.totalProduction || 0), 0) * 1000;
     const totalDDGSProduced = Math.max(ddgsFromStock, ddgsFromProd);
     const totalDDGSDispatched = ddgsDispatch.reduce((s, e) => s + (e.weightNet || 0), 0);
 
@@ -312,19 +314,23 @@ router.get('/fermentation-deep', authenticate, asyncHandler(async (req: AuthRequ
         where: { createdAt: { gte: from } },
         include: { dosings: true },
         orderBy: { createdAt: 'asc' },
+        take: 1000,
       }),
       prisma.pFBatch.findMany({
         where: { createdAt: { gte: from } },
         include: { dosings: true, labReadings: { orderBy: { createdAt: 'asc' } } },
         orderBy: { createdAt: 'asc' },
+        take: 1000,
       }),
       prisma.fermentationEntry.findMany({
         where: { createdAt: { gte: from } },
         orderBy: { createdAt: 'asc' },
+        take: 10000,
       }),
       prisma.pFLabReading.findMany({
         where: { createdAt: { gte: from } },
         orderBy: { createdAt: 'asc' },
+        take: 10000,
       }),
       prisma.fermentationBatch.findMany({
         where: { phase: { not: 'DONE' } },

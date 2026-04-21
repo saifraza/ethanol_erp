@@ -17,7 +17,7 @@ import { z } from 'zod';
 import { AuthRequest, authenticate, authorize } from '../middleware/auth';
 import { asyncHandler, validate } from '../shared/middleware';
 import prisma from '../config/prisma';
-import { checkGrainTruckCorrectable } from '../shared/weighment/correctionGuards';
+import { checkGrainTruckCorrectable, summarizeGrainTruckCorrectable } from '../shared/weighment/correctionGuards';
 
 const router = Router();
 
@@ -145,8 +145,17 @@ router.get(
             materialType: true,
             materialId: true,
             grnId: true,
+            cancelled: true,
+            createdAt: true,
             goodsReceipt: {
-              select: { grnNo: true, status: true, invoiceNo: true, fullyPaid: true },
+              select: {
+                id: true,
+                grnNo: true,
+                status: true,
+                invoiceNo: true,
+                fullyPaid: true,
+                paymentLinkedAt: true,
+              },
             },
           },
         })
@@ -192,16 +201,17 @@ router.get(
       }
     }
 
-    // Shape each mirror row into the CorrectableRow contract the frontend expects
-    const rows = await Promise.all(
-      mirrorRows.map(async (m) => {
+    // Shape each mirror row into the CorrectableRow contract the frontend expects.
+    // No per-row DB call — summarizeGrainTruckCorrectable is pure and uses the
+    // fields we already loaded in the batch fetch above (N+1 fix).
+    const rows = mirrorRows.map((m) => {
         // Try to find a matching GrainTruck via factoryLocalId first (unique),
         // then ticketNo. If present, this is an editable grain inbound row.
         const gt = gtByLocalId.get(m.localId) ??
           (m.ticketNo !== null ? gtByTicket.get(m.ticketNo) : undefined);
 
         if (gt) {
-          const summary = await checkGrainTruckCorrectable(gt.id);
+          const summary = summarizeGrainTruckCorrectable(gt);
           return {
             id: gt.id,
             mirrorId: m.id,
@@ -218,7 +228,14 @@ router.get(
             cancelled: m.cancelled,
             cancelledReason: m.cancelledReason,
             grnId: gt.grnId,
-            goodsReceipt: gt.goodsReceipt,
+            goodsReceipt: gt.goodsReceipt
+              ? {
+                  grnNo: gt.goodsReceipt.grnNo,
+                  status: gt.goodsReceipt.status,
+                  invoiceNo: gt.goodsReceipt.invoiceNo,
+                  fullyPaid: gt.goodsReceipt.fullyPaid,
+                }
+              : null,
             factoryLocalId: m.localId,
             source: 'GRAIN_TRUCK' as const,
             canEdit: summary.canEdit,
@@ -260,8 +277,7 @@ router.get(
           blockers: [{ code: 'CLI_ONLY', message: 'Use /correct-weighment skill in Claude Code to edit non-grain weighments' }],
           requiresAdminPin: false,
         };
-      }),
-    );
+    });
 
     res.json({
       items: rows,

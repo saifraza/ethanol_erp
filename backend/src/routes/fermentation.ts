@@ -723,14 +723,30 @@ router.get('/history', asyncHandler(async (req: AuthRequest, res: Response) => {
     }),
   ]);
 
-  // For ferm batches, also load lab entries
-  const fermWithLab = await Promise.all(fermHistory.map(async (fb: any) => {
-    const entries = await prisma.fermentationEntry.findMany({
-      where: { batchNo: fb.batchNo, fermenterNo: fb.fermenterNo },
-      orderBy: { createdAt: 'asc' },
-      select: { id: true, analysisTime: true, level: true, spGravity: true, ph: true, alcohol: true, temp: true, rs: true, rst: true, createdAt: true },
-    });
-    return { ...fb, labReadings: entries };
+  // For ferm batches, also load lab entries.
+  // N+1 fix — one OR query instead of one query per batch.
+  const entryKeys = fermHistory.map((fb) => ({ batchNo: fb.batchNo, fermenterNo: fb.fermenterNo }));
+  const allEntries = entryKeys.length === 0
+    ? []
+    : await prisma.fermentationEntry.findMany({
+        where: { OR: entryKeys },
+        orderBy: { createdAt: 'asc' },
+        select: {
+          id: true, analysisTime: true, level: true, spGravity: true, ph: true,
+          alcohol: true, temp: true, rs: true, rst: true, createdAt: true,
+          batchNo: true, fermenterNo: true,
+        },
+      });
+  const entriesByBatch = new Map<string, typeof allEntries>();
+  for (const e of allEntries) {
+    const k = `${e.batchNo}-${e.fermenterNo}`;
+    let bucket = entriesByBatch.get(k);
+    if (!bucket) { bucket = []; entriesByBatch.set(k, bucket); }
+    bucket.push(e);
+  }
+  const fermWithLab = fermHistory.map((fb) => ({
+    ...fb,
+    labReadings: entriesByBatch.get(`${fb.batchNo}-${fb.fermenterNo}`) ?? [],
   }));
 
   res.json({ pfHistory, fermHistory: fermWithLab });

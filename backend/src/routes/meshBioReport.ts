@@ -40,24 +40,26 @@ router.get('/generate', async (req: AuthRequest, res: Response) => {
       orderBy: { date: 'asc' },
     });
 
-    // Join with LabSample data for quality info
-    const grainTrucksWithLab = await Promise.all(
-      grainTrucks.map(async (truck) => {
-        let labData = null;
-        if (truck.uidRst) {
-          labData = await prisma.labSample.findUnique({
-            where: { rstNumber: truck.uidRst },
-          });
-        }
-        return {
-          ...truck,
-          moisture: labData?.moisture ?? truck.moisture,
-          starchPercent: labData?.starchPercent ?? truck.starchPercent,
-          damagedPercent: labData?.damagedPercent ?? truck.damagedPercent,
-          tfm: labData?.tfm ?? truck.foreignMatter,
-        };
-      })
-    );
+    // Join with LabSample data for quality info.
+    // N+1 fix — one IN query instead of one findUnique per truck.
+    const rstNumbers = grainTrucks.map((t) => t.uidRst).filter((r): r is string => !!r);
+    const labSamples = rstNumbers.length === 0
+      ? []
+      : await prisma.labSample.findMany({
+          where: { rstNumber: { in: rstNumbers } },
+          select: { rstNumber: true, moisture: true, starchPercent: true, damagedPercent: true, tfm: true },
+        });
+    const labByRst = new Map(labSamples.map((l) => [l.rstNumber, l]));
+    const grainTrucksWithLab = grainTrucks.map((truck) => {
+      const labData = truck.uidRst ? labByRst.get(truck.uidRst) : undefined;
+      return {
+        ...truck,
+        moisture: labData?.moisture ?? truck.moisture,
+        starchPercent: labData?.starchPercent ?? truck.starchPercent,
+        damagedPercent: labData?.damagedPercent ?? truck.damagedPercent,
+        tfm: labData?.tfm ?? truck.foreignMatter,
+      };
+    });
 
     // ─── FETCH DATA FOR SUMMARY SECTION ───
 
@@ -94,8 +96,11 @@ router.get('/generate', async (req: AuthRequest, res: Response) => {
     const ethanolTotalStock = latestEthanolEntry?.totalStock ?? 0;
 
     // Ethanol: dispatched (SUM of all DispatchTruck.quantityBL all time)
-    const ethanolDispatches = await prisma.dispatchTruck.findMany();
-    const ethanolDispatched = ethanolDispatches.reduce((sum: number, t) => sum + t.quantityBL, 0);
+    // Use aggregate — full table scan in Postgres (fast) instead of loading all rows into Node.
+    const ethanolDispatchedAgg = await prisma.dispatchTruck.aggregate({
+      _sum: { quantityBL: true },
+    });
+    const ethanolDispatched = ethanolDispatchedAgg._sum.quantityBL ?? 0;
 
     // DDGS: stockOpening (latest DDGSStockEntry.openingStock for date)
     const latestDDGSStockEntry = await prisma.dDGSStockEntry.findFirst({
@@ -107,12 +112,16 @@ router.get('/generate', async (req: AuthRequest, res: Response) => {
     const ddgsStockOpening = latestDDGSStockEntry?.openingStock ?? 0;
 
     // DDGS: dispatched (SUM of all DDGSDispatchTruck.weightNet — already in MT/tonnes)
-    const ddgsDispatches = await prisma.dDGSDispatchTruck.findMany();
-    const ddgsDispatched = ddgsDispatches.reduce((sum: number, t) => sum + t.weightNet, 0);
+    const ddgsDispatchedAgg = await prisma.dDGSDispatchTruck.aggregate({
+      _sum: { weightNet: true },
+    });
+    const ddgsDispatched = ddgsDispatchedAgg._sum.weightNet ?? 0;
 
     // Jute: bagsFromMaize (SUM of all GrainTruck.bags all time)
-    const allGrainTrucks = await prisma.grainTruck.findMany();
-    const bagsFromMaize = allGrainTrucks.reduce((sum: number, t) => sum + (t.bags ?? 0), 0);
+    const bagsFromMaizeAgg = await prisma.grainTruck.aggregate({
+      _sum: { bags: true },
+    });
+    const bagsFromMaize = bagsFromMaizeAgg._sum.bags ?? 0;
 
     // Jute: bagsLifted (placeholder)
     const bagsLifted = 0;

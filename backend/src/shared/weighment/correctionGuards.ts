@@ -26,42 +26,36 @@ export interface CorrectableSummary {
 const AGED_RECORD_DAYS = 30;
 
 /**
- * Check whether a GrainTruck can be edited.
- * Returns the list of blockers (empty = editable) + whether admin PIN is required.
+ * Shape of a GrainTruck pre-fetched by the caller with all fields needed for
+ * correctability evaluation. When a caller (e.g. the admin correction list)
+ * already has this data in memory from a batch query, it can call
+ * `summarizeGrainTruckCorrectable` directly to avoid an N+1 findUnique loop.
  */
-export async function checkGrainTruckCorrectable(
-  id: string,
+export interface GrainTruckCorrectableInput {
+  id: string;
+  cancelled: boolean;
+  grnId: string | null;
+  createdAt: Date;
+  goodsReceipt: {
+    id: string;
+    grnNo: number;
+    status: string;
+    invoiceNo: string | null;
+    fullyPaid: boolean;
+    paymentLinkedAt: Date | null;
+  } | null;
+}
+
+/**
+ * Pure function — evaluates blockers from an already-loaded GrainTruck row.
+ * No DB access. Used by batch callers; `checkGrainTruckCorrectable` is the
+ * single-row async wrapper that fetches then delegates here.
+ */
+export function summarizeGrainTruckCorrectable(
+  truck: GrainTruckCorrectableInput,
   opts: { adminPinProvided?: boolean } = {},
-): Promise<CorrectableSummary> {
+): CorrectableSummary {
   const blockers: BlockerReason[] = [];
-
-  const truck = await prisma.grainTruck.findUnique({
-    where: { id },
-    select: {
-      id: true,
-      cancelled: true,
-      grnId: true,
-      createdAt: true,
-      goodsReceipt: {
-        select: {
-          id: true,
-          grnNo: true,
-          status: true,
-          invoiceNo: true,
-          fullyPaid: true,
-          paymentLinkedAt: true,
-        },
-      },
-    },
-  });
-
-  if (!truck) {
-    return {
-      canEdit: false,
-      blockers: [{ code: 'NOT_FOUND', message: 'Weighment record not found' }],
-      requiresAdminPin: false,
-    };
-  }
 
   // BLOCKER 1: Already cancelled
   if (truck.cancelled) {
@@ -111,6 +105,45 @@ export async function checkGrainTruckCorrectable(
   }
 
   return { canEdit: blockers.length === 0, blockers, requiresAdminPin };
+}
+
+/**
+ * Check whether a GrainTruck can be edited.
+ * Returns the list of blockers (empty = editable) + whether admin PIN is required.
+ */
+export async function checkGrainTruckCorrectable(
+  id: string,
+  opts: { adminPinProvided?: boolean } = {},
+): Promise<CorrectableSummary> {
+  const truck = await prisma.grainTruck.findUnique({
+    where: { id },
+    select: {
+      id: true,
+      cancelled: true,
+      grnId: true,
+      createdAt: true,
+      goodsReceipt: {
+        select: {
+          id: true,
+          grnNo: true,
+          status: true,
+          invoiceNo: true,
+          fullyPaid: true,
+          paymentLinkedAt: true,
+        },
+      },
+    },
+  });
+
+  if (!truck) {
+    return {
+      canEdit: false,
+      blockers: [{ code: 'NOT_FOUND', message: 'Weighment record not found' }],
+      requiresAdminPin: false,
+    };
+  }
+
+  return summarizeGrainTruckCorrectable(truck, opts);
 }
 
 /**

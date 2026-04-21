@@ -124,7 +124,13 @@ router.get('/', asyncHandler(async (req: AuthRequest, res: Response) => {
         customer: {
           select: { id: true, name: true, shortName: true },
         },
-        payments: true,
+        // Cap payments payload — list view only needs latest 5 per invoice for
+        // "received so far" display. Detail endpoint (/:id) still returns all.
+        payments: {
+          select: { id: true, amount: true, paymentDate: true, mode: true, reference: true },
+          orderBy: { paymentDate: 'desc' },
+          take: 5,
+        },
       },
       orderBy: { invoiceDate: 'desc' },
       skip,
