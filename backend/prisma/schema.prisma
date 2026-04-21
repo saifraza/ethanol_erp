@@ -85,6 +85,7 @@ model Company {
   ddgsDispatchTrucks    DDGSDispatchTruck[]
   sugarDispatchTrucks   SugarDispatchTruck[]
   transporterPayments   TransporterPayment[]
+  projectPurchases      ProjectPurchase[]
 }
 
 model User {
@@ -2194,12 +2195,13 @@ model Vendor {
   createdAt               DateTime    @default(now())
   updatedAt               DateTime    @updatedAt
 
-  purchaseOrders PurchaseOrder[]
-  grns           GoodsReceipt[]
-  vendorInvoices VendorInvoice[]
-  vendorPayments VendorPayment[]
-  vendorItems    VendorItem[]
-  contractor     Contractor?
+  purchaseOrders    PurchaseOrder[]
+  grns              GoodsReceipt[]
+  vendorInvoices    VendorInvoice[]
+  vendorPayments    VendorPayment[]
+  vendorItems       VendorItem[]
+  contractor        Contractor?
+  projectQuotations ProjectQuotation[]
 
   divisions String[] @default([]) // empty = available to all divisions
 
@@ -2344,6 +2346,10 @@ model PurchaseOrder {
   vendorInvoices  VendorInvoice[]
   grainTrucks     GrainTruck[]
   contractorBills ContractorBill[]
+
+  // Link back to project purchase (when auto-generated from a ProjectPurchase awarded quote)
+  projectPurchaseId String?          @unique
+  projectPurchase   ProjectPurchase? @relation(fields: [projectPurchaseId], references: [id])
 
   division  String?  @default("ETHANOL") // SUGAR | POWER | ETHANOL | COMMON
   companyId String? // FK → Company (null = MSPIL default)
@@ -4654,4 +4660,110 @@ model WeighmentAuditEvent {
   @@index([weighmentLocalId])
   @@index([occurredAt])
   @@index([ticketNo])
+}
+
+// ─────────────────────────────────────────────────────────────────────────
+// PROJECT PURCHASES — capex / asset / hardware projects
+// Multi-quotation workflow: upload N vendor quotes → AI parse + compare →
+// award winner → auto-generate PO. Keeps regular PO flow simple.
+// ─────────────────────────────────────────────────────────────────────────
+model ProjectPurchase {
+  id                 String            @id @default(uuid())
+  projectNo          Int               @default(autoincrement())
+  name               String // e.g. "Coal Crusher 20 TPH"
+  description        String?
+  category           String? // MECHANICAL | CIVIL | ELECTRICAL | INSTRUMENTATION | IT | OTHER
+  scopeOfWork        String? // free-text scope / RFQ text
+  budgetAmount       Float             @default(0)
+  currency           String            @default("INR")
+  targetDate         DateTime? // desired completion / delivery date
+  status             String            @default("DRAFT") // DRAFT | COLLECTING_QUOTES | UNDER_EVALUATION | AWARDED | PO_RAISED | COMPLETED | CANCELLED
+  awardedQuotationId String?           @unique
+  awardedQuotation   ProjectQuotation? @relation("AwardedQuote", fields: [awardedQuotationId], references: [id])
+  awardedAt          DateTime?
+  awardedBy          String? // user.id
+  awardReason        String? // why this quote was picked
+  aiAnalysis         Json? // cached AI comparison summary (criteria, ranking, pros/cons)
+  aiAnalysisAt       DateTime?
+  remarks            String?
+  division           String?           @default("ETHANOL")
+  companyId          String?
+  company            Company?          @relation(fields: [companyId], references: [id])
+  userId             String
+  createdAt          DateTime          @default(now())
+  updatedAt          DateTime          @updatedAt
+
+  quotations ProjectQuotation[] @relation("ProjectQuotes")
+  po         PurchaseOrder?
+
+  @@index([status])
+  @@index([companyId])
+  @@index([division])
+}
+
+model ProjectQuotation {
+  id             String          @id @default(uuid())
+  projectId      String
+  project        ProjectPurchase @relation("ProjectQuotes", fields: [projectId], references: [id], onDelete: Cascade)
+  vendorId       String? // may not match existing vendor yet
+  vendor         Vendor?         @relation(fields: [vendorId], references: [id])
+  vendorNameRaw  String? // name as extracted from quote
+  vendorContact  String? // extracted contact (email / phone) from quote
+  quotationNo    String?
+  quotationDate  DateTime?
+  validityDays   Int? // how many days the quote is valid
+  deliveryPeriod String? // free text "15 days", "4 weeks"
+  warranty       String? // e.g. "12 months on-site"
+  paymentTerms   String? // e.g. "50% advance, 50% on delivery"
+  // Totals
+  subtotal       Float           @default(0)
+  gstAmount      Float           @default(0)
+  freight        Float           @default(0)
+  otherCharges   Float           @default(0)
+  totalAmount    Float           @default(0)
+  currency       String          @default("INR")
+  // File
+  fileUrl        String // path to uploaded PDF/image
+  fileName       String?
+  mimeType       String?
+  fileSize       Int?
+  // AI parse state
+  extractedJson  Json? // full Gemini extraction
+  parsedAt       DateTime?
+  parseStatus    String          @default("PENDING") // PENDING | PARSING | PARSED | FAILED | MANUAL
+  parseError     String?
+  // Evaluation
+  aiScore        Float? // 0-100 AI-derived comparison score
+  aiNotes        String? // why this quote stands out
+  manualNotes    String?
+  isAwarded      Boolean         @default(false)
+  createdAt      DateTime        @default(now())
+  updatedAt      DateTime        @updatedAt
+
+  lineItems  ProjectQuotationLine[]
+  awardedFor ProjectPurchase?       @relation("AwardedQuote")
+
+  @@index([projectId])
+  @@index([vendorId])
+  @@index([parseStatus])
+}
+
+model ProjectQuotationLine {
+  id            String           @id @default(uuid())
+  quotationId   String
+  quotation     ProjectQuotation @relation(fields: [quotationId], references: [id], onDelete: Cascade)
+  lineNo        Int              @default(1)
+  description   String
+  specification String?
+  make          String? // brand / make from quote
+  model         String?
+  quantity      Float            @default(1)
+  unit          String           @default("NOS")
+  rate          Float            @default(0)
+  amount        Float            @default(0)
+  hsnSac        String?
+  gstPercent    Float            @default(0)
+  remarks       String?
+
+  @@index([quotationId])
 }

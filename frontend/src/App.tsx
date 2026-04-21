@@ -106,6 +106,7 @@ const Vendors = React.lazy(() => import('./pages/procurement/Vendors'));
 
 const Materials = React.lazy(() => import('./pages/procurement/Materials'));
 const PurchaseOrders = React.lazy(() => import('./pages/procurement/PurchaseOrders'));
+const ProjectPurchases = React.lazy(() => import('./pages/procurement/ProjectPurchases'));
 const GoodsReceipts = React.lazy(() => import('./pages/procurement/GoodsReceipts'));
 const AutoGoodsReceipts = React.lazy(() => import('./pages/procurement/AutoGoodsReceipts'));
 const StoreReceipts = React.lazy(() => import('./pages/store/StoreReceipts'));
@@ -269,6 +270,7 @@ export default function App() {
         <Route path="procurement/contractors" element={<Navigate to="/procurement/vendors" replace />} />
         <Route path="procurement/materials" element={<Navigate to="/inventory" replace />} />
         <Route path="procurement/purchase-orders" element={<PurchaseOrders />} />
+        <Route path="procurement/project-purchases" element={<ProjectPurchases />} />
         <Route path="procurement/goods-receipts" element={<Navigate to="/store/receipts" replace />} />
         <Route path="procurement/goods-receipts/auto" element={<AutoGoodsReceipts />} />
         <Route path="store/receipts" element={<StoreModule />} />

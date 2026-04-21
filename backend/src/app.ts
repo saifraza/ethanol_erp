@@ -55,6 +55,7 @@ import vendorRoutes from './routes/vendors';
 // traderRoutes removed — traders are vendors with category=TRADER (isAgent flag)
 import materialRoutes from './routes/materials';
 import purchaseOrderRoutes from './routes/purchaseOrders';
+import projectPurchaseRoutes from './routes/projectPurchases';
 import goodsReceiptRoutes from './routes/goodsReceipts';
 import autoGoodsReceiptRoutes from './routes/autoGoodsReceipts';
 import storeGoodsReceiptRoutes from './routes/storeGoodsReceipts';
@@ -248,6 +249,7 @@ app.use('/api/vendors', vendorRoutes);
 // app.use('/api/traders', traderRoutes); // merged into vendors
 app.use('/api/materials', materialRoutes);
 app.use('/api/purchase-orders', purchaseOrderRoutes);
+app.use('/api/project-purchases', projectPurchaseRoutes);
 app.use('/api/goods-receipts/auto', autoGoodsReceiptRoutes);
 app.use('/api/goods-receipts/store', storeGoodsReceiptRoutes);
 app.use('/api/goods-receipts', goodsReceiptRoutes);

@@ -82,6 +82,7 @@ interface PurchaseOrder {
   quotationNo?: string | null;
   quotationDate?: string | null;
   projectName?: string | null;
+  projectPurchaseId?: string | null;
 }
 
 interface APIResponse {
@@ -193,11 +194,8 @@ const PurchaseOrders: React.FC = () => {
     lines: [] as POLine[],
     termsAccepted: [] as string[],
     overrideTdsSectionId: null as string | null,
-    poType: 'GOODS' as 'GOODS' | 'SERVICE' | 'CONTRACTOR' | 'TRANSPORT' | 'RENT' | 'UTILITY' | 'PROJECT' | 'OTHER',
+    poType: 'GOODS' as 'GOODS' | 'SERVICE' | 'CONTRACTOR' | 'TRANSPORT' | 'RENT' | 'UTILITY' | 'OTHER',
     dealType: 'STANDARD' as 'STANDARD' | 'OPEN',
-    quotationNo: '',
-    quotationDate: '',
-    projectName: '',
   });
 
   // RM contract T&C catalog + 194Q section ID (loaded once)
@@ -390,9 +388,6 @@ const PurchaseOrders: React.FC = () => {
           poType: po.poType || 'GOODS',
           contractorId: po.contractorId || '',
           dealType: po.dealType || 'STANDARD',
-          quotationNo: po.quotationNo || '',
-          quotationDate: po.quotationDate ? new Date(po.quotationDate).toISOString().split('T')[0] : '',
-          projectName: po.projectName || '',
         });
         setTermsUserEdited(true); // keep their saved choices on edit
       }
@@ -616,9 +611,6 @@ const PurchaseOrders: React.FC = () => {
         overrideTdsSectionId: null,
         poType: 'GOODS',
         dealType: 'STANDARD',
-        quotationNo: '',
-        quotationDate: '',
-        projectName: '',
       });
       setTermsUserEdited(false);
       setShowCreateForm(false);
@@ -827,7 +819,7 @@ const PurchaseOrders: React.FC = () => {
                 {/* ═══ PO Type picker ═══ */}
                 <div className="border border-slate-200 bg-slate-50 px-3 py-2">
                   <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest block mb-1.5">What is this PO for? *</label>
-                  <div className="grid grid-cols-3 md:grid-cols-4 lg:grid-cols-8 gap-2">
+                  <div className="grid grid-cols-3 md:grid-cols-4 lg:grid-cols-7 gap-2">
                     {[
                       { key: 'GOODS',      label: 'Goods',      hint: 'Physical inventory items (HSN + GRN)' },
                       { key: 'SERVICE',    label: 'Service',    hint: 'Services (SAC code, no physical delivery)' },
@@ -835,7 +827,6 @@ const PurchaseOrders: React.FC = () => {
                       { key: 'TRANSPORT',  label: 'Transport',  hint: 'Freight / vehicle hire / logistics' },
                       { key: 'RENT',       label: 'Rent',       hint: 'Premises / equipment / vehicle rent' },
                       { key: 'UTILITY',    label: 'Utility',    hint: 'Electricity, water, internet, phone' },
-                      { key: 'PROJECT',    label: 'Project',    hint: 'Capex / asset (coal crusher, hardware, turnkey)' },
                       { key: 'OTHER',      label: 'Other',      hint: 'Anything else that needs a PO umbrella' },
                     ].map(t => (
                       <button type="button" key={t.key}
@@ -869,57 +860,6 @@ const PurchaseOrders: React.FC = () => {
                       ))}
                     </div>
                   </div>
-                </div>
-
-                {/* ═══ Quotation / Project Reference ═══ */}
-                <div className={`border px-3 py-2 ${formData.poType === 'PROJECT' ? 'border-indigo-300 bg-indigo-50/50' : 'border-slate-200 bg-slate-50'}`}>
-                  <div className="flex items-center justify-between mb-1.5">
-                    <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">
-                      {formData.poType === 'PROJECT' ? 'Project & Quotation Reference *' : 'Quotation Reference (optional)'}
-                    </label>
-                    {formData.poType === 'PROJECT' && (
-                      <span className="text-[9px] text-indigo-700 bg-indigo-100 border border-indigo-300 px-1.5 py-0.5 font-bold uppercase tracking-widest">Capex PO</span>
-                    )}
-                  </div>
-                  <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
-                    {formData.poType === 'PROJECT' && (
-                      <div>
-                        <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-0.5 block">Project / Asset Name *</label>
-                        <input
-                          type="text"
-                          required={formData.poType === 'PROJECT'}
-                          value={formData.projectName}
-                          onChange={(e) => setFormData({ ...formData, projectName: e.target.value })}
-                          placeholder="e.g. Coal Crusher 20 TPH, Silo #3 Erection"
-                          className="border border-slate-300 px-2.5 py-1.5 text-xs w-full focus:outline-none focus:ring-1 focus:ring-slate-400"
-                        />
-                      </div>
-                    )}
-                    <div>
-                      <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-0.5 block">Vendor Quotation No.</label>
-                      <input
-                        type="text"
-                        value={formData.quotationNo}
-                        onChange={(e) => setFormData({ ...formData, quotationNo: e.target.value })}
-                        placeholder="e.g. Q-2026-0045"
-                        className="border border-slate-300 px-2.5 py-1.5 text-xs w-full focus:outline-none focus:ring-1 focus:ring-slate-400"
-                      />
-                    </div>
-                    <div>
-                      <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-0.5 block">Quotation Date</label>
-                      <input
-                        type="date"
-                        value={formData.quotationDate}
-                        onChange={(e) => setFormData({ ...formData, quotationDate: e.target.value })}
-                        className="border border-slate-300 px-2.5 py-1.5 text-xs w-full focus:outline-none focus:ring-1 focus:ring-slate-400"
-                      />
-                    </div>
-                  </div>
-                  {formData.poType === 'PROJECT' && (
-                    <div className="mt-1.5 text-[10px] text-indigo-700">
-                      <b>Project PO:</b> capex / asset purchase. Line items use free-text descriptions (no inventory master needed). HSN / SAC optional.
-                    </div>
-                  )}
                 </div>
 
                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-3">
@@ -1056,7 +996,7 @@ const PurchaseOrders: React.FC = () => {
                   {/* Credit Days removed — payment terms already define the timeline */}
                 </div>
 
-                {['GOODS', 'TRANSPORT', 'PROJECT'].includes(formData.poType) && (
+                {['GOODS', 'TRANSPORT'].includes(formData.poType) && (
                 <div className="grid grid-cols-1 md:grid-cols-4 gap-3">
                   <div className="md:col-span-2">
                     <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-0.5 block">Delivery Address</label>
@@ -1088,7 +1028,7 @@ const PurchaseOrders: React.FC = () => {
                   </div>
                 </div>
                 )}
-                {!['GOODS', 'TRANSPORT', 'PROJECT'].includes(formData.poType) && (
+                {!['GOODS', 'TRANSPORT'].includes(formData.poType) && (
                 <div className="grid grid-cols-1 gap-3">
                   <div>
                     <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-0.5 block">Remarks</label>
@@ -1100,7 +1040,7 @@ const PurchaseOrders: React.FC = () => {
                 {/* Line Items */}
                 <div className="border-t border-slate-200 pt-4">
                   <div className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-3">
-                    {formData.poType === 'GOODS' ? 'Line Items' : formData.poType === 'TRANSPORT' ? 'Trip / Route Details' : formData.poType === 'CONTRACTOR' ? 'Work Items' : formData.poType === 'RENT' ? 'Rental Items' : formData.poType === 'UTILITY' ? 'Utility Charges' : formData.poType === 'PROJECT' ? 'Scope Items / Deliverables' : 'Service Items'}
+                    {formData.poType === 'GOODS' ? 'Line Items' : formData.poType === 'TRANSPORT' ? 'Trip / Route Details' : formData.poType === 'CONTRACTOR' ? 'Work Items' : formData.poType === 'RENT' ? 'Rental Items' : formData.poType === 'UTILITY' ? 'Utility Charges' : 'Service Items'}
                   </div>
 
                   {formData.lines.length > 0 && (
@@ -1167,9 +1107,9 @@ const PurchaseOrders: React.FC = () => {
                       ) : (
                       <div>
                         <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-0.5 block">
-                          {formData.poType === 'TRANSPORT' ? 'Route / Trip' : formData.poType === 'CONTRACTOR' ? 'Work Description' : formData.poType === 'RENT' ? 'Rental Item' : formData.poType === 'PROJECT' ? 'Scope / Asset Item' : 'Description'}
+                          {formData.poType === 'TRANSPORT' ? 'Route / Trip' : formData.poType === 'CONTRACTOR' ? 'Work Description' : formData.poType === 'RENT' ? 'Rental Item' : 'Description'}
                         </label>
-                        <input type="text" value={newLine.description || ''} onChange={(e) => setNewLine({ ...newLine, description: e.target.value })} placeholder={formData.poType === 'TRANSPORT' ? 'e.g. Bachai to Jabalpur, 10MT grain' : formData.poType === 'CONTRACTOR' ? 'e.g. Civil repair work - boiler room' : formData.poType === 'PROJECT' ? 'e.g. Jaw Crusher 20 TPH incl. erection' : 'Description of service'} className="border border-slate-300 px-2.5 py-1.5 text-xs w-full focus:outline-none focus:ring-1 focus:ring-slate-400" />
+                        <input type="text" value={newLine.description || ''} onChange={(e) => setNewLine({ ...newLine, description: e.target.value })} placeholder={formData.poType === 'TRANSPORT' ? 'e.g. Bachai to Jabalpur, 10MT grain' : formData.poType === 'CONTRACTOR' ? 'e.g. Civil repair work - boiler room' : 'Description of service'} className="border border-slate-300 px-2.5 py-1.5 text-xs w-full focus:outline-none focus:ring-1 focus:ring-slate-400" />
                       </div>
                       )}
                       <div>
@@ -1315,7 +1255,6 @@ const PurchaseOrders: React.FC = () => {
               { key: 'TRANSPORT', label: 'Transport', color: 'cyan' },
               { key: 'RENT', label: 'Rent', color: 'teal' },
               { key: 'UTILITY', label: 'Utility', color: 'rose' },
-              { key: 'PROJECT', label: 'Project', color: 'indigo' },
               { key: 'OTHER', label: 'Other', color: 'slate' },
             ].map((t) => {
               const active = typeFilter === t.key;

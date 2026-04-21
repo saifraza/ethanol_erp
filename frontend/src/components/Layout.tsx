@@ -415,6 +415,7 @@ function getPageContext(path: string): string {
     'vendors': 'procurement',
     'materials': 'procurement',
     'purchase-orders': 'procurement',
+    'project-purchases': 'procurement',
     'goods-receipts': 'procurement',
     'auto-grn': 'procurement',
     'store-module': 'inventory',
