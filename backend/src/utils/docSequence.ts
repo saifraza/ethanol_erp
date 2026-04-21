@@ -8,6 +8,10 @@
  *
  * Safety: uses raw SQL MAX() + 1. If two concurrent creates race,
  * the @@unique([companyId, field]) constraint catches it and the retry loop handles it.
+ *
+ * 2026-04-21 bug fix — MSPIL was restarting at 1 when legacy rows had companyId=null.
+ * Schema comment says "null = MSPIL default" — honor that when computing MSPIL's max.
+ * For MSPIL, include companyId IS NULL rows. For any other company, strict match only.
  */
 import prisma from '../config/prisma';
 
@@ -37,8 +41,17 @@ export async function nextDocNo(table: string, field: string, companyId: string 
     throw new Error(`nextDocNo: invalid table/field: ${table}.${field}`);
   }
 
+  // Pre-multi-company rows have companyId = NULL and must be treated as MSPIL's history
+  // (schema comment: "null = MSPIL default"). Without this, every MSPIL document type
+  // restarts at 1 after the multi-company rollout, creating duplicate PO/Invoice/GRN
+  // numbers with legacy rows.
+  const isMspil = cid === MSPIL_ID;
+  const whereClause = isMspil
+    ? `WHERE "companyId" = $1 OR "companyId" IS NULL`
+    : `WHERE "companyId" = $1`;
+
   const result = await prisma.$queryRawUnsafe<Array<{ max: number | null }>>(
-    `SELECT MAX("${field}") as max FROM "${table}" WHERE "companyId" = $1`,
+    `SELECT MAX("${field}") as max FROM "${table}" ${whereClause}`,
     cid
   );
 
