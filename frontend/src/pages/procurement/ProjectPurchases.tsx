@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
-import { Plus, X, Upload, Loader2, Trash2, Search, FileText, Sparkles, Award, CheckCircle, AlertTriangle, Download, Edit3, Save } from 'lucide-react';
+import { Plus, X, Upload, Loader2, Trash2, Search, FileText, Sparkles, Award, CheckCircle, AlertTriangle, Download, Edit3, Save, Mail, MessageSquare } from 'lucide-react';
 import api from '../../services/api';
 
 // ═════════════════════════════════════════════════════════════════════
@@ -99,13 +99,15 @@ interface Project {
   status: 'DRAFT' | 'COLLECTING_QUOTES' | 'UNDER_EVALUATION' | 'AWARDED' | 'PO_RAISED' | 'COMPLETED' | 'CANCELLED';
   awardedQuotationId: string | null;
   awardReason: string | null;
+  negotiatedTotal: number | null;
+  negotiationNotes: string | null;
   aiAnalysis: AIAnalysis | null;
   aiAnalysisAt: string | null;
   remarks: string | null;
   division: string | null;
   createdAt: string;
   _count?: { quotations: number };
-  po?: { id: string; poNo: number; status: string } | null;
+  po?: { id: string; poNo: number; status: string; grandTotal?: number } | null;
   quotations?: Quotation[];
 }
 
@@ -461,6 +463,8 @@ const ProjectDetailDrawer: React.FC<DrawerProps> = ({ projectId, detail, loading
   const [awarding, setAwarding] = useState(false);
   const [generatingPO, setGeneratingPO] = useState(false);
   const [editQuoteId, setEditQuoteId] = useState<string | null>(null);
+  const [showNegotiate, setShowNegotiate] = useState(false);
+  const [showEmail, setShowEmail] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const handleFileUpload = async (files: FileList | null) => {
@@ -603,23 +607,31 @@ const ProjectDetailDrawer: React.FC<DrawerProps> = ({ projectId, detail, loading
               </button>
 
               {detail.status === 'AWARDED' && !detail.po && (
-                <button
-                  onClick={handleGeneratePO}
-                  disabled={generatingPO}
-                  className="flex items-center gap-1.5 px-3 py-1.5 bg-green-600 text-white text-xs font-bold uppercase tracking-widest hover:bg-green-700 disabled:bg-slate-300"
-                >
-                  {generatingPO ? <Loader2 size={14} className="animate-spin" /> : <FileText size={14} />}
-                  Generate PO
-                </button>
+                <>
+                  <button
+                    onClick={() => setShowNegotiate(true)}
+                    className="flex items-center gap-1.5 px-3 py-1.5 bg-amber-600 text-white text-xs font-bold uppercase tracking-widest hover:bg-amber-700"
+                  >
+                    <MessageSquare size={14} /> Negotiate &amp; Generate PO
+                  </button>
+                </>
               )}
 
               {detail.po && (
-                <a
-                  href={`/procurement/purchase-orders`}
-                  className="flex items-center gap-1.5 px-3 py-1.5 border border-blue-400 bg-blue-50 text-blue-700 text-xs font-bold uppercase tracking-widest hover:bg-blue-100"
-                >
-                  <FileText size={14} /> PO-{detail.po.poNo} · {detail.po.status}
-                </a>
+                <>
+                  <a
+                    href={`/procurement/purchase-orders`}
+                    className="flex items-center gap-1.5 px-3 py-1.5 border border-blue-400 bg-blue-50 text-blue-700 text-xs font-bold uppercase tracking-widest hover:bg-blue-100"
+                  >
+                    <FileText size={14} /> PO-{detail.po.poNo} · {detail.po.status}
+                  </a>
+                  <button
+                    onClick={() => setShowEmail(true)}
+                    className="flex items-center gap-1.5 px-3 py-1.5 bg-blue-600 text-white text-xs font-bold uppercase tracking-widest hover:bg-blue-700"
+                  >
+                    <Mail size={14} /> Email PO to Vendor
+                  </button>
+                </>
               )}
             </div>
 
@@ -660,8 +672,197 @@ const ProjectDetailDrawer: React.FC<DrawerProps> = ({ projectId, detail, loading
                 onError={onError}
               />
             )}
+
+            {showNegotiate && detail.awardedQuotationId && (
+              <NegotiateModal
+                project={detail}
+                awardedQuote={detail.quotations?.find((q) => q.id === detail.awardedQuotationId) || null}
+                busy={generatingPO}
+                onClose={() => setShowNegotiate(false)}
+                onGenerate={async (finalTotal: number, notes: string) => {
+                  try {
+                    await api.put(`/project-purchases/${projectId}/negotiate`, { negotiatedTotal: finalTotal, negotiationNotes: notes });
+                    await handleGeneratePO();
+                    setShowNegotiate(false);
+                  } catch (err) {
+                    const e = err as { response?: { data?: { error?: string } } };
+                    onError(e.response?.data?.error || 'Failed');
+                  }
+                }}
+              />
+            )}
+
+            {showEmail && detail.po && (
+              <EmailPOModal
+                poId={detail.po.id}
+                poNo={detail.po.poNo}
+                defaultTo={detail.quotations?.find((q) => q.id === detail.awardedQuotationId)?.vendor?.email || detail.quotations?.find((q) => q.id === detail.awardedQuotationId)?.vendorContact || ''}
+                vendorName={detail.quotations?.find((q) => q.id === detail.awardedQuotationId)?.vendor?.name || ''}
+                onClose={() => setShowEmail(false)}
+                onSent={(to) => {
+                  setShowEmail(false);
+                  onSuccess(`PO emailed to ${to}`);
+                }}
+                onError={onError}
+              />
+            )}
           </div>
         )}
+      </div>
+    </div>
+  );
+};
+
+// ═════════════════════════════════════════════════════════════════════
+// NEGOTIATE MODAL — final total + notes before PO generation
+// ═════════════════════════════════════════════════════════════════════
+const NegotiateModal: React.FC<{
+  project: Project;
+  awardedQuote: Quotation | null;
+  busy: boolean;
+  onClose: () => void;
+  onGenerate: (finalTotal: number, notes: string) => Promise<void>;
+}> = ({ project, awardedQuote, busy, onClose, onGenerate }) => {
+  const quoteTotal = awardedQuote?.totalAmount || 0;
+  const [finalTotal, setFinalTotal] = useState<number>(project.negotiatedTotal ?? quoteTotal);
+  const [notes, setNotes] = useState<string>(project.negotiationNotes || '');
+  const discount = quoteTotal - finalTotal;
+  const discountPct = quoteTotal > 0 ? (discount / quoteTotal) * 100 : 0;
+  const overBudget = finalTotal > project.budgetAmount && project.budgetAmount > 0;
+
+  return (
+    <div className="fixed inset-0 bg-black/50 flex items-start justify-center z-50 overflow-y-auto py-8" onClick={onClose}>
+      <div className="bg-white w-full max-w-2xl mx-4 shadow-2xl" onClick={(e) => e.stopPropagation()}>
+        <div className="bg-amber-600 text-white px-4 py-2.5 flex items-center justify-between">
+          <span className="text-sm font-bold uppercase tracking-wide flex items-center gap-2"><MessageSquare size={14} /> Negotiate Final Terms</span>
+          <button onClick={onClose}><X size={16} /></button>
+        </div>
+        <div className="p-4 space-y-3">
+          <div className="text-xs text-slate-600">
+            Capture the result of your oral negotiation. You can adjust the final amount (typically lower than the quote). Line rates on the PO will be scaled proportionally.
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-0 border border-slate-300">
+            <InfoCell label="Awarded Vendor" value={awardedQuote?.vendor?.name || awardedQuote?.vendorNameRaw || '—'} />
+            <InfoCell label="Original Quote" value={`₹ ${fmtINR(quoteTotal)}`} mono />
+            <InfoCell label="Project Budget" value={`₹ ${fmtINR(project.budgetAmount)}`} mono />
+          </div>
+
+          <div>
+            <Label required>Final Negotiated Total (₹)</Label>
+            <input
+              type="number"
+              value={finalTotal || ''}
+              onChange={(e) => setFinalTotal(parseFloat(e.target.value) || 0)}
+              className="border-2 border-amber-400 bg-amber-50 px-3 py-2 text-lg font-bold font-mono tabular-nums w-full focus:outline-none focus:ring-2 focus:ring-amber-500"
+            />
+            <div className="flex gap-3 mt-1 text-[11px]">
+              {discount > 0 && <span className="text-green-700 font-bold">Negotiated discount: ₹ {fmtINR(discount)} ({discountPct.toFixed(1)}%)</span>}
+              {discount < 0 && <span className="text-red-700 font-bold">Over quote by ₹ {fmtINR(-discount)}</span>}
+              {overBudget && <span className="text-red-700 font-bold">⚠ Over budget by ₹ {fmtINR(finalTotal - project.budgetAmount)}</span>}
+            </div>
+          </div>
+
+          <div>
+            <Label>Negotiation Notes (what was agreed)</Label>
+            <textarea
+              rows={3}
+              value={notes}
+              onChange={(e) => setNotes(e.target.value)}
+              placeholder="e.g. Agreed 8% discount after phone call with Mr. Sharma on 21/04. Includes free on-site commissioning."
+              className="border border-slate-300 px-2.5 py-1.5 text-xs w-full focus:outline-none focus:ring-1 focus:ring-slate-400"
+            />
+          </div>
+
+          <div className="border border-slate-200 bg-slate-50 px-3 py-2 text-[11px] text-slate-600">
+            <b>What happens next:</b> A DRAFT Purchase Order will be created with the final total ₹ {fmtINR(finalTotal)}. All line rates from the awarded quote will be scaled proportionally. You can review & edit the PO before approval, then email it to the vendor.
+          </div>
+
+          <div className="flex gap-2 justify-end pt-2 border-t border-slate-200">
+            <button onClick={onClose} disabled={busy} className="px-3 py-1.5 border border-slate-300 text-xs font-bold uppercase tracking-widest text-slate-600 hover:bg-slate-50">Cancel</button>
+            <button
+              onClick={() => onGenerate(finalTotal, notes)}
+              disabled={busy || finalTotal <= 0}
+              className="px-3 py-1.5 bg-green-600 text-white text-xs font-bold uppercase tracking-widest hover:bg-green-700 disabled:bg-slate-300 flex items-center gap-1"
+            >
+              {busy ? <Loader2 size={12} className="animate-spin" /> : <FileText size={12} />} Generate PO
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+};
+
+// ═════════════════════════════════════════════════════════════════════
+// EMAIL PO MODAL — send generated PO to vendor
+// ═════════════════════════════════════════════════════════════════════
+const EmailPOModal: React.FC<{
+  poId: string;
+  poNo: number;
+  defaultTo: string;
+  vendorName: string;
+  onClose: () => void;
+  onSent: (to: string) => void;
+  onError: (m: string) => void;
+}> = ({ poId, poNo, defaultTo, vendorName, onClose, onSent, onError }) => {
+  const [to, setTo] = useState(defaultTo);
+  const [cc, setCc] = useState('');
+  const [subject, setSubject] = useState(`PO-${String(poNo).padStart(4, '0')} — Purchase Order from MSPIL`);
+  const [body, setBody] = useState(
+    `Dear ${vendorName || 'Vendor'},\n\nPlease find attached Purchase Order PO-${String(poNo).padStart(4, '0')} for your reference.\n\nKindly acknowledge receipt and confirm delivery schedule.\n\nRegards,\nMahakaushal Sugar & Power Industries Ltd.\nVillage Bachai, Dist. Narsinghpur (M.P.)`,
+  );
+  const [sending, setSending] = useState(false);
+
+  const send = async () => {
+    if (!to.trim()) { onError('Recipient email required'); return; }
+    setSending(true);
+    try {
+      await api.post(`/purchase-orders/${poId}/send-email`, { to: to.trim(), cc: cc.trim() || undefined, subject, body });
+      onSent(to.trim());
+    } catch (err) {
+      const e = err as { response?: { data?: { error?: string } } };
+      onError(e.response?.data?.error || 'Email failed');
+    } finally {
+      setSending(false);
+    }
+  };
+
+  return (
+    <div className="fixed inset-0 bg-black/50 flex items-start justify-center z-50 overflow-y-auto py-8" onClick={onClose}>
+      <div className="bg-white w-full max-w-2xl mx-4 shadow-2xl" onClick={(e) => e.stopPropagation()}>
+        <div className="bg-blue-700 text-white px-4 py-2.5 flex items-center justify-between">
+          <span className="text-sm font-bold uppercase tracking-wide flex items-center gap-2"><Mail size={14} /> Email PO-{String(poNo).padStart(4, '0')} to Vendor</span>
+          <button onClick={onClose}><X size={16} /></button>
+        </div>
+        <div className="p-4 space-y-3">
+          <div>
+            <Label required>To</Label>
+            <input type="email" value={to} onChange={(e) => setTo(e.target.value)} placeholder="vendor@example.com" className="border border-slate-300 px-2.5 py-1.5 text-xs w-full focus:outline-none focus:ring-1 focus:ring-slate-400" />
+            {!defaultTo && <div className="text-[10px] text-amber-700 mt-1">⚠ No vendor email on file — enter manually</div>}
+          </div>
+          <div>
+            <Label>CC (optional)</Label>
+            <input type="text" value={cc} onChange={(e) => setCc(e.target.value)} placeholder="comma-separated" className="border border-slate-300 px-2.5 py-1.5 text-xs w-full focus:outline-none focus:ring-1 focus:ring-slate-400" />
+          </div>
+          <div>
+            <Label>Subject</Label>
+            <input type="text" value={subject} onChange={(e) => setSubject(e.target.value)} className="border border-slate-300 px-2.5 py-1.5 text-xs w-full focus:outline-none focus:ring-1 focus:ring-slate-400" />
+          </div>
+          <div>
+            <Label>Message</Label>
+            <textarea rows={8} value={body} onChange={(e) => setBody(e.target.value)} className="border border-slate-300 px-2.5 py-1.5 text-xs w-full font-mono focus:outline-none focus:ring-1 focus:ring-slate-400" />
+          </div>
+          <div className="border border-slate-200 bg-slate-50 px-3 py-2 text-[11px] text-slate-600">
+            <b>Attached:</b> PO-{String(poNo).padStart(4, '0')}.pdf (auto-generated from the Purchase Order)
+          </div>
+          <div className="flex gap-2 justify-end pt-2 border-t border-slate-200">
+            <button onClick={onClose} disabled={sending} className="px-3 py-1.5 border border-slate-300 text-xs font-bold uppercase tracking-widest text-slate-600 hover:bg-slate-50">Cancel</button>
+            <button onClick={send} disabled={sending || !to.trim()} className="px-3 py-1.5 bg-blue-700 text-white text-xs font-bold uppercase tracking-widest hover:bg-blue-800 disabled:bg-slate-300 flex items-center gap-1">
+              {sending ? <Loader2 size={12} className="animate-spin" /> : <Mail size={12} />} Send
+            </button>
+          </div>
+        </div>
       </div>
     </div>
   );
@@ -826,19 +1027,29 @@ const QuotationsCompare: React.FC<{
             <CompareRow label="Lines" values={quotations.map((q) => `${q.lineItems.length} items`)} />
             {canAward && (
               <tr className="bg-slate-50 border-t-2 border-slate-300">
-                <td className="px-2 py-2 text-[10px] font-bold text-slate-600 uppercase tracking-widest border-r border-slate-200 sticky left-0 bg-slate-50">Action</td>
+                <td className="px-2 py-2 text-[10px] font-bold text-slate-600 uppercase tracking-widest border-r border-slate-200 sticky left-0 bg-slate-50">Accept / Award</td>
                 {quotations.map((q) => (
                   <td key={q.id} className="px-2 py-2 border-r border-slate-200">
                     {q.id === awardedId ? (
                       <span className="text-[10px] font-bold px-1.5 py-0.5 border border-green-400 bg-green-50 text-green-700 inline-flex items-center gap-1"><Award size={10} /> AWARDED</span>
+                    ) : !q.vendorId ? (
+                      <div className="space-y-1">
+                        <div className="text-[9px] text-amber-700 font-bold leading-tight">Link vendor first</div>
+                        <button
+                          onClick={() => onEdit(q.id)}
+                          className="w-full px-2 py-1 text-[10px] font-bold uppercase tracking-widest border border-amber-400 bg-amber-50 text-amber-700 hover:bg-amber-100 flex items-center justify-center gap-1"
+                        >
+                          <Edit3 size={10} /> Edit to Link Vendor
+                        </button>
+                      </div>
                     ) : (
                       <button
                         onClick={() => setAwardTarget(q.id)}
-                        disabled={!q.vendorId || awarding}
-                        title={!q.vendorId ? 'Link a vendor first (Edit)' : 'Award this quote'}
-                        className="px-2 py-1 text-[10px] font-bold uppercase tracking-widest border border-slate-400 bg-white text-slate-600 hover:bg-amber-50 hover:border-amber-400 hover:text-amber-700 disabled:opacity-40"
+                        disabled={awarding}
+                        title="Accept this quote as the winner"
+                        className="w-full px-2 py-1 text-[10px] font-bold uppercase tracking-widest border-2 border-amber-500 bg-amber-50 text-amber-800 hover:bg-amber-100 hover:border-amber-600 disabled:opacity-40 flex items-center justify-center gap-1"
                       >
-                        Award
+                        <Award size={10} /> Accept &amp; Award
                       </button>
                     )}
                   </td>

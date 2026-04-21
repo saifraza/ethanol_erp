@@ -4683,6 +4683,9 @@ model ProjectPurchase {
   awardedAt          DateTime?
   awardedBy          String? // user.id
   awardReason        String? // why this quote was picked
+  // Post-award negotiation (oral discussions before PO is raised)
+  negotiatedTotal    Float? // final negotiated total (overrides awarded quote total if set)
+  negotiationNotes   String? // what was negotiated (discount, extras, etc.)
   aiAnalysis         Json? // cached AI comparison summary (criteria, ranking, pros/cons)
   aiAnalysisAt       DateTime?
   remarks            String?

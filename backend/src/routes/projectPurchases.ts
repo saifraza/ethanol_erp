@@ -589,11 +589,32 @@ router.post('/:id/award', asyncHandler(async (req: AuthRequest, res: Response) =
         awardedAt: new Date(),
         awardedBy: req.user!.id,
         awardReason: reason || null,
+        // Initialize negotiatedTotal to awarded quote total (user can override before PO)
+        negotiatedTotal: q.totalAmount,
         status: 'AWARDED',
       },
     });
   });
 
+  res.json(updated);
+}));
+
+// ═══════════════════════════════════════════════
+// PUT /:id/negotiate — update post-award negotiated total + notes
+// ═══════════════════════════════════════════════
+router.put('/:id/negotiate', asyncHandler(async (req: AuthRequest, res: Response) => {
+  const { negotiatedTotal, negotiationNotes } = req.body as { negotiatedTotal?: number; negotiationNotes?: string };
+  const project = await prisma.projectPurchase.findUnique({ where: { id: req.params.id } });
+  if (!project) { res.status(404).json({ error: 'Project not found' }); return; }
+  if (project.status !== 'AWARDED') { res.status(400).json({ error: 'Project must be AWARDED to set negotiated total' }); return; }
+
+  const updated = await prisma.projectPurchase.update({
+    where: { id: project.id },
+    data: {
+      negotiatedTotal: typeof negotiatedTotal === 'number' ? negotiatedTotal : project.negotiatedTotal,
+      negotiationNotes: negotiationNotes ?? project.negotiationNotes,
+    },
+  });
   res.json(updated);
 }));
 
@@ -622,6 +643,24 @@ router.post('/:id/generate-po', asyncHandler(async (req: AuthRequest, res: Respo
   const companyId = getActiveCompanyId(req);
   const poNo = await nextDocNo('PurchaseOrder', 'poNo', companyId);
 
+  // Apply negotiated total: scale line rates + subtotal proportionally, keep GST ratio intact.
+  // If no negotiation, use quote values as-is.
+  const negotiatedGrand = typeof project.negotiatedTotal === 'number' && project.negotiatedTotal > 0
+    ? project.negotiatedTotal
+    : q.totalAmount;
+  const scaleFactor = q.totalAmount > 0 ? negotiatedGrand / q.totalAmount : 1;
+  const scaledSubtotal = q.subtotal * scaleFactor;
+  const scaledGst = q.gstAmount * scaleFactor;
+  const scaledFreight = q.freight * scaleFactor;
+  const scaledOther = q.otherCharges * scaleFactor;
+
+  const remarkParts = [
+    q.warranty ? `Warranty: ${q.warranty}` : '',
+    q.deliveryPeriod ? `Delivery: ${q.deliveryPeriod}` : '',
+    project.negotiationNotes ? `Negotiation: ${project.negotiationNotes}` : '',
+    scaleFactor !== 1 ? `Negotiated ₹${negotiatedGrand.toFixed(0)} (quote was ₹${q.totalAmount.toFixed(0)})` : '',
+  ].filter(Boolean).join(' | ');
+
   const po = await prisma.$transaction(async (tx) => {
     const created = await tx.purchaseOrder.create({
       data: {
@@ -633,12 +672,12 @@ router.post('/:id/generate-po', asyncHandler(async (req: AuthRequest, res: Respo
         dealType: 'STANDARD',
         status: 'DRAFT',
         paymentTerms: q.paymentTerms || '',
-        remarks: [q.warranty ? `Warranty: ${q.warranty}` : '', q.deliveryPeriod ? `Delivery: ${q.deliveryPeriod}` : ''].filter(Boolean).join(' | '),
-        subtotal: q.subtotal,
-        totalGst: q.gstAmount,
-        freightCharge: q.freight,
-        otherCharges: q.otherCharges,
-        grandTotal: q.totalAmount,
+        remarks: remarkParts,
+        subtotal: scaledSubtotal,
+        totalGst: scaledGst,
+        freightCharge: scaledFreight,
+        otherCharges: scaledOther,
+        grandTotal: negotiatedGrand,
         quotationNo: q.quotationNo,
         quotationDate: q.quotationDate,
         projectName: project.name,
@@ -652,11 +691,11 @@ router.post('/:id/generate-po', asyncHandler(async (req: AuthRequest, res: Respo
             hsnCode: li.hsnSac || '',
             quantity: li.quantity,
             unit: li.unit,
-            rate: li.rate,
+            rate: li.rate * scaleFactor,
             discountPercent: 0,
             gstPercent: li.gstPercent,
-            amount: li.amount,
-            taxableAmount: li.amount,
+            amount: li.amount * scaleFactor,
+            taxableAmount: li.amount * scaleFactor,
             cgstPercent: 0,
             sgstPercent: 0,
             igstPercent: 0,
