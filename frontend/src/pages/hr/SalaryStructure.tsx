@@ -4,50 +4,58 @@ import { Search, Loader2, Save, IndianRupee, Users } from 'lucide-react';
 
 interface Employee {
   id: string;
-  employeeCode: string;
-  name: string;
-  departmentId: string | null;
+  empCode?: string;
+  employeeCode?: string;
+  firstName?: string;
+  lastName?: string;
+  name?: string;
+  departmentId?: string | null;
   department?: { name: string };
-  designationId: string | null;
+  designationId?: string | null;
   designation?: { title: string };
   epfApplicable: boolean;
   esiApplicable: boolean;
 }
 
 interface SalaryComponent {
-  name: string;
-  type: 'EARNING' | 'DEDUCTION' | 'EMPLOYER';
+  id: string;
   monthlyAmount: number;
   annualAmount: number;
+  component: { code: string; name: string; type: string };
 }
 
-interface SalaryBreakdown {
-  basic: number;
-  hra: number;
-  da: number;
-  specialAllowance: number;
-  grossMonthly: number;
-  epfEmployee: number;
-  esiEmployee: number;
-  pt: number;
-  totalDeductions: number;
+interface CtcBreakdown {
+  ctcAnnual: number;
+  basicMonthly: number; basicAnnual: number;
+  hraMonthly: number; hraAnnual: number;
+  daMonthly: number; daAnnual: number;
+  specialMonthly: number; specialAnnual: number;
+  grossMonthly: number; grossAnnual: number;
+  epfEmployerMonthly: number;
+  esiEmployerMonthly: number;
+  gratuityMonthly: number;
+  edliMonthly: number;
+  epfAdminMonthly: number;
+  totalEmployerMonthly: number;
+  epfEmployeeMonthly: number;
+  esiEmployeeMonthly: number;
+  ptMonthly: number;
+  totalDeductionsMonthly: number;
   netMonthly: number;
-  epfEmployer: number;
-  esiEmployer: number;
-  edli: number;
-  adminCharges: number;
-  gratuity: number;
-  totalEmployerCost: number;
-  totalCTC: number;
 }
 
 interface SalaryData {
-  id: string;
-  employeeId: string;
-  ctcAnnual: number;
-  breakdown: SalaryBreakdown;
+  employee: { id: string; empCode: string; firstName: string; lastName: string; ctcAnnual: number; basicMonthly: number; epfApplicable: boolean; esiApplicable: boolean };
   components: SalaryComponent[];
+  breakdown: CtcBreakdown | null;
 }
+
+const empName = (e: Employee | undefined | null): string => {
+  if (!e) return '';
+  if (e.name) return e.name;
+  return `${e.firstName || ''} ${e.lastName || ''}`.trim();
+};
+const empCode = (e: Employee | undefined | null): string => e?.empCode || e?.employeeCode || '';
 
 const fmtINR = (n: number) =>
   new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR', maximumFractionDigits: 0 }).format(n);
@@ -75,7 +83,7 @@ export default function SalaryStructure() {
       setLoading(true);
       const res = await api.get<SalaryData>(`/employee-salary/${empId}`);
       setSalaryData(res.data);
-      setCtcInput(String(res.data.ctcAnnual || ''));
+      setCtcInput(String(res.data.employee?.ctcAnnual || ''));
     } catch {
       setSalaryData(null);
       setCtcInput('');
@@ -95,8 +103,8 @@ export default function SalaryStructure() {
     if (!selectedId || !ctcInput) return;
     try {
       setSaving(true);
-      const res = await api.put<SalaryData>(`/employee-salary/${selectedId}`, { ctcAnnual: Number(ctcInput) });
-      setSalaryData(res.data);
+      await api.put(`/employee-salary/${selectedId}`, { ctcAnnual: Number(ctcInput) });
+      await loadSalary(selectedId);
     } catch (err) {
       console.error('Failed to save CTC:', err);
     } finally {
@@ -117,8 +125,8 @@ export default function SalaryStructure() {
   };
 
   const filteredEmployees = employees.filter(e =>
-    e.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    e.employeeCode.toLowerCase().includes(searchTerm.toLowerCase())
+    empName(e).toLowerCase().includes(searchTerm.toLowerCase()) ||
+    empCode(e).toLowerCase().includes(searchTerm.toLowerCase())
   );
 
   const bd = salaryData?.breakdown;
@@ -153,7 +161,7 @@ export default function SalaryStructure() {
               <option value="">-- Select --</option>
               {filteredEmployees.map(e => (
                 <option key={e.id} value={e.id}>
-                  {e.employeeCode} - {e.name} {e.department ? `(${e.department.name})` : ''}
+                  {empCode(e)} - {empName(e)} {e.department ? `(${e.department.name})` : ''}
                 </option>
               ))}
             </select>
@@ -232,10 +240,10 @@ export default function SalaryStructure() {
               </thead>
               <tbody className="divide-y divide-gray-100">
                 {[
-                  { label: 'Basic', monthly: bd.basic, annual: bd.basic * 12 },
-                  { label: 'HRA', monthly: bd.hra, annual: bd.hra * 12 },
-                  { label: 'DA', monthly: bd.da, annual: bd.da * 12 },
-                  { label: 'Special Allowance', monthly: bd.specialAllowance, annual: bd.specialAllowance * 12 },
+                  { label: 'Basic', monthly: bd.basicMonthly, annual: bd.basicAnnual },
+                  { label: 'HRA', monthly: bd.hraMonthly, annual: bd.hraAnnual },
+                  { label: 'DA', monthly: bd.daMonthly, annual: bd.daAnnual },
+                  { label: 'Special Allowance', monthly: bd.specialMonthly, annual: bd.specialAnnual },
                 ].map(row => (
                   <tr key={row.label}>
                     <td className="px-4 py-2 text-gray-700">{row.label}</td>
@@ -246,7 +254,7 @@ export default function SalaryStructure() {
                 <tr className="bg-green-50 font-semibold">
                   <td className="px-4 py-2 text-green-800">Gross Monthly</td>
                   <td className="px-4 py-2 text-right text-green-800 font-mono">{fmtNum(bd.grossMonthly)}</td>
-                  <td className="px-4 py-2 text-right text-green-800 font-mono">{fmtNum(bd.grossMonthly * 12)}</td>
+                  <td className="px-4 py-2 text-right text-green-800 font-mono">{fmtNum(bd.grossAnnual)}</td>
                 </tr>
               </tbody>
             </table>
@@ -267,19 +275,19 @@ export default function SalaryStructure() {
               <tbody className="divide-y divide-gray-100">
                 <tr>
                   <td className="px-4 py-2 text-gray-700">EPF Employee (12%)</td>
-                  <td className="px-4 py-2 text-right text-gray-900 font-mono">{fmtNum(bd.epfEmployee)}</td>
+                  <td className="px-4 py-2 text-right text-gray-900 font-mono">{fmtNum(bd.epfEmployeeMonthly)}</td>
                 </tr>
                 <tr>
                   <td className="px-4 py-2 text-gray-700">ESI Employee (0.75%)</td>
-                  <td className="px-4 py-2 text-right text-gray-900 font-mono">{fmtNum(bd.esiEmployee)}</td>
+                  <td className="px-4 py-2 text-right text-gray-900 font-mono">{fmtNum(bd.esiEmployeeMonthly)}</td>
                 </tr>
                 <tr>
                   <td className="px-4 py-2 text-gray-700">Professional Tax</td>
-                  <td className="px-4 py-2 text-right text-gray-900 font-mono">{fmtNum(bd.pt)}</td>
+                  <td className="px-4 py-2 text-right text-gray-900 font-mono">{fmtNum(bd.ptMonthly)}</td>
                 </tr>
                 <tr className="bg-red-50 font-semibold">
                   <td className="px-4 py-2 text-red-800">Total Deductions</td>
-                  <td className="px-4 py-2 text-right text-red-800 font-mono">{fmtNum(bd.totalDeductions)}</td>
+                  <td className="px-4 py-2 text-right text-red-800 font-mono">{fmtNum(bd.totalDeductionsMonthly)}</td>
                 </tr>
               </tbody>
             </table>
@@ -299,28 +307,28 @@ export default function SalaryStructure() {
               </thead>
               <tbody className="divide-y divide-gray-100">
                 <tr>
-                  <td className="px-4 py-2 text-gray-700">EPF Employer (3.67%)</td>
-                  <td className="px-4 py-2 text-right text-gray-900 font-mono">{fmtNum(bd.epfEmployer)}</td>
+                  <td className="px-4 py-2 text-gray-700">EPF Employer (12%)</td>
+                  <td className="px-4 py-2 text-right text-gray-900 font-mono">{fmtNum(bd.epfEmployerMonthly)}</td>
                 </tr>
                 <tr>
                   <td className="px-4 py-2 text-gray-700">ESI Employer (3.25%)</td>
-                  <td className="px-4 py-2 text-right text-gray-900 font-mono">{fmtNum(bd.esiEmployer)}</td>
+                  <td className="px-4 py-2 text-right text-gray-900 font-mono">{fmtNum(bd.esiEmployerMonthly)}</td>
                 </tr>
                 <tr>
                   <td className="px-4 py-2 text-gray-700">EDLI</td>
-                  <td className="px-4 py-2 text-right text-gray-900 font-mono">{fmtNum(bd.edli)}</td>
+                  <td className="px-4 py-2 text-right text-gray-900 font-mono">{fmtNum(bd.edliMonthly)}</td>
                 </tr>
                 <tr>
-                  <td className="px-4 py-2 text-gray-700">Admin Charges</td>
-                  <td className="px-4 py-2 text-right text-gray-900 font-mono">{fmtNum(bd.adminCharges)}</td>
+                  <td className="px-4 py-2 text-gray-700">EPF Admin Charges</td>
+                  <td className="px-4 py-2 text-right text-gray-900 font-mono">{fmtNum(bd.epfAdminMonthly)}</td>
                 </tr>
                 <tr>
                   <td className="px-4 py-2 text-gray-700">Gratuity</td>
-                  <td className="px-4 py-2 text-right text-gray-900 font-mono">{fmtNum(bd.gratuity)}</td>
+                  <td className="px-4 py-2 text-right text-gray-900 font-mono">{fmtNum(bd.gratuityMonthly)}</td>
                 </tr>
                 <tr className="bg-purple-50 font-semibold">
                   <td className="px-4 py-2 text-purple-800">Total Employer Cost</td>
-                  <td className="px-4 py-2 text-right text-purple-800 font-mono">{fmtNum(bd.totalEmployerCost)}</td>
+                  <td className="px-4 py-2 text-right text-purple-800 font-mono">{fmtNum(bd.totalEmployerMonthly)}</td>
                 </tr>
               </tbody>
             </table>
@@ -338,7 +346,7 @@ export default function SalaryStructure() {
               </div>
               <div className="text-center">
                 <p className="text-xs text-gray-500 mb-1">Total Deductions</p>
-                <p className="text-lg font-bold text-red-600">{fmtINR(bd.totalDeductions)}</p>
+                <p className="text-lg font-bold text-red-600">{fmtINR(bd.totalDeductionsMonthly)}</p>
               </div>
               <div className="text-center">
                 <p className="text-xs text-gray-500 mb-1">Net Monthly</p>
@@ -346,7 +354,7 @@ export default function SalaryStructure() {
               </div>
               <div className="text-center">
                 <p className="text-xs text-gray-500 mb-1">Total CTC (Annual)</p>
-                <p className="text-lg font-bold text-blue-600">{fmtINR(bd.totalCTC)}</p>
+                <p className="text-lg font-bold text-blue-600">{fmtINR(bd.ctcAnnual)}</p>
               </div>
             </div>
           </div>

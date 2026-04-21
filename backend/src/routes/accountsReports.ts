@@ -20,6 +20,7 @@ const ACCOUNT_CODES = {
   GST_INPUT_SGST: '1201',
   GST_INPUT_IGST: '1202',
   TDS_PAYABLE: '2200',
+  TCS_PAYABLE_206C: '2250',
 } as const;
 
 // ═══════════════════════════════════════════════
@@ -853,7 +854,111 @@ router.get('/tds-summary', asyncHandler(async (req: AuthRequest, res: Response) 
       vendorBillNo: cp.bill?.vendorBillNo || null,
     });
   }
-  res.json({ period: { from, to }, bySections: Object.values(sectionTotals).map(s => ({ ...s, totalPayment: round(s.totalPayment), totalTds: round(s.totalTds) })), byQuarter: Object.values(quarterTotals).map(q => ({ ...q, totalTds: round(q.totalTds) })), deductees: deductees.sort((a, b) => b.date.getTime() - a.date.getTime()), tdsPayableBalance: round(tdsPayableBalance), totalDeducted: round(deductees.reduce((s, d) => s + d.tdsAmount, 0)) });
+  // ── PO-stage projection: open POs with TDS configured (vendor.tdsApplicable OR PO.overrideTdsSection) ──
+  const projectedPOs = await prisma.purchaseOrder.findMany({
+    where: { ...getCompanyFilter(req), poDate: dateFilter, status: { notIn: ['CANCELLED', 'CLOSED'] } },
+    select: {
+      id: true, poNo: true, poDate: true, grandTotal: true, subtotal: true, status: true,
+      tdsApplicable: true, tdsAmount: true,
+      vendor: { select: { id: true, name: true, pan: true, tdsApplicable: true, tdsSection: true, tdsPercent: true, tdsSectionRef: { select: { newSection: true, rateOthers: true, rateIndividual: true } } } },
+      overrideTdsSection: { select: { newSection: true, rateOthers: true } },
+    },
+    orderBy: { poDate: 'desc' },
+    take: 500,
+  });
+  const projectedTdsPOs = projectedPOs.filter(p => p.tdsApplicable || p.tdsAmount > 0 || p.vendor?.tdsApplicable || p.vendor?.tdsSection || p.vendor?.tdsSectionRef);
+  const projection = projectedTdsPOs.map(p => ({
+    poId: p.id, poNo: p.poNo, poDate: p.poDate, vendor: p.vendor?.name, status: p.status,
+    grandTotal: round(p.grandTotal),
+    section: p.overrideTdsSection?.newSection || p.vendor?.tdsSectionRef?.newSection || p.vendor?.tdsSection || null,
+    rate: p.overrideTdsSection?.rateOthers || p.vendor?.tdsSectionRef?.rateOthers || p.vendor?.tdsPercent || 0,
+    expectedTds: round(p.tdsAmount || ((p.subtotal || 0) * ((p.overrideTdsSection?.rateOthers || p.vendor?.tdsSectionRef?.rateOthers || p.vendor?.tdsPercent || 0) / 100))),
+  })).filter(p => p.expectedTds > 0);
+
+  // ── Vendor-master health: how many vendors are missing TDS configuration ──
+  const totalActiveVendors = await prisma.vendor.count({ where: { ...getCompanyFilter(req), isActive: true } });
+  const vendorsWithTds = await prisma.vendor.count({ where: { ...getCompanyFilter(req), isActive: true, OR: [{ tdsApplicable: true }, { tdsSection: { not: null } }, { tdsSectionId: { not: null } }] } });
+
+  res.json({
+    period: { from, to },
+    bySections: Object.values(sectionTotals).map(s => ({ ...s, totalPayment: round(s.totalPayment), totalTds: round(s.totalTds) })),
+    byQuarter: Object.values(quarterTotals).map(q => ({ ...q, totalTds: round(q.totalTds) })),
+    deductees: deductees.sort((a, b) => b.date.getTime() - a.date.getTime()),
+    tdsPayableBalance: round(tdsPayableBalance),
+    totalDeducted: round(deductees.reduce((s, d) => s + d.tdsAmount, 0)),
+    projection,
+    projectionTotal: round(projection.reduce((s, p) => s + p.expectedTds, 0)),
+    vendorHealth: { totalActive: totalActiveVendors, withTdsConfig: vendorsWithTds, missingTdsConfig: totalActiveVendors - vendorsWithTds },
+  });
+}));
+
+// GET /tcs-summary — TCS collected u/s 206C (scrap, high-value sales)
+router.get('/tcs-summary', asyncHandler(async (req: AuthRequest, res: Response) => {
+  const from = req.query.from as string;
+  const to = req.query.to as string;
+  if (!from || !to) { res.status(400).json({ error: 'from and to required' }); return; }
+  const dateFilter = { gte: new Date(from), lte: new Date(to + 'T23:59:59.999Z') };
+  const round = (v: number): number => Math.round(v * 100) / 100;
+
+  const invoices = await prisma.invoice.findMany({
+    where: { ...getCompanyFilter(req), invoiceDate: dateFilter, tcsAmount: { gt: 0 }, status: { not: 'CANCELLED' } },
+    select: {
+      id: true, invoiceNo: true, invoiceDate: true, amount: true, gstAmount: true,
+      tcsPercent: true, tcsAmount: true, tcsSection: true, totalAmount: true, paidAmount: true,
+      customer: { select: { name: true, gstNo: true, panNo: true } },
+    },
+    orderBy: { invoiceDate: 'desc' },
+    take: 500,
+  });
+
+  // By section
+  const sectionTotals: Record<string, { section: string; count: number; totalAmount: number; totalTcs: number }> = {};
+  for (const inv of invoices) {
+    const sec = inv.tcsSection || 'UNCLASSIFIED';
+    if (!sectionTotals[sec]) sectionTotals[sec] = { section: sec, count: 0, totalAmount: 0, totalTcs: 0 };
+    sectionTotals[sec].count++;
+    sectionTotals[sec].totalAmount += inv.amount;
+    sectionTotals[sec].totalTcs += inv.tcsAmount;
+  }
+
+  // By quarter
+  const getQuarter = (d: Date): string => { const m = d.getMonth(); if (m >= 3 && m <= 5) return 'Q1 (Apr-Jun)'; if (m >= 6 && m <= 8) return 'Q2 (Jul-Sep)'; if (m >= 9 && m <= 11) return 'Q3 (Oct-Dec)'; return 'Q4 (Jan-Mar)'; };
+  const quarterTotals: Record<string, { quarter: string; totalTcs: number; count: number }> = {};
+  for (const inv of invoices) {
+    const q = getQuarter(inv.invoiceDate);
+    if (!quarterTotals[q]) quarterTotals[q] = { quarter: q, totalTcs: 0, count: 0 };
+    quarterTotals[q].totalTcs += inv.tcsAmount;
+    quarterTotals[q].count++;
+  }
+
+  // Ledger balance
+  const tcsAccount = await prisma.account.findFirst({ where: { code: ACCOUNT_CODES.TCS_PAYABLE_206C }, select: { id: true } });
+  let tcsPayableBalance = 0;
+  if (tcsAccount) {
+    const agg = await prisma.journalLine.aggregate({ where: { accountId: tcsAccount.id }, _sum: { debit: true, credit: true } });
+    tcsPayableBalance = (agg._sum.credit || 0) - (agg._sum.debit || 0);
+  }
+
+  res.json({
+    period: { from, to },
+    bySections: Object.values(sectionTotals).map(s => ({ ...s, totalAmount: round(s.totalAmount), totalTcs: round(s.totalTcs) })),
+    byQuarter: Object.values(quarterTotals).map(q => ({ ...q, totalTcs: round(q.totalTcs) })),
+    invoices: invoices.map(inv => ({
+      id: inv.id, invoiceNo: inv.invoiceNo, invoiceDate: inv.invoiceDate,
+      customer: inv.customer?.name || 'Unknown',
+      gstin: inv.customer?.gstNo || null,
+      pan: inv.customer?.panNo || null,
+      taxableAmount: round(inv.amount),
+      tcsSection: inv.tcsSection || null,
+      tcsPercent: inv.tcsPercent,
+      tcsAmount: round(inv.tcsAmount),
+      totalAmount: round(inv.totalAmount),
+      paidAmount: round(inv.paidAmount),
+    })),
+    tcsPayableBalance: round(tcsPayableBalance),
+    totalCollected: round(invoices.reduce((s, i) => s + i.tcsAmount, 0)),
+    invoiceCount: invoices.length,
+  });
 }));
 
 // GET /itc-register — Input Tax Credit register

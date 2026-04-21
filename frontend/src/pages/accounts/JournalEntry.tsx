@@ -188,6 +188,11 @@ export default function JournalEntry() {
           click any row to expand its lines.
         </TipBanner>
 
+        <div className="-mx-3 md:-mx-6 border-x border-b border-blue-200 bg-blue-50 px-4 py-2 text-[11px] text-slate-700 flex items-center gap-3">
+          <span className="font-bold uppercase tracking-widest text-blue-700">📘 Journal vs Ledger</span>
+          <span><strong>Journal</strong> (this page) = the chronological book — each transaction with both Dr and Cr lines, posted on a date. <strong>Ledger</strong> (<a href="/accounts/ledger" className="text-blue-700 underline">/accounts/ledger</a>) = the per-account view — pick one account and see its running balance, with each Journal Entry as a row.</span>
+        </div>
+
         <FilterBar>
           <PresetButtons onPreset={p => applyDateRange(computePreset(p))} />
           <DateRangeInputs from={dateRange.from} to={dateRange.to} onChange={applyDateRange} />

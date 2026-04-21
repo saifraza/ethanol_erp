@@ -7,7 +7,7 @@ const fmtCurrency = (n: number): string => {
 };
 const fmtDate = (d: string) => new Date(d).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' });
 
-type Tab = 'gst' | 'tds' | 'itc';
+type Tab = 'gst' | 'tds' | 'tcs' | 'itc';
 
 export default function Taxes() {
   const [tab, setTab] = useState<Tab>('gst');
@@ -33,10 +33,10 @@ export default function Taxes() {
         {/* Tab Bar + Date Filter */}
         <div className="bg-slate-100 border-x border-b border-slate-300 px-4 py-2 -mx-3 md:-mx-6 flex items-center gap-6 flex-wrap print:hidden">
           <div className="flex gap-0">
-            {(['gst', 'tds', 'itc'] as Tab[]).map(t => (
+            {(['gst', 'tds', 'tcs', 'itc'] as Tab[]).map(t => (
               <button key={t} onClick={() => setTab(t)}
                 className={`px-4 py-1.5 text-[11px] font-bold uppercase tracking-widest border border-slate-300 ${tab === t ? 'bg-slate-800 text-white border-slate-800' : 'bg-white text-slate-600 hover:bg-slate-50'} ${t === 'gst' ? '' : '-ml-px'}`}>
-                {t === 'gst' ? 'GST Summary' : t === 'tds' ? 'TDS Summary' : 'ITC Register'}
+                {t === 'gst' ? 'GST Summary' : t === 'tds' ? 'TDS Summary' : t === 'tcs' ? 'TCS Summary' : 'ITC Register'}
               </button>
             ))}
           </div>
@@ -54,6 +54,7 @@ export default function Taxes() {
 
         {tab === 'gst' && <GSTTab from={dateRange.from} to={dateRange.to} />}
         {tab === 'tds' && <TDSTab from={dateRange.from} to={dateRange.to} />}
+        {tab === 'tcs' && <TCSTab from={dateRange.from} to={dateRange.to} />}
         {tab === 'itc' && <ITCTab from={dateRange.from} to={dateRange.to} />}
       </div>
     </div>
@@ -182,23 +183,77 @@ function TDSTab({ from, to }: { from: string; to: string }) {
   if (loading) return <div className="py-12 text-center text-xs text-slate-400 uppercase tracking-widest">Loading TDS data...</div>;
   if (!data) return null;
 
+  const vh = data.vendorHealth || { totalActive: 0, withTdsConfig: 0, missingTdsConfig: 0 };
+
   return (
     <>
-      {/* KPI Strip */}
-      <div className="grid grid-cols-3 gap-0 border-x border-b border-slate-300 -mx-3 md:-mx-6">
+      {/* KPI Strip — 4 cards (added Projected from open POs) */}
+      <div className="grid grid-cols-4 gap-0 border-x border-b border-slate-300 -mx-3 md:-mx-6">
         <div className="bg-white px-4 py-3 border-r border-slate-300 border-l-4 border-l-purple-500">
           <div className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Total TDS Deducted</div>
           <div className="text-xl font-bold text-slate-800 mt-1 font-mono tabular-nums">{fmtCurrency(data.totalDeducted)}</div>
+          <div className="text-[9px] text-slate-400 mt-0.5">at payment stage</div>
         </div>
         <div className="bg-white px-4 py-3 border-r border-slate-300 border-l-4 border-l-red-500">
           <div className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">TDS Payable (Ledger)</div>
           <div className="text-xl font-bold text-red-700 mt-1 font-mono tabular-nums">{fmtCurrency(data.tdsPayableBalance)}</div>
+          <div className="text-[9px] text-slate-400 mt-0.5">all-time, owed to govt</div>
+        </div>
+        <div className="bg-white px-4 py-3 border-r border-slate-300 border-l-4 border-l-amber-500">
+          <div className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Projected (from POs)</div>
+          <div className="text-xl font-bold text-amber-700 mt-1 font-mono tabular-nums">{fmtCurrency(data.projectionTotal || 0)}</div>
+          <div className="text-[9px] text-slate-400 mt-0.5">{data.projection?.length || 0} POs · awaiting payment</div>
         </div>
         <div className="bg-white px-4 py-3 border-l-4 border-l-emerald-500">
           <div className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Deductions Count</div>
           <div className="text-xl font-bold text-slate-800 mt-1 font-mono tabular-nums">{data.deductees.length}</div>
+          <div className="text-[9px] text-slate-400 mt-0.5">in selected period</div>
         </div>
       </div>
+
+      {/* Vendor master health warning */}
+      {vh.missingTdsConfig > 0 && (
+        <div className="-mx-3 md:-mx-6 border-x border-b border-amber-300 bg-amber-50 px-4 py-2 flex items-center gap-3 text-[11px] text-amber-900">
+          <span className="font-bold uppercase tracking-widest text-amber-700">⚠ Setup gap</span>
+          <span>{vh.missingTdsConfig} of {vh.totalActive} active vendors have NO TDS section assigned. Their payments will skip TDS deduction.</span>
+          <a href="/admin/vendors" className="ml-auto px-2 py-0.5 border border-amber-400 bg-white hover:bg-amber-100 font-semibold uppercase tracking-widest text-[10px]">Configure vendors →</a>
+        </div>
+      )}
+
+      {/* Projection: open POs that should deduct TDS but haven't yet */}
+      {data.projection && data.projection.length > 0 && (
+        <div className="-mx-3 md:-mx-6 border-x border-b border-slate-300 overflow-hidden">
+          <div className="bg-amber-100 border-b border-amber-300 px-3 py-1.5 flex items-center justify-between">
+            <span className="text-[10px] font-bold text-amber-800 uppercase tracking-widest">Projected TDS — Open POs (will deduct on payment)</span>
+            <span className="text-[10px] text-amber-700">Total: {fmtCurrency(data.projectionTotal)}</span>
+          </div>
+          <div className="overflow-x-auto">
+            <table className="w-full text-xs">
+              <thead><tr className="bg-slate-700 text-white">
+                {['PO #', 'Date', 'Vendor', 'Section', 'Rate', 'PO Total', 'Expected TDS', 'Status'].map(h => (
+                  <th key={h} className="px-3 py-1.5 font-semibold text-[10px] uppercase tracking-widest border-r border-slate-600 text-left last:border-r-0 last:text-right">{h}</th>
+                ))}
+              </tr></thead>
+              <tbody>
+                {data.projection.map((p: any, i: number) => (
+                  <tr key={p.poId} className={`border-b border-slate-100 hover:bg-amber-50/60 ${i % 2 ? 'bg-slate-50/70' : ''}`}>
+                    <td className="px-3 py-1.5 font-mono border-r border-slate-100">
+                      <a href={`/procurement/purchase-orders?search=${p.poNo}`} className="text-blue-600 hover:underline">PO-{p.poNo}</a>
+                    </td>
+                    <td className="px-3 py-1.5 border-r border-slate-100">{fmtDate(p.poDate)}</td>
+                    <td className="px-3 py-1.5 border-r border-slate-100 font-medium">{p.vendor}</td>
+                    <td className="px-3 py-1.5 border-r border-slate-100 font-mono text-[10px]">{p.section || '--'}</td>
+                    <td className="px-3 py-1.5 text-right font-mono tabular-nums border-r border-slate-100">{p.rate}%</td>
+                    <td className="px-3 py-1.5 text-right font-mono tabular-nums border-r border-slate-100">{fmtCurrency(p.grandTotal)}</td>
+                    <td className="px-3 py-1.5 text-right font-mono tabular-nums border-r border-slate-100 text-amber-700 font-semibold">{fmtCurrency(p.expectedTds)}</td>
+                    <td className="px-3 py-1.5"><span className="text-[9px] font-bold uppercase px-1.5 py-0.5 border border-slate-300 bg-slate-50 text-slate-600">{p.status}</span></td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
 
       {/* By Section + By Quarter side by side */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-0 -mx-3 md:-mx-6">
@@ -299,6 +354,138 @@ function TDSTab({ from, to }: { from: string; to: string }) {
                 <td colSpan={8} className="px-3 py-2">Total</td>
                 <td className="px-3 py-2 text-right font-mono tabular-nums">{fmtCurrency(data.deductees.reduce((s: number, d: any) => s + d.paymentAmount, 0))}</td>
                 <td className="px-3 py-2 text-right font-mono tabular-nums">{fmtCurrency(data.totalDeducted)}</td>
+              </tr></tfoot>
+            )}
+          </table>
+        </div>
+      </div>
+    </>
+  );
+}
+
+/* ═══════ TCS SUMMARY TAB ═══════ */
+function TCSTab({ from, to }: { from: string; to: string }) {
+  const [data, setData] = useState<any>(null);
+  const [loading, setLoading] = useState(true);
+
+  const fetchData = useCallback(async () => {
+    if (!from || !to) return;
+    setLoading(true);
+    try {
+      const res = await api.get('/accounts-reports/tcs-summary', { params: { from, to } });
+      setData(res.data);
+    } catch (err) { console.error(err); } finally { setLoading(false); }
+  }, [from, to]);
+
+  useEffect(() => { fetchData(); }, [fetchData]);
+
+  if (loading) return <div className="py-12 text-center text-xs text-slate-400 uppercase tracking-widest">Loading TCS data...</div>;
+  if (!data) return null;
+
+  return (
+    <>
+      {/* KPI Strip */}
+      <div className="grid grid-cols-3 gap-0 border-x border-b border-slate-300 -mx-3 md:-mx-6">
+        <div className="bg-white px-4 py-3 border-r border-slate-300 border-l-4 border-l-purple-500">
+          <div className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Total TCS Collected</div>
+          <div className="text-xl font-bold text-slate-800 mt-1 font-mono tabular-nums">{fmtCurrency(data.totalCollected)}</div>
+          <div className="text-[9px] text-slate-400 mt-0.5">u/s 206C — scrap, high-value</div>
+        </div>
+        <div className="bg-white px-4 py-3 border-r border-slate-300 border-l-4 border-l-red-500">
+          <div className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">TCS Payable (Ledger)</div>
+          <div className="text-xl font-bold text-red-700 mt-1 font-mono tabular-nums">{fmtCurrency(data.tcsPayableBalance)}</div>
+          <div className="text-[9px] text-slate-400 mt-0.5">all-time, owed to govt</div>
+        </div>
+        <div className="bg-white px-4 py-3 border-l-4 border-l-emerald-500">
+          <div className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Invoices Count</div>
+          <div className="text-xl font-bold text-slate-800 mt-1 font-mono tabular-nums">{data.invoiceCount}</div>
+          <div className="text-[9px] text-slate-400 mt-0.5">in selected period</div>
+        </div>
+      </div>
+
+      {/* By Section + By Quarter side by side */}
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-0 -mx-3 md:-mx-6">
+        <div className="border-x border-b border-slate-300 overflow-hidden">
+          <table className="w-full text-xs">
+            <thead><tr className="bg-slate-800 text-white">
+              <th className="px-3 py-2 text-left font-semibold text-[10px] uppercase tracking-widest border-r border-slate-700">Section</th>
+              <th className="px-3 py-2 text-right font-semibold text-[10px] uppercase tracking-widest border-r border-slate-700">Count</th>
+              <th className="px-3 py-2 text-right font-semibold text-[10px] uppercase tracking-widest border-r border-slate-700">Taxable</th>
+              <th className="px-3 py-2 text-right font-semibold text-[10px] uppercase tracking-widest">TCS</th>
+            </tr></thead>
+            <tbody>
+              {data.bySections.map((s: any, i: number) => (
+                <tr key={s.section} className={`border-b border-slate-100 hover:bg-blue-50/60 ${i % 2 ? 'bg-slate-50/70' : ''}`}>
+                  <td className="px-3 py-1.5 font-semibold border-r border-slate-100">{s.section}</td>
+                  <td className="px-3 py-1.5 text-right font-mono border-r border-slate-100">{s.count}</td>
+                  <td className="px-3 py-1.5 text-right font-mono tabular-nums border-r border-slate-100">{fmtCurrency(s.totalAmount)}</td>
+                  <td className="px-3 py-1.5 text-right font-mono tabular-nums font-semibold">{fmtCurrency(s.totalTcs)}</td>
+                </tr>
+              ))}
+              {data.bySections.length === 0 && <tr><td colSpan={4} className="px-3 py-4 text-center text-slate-400">No TCS collections in period</td></tr>}
+            </tbody>
+          </table>
+        </div>
+        <div className="border-r border-b border-slate-300 overflow-hidden md:border-l-0 border-l">
+          <table className="w-full text-xs">
+            <thead><tr className="bg-slate-800 text-white">
+              <th className="px-3 py-2 text-left font-semibold text-[10px] uppercase tracking-widest border-r border-slate-700">Quarter</th>
+              <th className="px-3 py-2 text-right font-semibold text-[10px] uppercase tracking-widest border-r border-slate-700">Invoices</th>
+              <th className="px-3 py-2 text-right font-semibold text-[10px] uppercase tracking-widest">TCS Amount</th>
+            </tr></thead>
+            <tbody>
+              {data.byQuarter.map((q: any, i: number) => (
+                <tr key={q.quarter} className={`border-b border-slate-100 hover:bg-blue-50/60 ${i % 2 ? 'bg-slate-50/70' : ''}`}>
+                  <td className="px-3 py-1.5 font-semibold border-r border-slate-100">{q.quarter}</td>
+                  <td className="px-3 py-1.5 text-right font-mono border-r border-slate-100">{q.count}</td>
+                  <td className="px-3 py-1.5 text-right font-mono tabular-nums font-semibold">{fmtCurrency(q.totalTcs)}</td>
+                </tr>
+              ))}
+              {data.byQuarter.length === 0 && <tr><td colSpan={3} className="px-3 py-4 text-center text-slate-400">No quarterly data</td></tr>}
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      {/* Invoice Detail (Form 27EQ) */}
+      <div className="-mx-3 md:-mx-6 border-x border-b border-slate-300 overflow-hidden">
+        <div className="bg-slate-200 border-b border-slate-300 px-3 py-1.5 flex items-center justify-between">
+          <span className="text-[10px] font-bold text-slate-600 uppercase tracking-widest">Invoice-wise Detail (Form 27EQ — TCS Return)</span>
+          <span className="text-[10px] text-slate-500">Click invoice to open the source document</span>
+        </div>
+        <div className="overflow-x-auto">
+          <table className="w-full text-xs">
+            <thead><tr className="bg-slate-800 text-white">
+              {['Date', 'Invoice', 'Customer', 'GSTIN', 'PAN', 'Section', 'Taxable', 'TCS %', 'TCS', 'Total'].map(h => (
+                <th key={h} className="px-3 py-2 font-semibold text-[10px] uppercase tracking-widest border-r border-slate-700 text-left last:border-r-0 last:text-right">{h}</th>
+              ))}
+            </tr></thead>
+            <tbody>
+              {data.invoices.map((inv: any, i: number) => (
+                <tr key={inv.id} className={`border-b border-slate-100 hover:bg-blue-50/60 ${i % 2 ? 'bg-slate-50/70' : ''}`}>
+                  <td className="px-3 py-1.5 border-r border-slate-100">{fmtDate(inv.invoiceDate)}</td>
+                  <td className="px-3 py-1.5 border-r border-slate-100 font-mono text-[10px]">
+                    <a href={`/sales/invoices?search=${inv.invoiceNo}`} className="text-blue-600 hover:underline">INV-{inv.invoiceNo}</a>
+                  </td>
+                  <td className="px-3 py-1.5 border-r border-slate-100 font-medium">{inv.customer}</td>
+                  <td className="px-3 py-1.5 font-mono text-[10px] border-r border-slate-100">{inv.gstin || '--'}</td>
+                  <td className="px-3 py-1.5 font-mono text-[10px] border-r border-slate-100">{inv.pan || '--'}</td>
+                  <td className="px-3 py-1.5 border-r border-slate-100 font-mono text-[10px]">{inv.tcsSection || '--'}</td>
+                  <td className="px-3 py-1.5 text-right font-mono tabular-nums border-r border-slate-100">{fmtCurrency(inv.taxableAmount)}</td>
+                  <td className="px-3 py-1.5 text-right font-mono tabular-nums border-r border-slate-100">{inv.tcsPercent}%</td>
+                  <td className="px-3 py-1.5 text-right font-mono tabular-nums font-semibold border-r border-slate-100">{fmtCurrency(inv.tcsAmount)}</td>
+                  <td className="px-3 py-1.5 text-right font-mono tabular-nums">{fmtCurrency(inv.totalAmount)}</td>
+                </tr>
+              ))}
+              {data.invoices.length === 0 && <tr><td colSpan={10} className="px-3 py-8 text-center text-slate-400">No TCS-bearing invoices in the selected period</td></tr>}
+            </tbody>
+            {data.invoices.length > 0 && (
+              <tfoot><tr className="bg-slate-800 text-white font-semibold text-xs">
+                <td colSpan={6} className="px-3 py-2">Total</td>
+                <td className="px-3 py-2 text-right font-mono tabular-nums">{fmtCurrency(data.invoices.reduce((s: number, i: any) => s + i.taxableAmount, 0))}</td>
+                <td></td>
+                <td className="px-3 py-2 text-right font-mono tabular-nums">{fmtCurrency(data.totalCollected)}</td>
+                <td className="px-3 py-2 text-right font-mono tabular-nums">{fmtCurrency(data.invoices.reduce((s: number, i: any) => s + i.totalAmount, 0))}</td>
               </tr></tfoot>
             )}
           </table>

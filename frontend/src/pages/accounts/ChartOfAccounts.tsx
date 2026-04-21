@@ -146,6 +146,34 @@ export default function ChartOfAccounts() {
     });
   }, [accounts, filterType, search]);
 
+  // Tree view must also respect search — filter recursively, keeping ancestors of matches
+  const filteredTree = useMemo(() => {
+    const q = search.trim().toLowerCase();
+    if (!q && !filterType) return tree;
+    const matches = (a: Account): boolean => {
+      if (filterType && a.type !== filterType) return false;
+      if (!q) return true;
+      return `${a.code} ${a.name} ${a.subType || ''}`.toLowerCase().includes(q);
+    };
+    const filterNode = (n: Account): Account | null => {
+      const childMatches = (n.children || []).map(filterNode).filter(Boolean) as Account[];
+      const selfMatch = matches(n);
+      if (selfMatch || childMatches.length > 0) return { ...n, children: childMatches };
+      return null;
+    };
+    return tree.map(filterNode).filter(Boolean) as Account[];
+  }, [tree, filterType, search]);
+
+  // Duplicate-name guard while typing — warn if a similar name already exists
+  const duplicateMatches = useMemo(() => {
+    const n = form.name.trim().toLowerCase();
+    if (n.length < 3) return [];
+    return accounts
+      .filter(a => a.name.toLowerCase().includes(n) || n.includes(a.name.toLowerCase()))
+      .filter(a => !editAccount || a.id !== editAccount.id)
+      .slice(0, 5);
+  }, [form.name, accounts, editAccount]);
+
   useHotkeys([
     { key: 'f', ctrl: true, handler: e => { e.preventDefault(); searchRef.current?.focus(); } },
     { key: 'n', handler: e => {
@@ -282,7 +310,7 @@ export default function ChartOfAccounts() {
             {tree.length === 0 ? (
               <div className="text-center py-12 text-xs text-slate-400">No accounts. Click "Seed Default Accounts" to get started.</div>
             ) : (
-              tree.map(node => renderTreeNode(node))
+              filteredTree.map(node => renderTreeNode(node))
             )}
           </div>
         )}
@@ -364,6 +392,18 @@ export default function ChartOfAccounts() {
                 <input value={form.name} onChange={e => setForm(f => ({ ...f, name: e.target.value }))}
                   placeholder="e.g. PNB Current Account" required
                   className="w-full border border-slate-300 px-2.5 py-1.5 text-xs text-slate-800 focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500" />
+                {duplicateMatches.length > 0 && !editAccount && (
+                  <div className="mt-1.5 border border-amber-300 bg-amber-50 px-2 py-1.5">
+                    <div className="text-[10px] font-bold text-amber-800 uppercase tracking-widest mb-0.5">⚠ Similar accounts exist — pick one of these instead?</div>
+                    {duplicateMatches.map(d => (
+                      <button key={d.id} type="button" onClick={() => { setShowForm(false); handleEdit(d); }}
+                        className="block w-full text-left text-[11px] text-amber-900 hover:bg-amber-100 px-1.5 py-0.5 font-mono">
+                        <span className="text-amber-700 mr-2">[{d.code}]</span>{d.name}
+                        <span className="ml-2 text-[9px] uppercase text-amber-600">{d.type}</span>
+                      </button>
+                    ))}
+                  </div>
+                )}
               </div>
 
               <div className="grid grid-cols-2 gap-3">

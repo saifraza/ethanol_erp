@@ -226,6 +226,28 @@ router.get('/:id', asyncHandler(async (req: AuthRequest, res: Response) => {
 // ── POST / — Create account (auto-generates code if not provided) ──
 router.post('/', validate(createAccountSchema), asyncHandler(async (req: AuthRequest, res: Response) => {
   const userCode = req.body.code?.trim();
+  const newName = (req.body.name || '').trim();
+  const force = req.body.force === true;
+
+  // Duplicate-name guard: case-insensitive exact match within same type & company
+  // Returns 409 with the existing account so frontend can offer "use existing".
+  if (newName && !force) {
+    const dup = await prisma.account.findFirst({
+      where: {
+        name: { equals: newName, mode: 'insensitive' },
+        type: req.body.type,
+        companyId: getActiveCompanyId(req),
+      },
+      select: { id: true, code: true, name: true, type: true, subType: true },
+    });
+    if (dup) {
+      res.status(409).json({
+        error: `An account named "${dup.name}" (${dup.code}) already exists in ${dup.type}. Use it instead, or pass force:true to create another.`,
+        existing: dup,
+      });
+      return;
+    }
+  }
 
   // Validate parent exists if provided (can do outside transaction)
   if (req.body.parentId) {

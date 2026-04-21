@@ -296,6 +296,11 @@ export default function Ledger() {
           </div>
         )}
 
+        <div className="-mx-3 md:-mx-6 border-x border-b border-blue-200 bg-blue-50 px-4 py-2 text-[11px] text-slate-700 flex items-center gap-3">
+          <span className="font-bold uppercase tracking-widest text-blue-700">📒 Ledger vs Journal</span>
+          <span><strong>Ledger</strong> (this page) = the per-account view — pick one account, see its running balance and every transaction touching it. <strong>Journal</strong> (<a href="/accounts/journal" className="text-blue-700 underline">/accounts/journal</a>) = the chronological book — every transaction with its full Dr & Cr lines, in date order.</span>
+        </div>
+
         {/* Filter Toolbar: account + dates + division */}
         <div className="bg-slate-100 border-x border-b border-slate-300 px-4 py-2 -mx-3 md:-mx-6 flex items-center gap-3 flex-wrap">
           <div className="flex-1 min-w-[280px]">
