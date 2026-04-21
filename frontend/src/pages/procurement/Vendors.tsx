@@ -423,17 +423,6 @@ export default function Vendors() {
     }
   }
 
-  async function deleteVendor(id: string) {
-    if (!confirm('Delete this vendor?')) return;
-    try {
-      await api.delete(`/vendors/${id}`);
-      setMsg({ type: 'ok', text: 'Vendor deleted!' });
-      loadVendors();
-    } catch (error: any) {
-      setMsg({ type: 'err', text: error.response?.data?.error || 'Delete failed' });
-    }
-  }
-
   async function seedVendors() {
     try {
       setSaving(true);
@@ -482,6 +471,9 @@ export default function Vendors() {
       FUEL_SUPPLIER: 'border-orange-400 bg-orange-50 text-orange-700',
       PACKING_SUPPLIER: 'border-green-400 bg-green-50 text-green-700',
       SPARES_SUPPLIER: 'border-cyan-400 bg-cyan-50 text-cyan-700',
+      PROJECT_SUPPLIER: 'border-indigo-500 bg-indigo-50 text-indigo-800',
+      EQUIPMENT_SUPPLIER: 'border-violet-500 bg-violet-50 text-violet-800',
+      TURNKEY_CONTRACTOR: 'border-purple-500 bg-purple-50 text-purple-800',
       TRANSPORTER: 'border-yellow-400 bg-yellow-50 text-yellow-700',
       SERVICE_PROVIDER: 'border-pink-400 bg-pink-50 text-pink-700',
       CONSULTANT: 'border-pink-400 bg-pink-50 text-pink-700',
@@ -648,6 +640,11 @@ export default function Vendors() {
                         <option value="FUEL_SUPPLIER">Fuel Supplier</option>
                         <option value="PACKING_SUPPLIER">Packing Supplier</option>
                         <option value="SPARES_SUPPLIER">Spares / AMC Supplier</option>
+                      </optgroup>
+                      <optgroup label="Capex / Projects">
+                        <option value="PROJECT_SUPPLIER">Project / Capex Supplier</option>
+                        <option value="EQUIPMENT_SUPPLIER">Equipment / Machinery Supplier</option>
+                        <option value="TURNKEY_CONTRACTOR">Turnkey Project Contractor</option>
                       </optgroup>
                       <optgroup label="Contractors (TDS 194C)">
                         <option value="CONTRACTOR_CIVIL">Contractor - Civil</option>
@@ -1125,7 +1122,6 @@ export default function Vendors() {
                       <td className="px-3 py-1.5 text-xs text-center">
                         <div className="flex items-center justify-center gap-1">
                           <button onClick={(e) => { e.stopPropagation(); openForm(vendor); }} className="px-2 py-0.5 bg-blue-600 text-white text-[10px] font-medium hover:bg-blue-700">Edit</button>
-                          {user?.role === 'SUPER_ADMIN' && <button onClick={(e) => { e.stopPropagation(); deleteVendor(vendor.id); }} className="px-2 py-0.5 bg-red-600 text-white text-[10px] font-medium hover:bg-red-700">Del</button>}
                           <ChevronDown size={12} className={`text-slate-400 transition-transform ${expandedId === vendor.id ? 'rotate-180' : ''}`} />
                         </div>
                       </td>
