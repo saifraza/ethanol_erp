@@ -7,7 +7,7 @@
  *   POST /api/ai-v2/export-excel    — convert any tabular dataset to .xlsx download
  *   GET  /api/ai-v2/features        — list all registered AI features + usage stats
  */
-import { Router, Response } from 'express';
+import { Router, Response, NextFunction } from 'express';
 import { z } from 'zod';
 import ExcelJS from 'exceljs';
 import { authenticate, AuthRequest } from '../middleware/auth';
@@ -17,6 +17,28 @@ import { runChat, getUsageStats } from '../services/ai/chat';
 
 const router = Router();
 router.use(authenticate as any);
+
+// ─── AI access control ───────────────────────────
+// AI has read-access to the entire database (invoices, payroll, loans,
+// accounts, etc.) via the generic query_table tool. Restrict to roles with
+// legitimate need-to-know. Extend the allow-list by setting AI_ALLOWED_ROLES
+// env var (comma-separated).
+const DEFAULT_ALLOWED = ['ADMIN', 'SUPER_ADMIN', 'OWNER', 'ACCOUNTS_MANAGER', 'FINANCE'];
+const ALLOWED_ROLES = (process.env.AI_ALLOWED_ROLES || DEFAULT_ALLOWED.join(','))
+  .split(',')
+  .map(r => r.trim().toUpperCase())
+  .filter(Boolean);
+
+function requireAiAccess(req: AuthRequest, res: Response, next: NextFunction): void {
+  const role = (req.user?.role || '').toUpperCase();
+  if (!ALLOWED_ROLES.includes(role)) {
+    res.status(403).json({ error: `AI is restricted to ${ALLOWED_ROLES.join(' / ')} roles. Your role: ${role || 'NONE'}` });
+    return;
+  }
+  next();
+}
+
+router.use(requireAiAccess as any);
 
 const chatSchema = z.object({
   message: z.string().min(1).max(4000),

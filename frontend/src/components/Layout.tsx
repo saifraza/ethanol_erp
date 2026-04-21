@@ -377,7 +377,9 @@ export default function Layout() {
           <Outlet />
         </main>
       </div>
-      <AIChatWidget pageContext={getPageContext(location.pathname)} />
+      {user && ['ADMIN', 'SUPER_ADMIN', 'OWNER', 'ACCOUNTS_MANAGER', 'FINANCE'].includes((user.role || '').toUpperCase()) && (
+        <AIChatWidget pageContext={getPageContext(location.pathname)} />
+      )}
     </div>
   );
 }

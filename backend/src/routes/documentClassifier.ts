@@ -20,6 +20,22 @@ import axios from 'axios';
 const router = Router();
 router.use(authenticate as any);
 
+// Smart Upload touches vendor/invoice data via AI — gate to same roles as chat
+const DEFAULT_ALLOWED = ['ADMIN', 'SUPER_ADMIN', 'OWNER', 'ACCOUNTS_MANAGER', 'FINANCE', 'PROCUREMENT_MANAGER'];
+const ALLOWED_ROLES = (process.env.AI_ALLOWED_ROLES || DEFAULT_ALLOWED.join(','))
+  .split(',')
+  .map(r => r.trim().toUpperCase())
+  .filter(Boolean);
+
+router.use((req: any, res, next) => {
+  const role = (req.user?.role || '').toUpperCase();
+  if (!ALLOWED_ROLES.includes(role)) {
+    res.status(403).json({ error: `AI Smart Upload restricted. Your role: ${role || 'NONE'}` });
+    return;
+  }
+  next();
+});
+
 // Reuse the same upload dir layout as vendorInvoices for consistency
 const uploadDir = path.join(process.cwd(), 'public', 'uploads', 'document-classifier');
 if (!fs.existsSync(uploadDir)) fs.mkdirSync(uploadDir, { recursive: true });

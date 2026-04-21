@@ -1,6 +1,9 @@
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { X, CreditCard, FileText, Upload, Download, Mail, Scan, Sparkles } from 'lucide-react';
 import api from '../../services/api';
+import { useAuth } from '../../context/AuthContext';
+
+const AI_ROLES = ['ADMIN', 'SUPER_ADMIN', 'OWNER', 'ACCOUNTS_MANAGER', 'FINANCE', 'PROCUREMENT_MANAGER'];
 
 // Pulls the clean UTR/bank-ref out of a free-text payment reference.
 // Example input : "RTGSO-JAY BAJRANG BHUSA BHA UBINR22026041601296969"
@@ -184,6 +187,8 @@ type TabKey = 'pending' | 'completed' | 'ledger' | 'outstanding';
 // ═══════════════════════════════════════════════
 
 export default function PaymentsOut() {
+  const { user } = useAuth();
+  const canUseAI = !!user && AI_ROLES.includes((user.role || '').toUpperCase());
   const [activeTab, setActiveTab] = useState<TabKey>('pending');
 
   // --- Pending tab ---
@@ -1046,13 +1051,15 @@ export default function PaymentsOut() {
             <span className="text-[10px] text-slate-400">|</span>
             <span className="text-[10px] text-slate-400">Accounts Payable Workflow</span>
           </div>
-          <button
-            onClick={() => setSmartUploadOpen(true)}
-            className="flex items-center gap-1.5 px-3 py-1 bg-purple-600 text-white text-[11px] font-bold uppercase tracking-widest hover:bg-purple-700"
-            title="Drop any document — AI classifies & auto-routes"
-          >
-            <Sparkles size={12} /> Smart Upload
-          </button>
+          {canUseAI && (
+            <button
+              onClick={() => setSmartUploadOpen(true)}
+              className="flex items-center gap-1.5 px-3 py-1 bg-purple-600 text-white text-[11px] font-bold uppercase tracking-widest hover:bg-purple-700"
+              title="Drop any document — AI classifies & auto-routes"
+            >
+              <Sparkles size={12} /> Smart Upload
+            </button>
+          )}
         </div>
 
         {/* Tabs */}

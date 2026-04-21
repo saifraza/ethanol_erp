@@ -18,6 +18,21 @@ const MAX_HISTORY = 20;
 const CHAT_HISTORY = new Map<string, Array<{ role: 'user' | 'assistant'; content: string }>>();
 const TRIGGER_RE = /^\/?(ai|ask)\b\s*/i;
 
+// Telegram allow-list — only these chat IDs can use /ai. Set as:
+//   TELEGRAM_AI_ALLOWED_CHATS=chatId1,chatId2,-groupId1
+// If unset, /ai is disabled over Telegram entirely (secure by default).
+const ALLOWED_CHATS = new Set(
+  (process.env.TELEGRAM_AI_ALLOWED_CHATS || '')
+    .split(',')
+    .map(c => c.trim())
+    .filter(Boolean)
+);
+
+function isChatAllowed(chatId: string): boolean {
+  if (ALLOWED_CHATS.size === 0) return false; // disabled by default
+  return ALLOWED_CHATS.has(chatId);
+}
+
 function shouldHandle(text: string): { handle: boolean; query: string } {
   const t = text.trim();
   if (!t) return { handle: false, query: '' };
@@ -37,6 +52,12 @@ function shouldHandle(text: string): { handle: boolean; query: string } {
 async function handleAiMessage(chatId: string, text: string, name: string | null): Promise<boolean> {
   const { handle, query } = shouldHandle(text);
   if (!handle) return false;
+
+  // Allow-list enforcement
+  if (!isChatAllowed(chatId)) {
+    await sendTelegramMessage(chatId, `🔒 AI is disabled for this chat. Ask an admin to whitelist chat ID \`${chatId}\`.`);
+    return true;
+  }
 
   if (query === '__HELP__') {
     await sendTelegramMessage(chatId,

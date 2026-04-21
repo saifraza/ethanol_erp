@@ -7,6 +7,22 @@ import prisma from '../config/prisma';
 const router = Router();
 router.use(authenticate as any);
 
+// AI access allow-list (same as ai-v2). Restricts chat + config endpoints.
+const DEFAULT_ALLOWED = ['ADMIN', 'SUPER_ADMIN', 'OWNER', 'ACCOUNTS_MANAGER', 'FINANCE'];
+const ALLOWED_ROLES = (process.env.AI_ALLOWED_ROLES || DEFAULT_ALLOWED.join(','))
+  .split(',')
+  .map(r => r.trim().toUpperCase())
+  .filter(Boolean);
+
+router.use((req: AuthRequest, res, next) => {
+  const role = (req.user?.role || '').toUpperCase();
+  if (!ALLOWED_ROLES.includes(role)) {
+    res.status(403).json({ error: `AI is restricted. Your role: ${role || 'NONE'}` });
+    return;
+  }
+  next();
+});
+
 // ─── Configuration ───────────────────────────────
 // Direct AI provider config (no OpenClaw — removed 2026-04-21)
 interface AIConfig {
