@@ -2312,10 +2312,16 @@ model PurchaseOrder {
   // GOODS      — physical inventory items (default, full HSN + GRN flow)
   // SERVICE    — service engagement (SAC code, no GRN / service completion note)
   // CONTRACTOR — contractor work (labour, civil, electrical) — may link to Contractor master
+  // TRANSPORT  — freight / vehicle hire / logistics
   // RENT       — premises / equipment / vehicle rent (recurring)
   // UTILITY    — electricity, water, internet, phone, subscription
+  // PROJECT    — capex / asset purchase (coal crusher, plant hardware, turnkey project, civil project)
   // OTHER      — anything else that needs a PO umbrella
-  poType               String               @default("GOODS") // GOODS | SERVICE | CONTRACTOR | RENT | UTILITY | OTHER
+  poType               String               @default("GOODS") // GOODS | SERVICE | CONTRACTOR | TRANSPORT | RENT | UTILITY | PROJECT | OTHER
+  // Quotation reference (vendor quote this PO is based on — primarily used for PROJECT / capex POs)
+  quotationNo          String?
+  quotationDate        DateTime?
+  projectName          String? // e.g. "Coal Crusher 20 TPH", "Silo #3 Erection"
   // Status
   status               String               @default("DRAFT") // DRAFT, APPROVED, SENT, PARTIAL_RECEIVED, RECEIVED, CLOSED, CANCELLED
   approvedBy           String?
@@ -2330,13 +2336,13 @@ model PurchaseOrder {
   updatedAt            DateTime             @updatedAt
 
   // Contractor link (when poType = CONTRACTOR)
-  contractorId         String?
-  contractor           Contractor?          @relation(fields: [contractorId], references: [id])
+  contractorId String?
+  contractor   Contractor? @relation(fields: [contractorId], references: [id])
 
-  lines          POLine[]
-  grns           GoodsReceipt[]
-  vendorInvoices VendorInvoice[]
-  grainTrucks    GrainTruck[]
+  lines           POLine[]
+  grns            GoodsReceipt[]
+  vendorInvoices  VendorInvoice[]
+  grainTrucks     GrainTruck[]
   contractorBills ContractorBill[]
 
   division  String?  @default("ETHANOL") // SUGAR | POWER | ETHANOL | COMMON
@@ -2463,6 +2469,8 @@ model GoodsReceipt {
   @@index([ticketNo])
   @@index([division])
   @@index([companyId])
+  @@index([status])
+  @@index([status, archived])
 }
 
 // ── GRN Line Item ──
@@ -2578,42 +2586,42 @@ model VendorInvoice {
 
 // ── Vendor Payment ──
 model VendorPayment {
-  id              String         @id @default(uuid())
-  paymentNo       Int            @default(autoincrement())
-  vendorId        String
-  vendor          Vendor         @relation(fields: [vendorId], references: [id])
-  invoiceId       String?
-  invoice         VendorInvoice? @relation(fields: [invoiceId], references: [id])
-  paymentDate     DateTime       @default(now())
-  amount          Float
-  mode            String         @default("BANK_TRANSFER") // CASH, CHEQUE, BANK_TRANSFER, NEFT, RTGS, UPI
-  reference       String? // UTR / cheque no
+  id                   String         @id @default(uuid())
+  paymentNo            Int            @default(autoincrement())
+  vendorId             String
+  vendor               Vendor         @relation(fields: [vendorId], references: [id])
+  invoiceId            String?
+  invoice              VendorInvoice? @relation(fields: [invoiceId], references: [id])
+  paymentDate          DateTime       @default(now())
+  amount               Float
+  mode                 String         @default("BANK_TRANSFER") // CASH, CHEQUE, BANK_TRANSFER, NEFT, RTGS, UPI
+  reference            String? // UTR / cheque no
   // TDS deducted in this payment
-  tdsDeducted     Float          @default(0)
-  tdsSection      String?
+  tdsDeducted          Float          @default(0)
+  tdsSection           String?
   // Advance payment (no invoice)
-  isAdvance       Boolean        @default(false)
-  advanceAdjusted Float          @default(0) // how much of advance is adjusted
+  isAdvance            Boolean        @default(false)
+  advanceAdjusted      Float          @default(0) // how much of advance is adjusted
   // Payment status (bank two-step flow)
-  paymentStatus   String         @default("CONFIRMED") // INITIATED (pending UTR), CONFIRMED, CANCELLED
-  confirmedAt     DateTime? // when UTR was entered and payment confirmed
+  paymentStatus        String         @default("CONFIRMED") // INITIATED (pending UTR), CONFIRMED, CANCELLED
+  confirmedAt          DateTime? // when UTR was entered and payment confirmed
   // Payment Advice delivery (emailed to vendor after confirmation)
-  adviceSentAt    DateTime? // when Payment Advice email was delivered
-  adviceSentTo    String? // email address the advice was sent to
+  adviceSentAt         DateTime? // when Payment Advice email was delivered
+  adviceSentTo         String? // email address the advice was sent to
   // GST inclusion — captured at Pay time (compulsory user choice)
-  hasGst          Boolean? // true = payment inclusive of GST, false = advance/GST excluded, null = legacy (not captured)
+  hasGst               Boolean? // true = payment inclusive of GST, false = advance/GST excluded, null = legacy (not captured)
   // Bank receipt — PDF/JPG uploaded by team, Gemini-extracted structured data, timestamp
   bankReceiptPath      String? // uploads/bank-receipts/<filename> — original bank confirmation
   bankReceiptExtracted Json? //   raw Gemini extraction (audit trail: UTR, beneficiary, amount, etc.)
   bankReceiptScannedAt DateTime? // when the receipt was uploaded + scanned
   // Bank file tracking (UBI APPA integration)
-  bankFileBatch   String? // batch ID when included in bank file
-  bankFileSentAt  DateTime? // when bank file was generated
+  bankFileBatch        String? // batch ID when included in bank file
+  bankFileSentAt       DateTime? // when bank file was generated
   //
-  remarks         String?
-  userId          String
-  createdAt       DateTime       @default(now())
-  updatedAt       DateTime       @updatedAt
+  remarks              String?
+  userId               String
+  createdAt            DateTime       @default(now())
+  updatedAt            DateTime       @updatedAt
 
   division  String?  @default("ETHANOL") // SUGAR | POWER | ETHANOL | COMMON
   companyId String? // FK → Company (null = MSPIL default)
@@ -2677,44 +2685,44 @@ model Contractor {
 }
 
 model ContractorBill {
-  id                String          @id @default(uuid())
-  billNo            Int             @default(autoincrement())
+  id                String         @id @default(uuid())
+  billNo            Int            @default(autoincrement())
   contractorId      String
-  contractor        Contractor      @relation(fields: [contractorId], references: [id])
+  contractor        Contractor     @relation(fields: [contractorId], references: [id])
   purchaseOrderId   String?
-  purchaseOrder     PurchaseOrder?  @relation(fields: [purchaseOrderId], references: [id])
-  billDate          DateTime        @default(now())
-  billPath          String          @default("CREATED") // CREATED | UPLOADED
+  purchaseOrder     PurchaseOrder? @relation(fields: [purchaseOrderId], references: [id])
+  billDate          DateTime       @default(now())
+  billPath          String         @default("CREATED") // CREATED | UPLOADED
   description       String // Summary of work done
   // Amounts
-  subtotal          Float      @default(0) // Sum of line items (base before GST)
-  cgstPercent       Float      @default(0)
-  sgstPercent       Float      @default(0)
-  igstPercent       Float      @default(0)
-  cgstAmount        Float      @default(0)
-  sgstAmount        Float      @default(0)
-  igstAmount        Float      @default(0)
-  totalAmount       Float      @default(0) // subtotal + GST
-  tdsPercent        Float      @default(0) // From contractor master
-  tdsAmount         Float      @default(0) // tdsPercent × subtotal
-  netPayable        Float      @default(0) // totalAmount - tdsAmount
-  paidAmount        Float      @default(0)
-  balanceAmount     Float      @default(0) // netPayable - paidAmount
+  subtotal          Float          @default(0) // Sum of line items (base before GST)
+  cgstPercent       Float          @default(0)
+  sgstPercent       Float          @default(0)
+  igstPercent       Float          @default(0)
+  cgstAmount        Float          @default(0)
+  sgstAmount        Float          @default(0)
+  igstAmount        Float          @default(0)
+  totalAmount       Float          @default(0) // subtotal + GST
+  tdsPercent        Float          @default(0) // From contractor master
+  tdsAmount         Float          @default(0) // tdsPercent × subtotal
+  netPayable        Float          @default(0) // totalAmount - tdsAmount
+  paidAmount        Float          @default(0)
+  balanceAmount     Float          @default(0) // netPayable - paidAmount
   // Status
-  status            String     @default("DRAFT") // DRAFT | CONFIRMED | PARTIAL_PAID | PAID | CANCELLED
+  status            String         @default("DRAFT") // DRAFT | CONFIRMED | PARTIAL_PAID | PAID | CANCELLED
   vendorBillNo      String? // Contractor's own bill number (UPLOADED path)
   documentUrl       String? // Uploaded bill file path (UPLOADED path)
   // ITC tracking (Input Tax Credit)
-  itcEligible       Boolean    @default(true)
-  itcClaimed        Boolean    @default(false)
+  itcEligible       Boolean        @default(true)
+  itcClaimed        Boolean        @default(false)
   itcClaimedDate    DateTime?
-  itcReversed       Boolean    @default(false)
+  itcReversed       Boolean        @default(false)
   itcReversalReason String?
   confirmedAt       DateTime?
   confirmedBy       String?
   userId            String
-  createdAt         DateTime   @default(now())
-  updatedAt         DateTime   @updatedAt
+  createdAt         DateTime       @default(now())
+  updatedAt         DateTime       @updatedAt
 
   lines    ContractorBillLine[]
   payments ContractorPayment[]
@@ -4462,11 +4470,11 @@ model PayrollLine {
   netPay          Float @default(0)
 
   // Cash vs Bank split (snapshot from Employee.cashPayPercent at compute time)
-  cashAmount      Float @default(0) // portion of netPay to be paid in cash
-  bankAmount      Float @default(0) // portion of netPay to be paid via bank transfer
-  paidStatus      String @default("UNPAID") // UNPAID, CASH_PAID, BANK_PAID, FULLY_PAID
-  cashPaidAt      DateTime?
-  bankPaidAt      DateTime?
+  cashAmount Float     @default(0) // portion of netPay to be paid in cash
+  bankAmount Float     @default(0) // portion of netPay to be paid via bank transfer
+  paidStatus String    @default("UNPAID") // UNPAID, CASH_PAID, BANK_PAID, FULLY_PAID
+  cashPaidAt DateTime?
+  bankPaidAt DateTime?
 
   // EPF breakdown
   pfWages        Float @default(0) // Basic + DA
