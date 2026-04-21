@@ -405,7 +405,39 @@ export default function BankLoans() {
     );
   }
 
-  const s = summary;
+  // When a filter tab is selected, rebuild KPI numbers from the filtered loan list
+  // so totals on the strip match the rows shown below.
+  const s = useMemo(() => {
+    if (!summary) return null;
+    if (activeTab === 'ALL') return summary;
+    const visible = ([] as BankLoan[]).concat(
+      groupedLoans.TERM_LOAN, groupedLoans.CC_PLEDGE, groupedLoans.VEHICLE, groupedLoans.BUSINESS
+    );
+    const active = visible.filter(l => l.status === 'ACTIVE');
+    const closed = visible.filter(l => l.status === 'CLOSED');
+    const totalSanc = visible.reduce((a, l) => a + l.sanctionAmount, 0);
+    const totalOS = visible.reduce((a, l) => a + l.outstandingAmount, 0);
+    const monthlyEq = (emi: number, freq: string) => freq === 'MONTHLY' ? emi : freq === 'QUARTERLY' ? emi / 3 : freq === 'HALF_YEARLY' ? emi / 6 : 0;
+    const monthlyOut = active.reduce((a, l) => a + monthlyEq(l.emiAmount, l.repaymentFrequency), 0);
+    const weightedRate = totalOS > 0 ? visible.reduce((a, l) => a + l.interestRate * l.outstandingAmount, 0) / totalOS : 0;
+    const unsec = visible.filter(l => (l.securityDetails || '').toUpperCase().includes('UNSECURED')).reduce((a, l) => a + l.outstandingAmount, 0);
+    const sec = totalOS - unsec;
+    return {
+      ...summary,
+      totalSanctioned: totalSanc,
+      totalOutstanding: totalOS,
+      utilizationPercent: totalSanc > 0 ? Math.round((totalOS / totalSanc) * 100) : 0,
+      monthlyOutflow: Math.round(monthlyOut),
+      weightedAvgRate: weightedRate,
+      activeCount: active.length,
+      closedCount: closed.length,
+      totalCount: visible.length,
+      securedOutstanding: sec,
+      unsecuredOutstanding: unsec,
+      // nextPayment stays from server (cross-filter next payment still useful context)
+    };
+  }, [summary, activeTab, groupedLoans]);
+
   const pieData = s?.byType.map((t) => ({ name: t.label, value: t.outstanding, type: t.loanType })) || [];
 
   return (

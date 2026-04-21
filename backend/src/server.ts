@@ -6,6 +6,7 @@ import { initTelegram } from './services/telegramBot';
 import { initTelegramAutoCollect } from './services/telegramAutoCollect';
 import { initImageHandler } from './services/telegramImageHandler';
 import { initTelegramAiChat } from './services/telegramAiChat';
+import { runSchemaDriftGuard } from './services/schemaDriftGuard';
 import { startInventoryAlerts } from './services/inventoryAlerts';
 import { startComplianceAlerts } from './services/complianceAlerts';
 import { startWebhookProcessor } from './services/webhookDelivery';
@@ -94,6 +95,9 @@ const server = app.listen(PORT, HOST, async () => {
   await autoSeed();
   await migrateSuperAdmin();
   await seedMashBioContract();
+
+  // Schema drift guard — catches missed prisma db push on deploy
+  await runSchemaDriftGuard();
 
   // Initialize Telegram Bot
   initTelegram().then(() => {
