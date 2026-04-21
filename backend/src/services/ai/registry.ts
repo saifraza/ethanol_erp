@@ -14,6 +14,7 @@ import { searchInvoices } from './tools/searchInvoices';
 import { getOutstandingPayables } from './tools/getOutstandingPayables';
 import { getAccountBalance } from './tools/getAccountBalance';
 import { getTruckArrivals } from './tools/getTruckArrivals';
+import { getEthanolDispatches } from './tools/getEthanolDispatches';
 import { getGRNs } from './tools/getGRNs';
 import { listTables } from './tools/listTables';
 import { describeTable } from './tools/describeTable';
@@ -76,6 +77,7 @@ const bankPaymentVerifyFeature: AIFeature = {
 export const AI_FEATURES: AIFeature[] = [
   // Specific chat tools — pick these FIRST when they fit
   getTruckArrivals,
+  getEthanolDispatches,
   getGRNs,
   getFuelInflow,
   getEthanolProduction,

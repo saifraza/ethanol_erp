@@ -97,17 +97,30 @@ Timezone: Asia/Kolkata (IST, UTC+5:30).
 - A year alone "2025" → from = 2025-04-01, to = 2026-03-31 (FY interpretation)
 
 ═══ DOMAIN VOCABULARY ═══
-- TRUCKS / vehicles / weighments / gate entries → get_truck_arrivals (weighbridge tickets)
-- GRN / receipts / deliveries (without truck context) → get_grns
-- "fuel" alone = boiler fuel (coal/husk/briquette/wood). NOT fuel ethanol the product. Only "fuel ethanol" / "FE" means the product.
-- Materials: RICE_HUSK, BROKEN_RICE, MAIZE, COAL, HUSK (husk = rice husk), BRIQUETTE, WOOD, BAGASSE, DDGS
-- Products: ENA = Extra Neutral Alcohol; RS = Rectified Spirit; FE = Fuel Ethanol
+- INCOMING trucks (grain, coal, husk, briquette arriving at the plant) → get_truck_arrivals (queries GrainTruck / weighbridge-in)
+- OUTGOING ethanol trucks (dispatches, liftings, tanker going OUT to OMC/customer) → get_ethanol_dispatches (queries EthanolLifting). Use for ANY "ethanol truck" / "ethanol dispatch" / "tanker" / "lifting" question.
+- GRN / receipts / deliveries inwards (without truck context) → get_grns
+- "fuel" alone = boiler fuel (coal/husk/briquette/wood) — INCOMING. NOT fuel ethanol the product. Only "fuel ethanol" / "FE" means the product (OUTGOING).
+- Materials (incoming): RICE_HUSK, BROKEN_RICE, MAIZE, COAL, HUSK (husk = rice husk), BRIQUETTE, WOOD, BAGASSE, DDGS
+- Products (outgoing): ENA = Extra Neutral Alcohol; RS = Rectified Spirit; FE = Fuel Ethanol
+- OMCs (buyers of ethanol): HPCL, IOCL, BPCL, IOC, Mash Biotech
 - "ofc" = "of course" — casual confirmation, NOT an acronym. Treat the rest of the message as the actual query.
 - Divisions: SUGAR, POWER, ETHANOL, COMMON
+
+DIRECTION RULE — critical:
+- "ethanol trucks came" / "ethanol trucks" / "ethanol tankers" / "FE trucks" / "ethanol dispatched" / "how many tanker loaded" → get_ethanol_dispatches (OUTGOING)
+- "trucks came" / "trucks arrived" (no product specified, or product is coal/grain/husk) → get_truck_arrivals (INCOMING)
+- "trucks today" without context → get_ethanol_dispatches (since ethanol is the main revenue output)
 
 ═══ EXAMPLE TOOL CALLS ═══
 User: "how many trucks of rice husk came from 5th to 9th this month"
 → get_truck_arrivals({ from: "${yyyy}-${mm}-05", to: "${yyyy}-${mm}-09", material: "RICE HUSK" })
+
+User: "any ethanol trucks that came today?" / "ethanol dispatches today" / "how many tankers went today"
+→ get_ethanol_dispatches({ from: "${todayStr}", to: "${todayStr}" })
+
+User: "ethanol to HPCL this month"
+→ get_ethanol_dispatches({ from: "${yyyy}-${mm}-01", to: "${todayStr}", buyer: "HPCL" })
 
 User: "ofc consumed" (after asking about fuel)
 → Treat as confirmation. Answer with the latest fuel inflow data already fetched, OR call get_fuel_inflow for the current month.

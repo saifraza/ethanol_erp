@@ -174,6 +174,8 @@ const EthanolContracts: React.FC = () => {
   const [error, setError] = useState('');
   const [typeFilter, setTypeFilter] = useState('ALL');
   const [expanded, setExpanded] = useState<string | null>(null);
+  const expandedRowRef = useRef<HTMLTableRowElement | null>(null);
+  const [scrollAnchor, setScrollAnchor] = useState<{ liftingId: string | null; ts: number }>({ liftingId: null, ts: 0 });
 
   const [showForm, setShowForm] = useState(false);
   const [editId, setEditId] = useState<string | null>(null);
@@ -984,6 +986,7 @@ const EthanolContracts: React.FC = () => {
                                             {/* Transport/Dispatch details from lifting */}
                                             <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-x-6 gap-y-1.5 mb-2 pt-1 border-t border-slate-200">
                                               {l.rstNo && <div><span className="font-bold text-slate-400 uppercase tracking-widest">RST No</span><div className="font-mono text-slate-700 mt-0.5">{l.rstNo}</div></div>}
+                                              {l.challanNo && <div><span className="font-bold text-slate-400 uppercase tracking-widest">DCH No</span><div className="font-mono text-slate-700 mt-0.5">{l.challanNo}</div></div>}
                                               <div><span className="font-bold text-slate-400 uppercase tracking-widest">Vehicle</span><div className="font-mono text-slate-700 mt-0.5">{l.vehicleNo}</div></div>
                                               {l.driverName && <div><span className="font-bold text-slate-400 uppercase tracking-widest">Driver</span><div className="text-slate-700 mt-0.5">{l.driverName}{l.driverPhone ? ` (${l.driverPhone})` : ''}</div></div>}
                                               {l.transporterName && <div><span className="font-bold text-slate-400 uppercase tracking-widest">Transporter</span><div className="text-slate-700 mt-0.5">{l.transporterName}</div></div>}
