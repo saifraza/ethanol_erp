@@ -5,6 +5,7 @@ import bcrypt from 'bcryptjs';
 import { initTelegram } from './services/telegramBot';
 import { initTelegramAutoCollect } from './services/telegramAutoCollect';
 import { initImageHandler } from './services/telegramImageHandler';
+import { initTelegramAiChat } from './services/telegramAiChat';
 import { startInventoryAlerts } from './services/inventoryAlerts';
 import { startComplianceAlerts } from './services/complianceAlerts';
 import { startWebhookProcessor } from './services/webhookDelivery';
@@ -98,6 +99,7 @@ const server = app.listen(PORT, HOST, async () => {
   initTelegram().then(() => {
     initTelegramAutoCollect().catch((err) => console.error('[TG-AutoCollect] Init error:', err));
     initImageHandler();
+    initTelegramAiChat();
   }).catch((err) => console.error('[Telegram] Init error:', err));
 
   // Inventory low stock alerts via Telegram
