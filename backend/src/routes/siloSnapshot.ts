@@ -3,6 +3,7 @@ import { AuthRequest, authenticate, authorize } from '../middleware/auth';
 import { asyncHandler, validate } from '../shared/middleware';
 import { z } from 'zod';
 import prisma from '../config/prisma';
+import { getOpcPrisma, isOpcAvailable } from '../config/opcPrisma';
 
 const router = Router();
 
@@ -150,9 +151,7 @@ router.get('/live-tanks', authenticate, asyncHandler(async (_req: AuthRequest, r
     return res.json({ tanks: [], opcOnline: false });
   }
 
-  // eslint-disable-next-line @typescript-eslint/no-var-requires
-  const { PrismaClient } = require('@prisma/opc-client');
-  const opc = new PrismaClient();
+  const opc = getOpcPrisma();
 
   try {
     const TAGS: Record<string, { label: string; capField: string }> = {
@@ -216,7 +215,7 @@ router.get('/live-tanks', authenticate, asyncHandler(async (_req: AuthRequest, r
 
     res.json({ tanks, opcOnline });
   } finally {
-    await opc.$disconnect();
+    // shared singleton — do not disconnect
   }
 }));
 
@@ -244,11 +243,9 @@ router.post('/baseline', authenticate, validate(baselineSchema), asyncHandler(as
 
   const grainPct = await getGrainPct();
 
-  if (process.env.DATABASE_URL_OPC) {
+  if (isOpcAvailable()) {
     try {
-      // eslint-disable-next-line @typescript-eslint/no-var-requires
-      const { PrismaClient } = require('@prisma/opc-client');
-      const opc = new PrismaClient();
+      const opc = getOpcPrisma();
       const caps = await getCapacities();
       const tagNames = ['LT130201', 'LT130202', 'LT130301', 'LT130302', 'LT130401', 'LT130101', 'LT130102', 'LT_120103', 'LT_120102'];
       const readings = await opc.opcReading.findMany({
@@ -272,7 +269,7 @@ router.post('/baseline', authenticate, validate(baselineSchema), asyncHandler(as
       fltLevel = r2(((latest.get('LT_120102') ?? 0) / 100) * caps.flt);
       totalVolumeKL = r2(f1Level + f2Level + f3Level + f4Level + beerWellLevel + pf1Level + pf2Level + iltLevel + fltLevel);
       grainInSystem = r2(totalVolumeKL * grainPct);
-      await opc.$disconnect();
+      // shared singleton — do not disconnect
     } catch (err) {
       console.warn('[Silo Baseline] OPC read failed, using zeros:', (err as Error).message);
     }

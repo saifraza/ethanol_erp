@@ -1,5 +1,6 @@
 import { Router, Response } from 'express';
 import prisma from '../config/prisma';
+import { getOpcPrisma, isOpcAvailable } from '../config/opcPrisma';
 import { authenticate, AuthRequest, authorize } from '../middleware/auth';
 import { asyncHandler } from '../shared/middleware';
 
@@ -21,12 +22,10 @@ interface WashSnapshot {
 }
 
 async function snapshotWashKL(prevCreatedAt: Date | null, currentTime: Date, prevTotalizer?: number | null): Promise<WashSnapshot | null> {
-  if (!process.env.DATABASE_URL_OPC || !prevCreatedAt) return null;
+  if (!isOpcAvailable() || !prevCreatedAt) return null;
 
   try {
-    // eslint-disable-next-line @typescript-eslint/no-var-requires
-    const { PrismaClient } = require('@prisma/opc-client');
-    const opc = new PrismaClient();
+    const opc = getOpcPrisma();
 
     try {
       // 1. Read DCS cumulative totalizer (CURRENT) — latest reading
@@ -66,7 +65,7 @@ async function snapshotWashKL(prevCreatedAt: Date | null, currentTime: Date, pre
       const finalWashKL = washKL ?? 0;
       const grainConsumedMT = Math.round(finalWashKL * grainPct * 100) / 100;
 
-      await opc.$disconnect();
+      // shared singleton — do not disconnect
 
       return {
         washTotalizer: currentTotalizer != null ? Math.round(currentTotalizer * 100) / 100 : null,
@@ -77,7 +76,7 @@ async function snapshotWashKL(prevCreatedAt: Date | null, currentTime: Date, pre
       };
     } catch (err) {
       console.warn('[EthanolProduct] OPC wash snapshot failed:', (err as Error).message);
-      await opc.$disconnect();
+      // shared singleton — do not disconnect
       return null;
     }
   } catch {

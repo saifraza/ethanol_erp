@@ -12,6 +12,7 @@
  */
 
 import { broadcastToGroup } from './messagingGateway';
+import { getOpcPrisma, isOpcAvailable } from '../config/opcPrisma';
 
 const CHECK_INTERVAL_MS = 3 * 60 * 1000; // 3 minutes
 const OFFLINE_THRESHOLD_MS = 3 * 60 * 1000; // 3 min without heartbeat = offline
@@ -148,16 +149,14 @@ async function checkHealth(): Promise<void> {
     // ---- Source 2: OPC sync log fallback ----
     if (!useHeartbeat) {
       try {
-        if (process.env.DATABASE_URL_OPC) {
-          // eslint-disable-next-line @typescript-eslint/no-var-requires
-          const { PrismaClient } = require('@prisma/opc-client');
-          const opc = new PrismaClient();
+        if (isOpcAvailable()) {
+          const opc = getOpcPrisma();
           const latestSync = await opc.opcSyncLog.findFirst({
             orderBy: { syncedAt: 'desc' },
             select: { syncedAt: true },
           });
           lastSyncTime = latestSync?.syncedAt || null;
-          await opc.$disconnect();
+          // shared singleton — do not disconnect
         }
       } catch (err) {
         console.warn('[OPC Watchdog] Sync log fallback failed:', (err as Error).message);
@@ -261,10 +260,8 @@ async function sendDailyGapSummary(prisma: any): Promise<void> {
   lastGapSummaryDate = todayStr;
 
   try {
-    if (!process.env.DATABASE_URL_OPC) return;
-    // eslint-disable-next-line @typescript-eslint/no-var-requires
-    const { PrismaClient } = require('@prisma/opc-client');
-    const opc = new PrismaClient();
+    if (!isOpcAvailable()) return;
+    const opc = getOpcPrisma();
 
     const now = new Date();
     const startTime = new Date(now.getTime() - 24 * 60 * 60 * 1000);
@@ -287,7 +284,7 @@ async function sendDailyGapSummary(prisma: any): Promise<void> {
     const existingHours = new Set(hourlyReadings.map((r: { hour: Date }) => r.hour.toISOString()));
     const gapHours = expectedHours.filter(h => !existingHours.has(h.toISOString()));
 
-    await opc.$disconnect();
+    // shared singleton — do not disconnect
 
     const settings = await prisma.settings.findFirst();
     const groupChatId = (settings as any)?.telegramGroupChatId;
