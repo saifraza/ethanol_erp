@@ -155,14 +155,31 @@ export default function CashVouchers() {
 
   useEffect(() => { fetchPendingPOs(); }, [fetchPendingPOs]);
 
-  // Fetch contractors for payee picker
+  // Fetch contractors for payee picker — from BOTH the Contractor master
+  // and the Vendor master (categories starting with CONTRACTOR_ or labour/service).
+  // Keeps the dropdown useful when all "contractors" are actually vendors.
   useEffect(() => {
-    api.get('/contractors', { params: { active: 'true' } })
-      .then(res => {
-        const list = res.data?.contractors ?? res.data ?? [];
-        setContractors(Array.isArray(list) ? list : []);
-      })
-      .catch(() => {});
+    const CONTRACTOR_VENDOR_CATS = ['CONTRACTOR_CIVIL', 'CONTRACTOR_LABOUR', 'CONTRACTOR_ELECTRICAL', 'CONTRACTOR_MECHANICAL', 'CONTRACTOR', 'LABOUR', 'SERVICE'];
+    Promise.all([
+      api.get('/contractors', { params: { active: 'true' } }).catch(() => ({ data: { contractors: [] } })),
+      api.get('/vendors', { params: { isActive: 'true' } }).catch(() => ({ data: { vendors: [] } })),
+    ]).then(([cRes, vRes]) => {
+      const cList = cRes.data?.contractors ?? cRes.data ?? [];
+      const vList = vRes.data?.vendors ?? vRes.data ?? [];
+      const contractorRows: { id: string; name: string; phone?: string | null }[] = Array.isArray(cList)
+        ? cList.map((c: any) => ({ id: `C:${c.id}`, name: c.name, phone: c.phone || null }))
+        : [];
+      const vendorRows: { id: string; name: string; phone?: string | null }[] = Array.isArray(vList)
+        ? vList
+            .filter((v: any) => {
+              const cat = (v.category || '').toUpperCase();
+              return CONTRACTOR_VENDOR_CATS.includes(cat) || cat.startsWith('CONTRACTOR');
+            })
+            .map((v: any) => ({ id: `V:${v.id}`, name: `${v.name}  [${v.category || 'VENDOR'}]`, phone: v.phone || null }))
+        : [];
+      // Contractor master first (canonical), then vendor-as-contractor rows
+      setContractors([...contractorRows, ...vendorRows]);
+    });
   }, []);
 
   // Filtered pending POs by purpose chip
