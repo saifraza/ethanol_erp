@@ -395,18 +395,10 @@ export default function BankLoans() {
     }
   }, [paymentTarget, paymentForm, fetchLoans, expandedLoanId, fetchLoanDetail]);
 
-  // ── Loading ──
-
-  if (loading) {
-    return (
-      <div className="min-h-screen bg-slate-50 flex items-center justify-center">
-        <div className="text-xs text-slate-400 uppercase tracking-widest">Loading...</div>
-      </div>
-    );
-  }
-
   // When a filter tab is selected, rebuild KPI numbers from the filtered loan list
   // so totals on the strip match the rows shown below.
+  // NOTE: This useMemo MUST stay above the `if (loading) return` early-exit so
+  // hook order never changes between renders (React error #310).
   const s = useMemo(() => {
     if (!summary) return null;
     if (activeTab === 'ALL') return summary;
@@ -437,6 +429,16 @@ export default function BankLoans() {
       // nextPayment stays from server (cross-filter next payment still useful context)
     };
   }, [summary, activeTab, groupedLoans]);
+
+  // ── Loading ──
+
+  if (loading) {
+    return (
+      <div className="min-h-screen bg-slate-50 flex items-center justify-center">
+        <div className="text-xs text-slate-400 uppercase tracking-widest">Loading...</div>
+      </div>
+    );
+  }
 
   const pieData = s?.byType.map((t) => ({ name: t.label, value: t.outstanding, type: t.loanType })) || [];
 

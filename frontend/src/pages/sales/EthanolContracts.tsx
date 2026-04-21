@@ -174,8 +174,6 @@ const EthanolContracts: React.FC = () => {
   const [error, setError] = useState('');
   const [typeFilter, setTypeFilter] = useState('ALL');
   const [expanded, setExpanded] = useState<string | null>(null);
-  const expandedRowRef = useRef<HTMLTableRowElement | null>(null);
-  const [scrollAnchor, setScrollAnchor] = useState<{ liftingId: string | null; ts: number }>({ liftingId: null, ts: 0 });
 
   const [showForm, setShowForm] = useState(false);
   const [editId, setEditId] = useState<string | null>(null);
