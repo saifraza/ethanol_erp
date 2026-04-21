@@ -193,11 +193,18 @@ export default function OrgChart() {
           min-height: 400px;
         }
         .org-tree {
-          display: flex;
+          display: inline-flex;
           flex-direction: column;
           align-items: center;
-          transform-origin: top center;
+          transform-origin: top left;
           padding-bottom: 4rem;
+          min-width: 100%;
+        }
+        .org-tree > ul {
+          display: flex;
+          gap: 32px;
+          justify-content: center;
+          align-items: flex-start;
         }
         .org-tree > .org-branch {
           list-style: none;
@@ -210,8 +217,9 @@ export default function OrgChart() {
         .org-children {
           display: flex;
           justify-content: center;
-          padding-top: 24px;
+          padding-top: 28px;
           position: relative;
+          gap: 8px;
         }
         .org-children::before {
           content: '';
@@ -229,7 +237,7 @@ export default function OrgChart() {
           position: relative;
         }
         .org-children > .org-branch {
-          padding: 24px 12px 0;
+          padding: 28px 16px 0;
         }
         .org-children > .org-branch::before {
           content: '';
@@ -259,11 +267,12 @@ export default function OrgChart() {
           border-left: 2px solid #cbd5e1;
         }
         .org-node {
-          width: 180px;
+          width: 200px;
           background: #fff;
+          border: 1px solid #e2e8f0;
           border-radius: 0;
-          box-shadow: none;
-          border-left: 3px solid #94a3b8;
+          box-shadow: 0 1px 2px rgba(0,0,0,0.04);
+          border-left: 4px solid #94a3b8;
           cursor: pointer;
           transition: box-shadow 0.15s, transform 0.15s;
           position: relative;

@@ -86,6 +86,7 @@ const HrOrgChart = React.lazy(() => import('./pages/hr/OrgChart'));
 const HrSalaryStructure = React.lazy(() => import('./pages/hr/SalaryStructure'));
 const HrPayroll = React.lazy(() => import('./pages/hr/Payroll'));
 const HrPayrollDashboard = React.lazy(() => import('./pages/hr/PayrollDashboard'));
+const HrPayToday = React.lazy(() => import('./pages/hr/PayToday'));
 
 const PurchaseRequisition = React.lazy(() => import('./pages/PurchaseRequisition'));
 // Sales & Distribution
@@ -247,6 +248,7 @@ export default function App() {
         <Route path="hr/org-chart" element={<HrOrgChart />} />
         <Route path="hr/salary-structure" element={<HrSalaryStructure />} />
         <Route path="hr/payroll" element={<HrPayroll />} />
+        <Route path="hr/pay-today" element={<HrPayToday />} />
         <Route path="purchase-requisition" element={<PurchaseRequisition />} />
         {/* Sales & Distribution */}
         <Route path="sales/customers" element={<Customers />} />

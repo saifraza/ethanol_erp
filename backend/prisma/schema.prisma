@@ -4340,9 +4340,11 @@ model Employee {
   skillCategory    String? // UNSKILLED, SEMI_SKILLED, SKILLED, HIGHLY_SKILLED
   shiftPattern     String? // DAY, ROTATING_3SHIFT, GENERAL
   workLocation     String    @default("FACTORY") // FACTORY, OFFICE
+  division         String    @default("ETHANOL") // SUGAR | POWER | ETHANOL | HQ | COMMON
 
   // Salary Config
   ctcAnnual        Float   @default(0)
+  cashPayPercent   Float   @default(0) // % of netPay paid in cash (e.g. 30); rest goes to bank
   basicMonthly     Float   @default(0)
   epfApplicable    Boolean @default(true)
   epfOnActualBasic Boolean @default(false) // true = PF on full basic, false = capped at 15000
@@ -4376,6 +4378,7 @@ model Employee {
   @@index([reportingToId])
   @@index([contractorId])
   @@index([companyId])
+  @@index([division])
 }
 
 model SalaryComponent {
@@ -4457,6 +4460,13 @@ model PayrollLine {
   grossEarnings   Float @default(0)
   totalDeductions Float @default(0)
   netPay          Float @default(0)
+
+  // Cash vs Bank split (snapshot from Employee.cashPayPercent at compute time)
+  cashAmount      Float @default(0) // portion of netPay to be paid in cash
+  bankAmount      Float @default(0) // portion of netPay to be paid via bank transfer
+  paidStatus      String @default("UNPAID") // UNPAID, CASH_PAID, BANK_PAID, FULLY_PAID
+  cashPaidAt      DateTime?
+  bankPaidAt      DateTime?
 
   // EPF breakdown
   pfWages        Float @default(0) // Basic + DA

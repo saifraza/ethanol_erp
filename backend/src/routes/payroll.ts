@@ -131,6 +131,11 @@ router.post('/:id/compute', asyncHandler(async (req: AuthRequest, res: Response)
       ytdTdsMap[emp.id] || 0
     );
 
+    // Cash vs Bank split — snapshot from Employee.cashPayPercent at compute time
+    const cashPct = Math.max(0, Math.min(100, emp.cashPayPercent || 0));
+    const cashAmount = Math.round(result.netPay * cashPct / 100);
+    const bankAmount = Math.round(result.netPay - cashAmount);
+
     // Create payroll line
     const line = await prisma.payrollLine.create({
       data: {
@@ -139,6 +144,8 @@ router.post('/:id/compute', asyncHandler(async (req: AuthRequest, res: Response)
         grossEarnings: result.grossEarnings,
         totalDeductions: result.totalDeductions,
         netPay: result.netPay,
+        cashAmount,
+        bankAmount,
         pfWages: result.pfWages,
         epfEmployee: result.epf.epfEmployee,
         epfEmployerEpf: result.epf.epfEmployerEpf,
@@ -351,6 +358,146 @@ router.get('/:id/esi-register', asyncHandler(async (req: AuthRequest, res: Respo
   }
 
   res.json({ lines, totals, employeeCount: lines.length });
+}));
+
+// ═══════════════════════════════════════════════════════════
+// POST /pay-today/plan — given a budget, suggest who to pay
+// Body: { budget: number, payMode: 'CASH' | 'BANK' | 'BOTH', division?: string, runId?: string,
+//         strategy?: 'OLDEST_FIRST' | 'SMALLEST_FIRST' | 'LARGEST_FIRST' | 'BY_DIVISION' }
+// ═══════════════════════════════════════════════════════════
+router.post('/pay-today/plan', asyncHandler(async (req: AuthRequest, res: Response) => {
+  const { budget, payMode = 'BOTH', division, runId, strategy = 'OLDEST_FIRST' } = req.body;
+  const budgetNum = Number(budget);
+  if (!budgetNum || budgetNum <= 0) { res.status(400).json({ error: 'budget required and must be > 0' }); return; }
+
+  // Load most recent COMPUTED/APPROVED payroll run, or specific runId
+  const run = runId
+    ? await prisma.payrollRun.findUnique({ where: { id: runId } })
+    : await prisma.payrollRun.findFirst({
+        where: { status: { in: ['COMPUTED', 'APPROVED'] } },
+        orderBy: [{ year: 'desc' }, { month: 'desc' }],
+      });
+  if (!run) { res.status(404).json({ error: 'No computed payroll run found. Compute a payroll run first.' }); return; }
+
+  // Pull all unpaid (or partially paid) lines for that run
+  const where: any = { payrollRunId: run.id, paidStatus: { not: 'FULLY_PAID' } };
+  const lines = await prisma.payrollLine.findMany({
+    where,
+    include: { employee: { select: { id: true, empCode: true, firstName: true, lastName: true, division: true, workLocation: true, bankAccount: true, bankIfsc: true, department: { select: { name: true } } } } },
+    take: 1000,
+  });
+
+  // Optional division filter
+  let filtered = division ? lines.filter(l => l.employee.division === division) : lines;
+
+  // Compute remaining due per line based on payMode
+  const enriched = filtered.map(l => {
+    const cashRemaining = (l.paidStatus === 'CASH_PAID' || l.paidStatus === 'FULLY_PAID') ? 0 : l.cashAmount;
+    const bankRemaining = (l.paidStatus === 'BANK_PAID' || l.paidStatus === 'FULLY_PAID') ? 0 : l.bankAmount;
+    const due = payMode === 'CASH' ? cashRemaining : payMode === 'BANK' ? bankRemaining : (cashRemaining + bankRemaining);
+    return {
+      payrollLineId: l.id,
+      employeeId: l.employeeId,
+      empCode: l.employee.empCode,
+      name: `${l.employee.firstName} ${l.employee.lastName}`.trim(),
+      division: l.employee.division,
+      department: l.employee.department?.name || null,
+      hasBank: !!(l.employee.bankAccount && l.employee.bankIfsc),
+      netPay: l.netPay,
+      cashAmount: l.cashAmount,
+      bankAmount: l.bankAmount,
+      cashRemaining,
+      bankRemaining,
+      due,
+      paidStatus: l.paidStatus,
+    };
+  }).filter(e => e.due > 0);
+
+  // Sort
+  if (strategy === 'SMALLEST_FIRST') enriched.sort((a, b) => a.due - b.due);
+  else if (strategy === 'LARGEST_FIRST') enriched.sort((a, b) => b.due - a.due);
+  else if (strategy === 'BY_DIVISION') enriched.sort((a, b) => (a.division || '').localeCompare(b.division || '') || a.due - b.due);
+  else enriched.sort((a, b) => a.empCode.localeCompare(b.empCode));
+
+  // Greedy fit
+  let remaining = budgetNum;
+  const canFullyPay: typeof enriched = [];
+  const wouldNeedMore: typeof enriched = [];
+  let totalUsed = 0;
+  for (const e of enriched) {
+    if (e.due <= remaining) {
+      canFullyPay.push(e);
+      remaining -= e.due;
+      totalUsed += e.due;
+    } else {
+      wouldNeedMore.push(e);
+    }
+  }
+
+  // By-division summary for the affordable set
+  const byDivision: Record<string, { division: string; count: number; cash: number; bank: number; total: number }> = {};
+  for (const e of canFullyPay) {
+    const d = e.division || 'COMMON';
+    if (!byDivision[d]) byDivision[d] = { division: d, count: 0, cash: 0, bank: 0, total: 0 };
+    byDivision[d].count++;
+    byDivision[d].cash += (payMode === 'BANK' ? 0 : e.cashRemaining);
+    byDivision[d].bank += (payMode === 'CASH' ? 0 : e.bankRemaining);
+    byDivision[d].total += e.due;
+  }
+
+  res.json({
+    runId: run.id,
+    runMonth: run.month,
+    runYear: run.year,
+    budget: budgetNum,
+    payMode,
+    strategy,
+    division: division || null,
+    canFullyPay,
+    wouldNeedMore: wouldNeedMore.slice(0, 50),
+    summary: {
+      employeesPayable: canFullyPay.length,
+      totalEmployees: enriched.length,
+      totalUsed,
+      leftOver: remaining,
+      shortfall: wouldNeedMore.length > 0 ? wouldNeedMore[0].due - remaining : 0,
+      cashNeeded: canFullyPay.reduce((s, e) => s + (payMode === 'BANK' ? 0 : e.cashRemaining), 0),
+      bankNeeded: canFullyPay.reduce((s, e) => s + (payMode === 'CASH' ? 0 : e.bankRemaining), 0),
+    },
+    byDivision: Object.values(byDivision),
+  });
+}));
+
+// POST /pay-today/execute — mark selected lines as paid
+// Body: { payrollLineIds: string[], payMode: 'CASH' | 'BANK' | 'BOTH', paidDate?: string, reference?: string }
+router.post('/pay-today/execute', authorize('ADMIN', 'SUPER_ADMIN') as any, asyncHandler(async (req: AuthRequest, res: Response) => {
+  const { payrollLineIds, payMode, paidDate, reference } = req.body;
+  if (!Array.isArray(payrollLineIds) || payrollLineIds.length === 0) { res.status(400).json({ error: 'payrollLineIds required' }); return; }
+  if (!['CASH', 'BANK', 'BOTH'].includes(payMode)) { res.status(400).json({ error: 'invalid payMode' }); return; }
+  const when = paidDate ? new Date(paidDate) : new Date();
+
+  const lines = await prisma.payrollLine.findMany({ where: { id: { in: payrollLineIds } } });
+  let updated = 0;
+  for (const l of lines) {
+    let nextStatus = l.paidStatus;
+    const data: any = {};
+    if (payMode === 'CASH' || payMode === 'BOTH') { data.cashPaidAt = when; }
+    if (payMode === 'BANK' || payMode === 'BOTH') { data.bankPaidAt = when; }
+
+    const cashDone = (l.paidStatus === 'CASH_PAID' || l.paidStatus === 'FULLY_PAID') || payMode === 'CASH' || payMode === 'BOTH';
+    const bankDone = (l.paidStatus === 'BANK_PAID' || l.paidStatus === 'FULLY_PAID') || payMode === 'BANK' || payMode === 'BOTH';
+    const cashSkippable = l.cashAmount === 0;
+    const bankSkippable = l.bankAmount === 0;
+    if ((cashDone || cashSkippable) && (bankDone || bankSkippable)) nextStatus = 'FULLY_PAID';
+    else if (cashDone || cashSkippable) nextStatus = 'BANK_PAID' === l.paidStatus ? 'FULLY_PAID' : 'CASH_PAID';
+    else if (bankDone || bankSkippable) nextStatus = 'CASH_PAID' === l.paidStatus ? 'FULLY_PAID' : 'BANK_PAID';
+    data.paidStatus = nextStatus;
+    if (reference) data.remarks = `${l.remarks || ''} | ${payMode} ref: ${reference}`.slice(0, 500);
+
+    await prisma.payrollLine.update({ where: { id: l.id }, data });
+    updated++;
+  }
+  res.json({ updated, payMode, paidDate: when });
 }));
 
 export default router;

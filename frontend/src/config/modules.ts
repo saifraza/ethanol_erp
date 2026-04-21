@@ -134,6 +134,7 @@ export const MODULE_DEFS: ModuleDef[] = [
   { key: 'org-chart', label: 'Org Chart', to: '/hr/org-chart', icon: Network, group: 'hr' },
   { key: 'salary-structure', label: 'Salary Structure', to: '/hr/salary-structure', icon: Wallet, group: 'hr' },
   { key: 'payroll', label: 'Payroll', to: '/hr/payroll', icon: CircleDollarSign, group: 'hr' },
+  { key: 'pay-today', label: 'Pay Today', to: '/hr/pay-today', icon: Wallet, group: 'hr' },
 ];
 
 // For UsersPage — unique module keys for permission assignment (excludes adminOnly)
