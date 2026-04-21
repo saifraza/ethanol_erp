@@ -8,9 +8,9 @@ const router = Router();
 router.use(authenticate as any);
 
 // ─── Configuration ───────────────────────────────
-// OpenClaw or direct AI provider config stored in Settings
+// Direct AI provider config (no OpenClaw — removed 2026-04-21)
 interface AIConfig {
-  provider: 'openclaw' | 'gemini' | 'openai' | 'anthropic';
+  provider: 'gemini' | 'openai' | 'anthropic';
   baseUrl: string;
   apiKey: string;
   model: string;
@@ -21,43 +21,25 @@ async function getAIConfig(): Promise<AIConfig | null> {
   const row = await prisma.appConfig.findUnique({ where: { key: 'ai_config' } });
   if (row?.value) {
     try {
-      return JSON.parse(row.value) as AIConfig;
+      const parsed = JSON.parse(row.value);
+      // Migrate legacy openclaw config to gemini
+      if (parsed.provider === 'openclaw' && process.env.GEMINI_API_KEY) {
+        return { provider: 'gemini', baseUrl: 'https://generativelanguage.googleapis.com', apiKey: process.env.GEMINI_API_KEY, model: 'gemini-2.5-flash' };
+      }
+      if (parsed.provider !== 'openclaw') return parsed as AIConfig;
     } catch { /* fall through */ }
   }
 
-  // 2. OpenClaw — preferred (has memory, sessions, database access)
-  const openclawToken = process.env.OPENCLAW_GATEWAY_TOKEN;
-  // Use public URL — internal URL requires gateway bind 0.0.0.0 which isn't supported in local mode
-  const openclawUrl = process.env.OPENCLAW_URL || (openclawToken ? 'https://openclaw-production-4daf9.up.railway.app' : '');
-  if (openclawUrl && openclawToken) {
-    return {
-      provider: 'openclaw',
-      baseUrl: openclawUrl,
-      apiKey: openclawToken,
-      model: 'openclaw',
-    };
-  }
-
-  // 3. Gemini fallback
+  // Default: Gemini
   const geminiKey = process.env.GEMINI_API_KEY;
   if (geminiKey) {
-    return {
-      provider: 'gemini',
-      baseUrl: 'https://generativelanguage.googleapis.com',
-      apiKey: geminiKey,
-      model: 'gemini-2.5-flash',
-    };
+    return { provider: 'gemini', baseUrl: 'https://generativelanguage.googleapis.com', apiKey: geminiKey, model: 'gemini-2.5-flash' };
   }
 
-  // 4. Anthropic fallback
+  // Anthropic
   const anthropicKey = process.env.ANTHROPIC_API_KEY;
   if (anthropicKey) {
-    return {
-      provider: 'anthropic',
-      baseUrl: 'https://api.anthropic.com',
-      apiKey: anthropicKey,
-      model: 'claude-sonnet-4-20250514',
-    };
+    return { provider: 'anthropic', baseUrl: 'https://api.anthropic.com', apiKey: anthropicKey, model: 'claude-sonnet-4-20250514' };
   }
 
   return null;
@@ -75,7 +57,7 @@ router.post('/chat', asyncHandler(async (req: AuthRequest, res: Response) => {
 
   const config = await getAIConfig();
   if (!config) {
-    res.status(503).json({ error: 'AI not configured. Add OPENCLAW_URL and OPENCLAW_GATEWAY_TOKEN env vars, or configure in Settings.' });
+    res.status(503).json({ error: 'AI not configured. Set GEMINI_API_KEY env var, or configure in Settings.' });
     return;
   }
 
@@ -91,24 +73,12 @@ router.post('/chat', asyncHandler(async (req: AuthRequest, res: Response) => {
     'Content-Type': 'application/json',
     'Authorization': `Bearer ${config.apiKey}`,
   };
-
-  // OpenClaw-specific headers for session persistence
-  if (config.provider === 'openclaw') {
-    if (sessionKey) {
-      headers['x-openclaw-session-key'] = sessionKey;
-    }
-    // Use the ERP user's ID for session routing
-    headers['x-openclaw-message-channel'] = 'erp-chat';
-  }
+  void sessionKey; // legacy field, no longer used
 
   let apiUrl: string;
   let body: Record<string, unknown>;
 
   switch (config.provider) {
-    case 'openclaw':
-      apiUrl = `${config.baseUrl}/v1/chat/completions`;
-      body = { model: config.model, messages, stream: false, user: req.user?.id };
-      break;
     case 'gemini':
       apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/${config.model}:generateContent?key=${config.apiKey}`;
       body = {
@@ -144,29 +114,6 @@ router.post('/chat', asyncHandler(async (req: AuthRequest, res: Response) => {
     if (!response.ok) {
       const errorText = await response.text();
       console.error(`AI API error (${config.provider}):`, response.status, errorText.slice(0, 200));
-
-      // Auto-fallback to Gemini if OpenClaw fails
-      if (config.provider === 'openclaw' && process.env.GEMINI_API_KEY) {
-        console.log('[AI] OpenClaw failed, falling back to Gemini');
-        const geminiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${process.env.GEMINI_API_KEY}`;
-        const geminiRes = await fetch(geminiUrl, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            systemInstruction: { parts: [{ text: systemPrompt }] },
-            contents: [{ role: 'user', parts: [{ text: message }] }],
-            generationConfig: { maxOutputTokens: 1024 },
-          }),
-          signal: AbortSignal.timeout(30000),
-        });
-        if (geminiRes.ok) {
-          const gData = await geminiRes.json() as { candidates?: Array<{ content?: { parts?: Array<{ text?: string }> } }> };
-          const gReply = gData.candidates?.[0]?.content?.parts?.[0]?.text ?? 'No response';
-          res.json({ reply: gReply, provider: 'gemini', model: 'gemini-2.5-flash' });
-          return;
-        }
-      }
-
       res.status(502).json({ error: 'AI service returned an error. Please try again.' });
       return;
     }
@@ -177,7 +124,6 @@ router.post('/chat', asyncHandler(async (req: AuthRequest, res: Response) => {
     // Normalize response across providers
     let reply: string;
     switch (config.provider) {
-      case 'openclaw':
       case 'openai':
         reply = data.choices?.[0]?.message?.content ?? 'No response';
         break;
@@ -200,30 +146,6 @@ router.post('/chat', asyncHandler(async (req: AuthRequest, res: Response) => {
     const errMsg = err instanceof Error ? err.message : 'Unknown error';
     console.error(`AI proxy error (${config.provider}):`, errMsg);
 
-    // Auto-fallback to Gemini on connection failure
-    if (config.provider === 'openclaw' && process.env.GEMINI_API_KEY) {
-      try {
-        console.log('[AI] OpenClaw unreachable, falling back to Gemini');
-        const geminiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${process.env.GEMINI_API_KEY}`;
-        const geminiRes = await fetch(geminiUrl, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            systemInstruction: { parts: [{ text: systemPrompt }] },
-            contents: [{ role: 'user', parts: [{ text: message }] }],
-            generationConfig: { maxOutputTokens: 1024 },
-          }),
-          signal: AbortSignal.timeout(30000),
-        });
-        if (geminiRes.ok) {
-          const gData = await geminiRes.json() as { candidates?: Array<{ content?: { parts?: Array<{ text?: string }> } }> };
-          const gReply = gData.candidates?.[0]?.content?.parts?.[0]?.text ?? 'No response';
-          res.json({ reply: gReply, provider: 'gemini (fallback)', model: 'gemini-2.5-flash' });
-          return;
-        }
-      } catch { /* fallback also failed */ }
-    }
-
     if (errMsg.includes('timeout') || errMsg.includes('abort')) {
       res.status(504).json({ error: 'AI request timed out. Please try again.' });
     } else {
@@ -244,14 +166,14 @@ router.get('/config', asyncHandler(async (req: AuthRequest, res: Response) => {
     configured: true,
     provider: config.provider,
     model: config.model,
-    baseUrl: config.provider === 'openclaw' ? config.baseUrl : undefined,
+    baseUrl: undefined,
     keyHint: config.apiKey ? `...${config.apiKey.slice(-6)}` : undefined,
   });
 }));
 
 // ─── PUT /config — Save AI config (admin only) ──────
 const configSchema = z.object({
-  provider: z.enum(['openclaw', 'gemini', 'openai', 'anthropic']),
+  provider: z.enum(['gemini', 'openai', 'anthropic']),
   baseUrl: z.string().optional(),
   apiKey: z.string().min(1),
   model: z.string().optional(),
@@ -284,7 +206,6 @@ router.put('/config', asyncHandler(async (req: AuthRequest, res: Response) => {
 
 function getDefaultModel(provider: string): string {
   switch (provider) {
-    case 'openclaw': return 'openclaw';
     case 'gemini': return 'gemini-2.5-flash';
     case 'openai': return 'gpt-4o-mini';
     case 'anthropic': return 'claude-sonnet-4-20250514';

@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
-import { X, CreditCard, FileText, Upload, Download, Mail, Scan } from 'lucide-react';
+import { X, CreditCard, FileText, Upload, Download, Mail, Scan, Sparkles } from 'lucide-react';
 import api from '../../services/api';
 
 // Pulls the clean UTR/bank-ref out of a free-text payment reference.
@@ -341,6 +341,55 @@ export default function PaymentsOut() {
   const [scanFile, setScanFile] = useState<File | null>(null);
   const [scanUploading, setScanUploading] = useState(false);
   const [scanResult, setScanResult] = useState<{ extracted: Record<string, unknown> | null; warnings: string[] } | null>(null);
+
+  // Universal AI Doc Uploader — Smart classify + auto-route any document
+  const [smartUploadOpen, setSmartUploadOpen] = useState(false);
+  const [smartUploadFile, setSmartUploadFile] = useState<File | null>(null);
+  const [smartUploadBusy, setSmartUploadBusy] = useState(false);
+  const [smartUploadResult, setSmartUploadResult] = useState<{
+    filePath: string;
+    docType: string;
+    confidence: number;
+    reason: string;
+    supported: boolean;
+    message?: string;
+    extracted?: any;
+    matchedVendor?: { id: string; name: string; gstin: string | null; pan: string | null } | null;
+    matchedInvoices?: Array<{ id: string; invoiceNo: number; vendorInvNo: string | null; invoiceDate: string; balanceAmount: number; netPayable: number; status: string; po?: { id: string; poNo: number } | null }>;
+    suggestedAction?: 'PAY_EXISTING' | 'CREATE_NEW' | 'CONFIRM_VENDOR' | 'NO_VENDOR';
+    fileName?: string;
+    fileSize?: number;
+    error?: string;
+  } | null>(null);
+
+  const runSmartUpload = useCallback(async () => {
+    if (!smartUploadFile) return;
+    setSmartUploadBusy(true);
+    setSmartUploadResult(null);
+    try {
+      const fd = new FormData();
+      fd.append('file', smartUploadFile);
+      const res = await api.post('/document-classifier/classify', fd, {
+        headers: { 'Content-Type': 'multipart/form-data' },
+        timeout: 90000,
+      });
+      setSmartUploadResult(res.data);
+    } catch (err: any) {
+      setSmartUploadResult({
+        filePath: '', docType: 'OTHER', confidence: 0, reason: 'Upload failed',
+        supported: false, error: err.response?.data?.error || err.message || 'Upload failed',
+      });
+    } finally {
+      setSmartUploadBusy(false);
+    }
+  }, [smartUploadFile]);
+
+  const closeSmartUpload = () => {
+    setSmartUploadOpen(false);
+    setSmartUploadFile(null);
+    setSmartUploadResult(null);
+    setSmartUploadBusy(false);
+  };
 
   // Pay allocations — per-target amount the team explicitly wants to send.
   // Key: 'current' | <poId> | 'advance'.
@@ -997,6 +1046,13 @@ export default function PaymentsOut() {
             <span className="text-[10px] text-slate-400">|</span>
             <span className="text-[10px] text-slate-400">Accounts Payable Workflow</span>
           </div>
+          <button
+            onClick={() => setSmartUploadOpen(true)}
+            className="flex items-center gap-1.5 px-3 py-1 bg-purple-600 text-white text-[11px] font-bold uppercase tracking-widest hover:bg-purple-700"
+            title="Drop any document — AI classifies & auto-routes"
+          >
+            <Sparkles size={12} /> Smart Upload
+          </button>
         </div>
 
         {/* Tabs */}
@@ -3277,6 +3333,196 @@ export default function PaymentsOut() {
                         className="px-4 py-1.5 bg-white border border-slate-300 text-slate-600 text-[11px] font-medium hover:bg-slate-50">Scan another</button>
                     </div>
                   </div>
+                )}
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* ═══════════════════════════════════════ */}
+        {/* SMART UPLOAD MODAL — Universal Doc Classifier */}
+        {/* ═══════════════════════════════════════ */}
+        {smartUploadOpen && (
+          <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4" onClick={closeSmartUpload}>
+            <div className="bg-white max-w-2xl w-full max-h-[90vh] overflow-auto" onClick={e => e.stopPropagation()}>
+              {/* Modal Toolbar */}
+              <div className="bg-purple-700 text-white px-4 py-2.5 flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <Sparkles size={14} />
+                  <h2 className="text-sm font-bold uppercase tracking-wide">Smart Document Upload</h2>
+                  <span className="text-[10px] text-purple-200">|</span>
+                  <span className="text-[10px] text-purple-200">AI auto-classifies & routes</span>
+                </div>
+                <button onClick={closeSmartUpload} className="text-purple-200 hover:text-white"><X size={16} /></button>
+              </div>
+
+              {/* Content */}
+              <div className="p-4">
+                {/* Step 1 — File picker */}
+                {!smartUploadResult && (
+                  <>
+                    <div className="text-[11px] text-slate-600 mb-3">
+                      Drop any document — vendor invoice, contractor bill, GRN, PO, bank receipt — and Gemini will classify it and auto-route to the right place.
+                      <br />
+                      <span className="text-purple-700 font-bold">Currently auto-processing: Vendor Invoices.</span> Other types will be classified but routed manually.
+                    </div>
+
+                    <label className="block border-2 border-dashed border-slate-400 bg-slate-50 hover:bg-slate-100 cursor-pointer px-4 py-8 text-center mb-3">
+                      <Upload size={28} className="mx-auto text-slate-400 mb-2" />
+                      <div className="text-xs font-bold text-slate-700 uppercase tracking-widest">{smartUploadFile ? smartUploadFile.name : 'Click to choose a file'}</div>
+                      <div className="text-[10px] text-slate-500 mt-1">PDF, JPG, PNG · max 15 MB</div>
+                      <input type="file" accept="application/pdf,image/*" onChange={e => setSmartUploadFile(e.target.files?.[0] || null)} className="hidden" />
+                    </label>
+
+                    {smartUploadFile && (
+                      <div className="text-[11px] text-slate-600 mb-3 bg-slate-50 border border-slate-200 px-3 py-2">
+                        <strong>{smartUploadFile.name}</strong>
+                        <span className="text-slate-400 ml-2">{(smartUploadFile.size / 1024).toFixed(1)} KB</span>
+                      </div>
+                    )}
+
+                    <div className="flex gap-2 justify-end">
+                      <button onClick={closeSmartUpload} className="px-3 py-1.5 border border-slate-300 text-slate-600 text-[11px] font-bold uppercase tracking-widest hover:bg-slate-50">Cancel</button>
+                      <button onClick={runSmartUpload} disabled={!smartUploadFile || smartUploadBusy} className="flex items-center gap-1.5 px-4 py-1.5 bg-purple-600 text-white text-[11px] font-bold uppercase tracking-widest hover:bg-purple-700 disabled:opacity-50">
+                        {smartUploadBusy ? 'Analysing...' : <><Sparkles size={11} /> Classify with AI</>}
+                      </button>
+                    </div>
+                  </>
+                )}
+
+                {/* Step 2 — Result */}
+                {smartUploadResult && (
+                  <>
+                    {/* Classification banner */}
+                    <div className={`border-l-4 px-3 py-2 mb-3 ${
+                      smartUploadResult.error ? 'border-l-red-500 bg-red-50' :
+                      smartUploadResult.supported ? 'border-l-emerald-500 bg-emerald-50' :
+                      'border-l-amber-500 bg-amber-50'
+                    }`}>
+                      <div className="flex items-center justify-between">
+                        <div>
+                          <div className="text-[10px] font-bold uppercase tracking-widest text-slate-500">Document Type</div>
+                          <div className="text-base font-bold text-slate-800">{smartUploadResult.docType.replace(/_/g, ' ')}</div>
+                        </div>
+                        <div className="text-right">
+                          <div className="text-[10px] font-bold uppercase tracking-widest text-slate-500">Confidence</div>
+                          <div className={`text-base font-bold font-mono ${smartUploadResult.confidence >= 80 ? 'text-emerald-700' : smartUploadResult.confidence >= 50 ? 'text-amber-700' : 'text-red-700'}`}>{smartUploadResult.confidence}%</div>
+                        </div>
+                      </div>
+                      <div className="text-[11px] text-slate-700 mt-1">{smartUploadResult.reason}</div>
+                      {smartUploadResult.error && <div className="text-[11px] text-red-700 mt-1 font-bold">Error: {smartUploadResult.error}</div>}
+                    </div>
+
+                    {/* Unsupported message */}
+                    {!smartUploadResult.supported && smartUploadResult.message && (
+                      <div className="border border-amber-300 bg-amber-50 px-3 py-2 text-[11px] text-amber-900 mb-3">
+                        {smartUploadResult.message}
+                      </div>
+                    )}
+
+                    {/* Vendor Invoice — Extracted Fields + Vendor Match */}
+                    {smartUploadResult.supported && smartUploadResult.extracted && (
+                      <>
+                        {/* Extracted fields */}
+                        <div className="border border-slate-300 mb-3 overflow-hidden">
+                          <div className="bg-slate-200 border-b border-slate-300 px-3 py-1.5">
+                            <span className="text-[10px] font-bold text-slate-600 uppercase tracking-widest">Extracted Fields</span>
+                          </div>
+                          <table className="w-full text-xs">
+                            <tbody>
+                              {[
+                                { label: 'Vendor', value: smartUploadResult.extracted.vendor_name },
+                                { label: 'GSTIN', value: smartUploadResult.extracted.vendor_gstin },
+                                { label: 'PAN', value: smartUploadResult.extracted.vendor_pan },
+                                { label: 'Invoice #', value: smartUploadResult.extracted.invoice_number },
+                                { label: 'Invoice Date', value: smartUploadResult.extracted.invoice_date },
+                                { label: 'PO Reference', value: smartUploadResult.extracted.po_reference },
+                                { label: 'Taxable', value: smartUploadResult.extracted.taxable_amount ? '\u20B9' + Number(smartUploadResult.extracted.taxable_amount).toLocaleString('en-IN') : null },
+                                { label: 'Total GST', value: smartUploadResult.extracted.total_gst ? '\u20B9' + Number(smartUploadResult.extracted.total_gst).toLocaleString('en-IN') : null },
+                                { label: 'Total Amount', value: smartUploadResult.extracted.total_amount ? '\u20B9' + Number(smartUploadResult.extracted.total_amount).toLocaleString('en-IN') : null },
+                                { label: 'Supply Type', value: smartUploadResult.extracted.supply_type },
+                              ].map(r => (
+                                <tr key={r.label} className="border-b border-slate-100 even:bg-slate-50/70">
+                                  <td className="px-3 py-1 text-slate-500 border-r border-slate-100 w-32 font-bold uppercase text-[10px] tracking-widest">{r.label}</td>
+                                  <td className="px-3 py-1 font-mono text-slate-800">{r.value || <span className="text-slate-400">--</span>}</td>
+                                </tr>
+                              ))}
+                            </tbody>
+                          </table>
+                        </div>
+
+                        {/* Vendor match */}
+                        <div className="border border-slate-300 mb-3 overflow-hidden">
+                          <div className="bg-slate-200 border-b border-slate-300 px-3 py-1.5">
+                            <span className="text-[10px] font-bold text-slate-600 uppercase tracking-widest">Vendor Match</span>
+                          </div>
+                          {smartUploadResult.matchedVendor ? (
+                            <div className="px-3 py-2">
+                              <div className="text-sm font-bold text-emerald-700">✓ {smartUploadResult.matchedVendor.name}</div>
+                              <div className="text-[10px] text-slate-500 font-mono mt-0.5">
+                                {smartUploadResult.matchedVendor.gstin && <span>GSTIN: {smartUploadResult.matchedVendor.gstin}</span>}
+                                {smartUploadResult.matchedVendor.pan && <span className="ml-3">PAN: {smartUploadResult.matchedVendor.pan}</span>}
+                              </div>
+                            </div>
+                          ) : (
+                            <div className="px-3 py-2 text-[11px] text-amber-700">
+                              ⚠ No matching vendor in master. Create the vendor first at <a href="/admin/vendors" className="text-blue-600 underline">/admin/vendors</a>.
+                            </div>
+                          )}
+                        </div>
+
+                        {/* Matched invoices */}
+                        {smartUploadResult.matchedInvoices && smartUploadResult.matchedInvoices.length > 0 && (
+                          <div className="border border-slate-300 mb-3 overflow-hidden">
+                            <div className="bg-slate-200 border-b border-slate-300 px-3 py-1.5">
+                              <span className="text-[10px] font-bold text-slate-600 uppercase tracking-widest">Matched Invoice(s) in System</span>
+                            </div>
+                            <table className="w-full text-xs">
+                              <thead><tr className="bg-slate-700 text-white">
+                                {['INV #', 'Vendor Inv #', 'Date', 'Net Payable', 'Balance', 'Status'].map(h => (
+                                  <th key={h} className="px-2 py-1 font-semibold text-[10px] uppercase tracking-widest border-r border-slate-600 text-left last:border-r-0 last:text-right">{h}</th>
+                                ))}
+                              </tr></thead>
+                              <tbody>
+                                {smartUploadResult.matchedInvoices.map(inv => (
+                                  <tr key={inv.id} className="border-b border-slate-100 even:bg-slate-50/70">
+                                    <td className="px-2 py-1 font-mono text-[10px] border-r border-slate-100">INV-{inv.invoiceNo}</td>
+                                    <td className="px-2 py-1 font-mono text-[10px] border-r border-slate-100">{inv.vendorInvNo || '--'}</td>
+                                    <td className="px-2 py-1 border-r border-slate-100">{new Date(inv.invoiceDate).toLocaleDateString('en-IN', { day: '2-digit', month: 'short' })}</td>
+                                    <td className="px-2 py-1 text-right font-mono tabular-nums border-r border-slate-100">{'\u20B9' + inv.netPayable.toLocaleString('en-IN')}</td>
+                                    <td className="px-2 py-1 text-right font-mono tabular-nums font-bold border-r border-slate-100">{'\u20B9' + inv.balanceAmount.toLocaleString('en-IN')}</td>
+                                    <td className="px-2 py-1"><span className={`text-[9px] font-bold uppercase px-1 py-0.5 border ${inv.status === 'PAID' ? 'border-emerald-400 bg-emerald-50 text-emerald-700' : inv.balanceAmount > 0 ? 'border-amber-400 bg-amber-50 text-amber-700' : 'border-slate-300'}`}>{inv.status}</span></td>
+                                  </tr>
+                                ))}
+                              </tbody>
+                            </table>
+                          </div>
+                        )}
+
+                        {/* Suggested action */}
+                        <div className={`border-l-4 px-3 py-2 mb-3 ${
+                          smartUploadResult.suggestedAction === 'PAY_EXISTING' ? 'border-l-emerald-500 bg-emerald-50' :
+                          smartUploadResult.suggestedAction === 'CREATE_NEW' ? 'border-l-blue-500 bg-blue-50' :
+                          smartUploadResult.suggestedAction === 'CONFIRM_VENDOR' ? 'border-l-amber-500 bg-amber-50' :
+                          'border-l-red-500 bg-red-50'
+                        }`}>
+                          <div className="text-[10px] font-bold uppercase tracking-widest text-slate-500 mb-1">Suggested Action</div>
+                          <div className="text-xs text-slate-700">
+                            {smartUploadResult.suggestedAction === 'PAY_EXISTING' && '✓ This invoice already exists with an outstanding balance. Open the Pending tab to record the payment.'}
+                            {smartUploadResult.suggestedAction === 'CREATE_NEW' && 'New invoice for an existing vendor. Use the manual "Add Invoice" flow on the Pending tab to enter the values.'}
+                            {smartUploadResult.suggestedAction === 'CONFIRM_VENDOR' && 'Multiple invoices matched — please open the right one manually.'}
+                            {smartUploadResult.suggestedAction === 'NO_VENDOR' && '⚠ Vendor not in master — create the vendor first, then re-upload.'}
+                          </div>
+                        </div>
+                      </>
+                    )}
+
+                    {/* Actions */}
+                    <div className="flex gap-2 justify-end">
+                      <button onClick={() => { setSmartUploadFile(null); setSmartUploadResult(null); }} className="px-3 py-1.5 border border-slate-300 text-slate-600 text-[11px] font-bold uppercase tracking-widest hover:bg-slate-50">Upload Another</button>
+                      <button onClick={closeSmartUpload} className="px-4 py-1.5 bg-slate-800 text-white text-[11px] font-bold uppercase tracking-widest hover:bg-slate-900">Done</button>
+                    </div>
+                  </>
                 )}
               </div>
             </div>

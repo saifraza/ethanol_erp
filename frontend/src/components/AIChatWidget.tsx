@@ -1,6 +1,14 @@
 import { useState, useRef, useEffect, useCallback } from 'react';
-import { MessageSquare, X, Send, Loader2, Bot, User, Minimize2, Settings, ChevronDown } from 'lucide-react';
+import { MessageSquare, Send, Loader2, Bot, User, Minimize2, Settings, Download, Sparkles, Wrench, Maximize2 } from 'lucide-react';
 import api from '../services/api';
+
+interface ToolCall {
+  toolId: string;
+  args: Record<string, unknown>;
+  result?: any;
+  error?: string;
+  durationMs: number;
+}
 
 interface Message {
   id: string;
@@ -8,6 +16,8 @@ interface Message {
   content: string;
   timestamp: Date;
   provider?: string;
+  toolCalls?: ToolCall[];
+  turns?: number;
 }
 
 interface AIConfigState {
@@ -18,86 +28,114 @@ interface AIConfigState {
 }
 
 const PROVIDERS = [
-  { value: 'openclaw', label: 'OpenClaw', placeholder: 'Gateway token', modelDefault: 'openclaw' },
   { value: 'gemini', label: 'Google Gemini', placeholder: 'API key from Google AI Studio', modelDefault: 'gemini-2.5-flash' },
   { value: 'openai', label: 'OpenAI', placeholder: 'sk-... API key', modelDefault: 'gpt-4o-mini' },
   { value: 'anthropic', label: 'Anthropic Claude', placeholder: 'sk-ant-... API key', modelDefault: 'claude-sonnet-4-20250514' },
 ];
 
+// ── Helpers — extract tabular datasets from a tool result for Excel export ──
+function extractDatasets(toolCalls: ToolCall[] | undefined): Array<{ name: string; rows: Record<string, unknown>[]; summary?: Record<string, unknown> }> {
+  if (!toolCalls || toolCalls.length === 0) return [];
+  const sheets: Array<{ name: string; rows: Record<string, unknown>[]; summary?: Record<string, unknown> }> = [];
+  for (const tc of toolCalls) {
+    if (!tc.result || typeof tc.result !== 'object') continue;
+    const r = tc.result;
+    const toolShort = tc.toolId.split('.').pop() || tc.toolId;
+    // Pull every array-of-objects under the result as its own sheet
+    for (const [key, value] of Object.entries(r)) {
+      if (Array.isArray(value) && value.length > 0 && typeof value[0] === 'object' && value[0] !== null) {
+        sheets.push({
+          name: `${toolShort}-${key}`.slice(0, 31),
+          rows: value as Record<string, unknown>[],
+          summary: r.summary && typeof r.summary === 'object' ? r.summary as Record<string, unknown> : undefined,
+        });
+      }
+    }
+  }
+  return sheets;
+}
+
 export default function AIChatWidget({ pageContext }: { pageContext?: string }) {
   const [open, setOpen] = useState(false);
+  const [expanded, setExpanded] = useState(false);
   const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState('');
   const [loading, setLoading] = useState(false);
   const [config, setConfig] = useState<AIConfigState | null>(null);
   const [showConfig, setShowConfig] = useState(false);
-  const [configForm, setConfigForm] = useState({ provider: 'openclaw', apiKey: '', model: '', baseUrl: '' });
+  const [configForm, setConfigForm] = useState({ provider: 'gemini', apiKey: '', model: '', baseUrl: '' });
   const [savingConfig, setSavingConfig] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
 
-  const scrollToBottom = () => {
-    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
-  };
+  useEffect(() => { messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' }); }, [messages, loading]);
 
-  useEffect(() => { scrollToBottom(); }, [messages]);
-
-  // Check AI config on first open
   useEffect(() => {
     if (open && config === null) {
-      api.get('/ai/config').then(res => setConfig(res.data)).catch(() => setConfig({ configured: false }));
+      api.get('/ai/config').then(res => setConfig(res.data)).catch(() => setConfig({ configured: true }));
     }
   }, [open, config]);
 
-  // Focus input when opened
   useEffect(() => {
-    if (open && !showConfig) {
-      setTimeout(() => inputRef.current?.focus(), 100);
-    }
+    if (open && !showConfig) setTimeout(() => inputRef.current?.focus(), 100);
   }, [open, showConfig]);
 
   const sendMessage = useCallback(async () => {
     const text = input.trim();
     if (!text || loading) return;
-
-    const userMsg: Message = {
-      id: Date.now().toString(),
-      role: 'user',
-      content: text,
-      timestamp: new Date(),
-    };
-
+    const userMsg: Message = { id: Date.now().toString(), role: 'user', content: text, timestamp: new Date() };
+    const history = messages.map(m => ({ role: m.role, content: m.content }));
     setMessages(prev => [...prev, userMsg]);
     setInput('');
     setLoading(true);
-
     try {
-      const res = await api.post('/ai/chat', {
+      const res = await api.post('/ai-v2/chat', {
         message: text,
-        context: pageContext,
+        pageContext,
+        history,
       });
-
       const aiMsg: Message = {
         id: (Date.now() + 1).toString(),
         role: 'assistant',
         content: res.data.reply,
         timestamp: new Date(),
         provider: res.data.provider,
+        toolCalls: res.data.toolCalls,
+        turns: res.data.turns,
       };
       setMessages(prev => [...prev, aiMsg]);
-    } catch (err: unknown) {
-      const errorMsg = (err as { response?: { data?: { error?: string } } })?.response?.data?.error || 'Failed to get response';
-      const aiMsg: Message = {
-        id: (Date.now() + 1).toString(),
-        role: 'assistant',
-        content: `Error: ${errorMsg}`,
-        timestamp: new Date(),
-      };
-      setMessages(prev => [...prev, aiMsg]);
+    } catch (err: any) {
+      const errorMsg = err?.response?.data?.error || err?.message || 'Failed to get response';
+      setMessages(prev => [...prev, { id: (Date.now() + 1).toString(), role: 'assistant', content: `Error: ${errorMsg}`, timestamp: new Date() }]);
     } finally {
       setLoading(false);
     }
-  }, [input, loading, pageContext]);
+  }, [input, loading, pageContext, messages]);
+
+  const downloadExcel = async (msg: Message) => {
+    const sheets = extractDatasets(msg.toolCalls);
+    if (sheets.length === 0) return;
+    const userQuestion = (() => {
+      const idx = messages.findIndex(m => m.id === msg.id);
+      if (idx > 0 && messages[idx - 1].role === 'user') return messages[idx - 1].content;
+      return 'AI Report';
+    })();
+    try {
+      const res = await api.post('/ai-v2/export-excel', {
+        title: userQuestion.slice(0, 100),
+        sheets,
+      }, { responseType: 'blob' });
+      const blob = new Blob([res.data], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `${userQuestion.replace(/[^a-z0-9]+/gi, '-').toLowerCase().slice(0, 60) || 'report'}-${new Date().toISOString().slice(0, 10)}.xlsx`;
+      a.click();
+      URL.revokeObjectURL(url);
+    } catch (err: any) {
+      alert(`Excel export failed: ${err?.message || 'unknown'}`);
+    }
+  };
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
     if (e.key === 'Enter' && !e.shiftKey) {
@@ -109,144 +147,83 @@ export default function AIChatWidget({ pageContext }: { pageContext?: string }) 
   const saveConfig = async () => {
     setSavingConfig(true);
     try {
-      await api.put('/ai/config', {
-        provider: configForm.provider,
-        apiKey: configForm.apiKey,
-        model: configForm.model || undefined,
-        baseUrl: configForm.baseUrl || undefined,
-      });
+      await api.put('/ai/config', { provider: configForm.provider, apiKey: configForm.apiKey, model: configForm.model || undefined, baseUrl: configForm.baseUrl || undefined });
       setConfig({ configured: true, provider: configForm.provider, model: configForm.model });
       setShowConfig(false);
-    } catch {
-      alert('Failed to save AI config');
-    } finally {
-      setSavingConfig(false);
-    }
+    } catch { alert('Failed to save AI config'); } finally { setSavingConfig(false); }
   };
 
-  // Format markdown-like text simply
   const formatContent = (text: string) => {
     return text.split('\n').map((line, i) => {
-      if (line.startsWith('**') && line.endsWith('**')) {
-        return <p key={i} className="font-semibold">{line.slice(2, -2)}</p>;
-      }
-      if (line.startsWith('- ')) {
-        return <p key={i} className="ml-3">• {line.slice(2)}</p>;
-      }
+      if (line.startsWith('**') && line.endsWith('**')) return <p key={i} className="font-semibold">{line.slice(2, -2)}</p>;
+      if (line.startsWith('- ')) return <p key={i} className="ml-3">• {line.slice(2)}</p>;
       if (line.trim() === '') return <br key={i} />;
       return <p key={i}>{line}</p>;
     });
   };
 
+  const panelClass = expanded
+    ? 'fixed inset-6 z-50 bg-white border border-slate-200 shadow-2xl flex flex-col overflow-hidden'
+    : 'fixed bottom-6 right-6 z-50 w-[480px] h-[640px] bg-white border border-slate-200 shadow-2xl flex flex-col overflow-hidden';
+
   return (
     <>
-      {/* Floating Button */}
       {!open && (
-        <button
-          onClick={() => setOpen(true)}
-          className="fixed bottom-6 right-6 z-50 w-14 h-14 bg-blue-600 text-white rounded-full shadow-lg hover:bg-blue-700 flex items-center justify-center transition-all hover:scale-105"
-          title="AI Assistant"
-        >
-          <MessageSquare className="w-6 h-6" />
+        <button onClick={() => setOpen(true)} className="fixed bottom-6 right-6 z-50 w-14 h-14 bg-purple-600 text-white shadow-lg hover:bg-purple-700 flex items-center justify-center transition-all hover:scale-105" title="AI Reports & Assistant">
+          <Sparkles className="w-6 h-6" />
         </button>
       )}
 
-      {/* Chat Panel */}
       {open && (
-        <div className="fixed bottom-6 right-6 z-50 w-[400px] h-[560px] bg-white border border-slate-200 shadow-2xl flex flex-col overflow-hidden"
-          style={{ borderRadius: 0 }}>
-
+        <div className={panelClass} style={{ borderRadius: 0 }}>
           {/* Header */}
-          <div className="bg-slate-800 text-white px-4 py-3 flex items-center justify-between shrink-0">
+          <div className="bg-slate-800 text-white px-4 py-2.5 flex items-center justify-between shrink-0">
             <div className="flex items-center gap-2">
-              <Bot className="w-5 h-5" />
-              <div>
-                <span className="text-sm font-bold">AI Assistant</span>
-                {config?.configured && (
-                  <span className="text-[10px] text-slate-400 ml-2 uppercase">
-                    {messages.filter(m => m.provider).slice(-1)[0]?.provider || config.provider}
-                  </span>
-                )}
-              </div>
+              <Sparkles className="w-4 h-4 text-purple-400" />
+              <span className="text-sm font-bold tracking-wide uppercase">AI Reports</span>
+              <span className="text-[10px] text-slate-400">|</span>
+              <span className="text-[10px] text-slate-400">Live ERP data · Excel export</span>
             </div>
             <div className="flex items-center gap-1">
-              <button onClick={() => setShowConfig(!showConfig)} className="p-1.5 hover:bg-slate-700 rounded" title="AI Settings">
-                <Settings className="w-4 h-4" />
+              <button onClick={() => setExpanded(!expanded)} className="p-1.5 hover:bg-slate-700" title={expanded ? 'Compact' : 'Full screen'}>
+                <Maximize2 className="w-3.5 h-3.5" />
               </button>
-              <button onClick={() => setOpen(false)} className="p-1.5 hover:bg-slate-700 rounded" title="Close">
-                <Minimize2 className="w-4 h-4" />
+              <button onClick={() => setShowConfig(!showConfig)} className="p-1.5 hover:bg-slate-700" title="Settings">
+                <Settings className="w-3.5 h-3.5" />
+              </button>
+              <button onClick={() => setOpen(false)} className="p-1.5 hover:bg-slate-700" title="Minimize">
+                <Minimize2 className="w-3.5 h-3.5" />
               </button>
             </div>
           </div>
 
-          {/* Config Panel */}
+          {/* Config */}
           {showConfig && (
             <div className="p-4 bg-slate-50 border-b space-y-3 shrink-0">
-              <div className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">AI Provider Configuration</div>
-              <select
-                value={configForm.provider}
-                onChange={(e) => {
-                  const p = PROVIDERS.find(p => p.value === e.target.value);
-                  setConfigForm({ ...configForm, provider: e.target.value, model: p?.modelDefault || '' });
-                }}
-                className="w-full px-2.5 py-1.5 border border-slate-300 text-xs focus:outline-none focus:ring-1 focus:ring-slate-400"
-              >
+              <div className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">AI Provider</div>
+              <select value={configForm.provider} onChange={(e) => { const p = PROVIDERS.find(p => p.value === e.target.value); setConfigForm({ ...configForm, provider: e.target.value, model: p?.modelDefault || '' }); }} className="w-full px-2.5 py-1.5 border border-slate-300 text-xs">
                 {PROVIDERS.map(p => <option key={p.value} value={p.value}>{p.label}</option>)}
               </select>
-              {configForm.provider === 'openclaw' && (
-                <input
-                  type="text"
-                  placeholder="OpenClaw URL (e.g. https://openclaw-xxx.up.railway.app)"
-                  value={configForm.baseUrl}
-                  onChange={(e) => setConfigForm({ ...configForm, baseUrl: e.target.value })}
-                  className="w-full px-2.5 py-1.5 border border-slate-300 text-xs focus:outline-none focus:ring-1 focus:ring-slate-400"
-                />
-              )}
-              <input
-                type="password"
-                placeholder={PROVIDERS.find(p => p.value === configForm.provider)?.placeholder || 'API Key'}
-                value={configForm.apiKey}
-                onChange={(e) => setConfigForm({ ...configForm, apiKey: e.target.value })}
-                className="w-full px-2.5 py-1.5 border border-slate-300 text-xs focus:outline-none focus:ring-1 focus:ring-slate-400"
-              />
-              <input
-                type="text"
-                placeholder={`Model (default: ${PROVIDERS.find(p => p.value === configForm.provider)?.modelDefault})`}
-                value={configForm.model}
-                onChange={(e) => setConfigForm({ ...configForm, model: e.target.value })}
-                className="w-full px-2.5 py-1.5 border border-slate-300 text-xs focus:outline-none focus:ring-1 focus:ring-slate-400"
-              />
+              <input type="password" placeholder={PROVIDERS.find(p => p.value === configForm.provider)?.placeholder || 'API Key'} value={configForm.apiKey} onChange={(e) => setConfigForm({ ...configForm, apiKey: e.target.value })} className="w-full px-2.5 py-1.5 border border-slate-300 text-xs" />
+              <input type="text" placeholder={`Model (default: ${PROVIDERS.find(p => p.value === configForm.provider)?.modelDefault})`} value={configForm.model} onChange={(e) => setConfigForm({ ...configForm, model: e.target.value })} className="w-full px-2.5 py-1.5 border border-slate-300 text-xs" />
               <div className="flex gap-2">
-                <button onClick={saveConfig} disabled={!configForm.apiKey || savingConfig}
-                  className="px-3 py-1 bg-blue-600 text-white text-[11px] font-medium hover:bg-blue-700 disabled:opacity-50">
-                  {savingConfig ? 'Saving...' : 'Save'}
-                </button>
-                <button onClick={() => setShowConfig(false)}
-                  className="px-3 py-1 bg-white border border-slate-300 text-slate-600 text-[11px] font-medium hover:bg-slate-50">
-                  Cancel
-                </button>
+                <button onClick={saveConfig} disabled={!configForm.apiKey || savingConfig} className="px-3 py-1 bg-blue-600 text-white text-[11px] font-bold uppercase tracking-widest hover:bg-blue-700 disabled:opacity-50">{savingConfig ? 'Saving...' : 'Save'}</button>
+                <button onClick={() => setShowConfig(false)} className="px-3 py-1 bg-white border border-slate-300 text-slate-600 text-[11px] font-bold uppercase tracking-widest hover:bg-slate-50">Cancel</button>
               </div>
-              {config?.configured && (
-                <div className="text-[10px] text-slate-400">
-                  Current: {config.provider} ({config.keyHint})
-                </div>
-              )}
+              {config?.configured && <div className="text-[10px] text-slate-400">Current: {config.provider} ({config.keyHint})</div>}
             </div>
           )}
 
           {/* Messages */}
-          <div className="flex-1 overflow-y-auto p-4 space-y-4">
+          <div className="flex-1 overflow-y-auto p-4 space-y-3 bg-slate-50">
             {messages.length === 0 && !showConfig && (
-              <div className="text-center py-8">
-                <Bot className="w-10 h-10 text-slate-300 mx-auto mb-3" />
-                <p className="text-sm text-slate-500 font-medium">Ask me anything about your ERP data</p>
-                <p className="text-xs text-slate-400 mt-1">
-                  {pageContext ? `Context: ${pageContext}` : 'Production, sales, accounts, inventory...'}
-                </p>
-                <div className="mt-4 space-y-2">
+              <div className="text-center py-6">
+                <Sparkles className="w-10 h-10 text-purple-400 mx-auto mb-3" />
+                <p className="text-sm text-slate-700 font-bold uppercase tracking-wide">Ask anything about your ERP</p>
+                <p className="text-[11px] text-slate-500 mt-1">Live data · works offline of your memory · download as Excel</p>
+                <div className="mt-4 space-y-1.5">
                   {getSuggestions(pageContext).map((s, i) => (
-                    <button key={i} onClick={() => { setInput(s); inputRef.current?.focus(); }}
-                      className="block w-full text-left px-3 py-2 text-xs text-slate-600 bg-slate-50 hover:bg-blue-50 hover:text-blue-700 border border-slate-200 transition-colors">
+                    <button key={i} onClick={() => { setInput(s); inputRef.current?.focus(); }} className="block w-full text-left px-3 py-2 text-xs text-slate-700 bg-white hover:bg-purple-50 hover:text-purple-700 border border-slate-200 transition-colors">
                       {s}
                     </button>
                   ))}
@@ -254,41 +231,66 @@ export default function AIChatWidget({ pageContext }: { pageContext?: string }) 
               </div>
             )}
 
-            {messages.map((msg) => (
-              <div key={msg.id} className={`flex gap-2 ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}>
-                {msg.role === 'assistant' && (
-                  <div className="w-6 h-6 bg-slate-800 flex items-center justify-center shrink-0 mt-1">
-                    <Bot className="w-3.5 h-3.5 text-white" />
+            {messages.map((msg) => {
+              const datasets = msg.role === 'assistant' ? extractDatasets(msg.toolCalls) : [];
+              const totalRows = datasets.reduce((s, d) => s + d.rows.length, 0);
+              return (
+                <div key={msg.id} className={`flex gap-2 ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}>
+                  {msg.role === 'assistant' && (
+                    <div className="w-6 h-6 bg-slate-800 flex items-center justify-center shrink-0 mt-0.5">
+                      <Bot className="w-3.5 h-3.5 text-white" />
+                    </div>
+                  )}
+                  <div className={`max-w-[85%] ${msg.role === 'user' ? '' : 'flex-1'}`}>
+                    <div className={`px-3 py-2 text-xs leading-relaxed ${msg.role === 'user' ? 'bg-blue-600 text-white' : 'bg-white text-slate-800 border border-slate-200'}`}>
+                      {msg.role === 'assistant' ? formatContent(msg.content) : msg.content}
+                    </div>
+
+                    {/* Tool calls panel — transparency */}
+                    {msg.role === 'assistant' && msg.toolCalls && msg.toolCalls.length > 0 && (
+                      <div className="mt-1.5 bg-slate-100 border border-slate-200 px-2 py-1.5 text-[10px] text-slate-600">
+                        <div className="flex items-center gap-1 font-bold uppercase tracking-widest text-slate-500 mb-1">
+                          <Wrench className="w-2.5 h-2.5" /> {msg.toolCalls.length} tool{msg.toolCalls.length > 1 ? 's' : ''} called · {msg.turns} turn{(msg.turns || 0) > 1 ? 's' : ''}
+                        </div>
+                        {msg.toolCalls.map((tc, i) => (
+                          <div key={i} className="font-mono text-[10px] text-slate-600 truncate">
+                            <span className="text-purple-700 font-bold">{tc.toolId.split('.').pop()}</span>
+                            <span className="text-slate-400">({Object.entries(tc.args).map(([k, v]) => `${k}:${JSON.stringify(v)}`).join(', ')})</span>
+                            <span className="text-slate-400 ml-1">· {tc.durationMs}ms</span>
+                            {tc.error && <span className="text-red-600 ml-1">· error: {tc.error}</span>}
+                          </div>
+                        ))}
+                      </div>
+                    )}
+
+                    {/* Excel download button */}
+                    {msg.role === 'assistant' && datasets.length > 0 && (
+                      <button onClick={() => downloadExcel(msg)} className="mt-1.5 flex items-center gap-1.5 px-3 py-1.5 bg-emerald-600 text-white text-[11px] font-bold uppercase tracking-widest hover:bg-emerald-700">
+                        <Download className="w-3 h-3" /> Download Excel ({totalRows} rows · {datasets.length} sheet{datasets.length > 1 ? 's' : ''})
+                      </button>
+                    )}
+
+                    {msg.role === 'assistant' && msg.provider && (
+                      <div className="text-[9px] text-slate-400 mt-0.5 uppercase tracking-wider">via {msg.provider}</div>
+                    )}
                   </div>
-                )}
-                <div className={`max-w-[80%] px-3 py-2 text-xs leading-relaxed ${
-                  msg.role === 'user'
-                    ? 'bg-blue-600 text-white'
-                    : 'bg-slate-100 text-slate-700 border border-slate-200'
-                }`}>
-                  {msg.role === 'assistant' ? formatContent(msg.content) : msg.content}
-                {msg.role === 'assistant' && msg.provider && (
-                  <div className="text-[9px] text-slate-400 mt-1 uppercase tracking-wider text-right">
-                    via {msg.provider}
-                  </div>
-                )}
+                  {msg.role === 'user' && (
+                    <div className="w-6 h-6 bg-blue-600 flex items-center justify-center shrink-0 mt-0.5">
+                      <User className="w-3.5 h-3.5 text-white" />
+                    </div>
+                  )}
                 </div>
-                {msg.role === 'user' && (
-                  <div className="w-6 h-6 bg-blue-600 flex items-center justify-center shrink-0 mt-1">
-                    <User className="w-3.5 h-3.5 text-white" />
-                  </div>
-                )}
-              </div>
-            ))}
+              );
+            })}
 
             {loading && (
               <div className="flex gap-2 items-center">
                 <div className="w-6 h-6 bg-slate-800 flex items-center justify-center shrink-0">
                   <Bot className="w-3.5 h-3.5 text-white" />
                 </div>
-                <div className="bg-slate-100 border border-slate-200 px-3 py-2 flex items-center gap-2">
-                  <Loader2 className="w-3 h-3 animate-spin text-slate-500" />
-                  <span className="text-xs text-slate-500">Thinking...</span>
+                <div className="bg-white border border-slate-200 px-3 py-2 flex items-center gap-2">
+                  <Loader2 className="w-3 h-3 animate-spin text-purple-600" />
+                  <span className="text-xs text-slate-500">Thinking & querying ERP...</span>
                 </div>
               </div>
             )}
@@ -297,33 +299,13 @@ export default function AIChatWidget({ pageContext }: { pageContext?: string }) 
           </div>
 
           {/* Input */}
-          <div className="border-t border-slate-200 p-3 shrink-0">
-            {!config?.configured && !showConfig ? (
-              <button onClick={() => setShowConfig(true)}
-                className="w-full py-2 text-xs text-blue-600 bg-blue-50 border border-blue-200 hover:bg-blue-100">
-                Configure AI Provider to get started
+          <div className="border-t border-slate-200 p-3 shrink-0 bg-white">
+            <div className="flex gap-2">
+              <textarea ref={inputRef} value={input} onChange={(e) => setInput(e.target.value)} onKeyDown={handleKeyDown} placeholder="Ask anything — e.g. 'how many trucks of rice husk came from 5th to 9th'" rows={1} className="flex-1 px-3 py-2 border border-slate-300 text-xs resize-none focus:outline-none focus:ring-1 focus:ring-purple-500 max-h-24" style={{ minHeight: '36px' }} />
+              <button onClick={sendMessage} disabled={!input.trim() || loading} className="px-3 py-2 bg-purple-600 text-white hover:bg-purple-700 disabled:opacity-50 disabled:cursor-not-allowed">
+                <Send className="w-4 h-4" />
               </button>
-            ) : (
-              <div className="flex gap-2">
-                <textarea
-                  ref={inputRef}
-                  value={input}
-                  onChange={(e) => setInput(e.target.value)}
-                  onKeyDown={handleKeyDown}
-                  placeholder="Type a message..."
-                  rows={1}
-                  className="flex-1 px-3 py-2 border border-slate-300 text-xs resize-none focus:outline-none focus:ring-1 focus:ring-blue-500 max-h-20"
-                  style={{ minHeight: '36px' }}
-                />
-                <button
-                  onClick={sendMessage}
-                  disabled={!input.trim() || loading}
-                  className="px-3 py-2 bg-blue-600 text-white hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed"
-                >
-                  <Send className="w-4 h-4" />
-                </button>
-              </div>
-            )}
+            </div>
           </div>
         </div>
       )}
@@ -333,54 +315,18 @@ export default function AIChatWidget({ pageContext }: { pageContext?: string }) 
 
 function getSuggestions(context?: string): string[] {
   switch (context) {
-    case 'dashboard':
-      return [
-        'Summarize today\'s production',
-        'Compare this week vs last week',
-        'Which area needs attention?',
-      ];
-    case 'fermentation':
-      return [
-        'Which batches have low yield?',
-        'Average fermentation time this month?',
-        'Any batches with abnormal gravity?',
-      ];
-    case 'distillation':
-      return [
-        'Today\'s ethanol production summary',
-        'Average RS strength this week?',
-        'Tank-wise stock overview',
-      ];
-    case 'sales':
-    case 'invoices':
-      return [
-        'Pending invoices total',
-        'Which customers have overdue payments?',
-        'Sales trend this month',
-      ];
-    case 'procurement':
-      return [
-        'Open purchase orders',
-        'Vendor payment status',
-        'Materials with pending GRN',
-      ];
-    case 'inventory':
-      return [
-        'Items below reorder level',
-        'Total inventory value',
-        'Most used items this month',
-      ];
-    case 'accounts':
-      return [
-        'Trial balance summary',
-        'Pending receivables',
-        'Today\'s journal entries',
-      ];
-    default:
-      return [
-        'Summarize today\'s operations',
-        'Any pending tasks?',
-        'Production overview this week',
-      ];
+    case 'dashboard': return ['Total ethanol production this month', 'Outstanding payables > 5 lakhs', 'Trucks that came today'];
+    case 'fermentation': return ['Average fermentation time this month', 'Batches with low yield this week'];
+    case 'distillation': return ['Today\'s ethanol production summary', 'Average RS strength this week'];
+    case 'sales': case 'invoices': return ['Unpaid invoices total', 'Sales invoices this month', 'Top 5 customers by outstanding'];
+    case 'procurement': return ['Vendor outstanding > 1 lakh', 'GRNs received today', 'Coal trucks last week'];
+    case 'inventory': return ['Items below reorder level', 'Total inventory value'];
+    case 'accounts': return ['Trial balance summary', 'TDS payable balance', 'Cash in hand'];
+    default: return [
+      'Total ethanol production this month',
+      'How many trucks came today?',
+      'Outstanding to vendors > 5 lakhs',
+      'TDS payable balance',
+    ];
   }
 }
