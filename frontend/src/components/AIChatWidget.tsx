@@ -80,9 +80,51 @@ export default function AIChatWidget({ pageContext }: { pageContext?: string }) 
     if (open && !showConfig) setTimeout(() => inputRef.current?.focus(), 100);
   }, [open, showConfig]);
 
+  // Match phrases like "give me excel", "download", "export it", "as xlsx", "csv"
+  const isExcelRequest = (text: string): boolean => {
+    const t = text.toLowerCase().trim();
+    if (t.length > 80) return false; // long messages are new questions, not download requests
+    return /\b(excel|xlsx|xls|download|export|sheet|spreadsheet)\b/.test(t);
+  };
+
+  const lastAssistantWithData = (): Message | null => {
+    for (let i = messages.length - 1; i >= 0; i--) {
+      const m = messages[i];
+      if (m.role === 'assistant' && extractDatasets(m.toolCalls).length > 0) return m;
+    }
+    return null;
+  };
+
   const sendMessage = useCallback(async () => {
     const text = input.trim();
     if (!text || loading) return;
+
+    // Intercept "give me excel" / "download" / "export" → trigger Excel for the last answered message
+    if (isExcelRequest(text)) {
+      const src = lastAssistantWithData();
+      if (src) {
+        const userMsg: Message = { id: Date.now().toString(), role: 'user', content: text, timestamp: new Date() };
+        setMessages(prev => [...prev, userMsg]);
+        setInput('');
+        try {
+          await downloadExcel(src);
+          setMessages(prev => [...prev, {
+            id: (Date.now() + 1).toString(), role: 'assistant',
+            content: '✓ Excel downloaded. Ask another question or say "download" again for the same data.',
+            timestamp: new Date(),
+          }]);
+        } catch (err: any) {
+          setMessages(prev => [...prev, {
+            id: (Date.now() + 1).toString(), role: 'assistant',
+            content: `Excel export failed: ${err?.message || 'unknown'}`,
+            timestamp: new Date(),
+          }]);
+        }
+        return;
+      }
+      // No prior data — fall through to AI (maybe they're asking about Excel something)
+    }
+
     const userMsg: Message = { id: Date.now().toString(), role: 'user', content: text, timestamp: new Date() };
     const history = messages.map(m => ({ role: m.role, content: m.content }));
     setMessages(prev => [...prev, userMsg]);
@@ -263,11 +305,11 @@ export default function AIChatWidget({ pageContext }: { pageContext?: string }) 
                       </div>
                     )}
 
-                    {/* Excel download button */}
+                    {/* Excel download hint — no button auto-shown. User types "excel" / "download" to get it. */}
                     {msg.role === 'assistant' && datasets.length > 0 && (
-                      <button onClick={() => downloadExcel(msg)} className="mt-1.5 flex items-center gap-1.5 px-3 py-1.5 bg-emerald-600 text-white text-[11px] font-bold uppercase tracking-widest hover:bg-emerald-700">
-                        <Download className="w-3 h-3" /> Download Excel ({totalRows} rows · {datasets.length} sheet{datasets.length > 1 ? 's' : ''})
-                      </button>
+                      <div className="mt-1.5 text-[10px] text-slate-500 italic">
+                        {totalRows} rows available · type <span className="font-mono text-emerald-700 font-bold">"give me excel"</span> for download
+                      </div>
                     )}
 
                     {msg.role === 'assistant' && msg.provider && (

@@ -35,7 +35,17 @@ export const getTruckArrivals: AIFeature = {
       ];
     }
     if (vendorRaw) {
-      const vendorClause = { supplier: { contains: vendorRaw, mode: 'insensitive' as const } };
+      // Broad fuzzy match: search supplier, transporter, driver. Also try first
+      // significant word so "Irfan Transporter" matches "Irfan khan".
+      const tokens = vendorRaw.split(/\s+/).filter(t => t.length >= 3 && !/^(transport|transporter|pvt|ltd|inc|and|&)$/i.test(t));
+      const searchTokens = tokens.length > 0 ? tokens : [vendorRaw];
+      const vendorClause = {
+        OR: searchTokens.flatMap(tok => [
+          { supplier: { contains: tok, mode: 'insensitive' as const } },
+          { transporterName: { contains: tok, mode: 'insensitive' as const } },
+          { driverName: { contains: tok, mode: 'insensitive' as const } },
+        ]),
+      };
       where.AND = where.AND ? [...where.AND, vendorClause] : [vendorClause];
     }
     if (divRaw) {
