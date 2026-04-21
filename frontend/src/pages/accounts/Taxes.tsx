@@ -195,9 +195,14 @@ function TDSTab({ from, to }: { from: string; to: string }) {
           <div className="text-[9px] text-slate-400 mt-0.5">at payment stage</div>
         </div>
         <div className="bg-white px-4 py-3 border-r border-slate-300 border-l-4 border-l-red-500">
-          <div className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">TDS Payable (Ledger)</div>
+          <div className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">TDS Payable (Period)</div>
           <div className="text-xl font-bold text-red-700 mt-1 font-mono tabular-nums">{fmtCurrency(data.tdsPayableBalance)}</div>
-          <div className="text-[9px] text-slate-400 mt-0.5">all-time, owed to govt</div>
+          <div className="text-[9px] text-slate-400 mt-0.5">
+            net ledger movement in range
+            {data.tdsPayableAllTime !== undefined && data.tdsPayableAllTime !== data.tdsPayableBalance && (
+              <> · all-time: <span className="font-mono">{fmtCurrency(data.tdsPayableAllTime)}</span></>
+            )}
+          </div>
         </div>
         <div className="bg-white px-4 py-3 border-r border-slate-300 border-l-4 border-l-amber-500">
           <div className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Projected (from POs)</div>
@@ -392,9 +397,14 @@ function TCSTab({ from, to }: { from: string; to: string }) {
           <div className="text-[9px] text-slate-400 mt-0.5">u/s 206C — scrap, high-value</div>
         </div>
         <div className="bg-white px-4 py-3 border-r border-slate-300 border-l-4 border-l-red-500">
-          <div className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">TCS Payable (Ledger)</div>
+          <div className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">TCS Payable (Period)</div>
           <div className="text-xl font-bold text-red-700 mt-1 font-mono tabular-nums">{fmtCurrency(data.tcsPayableBalance)}</div>
-          <div className="text-[9px] text-slate-400 mt-0.5">all-time, owed to govt</div>
+          <div className="text-[9px] text-slate-400 mt-0.5">
+            net ledger movement in range
+            {data.tcsPayableAllTime !== undefined && data.tcsPayableAllTime !== data.tcsPayableBalance && (
+              <> · all-time: <span className="font-mono">{fmtCurrency(data.tcsPayableAllTime)}</span></>
+            )}
+          </div>
         </div>
         <div className="bg-white px-4 py-3 border-l-4 border-l-emerald-500">
           <div className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Invoices Count</div>

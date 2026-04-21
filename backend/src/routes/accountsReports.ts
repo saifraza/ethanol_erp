@@ -804,8 +804,22 @@ router.get('/tds-summary', asyncHandler(async (req: AuthRequest, res: Response) 
   for (const vp of vendorPayments) { const q = getQuarter(vp.paymentDate); if (!quarterTotals[q]) quarterTotals[q] = { quarter: q, totalTds: 0, count: 0 }; quarterTotals[q].totalTds += vp.tdsDeducted; quarterTotals[q].count++; }
   for (const cp of contractorPayments) { const q = getQuarter(cp.paymentDate); if (!quarterTotals[q]) quarterTotals[q] = { quarter: q, totalTds: 0, count: 0 }; quarterTotals[q].totalTds += cp.tdsDeducted; quarterTotals[q].count++; }
   const tdsAccount = await prisma.account.findFirst({ where: { code: ACCOUNT_CODES.TDS_PAYABLE }, select: { id: true } });
-  let tdsPayableBalance = 0;
-  if (tdsAccount) { const agg = await prisma.journalLine.aggregate({ where: { accountId: tdsAccount.id }, _sum: { debit: true, credit: true } }); tdsPayableBalance = (agg._sum.credit || 0) - (agg._sum.debit || 0); }
+  let tdsPayableBalance = 0;      // Net movement WITHIN selected period (period scoped)
+  let tdsPayableAllTime = 0;      // Full all-time carry-forward (what we currently owe govt)
+  if (tdsAccount) {
+    const [periodAgg, allTimeAgg] = await Promise.all([
+      prisma.journalLine.aggregate({
+        where: { accountId: tdsAccount.id, journal: { date: dateFilter } },
+        _sum: { debit: true, credit: true },
+      }),
+      prisma.journalLine.aggregate({
+        where: { accountId: tdsAccount.id, journal: { date: { lte: dateFilter.lte } } },
+        _sum: { debit: true, credit: true },
+      }),
+    ]);
+    tdsPayableBalance = (periodAgg._sum.credit || 0) - (periodAgg._sum.debit || 0);
+    tdsPayableAllTime = (allTimeAgg._sum.credit || 0) - (allTimeAgg._sum.debit || 0);
+  }
   const round = (v: number): number => Math.round(v * 100) / 100;
   const deductees: Array<{
     name: string; pan: string | null; section: string; date: Date;
@@ -885,6 +899,7 @@ router.get('/tds-summary', asyncHandler(async (req: AuthRequest, res: Response) 
     byQuarter: Object.values(quarterTotals).map(q => ({ ...q, totalTds: round(q.totalTds) })),
     deductees: deductees.sort((a, b) => b.date.getTime() - a.date.getTime()),
     tdsPayableBalance: round(tdsPayableBalance),
+    tdsPayableAllTime: round(tdsPayableAllTime),
     totalDeducted: round(deductees.reduce((s, d) => s + d.tdsAmount, 0)),
     projection,
     projectionTotal: round(projection.reduce((s, p) => s + p.expectedTds, 0)),
@@ -931,12 +946,17 @@ router.get('/tcs-summary', asyncHandler(async (req: AuthRequest, res: Response) 
     quarterTotals[q].count++;
   }
 
-  // Ledger balance
+  // Ledger balance — period-scoped + all-time as-of-to-date
   const tcsAccount = await prisma.account.findFirst({ where: { code: ACCOUNT_CODES.TCS_PAYABLE_206C }, select: { id: true } });
   let tcsPayableBalance = 0;
+  let tcsPayableAllTime = 0;
   if (tcsAccount) {
-    const agg = await prisma.journalLine.aggregate({ where: { accountId: tcsAccount.id }, _sum: { debit: true, credit: true } });
-    tcsPayableBalance = (agg._sum.credit || 0) - (agg._sum.debit || 0);
+    const [periodAgg, allTimeAgg] = await Promise.all([
+      prisma.journalLine.aggregate({ where: { accountId: tcsAccount.id, journal: { date: dateFilter } }, _sum: { debit: true, credit: true } }),
+      prisma.journalLine.aggregate({ where: { accountId: tcsAccount.id, journal: { date: { lte: dateFilter.lte } } }, _sum: { debit: true, credit: true } }),
+    ]);
+    tcsPayableBalance = (periodAgg._sum.credit || 0) - (periodAgg._sum.debit || 0);
+    tcsPayableAllTime = (allTimeAgg._sum.credit || 0) - (allTimeAgg._sum.debit || 0);
   }
 
   res.json({
@@ -956,6 +976,7 @@ router.get('/tcs-summary', asyncHandler(async (req: AuthRequest, res: Response) 
       paidAmount: round(inv.paidAmount),
     })),
     tcsPayableBalance: round(tcsPayableBalance),
+    tcsPayableAllTime: round(tcsPayableAllTime),
     totalCollected: round(invoices.reduce((s, i) => s + i.tcsAmount, 0)),
     invoiceCount: invoices.length,
   });
