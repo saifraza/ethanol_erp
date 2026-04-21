@@ -74,6 +74,8 @@ const STATUS_COLORS: Record<string, string> = {
   CANCELLED: 'border-red-400 bg-red-50 text-red-700',
 };
 
+const todayStr = () => new Date().toISOString().slice(0, 10);
+
 const emptyForm = {
   payeeName: '',
   amount: '',
@@ -84,7 +86,21 @@ const emptyForm = {
   type: 'PAYMENT',
   payeePhone: '',
   paymentRef: '',
+  date: todayStr(),
+  remarks: '',
 };
+
+const QUICK_AMOUNTS = [500, 1000, 2000, 5000, 10000, 20000];
+const CASH_LIMIT = 20000; // Income Tax Act Section 40A(3) — cash payments > 20k disallowed
+
+type PayeeKind = 'CONTRACTOR' | 'VENDOR' | 'EMPLOYEE' | 'OTHER';
+interface PayeeOption {
+  id: string;
+  kind: PayeeKind;
+  name: string;
+  phone?: string | null;
+  subtitle?: string;
+}
 
 export default function CashVouchers() {
   const [vouchers, setVouchers] = useState<CashVoucher[]>([]);
@@ -104,8 +120,12 @@ export default function CashVouchers() {
   const [showCancelConfirm, setShowCancelConfirm] = useState(false);
   const [selectedVoucher, setSelectedVoucher] = useState<CashVoucher | null>(null);
 
-  // Contractors for payee autocomplete
+  // Contractors for payee autocomplete (legacy variable name retained for filter logic below)
   const [contractors, setContractors] = useState<{ id: string; name: string; phone?: string | null }[]>([]);
+  // Unified payee options — contractors + vendors + employees merged
+  const [payeeOptions, setPayeeOptions] = useState<PayeeOption[]>([]);
+  const [payeeSearch, setPayeeSearch] = useState('');
+  const [payeeKindFilter, setPayeeKindFilter] = useState<'ALL' | PayeeKind>('ALL');
 
   // Client-side purpose bucket filter (Fuel/RM/Contractor) — keyword based since
   // CashVoucher has no FK to vendor/contractor; we infer from category + purpose text.
@@ -155,32 +175,35 @@ export default function CashVouchers() {
 
   useEffect(() => { fetchPendingPOs(); }, [fetchPendingPOs]);
 
-  // Fetch contractors for payee picker — from BOTH the Contractor master
-  // and the Vendor master (categories starting with CONTRACTOR_ or labour/service).
-  // Keeps the dropdown useful when all "contractors" are actually vendors.
+  // Unified payee picker — pulls Contractors + Vendors + Employees in parallel.
+  // Users then narrow by kind (ALL / CONTRACTOR / VENDOR / EMPLOYEE) + search text.
   useEffect(() => {
-    const CONTRACTOR_VENDOR_CATS = ['CONTRACTOR_CIVIL', 'CONTRACTOR_LABOUR', 'CONTRACTOR_ELECTRICAL', 'CONTRACTOR_MECHANICAL', 'CONTRACTOR', 'LABOUR', 'SERVICE'];
     Promise.all([
       api.get('/contractors', { params: { active: 'true' } }).catch(() => ({ data: { contractors: [] } })),
       api.get('/vendors', { params: { isActive: 'true' } }).catch(() => ({ data: { vendors: [] } })),
-    ]).then(([cRes, vRes]) => {
+      api.get('/employees', { params: { isActive: 'true' } }).catch(() => ({ data: { employees: [] } })),
+    ]).then(([cRes, vRes, eRes]) => {
       const cList = cRes.data?.contractors ?? cRes.data ?? [];
       const vList = vRes.data?.vendors ?? vRes.data ?? [];
-      const contractorRows: { id: string; name: string; phone?: string | null }[] = Array.isArray(cList)
-        ? cList.map((c: any) => ({ id: `C:${c.id}`, name: c.name, phone: c.phone || null }))
-        : [];
-      const vendorRows: { id: string; name: string; phone?: string | null }[] = Array.isArray(vList)
-        ? vList
-            .filter((v: any) => {
-              const cat = (v.category || '').toUpperCase();
-              return CONTRACTOR_VENDOR_CATS.includes(cat) || cat.startsWith('CONTRACTOR');
-            })
-            .map((v: any) => ({ id: `V:${v.id}`, name: `${v.name}  [${v.category || 'VENDOR'}]`, phone: v.phone || null }))
-        : [];
-      // Contractor master first (canonical), then vendor-as-contractor rows
-      setContractors([...contractorRows, ...vendorRows]);
+      const eList = eRes.data?.employees ?? eRes.data ?? [];
+      const opts: PayeeOption[] = [];
+      if (Array.isArray(cList)) for (const c of cList) opts.push({ id: `C:${c.id}`, kind: 'CONTRACTOR', name: c.name, phone: c.phone || null, subtitle: c.gstin || undefined });
+      if (Array.isArray(vList)) for (const v of vList) opts.push({ id: `V:${v.id}`, kind: 'VENDOR', name: v.name, phone: v.phone || null, subtitle: v.category || undefined });
+      if (Array.isArray(eList)) for (const e of eList) opts.push({ id: `E:${e.id}`, kind: 'EMPLOYEE', name: `${e.firstName || ''} ${e.lastName || ''}`.trim() || e.name || '—', phone: e.phone || null, subtitle: e.empCode || e.designation?.title || undefined });
+      setPayeeOptions(opts);
+      // Legacy `contractors` state still used below for the (now-removed) old dropdown — kept as no-op set
+      setContractors(opts.filter(o => o.kind === 'CONTRACTOR' || o.kind === 'VENDOR').map(o => ({ id: o.id, name: o.name, phone: o.phone || null })));
     });
   }, []);
+
+  // Filtered payee options for the search dropdown inside the modal
+  const filteredPayeeOptions = useMemo(() => {
+    const q = payeeSearch.trim().toLowerCase();
+    return payeeOptions
+      .filter(o => payeeKindFilter === 'ALL' || o.kind === payeeKindFilter)
+      .filter(o => !q || o.name.toLowerCase().includes(q) || (o.phone || '').includes(q) || (o.subtitle || '').toLowerCase().includes(q))
+      .slice(0, 50);
+  }, [payeeOptions, payeeKindFilter, payeeSearch]);
 
   // Filtered pending POs by purpose chip
   const filteredPendingPOs = useMemo(() => {
@@ -276,9 +299,12 @@ export default function CashVouchers() {
         type: form.type,
         payeePhone: form.payeePhone.trim() || null,
         paymentRef: form.paymentRef.trim() || null,
+        date: form.date || undefined,
       });
       setShowCreateModal(false);
-      setForm(emptyForm);
+      setForm({ ...emptyForm, date: todayStr() });
+      setPayeeSearch('');
+      setPayeeKindFilter('ALL');
       fetchData();
       fetchPendingPOs();
     } catch (err) {
@@ -637,51 +663,104 @@ export default function CashVouchers() {
       {/* ========== Create Voucher Modal ========== */}
       {showCreateModal && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-          <div className="bg-white shadow-2xl w-full max-w-lg">
+          <div className="bg-white shadow-2xl w-full max-w-3xl max-h-[92vh] overflow-auto">
             {/* Modal Header */}
-            <div className="bg-slate-800 text-white px-4 py-2.5 flex items-center justify-between">
-              <h2 className="text-xs font-bold uppercase tracking-widest">New Cash Voucher</h2>
-              <button onClick={() => setShowCreateModal(false)} className="text-slate-400 hover:text-white text-sm">X</button>
+            <div className="bg-slate-800 text-white px-4 py-2.5 flex items-center justify-between sticky top-0 z-10">
+              <div className="flex items-center gap-3">
+                <h2 className="text-xs font-bold uppercase tracking-widest">New Cash Voucher</h2>
+                <span className="text-[10px] text-slate-400">|</span>
+                <span className="text-[10px] text-slate-400">{form.type === 'PAYMENT' ? 'paying out' : form.type === 'RECEIPT' ? 'receiving' : form.type === 'ADVANCE' ? 'advance to payee' : 'refund'} · {form.paymentMode}</span>
+              </div>
+              <button onClick={() => setShowCreateModal(false)} className="text-slate-400 hover:text-white text-base px-1">✕</button>
             </div>
 
-            {/* Modal Body */}
-            <div className="p-4 space-y-3">
-              {/* Type */}
-              <div>
-                <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-0.5 block">Voucher Type</label>
-                <select
-                  value={form.type}
-                  onChange={(e) => setForm({ ...form, type: e.target.value })}
-                  className="w-full border border-slate-300 px-2.5 py-1.5 text-xs focus:outline-none focus:ring-1 focus:ring-slate-400"
+            {/* Type chip strip */}
+            <div className="bg-slate-100 border-b border-slate-300 px-4 py-2 flex items-center gap-1">
+              {TYPES.map((t) => (
+                <button
+                  key={t.value}
+                  type="button"
+                  onClick={() => setForm({ ...form, type: t.value })}
+                  className={`px-3 py-1 text-[11px] font-bold uppercase tracking-widest border ${
+                    form.type === t.value ? 'bg-slate-800 text-white border-slate-800' : 'bg-white text-slate-600 border-slate-300 hover:bg-slate-50'
+                  }`}
                 >
-                  {TYPES.map((t) => (
-                    <option key={t.value} value={t.value}>{t.label}</option>
-                  ))}
-                </select>
+                  {t.label}
+                </button>
+              ))}
+            </div>
+
+            {/* Cash > 20k warning (income tax Section 40A(3)) */}
+            {Number(form.amount) > CASH_LIMIT && form.paymentMode === 'CASH' && (
+              <div className="bg-amber-50 border-b border-amber-300 px-4 py-2 text-[11px] text-amber-900">
+                <strong>⚠ Section 40A(3):</strong> Cash payments over ₹{CASH_LIMIT.toLocaleString('en-IN')} to a single payee in one day are disallowed as expense. Split into multiple days or use Bank Transfer / UPI.
               </div>
+            )}
 
-              {/* Pick from Contractor (optional) */}
-              {contractors.length > 0 && (
-                <div>
-                  <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-0.5 block">Pick Contractor (optional)</label>
-                  <select
-                    value=""
-                    onChange={(e) => {
-                      const c = contractors.find(x => x.id === e.target.value);
-                      if (c) setForm({ ...form, payeeName: c.name, payeePhone: c.phone || '' });
-                    }}
-                    className="w-full border border-slate-300 px-2.5 py-1.5 text-xs focus:outline-none focus:ring-1 focus:ring-slate-400"
-                  >
-                    <option value="">-- Select contractor to auto-fill --</option>
-                    {contractors.map(c => (
-                      <option key={c.id} value={c.id}>{c.name}</option>
+            {/* Modal Body — 2-column grid */}
+            <div className="p-4 grid grid-cols-1 md:grid-cols-2 gap-4">
+              {/* LEFT — Payee */}
+              <div className="space-y-3">
+                <div className="border border-slate-300 bg-slate-50 px-3 py-2">
+                  <div className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-1">Who are you paying?</div>
+                  {/* Kind filter pills */}
+                  <div className="flex gap-0 mb-2">
+                    {(['ALL', 'CONTRACTOR', 'VENDOR', 'EMPLOYEE', 'OTHER'] as const).map((k, i) => (
+                      <button
+                        key={k}
+                        type="button"
+                        onClick={() => { setPayeeKindFilter(k); if (k === 'OTHER') { setForm(f => ({ ...f, payeeName: '' })); setPayeeSearch(''); } }}
+                        className={`px-2 py-0.5 text-[10px] font-bold uppercase tracking-widest border ${i > 0 ? '-ml-px' : ''} ${
+                          payeeKindFilter === k ? 'bg-slate-800 text-white border-slate-800' : 'bg-white text-slate-600 border-slate-300 hover:bg-slate-50'
+                        }`}
+                      >
+                        {k === 'ALL' ? 'All' : k === 'OTHER' ? 'Other (typed)' : k.charAt(0) + k.slice(1).toLowerCase()}
+                      </button>
                     ))}
-                  </select>
+                  </div>
+                  {/* Search + autocomplete list */}
+                  {payeeKindFilter !== 'OTHER' ? (
+                    <>
+                      <input
+                        type="text"
+                        value={payeeSearch}
+                        onChange={(e) => setPayeeSearch(e.target.value)}
+                        placeholder="Search payee — type name / phone / vendor code..."
+                        className="w-full border border-slate-300 px-2.5 py-1.5 text-xs focus:outline-none focus:ring-1 focus:ring-slate-400"
+                      />
+                      {payeeSearch.trim().length > 0 && filteredPayeeOptions.length > 0 && (
+                        <div className="mt-1 max-h-40 overflow-auto border border-slate-300 bg-white">
+                          {filteredPayeeOptions.slice(0, 20).map((o) => (
+                            <button
+                              key={o.id}
+                              type="button"
+                              onClick={() => {
+                                setForm({ ...form, payeeName: o.name, payeePhone: o.phone || '' });
+                                setPayeeSearch(o.name);
+                              }}
+                              className="w-full text-left px-2 py-1 text-[11px] hover:bg-blue-50 border-b border-slate-100 last:border-b-0 flex items-center justify-between gap-2"
+                            >
+                              <div className="flex-1 min-w-0">
+                                <div className="font-medium text-slate-800 truncate">{o.name}</div>
+                                {(o.subtitle || o.phone) && <div className="text-[10px] text-slate-500 truncate">{[o.subtitle, o.phone].filter(Boolean).join(' · ')}</div>}
+                              </div>
+                              <span className={`text-[9px] font-bold uppercase px-1 py-0.5 border flex-shrink-0 ${
+                                o.kind === 'CONTRACTOR' ? 'border-amber-300 bg-amber-50 text-amber-700' :
+                                o.kind === 'VENDOR' ? 'border-blue-300 bg-blue-50 text-blue-700' :
+                                'border-emerald-300 bg-emerald-50 text-emerald-700'
+                              }`}>{o.kind.slice(0, 3)}</span>
+                            </button>
+                          ))}
+                        </div>
+                      )}
+                      {payeeSearch.trim().length > 0 && filteredPayeeOptions.length === 0 && (
+                        <div className="mt-1 text-[10px] text-slate-500 italic">No match. Switch to "Other (typed)" to enter manually.</div>
+                      )}
+                    </>
+                  ) : null}
                 </div>
-              )}
 
-              {/* Payee + Phone */}
-              <div className="grid grid-cols-2 gap-3">
+                {/* Payee Name (always editable — shows what was picked OR typed) */}
                 <div>
                   <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-0.5 block">Payee Name *</label>
                   <input
@@ -702,62 +781,7 @@ export default function CashVouchers() {
                     className="w-full border border-slate-300 px-2.5 py-1.5 text-xs focus:outline-none focus:ring-1 focus:ring-slate-400"
                   />
                 </div>
-              </div>
 
-              {/* Amount + Mode */}
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-0.5 block">Amount (INR) *</label>
-                  <input
-                    type="number"
-                    value={form.amount}
-                    onChange={(e) => setForm({ ...form, amount: e.target.value })}
-                    placeholder="0.00"
-                    min="0"
-                    step="0.01"
-                    className="w-full border border-slate-300 px-2.5 py-1.5 text-xs focus:outline-none focus:ring-1 focus:ring-slate-400 font-mono"
-                  />
-                </div>
-                <div>
-                  <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-0.5 block">Payment Mode</label>
-                  <select
-                    value={form.paymentMode}
-                    onChange={(e) => setForm({ ...form, paymentMode: e.target.value })}
-                    className="w-full border border-slate-300 px-2.5 py-1.5 text-xs focus:outline-none focus:ring-1 focus:ring-slate-400"
-                  >
-                    {PAYMENT_MODES.map((m) => (
-                      <option key={m.value} value={m.value}>{m.label}</option>
-                    ))}
-                  </select>
-                </div>
-              </div>
-
-              {/* Purpose */}
-              <div>
-                <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-0.5 block">Purpose *</label>
-                <input
-                  type="text"
-                  value={form.purpose}
-                  onChange={(e) => setForm({ ...form, purpose: e.target.value })}
-                  placeholder="e.g. Purchase of cleaning supplies"
-                  className="w-full border border-slate-300 px-2.5 py-1.5 text-xs focus:outline-none focus:ring-1 focus:ring-slate-400"
-                />
-              </div>
-
-              {/* Category + Authorized By */}
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-0.5 block">Category</label>
-                  <select
-                    value={form.category}
-                    onChange={(e) => setForm({ ...form, category: e.target.value })}
-                    className="w-full border border-slate-300 px-2.5 py-1.5 text-xs focus:outline-none focus:ring-1 focus:ring-slate-400"
-                  >
-                    {CATEGORIES.map((c) => (
-                      <option key={c.value} value={c.value}>{c.label}</option>
-                    ))}
-                  </select>
-                </div>
                 <div>
                   <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-0.5 block">Authorized By *</label>
                   <input
@@ -770,34 +794,139 @@ export default function CashVouchers() {
                 </div>
               </div>
 
-              {/* Payment Ref */}
-              <div>
-                <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-0.5 block">Payment Reference</label>
-                <input
-                  type="text"
-                  value={form.paymentRef}
-                  onChange={(e) => setForm({ ...form, paymentRef: e.target.value })}
-                  placeholder="Cheque no. / UPI ref (optional)"
-                  className="w-full border border-slate-300 px-2.5 py-1.5 text-xs focus:outline-none focus:ring-1 focus:ring-slate-400"
-                />
+              {/* RIGHT — Amount + details */}
+              <div className="space-y-3">
+                {/* Amount + quick pills */}
+                <div>
+                  <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-0.5 block">Amount (INR) *</label>
+                  <input
+                    type="number"
+                    value={form.amount}
+                    onChange={(e) => setForm({ ...form, amount: e.target.value })}
+                    placeholder="0.00"
+                    min="0"
+                    step="0.01"
+                    className={`w-full border px-2.5 py-2 text-base font-mono font-bold text-slate-800 focus:outline-none focus:ring-1 ${
+                      Number(form.amount) > CASH_LIMIT && form.paymentMode === 'CASH'
+                        ? 'border-amber-400 focus:ring-amber-400 bg-amber-50'
+                        : 'border-slate-300 focus:ring-slate-400'
+                    }`}
+                  />
+                  <div className="flex flex-wrap gap-1 mt-1.5">
+                    {QUICK_AMOUNTS.map(a => (
+                      <button
+                        key={a}
+                        type="button"
+                        onClick={() => setForm({ ...form, amount: String(a) })}
+                        className="px-2 py-0.5 text-[10px] font-bold border border-slate-300 bg-white text-slate-600 hover:bg-slate-100 font-mono"
+                      >
+                        ₹{a.toLocaleString('en-IN')}
+                      </button>
+                    ))}
+                    <button
+                      type="button"
+                      onClick={() => setForm({ ...form, amount: '' })}
+                      className="px-2 py-0.5 text-[10px] font-bold border border-slate-300 bg-white text-red-600 hover:bg-red-50"
+                    >
+                      Clear
+                    </button>
+                  </div>
+                </div>
+
+                {/* Date + Payment Mode */}
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-0.5 block">Date *</label>
+                    <input
+                      type="date"
+                      value={form.date}
+                      onChange={(e) => setForm({ ...form, date: e.target.value })}
+                      max={todayStr()}
+                      className="w-full border border-slate-300 px-2.5 py-1.5 text-xs focus:outline-none focus:ring-1 focus:ring-slate-400"
+                    />
+                  </div>
+                  <div>
+                    <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-0.5 block">Mode</label>
+                    <select
+                      value={form.paymentMode}
+                      onChange={(e) => setForm({ ...form, paymentMode: e.target.value })}
+                      className="w-full border border-slate-300 px-2.5 py-1.5 text-xs focus:outline-none focus:ring-1 focus:ring-slate-400"
+                    >
+                      {PAYMENT_MODES.map((m) => (
+                        <option key={m.value} value={m.value}>{m.label}</option>
+                      ))}
+                    </select>
+                  </div>
+                </div>
+
+                {/* Category */}
+                <div>
+                  <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-0.5 block">Category</label>
+                  <select
+                    value={form.category}
+                    onChange={(e) => setForm({ ...form, category: e.target.value })}
+                    className="w-full border border-slate-300 px-2.5 py-1.5 text-xs focus:outline-none focus:ring-1 focus:ring-slate-400"
+                  >
+                    {CATEGORIES.map((c) => (
+                      <option key={c.value} value={c.value}>{c.label}</option>
+                    ))}
+                  </select>
+                </div>
+
+                {/* Purpose */}
+                <div>
+                  <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-0.5 block">Purpose *</label>
+                  <input
+                    type="text"
+                    value={form.purpose}
+                    onChange={(e) => setForm({ ...form, purpose: e.target.value })}
+                    placeholder="e.g. Civil repair labour 3 days"
+                    className="w-full border border-slate-300 px-2.5 py-1.5 text-xs focus:outline-none focus:ring-1 focus:ring-slate-400"
+                  />
+                </div>
+
+                {/* Payment Ref */}
+                <div>
+                  <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-0.5 block">
+                    Payment Reference
+                    {form.paymentMode === 'UPI' && <span className="text-blue-600 normal-case font-normal ml-1">(UPI ref)</span>}
+                    {form.paymentMode === 'BANK_TRANSFER' && <span className="text-blue-600 normal-case font-normal ml-1">(UTR / Cheque)</span>}
+                  </label>
+                  <input
+                    type="text"
+                    value={form.paymentRef}
+                    onChange={(e) => setForm({ ...form, paymentRef: e.target.value })}
+                    placeholder={form.paymentMode === 'CASH' ? 'Receipt no. (optional)' : form.paymentMode === 'UPI' ? 'UPI transaction id' : 'UTR / cheque no'}
+                    className="w-full border border-slate-300 px-2.5 py-1.5 text-xs focus:outline-none focus:ring-1 focus:ring-slate-400"
+                  />
+                </div>
               </div>
             </div>
 
             {/* Modal Footer */}
-            <div className="border-t border-slate-200 px-4 py-3 flex items-center justify-end gap-2">
-              <button
-                onClick={() => setShowCreateModal(false)}
-                className="px-3 py-1 bg-white border border-slate-300 text-slate-600 text-[11px] font-medium hover:bg-slate-50"
-              >
-                Cancel
-              </button>
-              <button
-                onClick={handleCreate}
-                disabled={submitting || !form.payeeName.trim() || !form.amount || !form.purpose.trim() || !form.authorizedBy.trim()}
-                className="px-3 py-1 bg-blue-600 text-white text-[11px] font-medium hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed"
-              >
-                {submitting ? 'Creating...' : 'Create Voucher'}
-              </button>
+            <div className="border-t border-slate-200 px-4 py-3 flex items-center justify-between gap-2 sticky bottom-0 bg-white">
+              <div className="text-[11px] text-slate-600">
+                {form.amount && form.payeeName ? (
+                  <>Paying <strong className="text-slate-800">{fmtCurrency(Number(form.amount) || 0)}</strong> to <strong className="text-slate-800">{form.payeeName}</strong> via {form.paymentMode.replace('_', ' ')}</>
+                ) : (
+                  <span className="text-slate-400">Fill payee + amount to preview</span>
+                )}
+              </div>
+              <div className="flex gap-2">
+                <button
+                  onClick={() => setShowCreateModal(false)}
+                  className="px-3 py-1.5 bg-white border border-slate-300 text-slate-600 text-[11px] font-bold uppercase tracking-widest hover:bg-slate-50"
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={handleCreate}
+                  disabled={submitting || !form.payeeName.trim() || !form.amount || !form.purpose.trim() || !form.authorizedBy.trim()}
+                  className="px-4 py-1.5 bg-blue-600 text-white text-[11px] font-bold uppercase tracking-widest hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  {submitting ? 'Creating...' : 'Create Voucher'}
+                </button>
+              </div>
             </div>
           </div>
         </div>
