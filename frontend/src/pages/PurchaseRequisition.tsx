@@ -33,6 +33,18 @@ const STATUS_COLORS: Record<string, string> = {
 interface InvItem { id: string; name: string; code: string; category: string; unit: string; currentStock: number; minStock: number; costPerUnit: number; supplier: string | null; }
 interface Vendor { id: string; name: string; email: string | null; phone: string | null; contactPerson?: string | null; }
 
+interface IndentLine {
+  id: string;
+  lineNo: number;
+  itemName: string;
+  inventoryItemId: string | null;
+  quantity: number;
+  unit: string;
+  estimatedCost: number;
+  remarks: string | null;
+  inventoryItem?: { id: string; name: string; code: string; unit: string; currentStock: number } | null;
+}
+
 interface Quote {
   id: string;
   vendorId: string;
@@ -64,6 +76,7 @@ interface PR {
   vendor: Pick<Vendor, 'id' | 'name' | 'email' | 'phone'> | null;
   vendorRate: number | null;
   quotes: Quote[];
+  lines: IndentLine[];
 }
 
 interface ItemHistory {
@@ -108,14 +121,21 @@ export default function PurchaseRequisition() {
   const [expanded, setExpanded] = useState<string | null>(null);
 
   // ── Create-indent form ──
+  // Header = shared context for the whole indent (one vendor later will quote on ALL lines)
+  // Lines = the individual items being requested
+  type NewLine = { itemName: string; inventoryItemId: string; quantity: string; unit: string; estimatedCost: string; remarks: string; _itemQuery?: string };
+  const blankLine = (): NewLine => ({ itemName: '', inventoryItemId: '', quantity: '1', unit: 'nos', estimatedCost: '', remarks: '', _itemQuery: '' });
   const [form, setForm] = useState({
-    itemName: '', quantity: '1', unit: 'nos', estimatedCost: '',
     urgency: 'ROUTINE', category: 'GENERAL', justification: '', remarks: '',
-    department: '', inventoryItemId: '', requestedByPerson: '',
+    department: '', requestedByPerson: '',
   });
-  const [itemQuery, setItemQuery] = useState('');
-  const [showItemDropdown, setShowItemDropdown] = useState(false);
+  const [lines, setLines] = useState<NewLine[]>([blankLine()]);
+  const [focusedLine, setFocusedLine] = useState<number | null>(null);
   const [saving, setSaving] = useState(false);
+  const updateLine = (i: number, patch: Partial<NewLine>) => setLines(ls => ls.map((l, idx) => idx === i ? { ...l, ...patch } : l));
+  const addLine = () => setLines(ls => [...ls, blankLine()]);
+  const removeLine = (i: number) => setLines(ls => ls.length === 1 ? [blankLine()] : ls.filter((_, idx) => idx !== i));
+  const duplicateLine = (i: number) => setLines(ls => [...ls.slice(0, i + 1), { ...ls[i] }, ...ls.slice(i + 1)]);
   const [invItems, setInvItems] = useState<InvItem[]>([]);
   const [departments, setDepartments] = useState<string[]>([]);
   const [vendors, setVendors] = useState<Vendor[]>([]);
@@ -163,22 +183,32 @@ export default function PurchaseRequisition() {
     const itemId = searchParams.get('itemId');
     const itemName = searchParams.get('itemName');
     if (itemName) {
-      setForm(f => ({ ...f, itemName, inventoryItemId: itemId || '' }));
-      setItemQuery(itemName);
+      setLines([{ itemName, inventoryItemId: itemId || '', quantity: '1', unit: 'nos', estimatedCost: '', remarks: '', _itemQuery: itemName }]);
     }
   }, [searchParams]);
 
-  // ── Create a new indent ──
+  // ── Create a new indent (multi-line: 1+ items in one request) ──
   const handleCreate = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!form.itemName.trim()) { alert('Item name is required'); return; }
-    if (!(parseFloat(form.quantity) > 0)) { alert('Quantity must be > 0'); return; }
     if (!form.department) { alert('Department is required'); return; }
+    const validLines = lines.filter(l => l.itemName.trim() && parseFloat(l.quantity) > 0);
+    if (validLines.length === 0) { alert('Add at least one item with name and quantity'); return; }
     setSaving(true);
     try {
-      await api.post('/purchase-requisition', { ...form, title: `Need ${form.itemName}`, status: 'SUBMITTED' });
-      setForm({ itemName: '', quantity: '1', unit: 'nos', estimatedCost: '', urgency: 'ROUTINE', category: 'GENERAL', justification: '', remarks: '', department: '', inventoryItemId: '', requestedByPerson: '' });
-      setItemQuery('');
+      await api.post('/purchase-requisition', {
+        ...form,
+        status: 'SUBMITTED',
+        lines: validLines.map(l => ({
+          itemName: l.itemName.trim(),
+          inventoryItemId: l.inventoryItemId || undefined,
+          quantity: parseFloat(l.quantity),
+          unit: l.unit,
+          estimatedCost: parseFloat(l.estimatedCost) || 0,
+          remarks: l.remarks || undefined,
+        })),
+      });
+      setForm({ urgency: 'ROUTINE', category: 'GENERAL', justification: '', remarks: '', department: '', requestedByPerson: '' });
+      setLines([blankLine()]);
       setTab('list');
       load();
     } catch (e: unknown) { alert((e as { response?: { data?: { error?: string } } }).response?.data?.error || 'Failed'); }
@@ -355,61 +385,16 @@ export default function PurchaseRequisition() {
         )}
       </div>
 
-      {/* ── NEW INDENT FORM ── */}
+      {/* ── NEW INDENT FORM (multi-line) ── */}
       {tab === 'new' && (
         <div className="border-x border-b border-slate-300 -mx-3 md:-mx-6 bg-white">
           <div className="bg-slate-100 border-b border-slate-300 px-4 py-2">
-            <div className="text-[11px] font-bold uppercase tracking-widest text-slate-700">New Indent — What do you need?</div>
-            <div className="text-[10px] text-slate-500 mt-0.5">After saving, open the indent to add vendors and request quotes.</div>
+            <div className="text-[11px] font-bold uppercase tracking-widest text-slate-700">New Indent</div>
+            <div className="text-[10px] text-slate-500 mt-0.5">Add all items you need in one indent. After saving, open it to attach vendors and request quotes.</div>
           </div>
           <form onSubmit={handleCreate} className="p-4 space-y-3">
-            {/* Row 1: Item + Qty */}
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
-              <div className="relative md:col-span-2">
-                <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-0.5 block">Item *</label>
-                <input className="w-full border border-slate-300 px-2.5 py-1.5 text-xs focus:ring-1 focus:ring-blue-500 outline-none" placeholder="Type to search items or enter new name"
-                  required value={itemQuery}
-                  onChange={e => { setItemQuery(e.target.value); setForm(f => ({ ...f, itemName: e.target.value, inventoryItemId: '' })); setShowItemDropdown(true); }}
-                  onFocus={() => setShowItemDropdown(true)}
-                  onBlur={() => setTimeout(() => setShowItemDropdown(false), 200)} />
-                {showItemDropdown && itemQuery.length >= 2 && (
-                  <div className="absolute z-10 w-full bg-white border border-slate-300 shadow-lg max-h-40 overflow-y-auto mt-0.5">
-                    {invItems.filter(it => it.name.toLowerCase().includes(itemQuery.toLowerCase()) || it.code.toLowerCase().includes(itemQuery.toLowerCase())).slice(0, 8).map(it => (
-                      <div key={it.id} className="px-2.5 py-1.5 text-xs hover:bg-blue-50 cursor-pointer border-b border-slate-100 flex justify-between"
-                        onMouseDown={() => {
-                          setItemQuery(it.name);
-                          setForm(f => ({ ...f, itemName: it.name, inventoryItemId: it.id, unit: it.unit, estimatedCost: it.costPerUnit > 0 ? String(it.costPerUnit) : f.estimatedCost, category: it.category || f.category }));
-                          setShowItemDropdown(false);
-                        }}>
-                        <span className="text-slate-800 font-medium">{it.name}</span>
-                        <span className="text-slate-400 text-[10px]">{it.code} | Stock: {it.currentStock} {it.unit}</span>
-                      </div>
-                    ))}
-                  </div>
-                )}
-                {form.inventoryItemId && (() => {
-                  const it = invItems.find(i => i.id === form.inventoryItemId);
-                  if (!it) return null;
-                  const qty = parseFloat(form.quantity) || 0;
-                  const ok = it.currentStock >= qty;
-                  return <div className={`text-[9px] mt-0.5 font-bold ${ok ? 'text-green-600' : it.currentStock > 0 ? 'text-amber-600' : 'text-red-600'}`}>
-                    Stock on hand: {it.currentStock} {it.unit} {ok ? '✓' : ''}
-                  </div>;
-                })()}
-              </div>
-              <div>
-                <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-0.5 block">Qty / Unit *</label>
-                <div className="flex gap-1">
-                  <input className="flex-1 border border-slate-300 px-2.5 py-1.5 text-xs outline-none" type="number" step="any" value={form.quantity} onChange={e => setForm({ ...form, quantity: e.target.value })} required />
-                  <select className="w-28 border border-slate-300 px-2 py-1.5 text-xs outline-none" value={form.unit} onChange={e => setForm({ ...form, unit: e.target.value })}>
-                    <optgroup label="Goods">{GOODS_UNITS.map(u => <option key={u} value={u}>{u}</option>)}</optgroup>
-                    <optgroup label="Service">{SERVICE_UNITS.map(u => <option key={u} value={u}>{u}</option>)}</optgroup>
-                  </select>
-                </div>
-              </div>
-            </div>
-            {/* Row 2: Dept/Person/Urgency */}
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+            {/* Header — who / why / how urgent — applies to whole indent */}
+            <div className="grid grid-cols-1 md:grid-cols-4 gap-3 pb-3 border-b border-slate-200">
               <div>
                 <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-0.5 block">Department *</label>
                 <select required className="w-full border border-slate-300 px-2.5 py-1.5 text-xs outline-none" value={form.department} onChange={e => setForm({ ...form, department: e.target.value })}>
@@ -427,9 +412,6 @@ export default function PurchaseRequisition() {
                   {URGENCIES.map(u => <option key={u} value={u}>{u}</option>)}
                 </select>
               </div>
-            </div>
-            {/* Row 3: Category + Est cost */}
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
               <div>
                 <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-0.5 block">Category</label>
                 <select className="w-full border border-slate-300 px-2.5 py-1.5 text-xs outline-none" value={form.category} onChange={e => setForm({ ...form, category: e.target.value })}>
@@ -437,25 +419,115 @@ export default function PurchaseRequisition() {
                   <optgroup label="Service">{SERVICE_CATEGORIES.map(c => <option key={c} value={c}>{c.replace(/_/g, ' ')}</option>)}</optgroup>
                 </select>
               </div>
-              <div>
-                <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-0.5 block">Est. Cost/Unit (Rs, optional)</label>
-                <input type="number" step="any" className="w-full border border-slate-300 px-2.5 py-1.5 text-xs outline-none" placeholder="Leave blank — vendors will quote" value={form.estimatedCost} onChange={e => setForm({ ...form, estimatedCost: e.target.value })} />
+            </div>
+
+            {/* Items table — each row is one item being requested */}
+            <div>
+              <div className="flex items-center justify-between mb-1">
+                <div className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">Items ({lines.filter(l => l.itemName.trim()).length} / {lines.length})</div>
+                <button type="button" onClick={addLine} className="px-2 py-0.5 bg-white border border-blue-500 text-blue-700 text-[10px] font-medium hover:bg-blue-50 flex items-center gap-1">
+                  <Plus size={10} /> Add Item
+                </button>
               </div>
+              <div className="border border-slate-300 overflow-visible">
+                <table className="w-full text-xs">
+                  <thead>
+                    <tr className="bg-slate-800 text-white">
+                      <th className="text-left px-2 py-1.5 font-semibold text-[10px] uppercase tracking-widest border-r border-slate-700 w-8">#</th>
+                      <th className="text-left px-2 py-1.5 font-semibold text-[10px] uppercase tracking-widest border-r border-slate-700">Item *</th>
+                      <th className="text-right px-2 py-1.5 font-semibold text-[10px] uppercase tracking-widest border-r border-slate-700 w-20">Qty *</th>
+                      <th className="text-left px-2 py-1.5 font-semibold text-[10px] uppercase tracking-widest border-r border-slate-700 w-24">Unit</th>
+                      <th className="text-right px-2 py-1.5 font-semibold text-[10px] uppercase tracking-widest border-r border-slate-700 w-28">Est. Rs/unit</th>
+                      <th className="text-left px-2 py-1.5 font-semibold text-[10px] uppercase tracking-widest border-r border-slate-700 min-w-[140px]">Remarks</th>
+                      <th className="text-center px-2 py-1.5 font-semibold text-[10px] uppercase tracking-widest w-20">Actions</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {lines.map((l, i) => {
+                      const showDropdown = focusedLine === i && (l._itemQuery || l.itemName).length >= 2;
+                      const q = (l._itemQuery || l.itemName).toLowerCase();
+                      const matches = showDropdown ? invItems.filter(it => it.name.toLowerCase().includes(q) || it.code.toLowerCase().includes(q)).slice(0, 8) : [];
+                      return (
+                        <tr key={i} className={i % 2 ? 'bg-slate-50/60' : 'bg-white'}>
+                          <td className="px-2 py-0.5 text-slate-400 text-center border-r border-slate-100 font-mono tabular-nums">{i + 1}</td>
+                          <td className="px-1 py-0.5 border-r border-slate-100 relative">
+                            <input className="w-full border-0 px-1.5 py-1 text-xs outline-none focus:bg-blue-50 bg-transparent"
+                              placeholder="Type to search or enter new..." value={l._itemQuery ?? l.itemName}
+                              onChange={e => updateLine(i, { _itemQuery: e.target.value, itemName: e.target.value, inventoryItemId: '' })}
+                              onFocus={() => setFocusedLine(i)}
+                              onBlur={() => setTimeout(() => setFocusedLine(f => f === i ? null : f), 200)} />
+                            {showDropdown && matches.length > 0 && (
+                              <div className="absolute z-20 left-0 right-0 top-full bg-white border border-slate-300 shadow-lg max-h-48 overflow-y-auto">
+                                {matches.map(it => (
+                                  <div key={it.id} className="px-2 py-1 text-xs hover:bg-blue-50 cursor-pointer border-b border-slate-100 flex justify-between"
+                                    onMouseDown={() => {
+                                      updateLine(i, {
+                                        _itemQuery: it.name, itemName: it.name, inventoryItemId: it.id,
+                                        unit: it.unit, estimatedCost: it.costPerUnit > 0 ? String(it.costPerUnit) : l.estimatedCost,
+                                      });
+                                      setFocusedLine(null);
+                                    }}>
+                                    <span className="text-slate-800 font-medium">{it.name}</span>
+                                    <span className="text-slate-400 text-[10px]">{it.code} | Stock {it.currentStock} {it.unit}</span>
+                                  </div>
+                                ))}
+                              </div>
+                            )}
+                          </td>
+                          <td className="px-1 py-0.5 border-r border-slate-100">
+                            <input type="number" step="any" className="w-full border-0 px-1.5 py-1 text-xs outline-none focus:bg-blue-50 bg-transparent text-right font-mono tabular-nums"
+                              value={l.quantity} onChange={e => updateLine(i, { quantity: e.target.value })} />
+                          </td>
+                          <td className="px-1 py-0.5 border-r border-slate-100">
+                            <select className="w-full border-0 px-1 py-1 text-xs outline-none focus:bg-blue-50 bg-transparent" value={l.unit} onChange={e => updateLine(i, { unit: e.target.value })}>
+                              <optgroup label="Goods">{GOODS_UNITS.map(u => <option key={u} value={u}>{u}</option>)}</optgroup>
+                              <optgroup label="Service">{SERVICE_UNITS.map(u => <option key={u} value={u}>{u}</option>)}</optgroup>
+                            </select>
+                          </td>
+                          <td className="px-1 py-0.5 border-r border-slate-100">
+                            <input type="number" step="any" placeholder="optional"
+                              className="w-full border-0 px-1.5 py-1 text-xs outline-none focus:bg-blue-50 bg-transparent text-right font-mono tabular-nums"
+                              value={l.estimatedCost} onChange={e => updateLine(i, { estimatedCost: e.target.value })} />
+                          </td>
+                          <td className="px-1 py-0.5 border-r border-slate-100">
+                            <input className="w-full border-0 px-1.5 py-1 text-xs outline-none focus:bg-blue-50 bg-transparent" placeholder="spec / model (optional)"
+                              value={l.remarks} onChange={e => updateLine(i, { remarks: e.target.value })} />
+                          </td>
+                          <td className="px-1 py-0.5 text-center">
+                            <button type="button" onClick={() => duplicateLine(i)} className="text-slate-400 hover:text-blue-600 mx-0.5" title="Duplicate">⎘</button>
+                            <button type="button" onClick={() => removeLine(i)} className="text-slate-400 hover:text-red-600 mx-0.5" title="Delete"><Trash2 size={12} /></button>
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+              <div className="text-[10px] text-slate-500 mt-1">
+                Total items: <span className="font-bold">{lines.filter(l => l.itemName.trim() && parseFloat(l.quantity) > 0).length}</span>
+                {' · '}
+                Est. total: <span className="font-mono tabular-nums font-bold">Rs.{lines.reduce((s, l) => s + (parseFloat(l.quantity) || 0) * (parseFloat(l.estimatedCost) || 0), 0).toLocaleString('en-IN')}</span>
+              </div>
+            </div>
+
+            {/* Notes */}
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
               <div>
                 <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-0.5 block">Justification</label>
                 <input className="w-full border border-slate-300 px-2.5 py-1.5 text-xs outline-none" placeholder="Why is this needed?" value={form.justification} onChange={e => setForm({ ...form, justification: e.target.value })} />
               </div>
+              <div>
+                <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-0.5 block">Remarks</label>
+                <input className="w-full border border-slate-300 px-2.5 py-1.5 text-xs outline-none" placeholder="Any notes for store/purchase" value={form.remarks} onChange={e => setForm({ ...form, remarks: e.target.value })} />
+              </div>
             </div>
-            <div>
-              <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-0.5 block">Remarks</label>
-              <textarea className="w-full border border-slate-300 px-2.5 py-1.5 text-xs outline-none resize-none" rows={2} value={form.remarks} onChange={e => setForm({ ...form, remarks: e.target.value })} />
-            </div>
+
             <div className="flex items-center justify-between pt-1">
-              <div className="text-[10px] text-slate-500">After saving, open the indent to add vendors and track quotes.</div>
+              <div className="text-[10px] text-slate-500">After saving, open the indent to attach one or more vendors and request quotes.</div>
               <div className="flex gap-2">
                 <button type="button" onClick={() => setTab('list')} className="px-3 py-1 bg-white border border-slate-300 text-slate-600 text-[11px] font-medium hover:bg-slate-50">Cancel</button>
                 <button type="submit" disabled={saving} className="px-4 py-1 bg-blue-600 text-white text-[11px] font-bold uppercase tracking-wide hover:bg-blue-700 disabled:bg-slate-400">
-                  {saving ? 'Saving...' : 'Save & Open'}
+                  {saving ? 'Saving...' : 'Save Indent'}
                 </button>
               </div>
             </div>
@@ -498,8 +570,15 @@ export default function PurchaseRequisition() {
                     >
                       <td className="px-3 py-1.5 text-slate-500 border-r border-slate-100 font-mono tabular-nums">{pr.reqNo}</td>
                       <td className="px-3 py-1.5 text-slate-500 border-r border-slate-100 text-[10px]">{fmtDate(pr.createdAt)}</td>
-                      <td className="px-3 py-1.5 text-slate-800 font-medium border-r border-slate-100 truncate max-w-[320px]" title={pr.itemName}>{pr.itemName}</td>
-                      <td className="px-3 py-1.5 text-right font-mono tabular-nums border-r border-slate-100 text-slate-700">{pr.quantity} <span className="text-[9px] text-slate-400">{pr.unit}</span></td>
+                      <td className="px-3 py-1.5 text-slate-800 font-medium border-r border-slate-100 truncate max-w-[360px]" title={pr.lines.length > 1 ? pr.lines.map(l => `${l.itemName} (${l.quantity} ${l.unit})`).join(', ') : pr.itemName}>
+                        {pr.itemName}
+                        {pr.lines.length > 1 && <span className="ml-1 text-[10px] text-blue-600 font-bold">+ {pr.lines.length - 1} more</span>}
+                      </td>
+                      <td className="px-3 py-1.5 text-right font-mono tabular-nums border-r border-slate-100 text-slate-700">
+                        {pr.lines.length > 1
+                          ? <span className="text-[10px] text-slate-600 font-bold">{pr.lines.length} items</span>
+                          : <>{pr.quantity} <span className="text-[9px] text-slate-400">{pr.unit}</span></>}
+                      </td>
                       <td className="px-3 py-1.5 text-slate-600 border-r border-slate-100 text-[10px]">{pr.department || '—'}</td>
                       <td className="px-3 py-1.5 text-slate-600 border-r border-slate-100 text-[10px]">{pr.requestedByPerson || '—'}</td>
                       <td className="px-3 py-1.5 text-center border-r border-slate-100">
@@ -549,17 +628,61 @@ export default function PurchaseRequisition() {
                       </div>
                     </div>
 
+                    {/* ── ITEMS in this indent ── */}
+                    <div className="bg-white border border-slate-200">
+                      <div className="bg-slate-100 border-b border-slate-200 px-3 py-1.5 flex items-center justify-between">
+                        <div className="text-[10px] font-bold text-slate-700 uppercase tracking-widest">
+                          Items in this Indent ({pr.lines.length || 1})
+                        </div>
+                        <div className="text-[10px] text-slate-500">
+                          Est. total: Rs.{pr.lines.reduce((s, l) => s + (l.quantity * l.estimatedCost), 0).toLocaleString('en-IN') || '0'}
+                        </div>
+                      </div>
+                      <table className="w-full text-[11px]">
+                        <thead>
+                          <tr className="bg-slate-50 text-slate-600 border-b border-slate-200">
+                            <th className="text-left px-3 py-1 font-semibold text-[10px] uppercase tracking-widest w-8">#</th>
+                            <th className="text-left px-3 py-1 font-semibold text-[10px] uppercase tracking-widest">Item</th>
+                            <th className="text-right px-3 py-1 font-semibold text-[10px] uppercase tracking-widest w-20">Qty</th>
+                            <th className="text-left px-3 py-1 font-semibold text-[10px] uppercase tracking-widest w-20">Unit</th>
+                            <th className="text-right px-3 py-1 font-semibold text-[10px] uppercase tracking-widest w-24">Est. Rs/unit</th>
+                            <th className="text-right px-3 py-1 font-semibold text-[10px] uppercase tracking-widest w-24">Line Total</th>
+                            <th className="text-left px-3 py-1 font-semibold text-[10px] uppercase tracking-widest">Remarks</th>
+                            <th className="text-left px-3 py-1 font-semibold text-[10px] uppercase tracking-widest w-20">Stock</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {(pr.lines.length > 0 ? pr.lines : [{ id: pr.id, lineNo: 1, itemName: pr.itemName, quantity: pr.quantity, unit: pr.unit, estimatedCost: pr.estimatedCost, inventoryItemId: pr.inventoryItemId, remarks: null, inventoryItem: null } as IndentLine]).map(l => (
+                            <tr key={l.id} className="border-b border-slate-100 last:border-b-0">
+                              <td className="px-3 py-1 text-slate-400 font-mono tabular-nums">{l.lineNo}</td>
+                              <td className="px-3 py-1 text-slate-800 font-medium">{l.itemName}</td>
+                              <td className="px-3 py-1 text-right font-mono tabular-nums">{l.quantity}</td>
+                              <td className="px-3 py-1 text-slate-600">{l.unit}</td>
+                              <td className="px-3 py-1 text-right font-mono tabular-nums">{l.estimatedCost > 0 ? l.estimatedCost.toLocaleString('en-IN') : '—'}</td>
+                              <td className="px-3 py-1 text-right font-mono tabular-nums font-bold text-slate-800">{l.estimatedCost > 0 ? `Rs.${(l.quantity * l.estimatedCost).toLocaleString('en-IN')}` : '—'}</td>
+                              <td className="px-3 py-1 text-[10px] text-slate-500 italic">{l.remarks || '—'}</td>
+                              <td className="px-3 py-1 text-[10px]">
+                                {l.inventoryItem ? (
+                                  <span className={l.inventoryItem.currentStock >= l.quantity ? 'text-green-700 font-bold' : l.inventoryItem.currentStock > 0 ? 'text-amber-600 font-bold' : 'text-red-600 font-bold'}>
+                                    {l.inventoryItem.currentStock} {l.inventoryItem.unit}
+                                  </span>
+                                ) : <span className="text-slate-300">—</span>}
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+
                     <div className="grid grid-cols-1 lg:grid-cols-3 gap-3">
-                      {/* ── LEFT: Request Details ── */}
+                      {/* ── LEFT: Request Info ── */}
                       <div className="bg-white border border-slate-200 p-3 space-y-2">
-                        <div className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">Request Details</div>
+                        <div className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">Request Info</div>
                         <div className="grid grid-cols-2 gap-2 text-[11px]">
-                          <div><div className="text-[9px] text-slate-400 uppercase">Item</div><div className="font-medium text-slate-800">{pr.itemName}</div></div>
-                          <div><div className="text-[9px] text-slate-400 uppercase">Qty</div><div className="font-medium font-mono tabular-nums">{pr.quantity} {pr.unit}</div></div>
                           <div><div className="text-[9px] text-slate-400 uppercase">Dept</div><div className="font-medium text-slate-800">{pr.department || '—'}</div></div>
                           <div><div className="text-[9px] text-slate-400 uppercase">Person</div><div className="font-medium text-slate-800">{pr.requestedByPerson || '—'}</div></div>
                           <div><div className="text-[9px] text-slate-400 uppercase">Category</div><div className="font-medium text-slate-800">{pr.category.replace(/_/g, ' ')}</div></div>
-                          <div><div className="text-[9px] text-slate-400 uppercase">Est. Cost</div><div className="font-medium font-mono tabular-nums">{pr.estimatedCost > 0 ? `Rs.${pr.estimatedCost.toLocaleString('en-IN')}` : '—'}</div></div>
+                          <div><div className="text-[9px] text-slate-400 uppercase">Raised By</div><div className="font-medium text-slate-800">{pr.requestedBy}</div></div>
                         </div>
                         {pr.justification && <div className="text-[11px] pt-1 border-t border-slate-100"><span className="text-[9px] text-slate-400 uppercase">Why:</span> <span className="text-slate-700">{pr.justification}</span></div>}
                         {pr.remarks && <div className="text-[11px] text-slate-600 italic">{pr.remarks}</div>}

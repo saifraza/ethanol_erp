@@ -25,6 +25,10 @@ router.get('/', asyncHandler(async (req: AuthRequest, res: Response) => {
           include: { vendor: { select: { id: true, name: true, email: true, phone: true } } },
           orderBy: { createdAt: 'asc' },
         },
+        lines: {
+          orderBy: { lineNo: 'asc' },
+          include: { inventoryItem: { select: { id: true, name: true, code: true, unit: true, currentStock: true } } },
+        },
       },
     });
     res.json({ requisitions: reqs });
@@ -238,36 +242,130 @@ router.post('/bulk', asyncHandler(async (req: AuthRequest, res: Response) => {
     res.status(201).json({ created: created.length, requisitions: created });
 }));
 
-// POST / — create new requisition
+// POST / — create new requisition (optionally with multiple lines)
+// Body: { department, urgency, category, justification, requestedByPerson, remarks, lines: [{itemName, quantity, unit, estimatedCost, inventoryItemId?, remarks?}, ...] }
+// If `lines` is absent, falls back to single-line mode using itemName/quantity/unit on the body (backward compat).
 router.post('/', asyncHandler(async (req: AuthRequest, res: Response) => {
     const b = req.body;
     const user = req.user!;
-    // Allow SUBMITTED as initial status (from indent form), otherwise default to DRAFT
     const initialStatus = b.status === 'SUBMITTED' ? 'SUBMITTED' : 'DRAFT';
-    const pr = await prisma.purchaseRequisition.create({
-      data: {
-        title: b.title,
-        itemName: b.itemName,
-        quantity: parseFloat(b.quantity) || 1,
-        unit: b.unit || 'nos',
-        estimatedCost: parseFloat(b.estimatedCost) || 0,
-        urgency: b.urgency || 'ROUTINE',
-        category: b.category || 'GENERAL',
-        justification: b.justification || null,
-        linkedIssueId: b.linkedIssueId || null,
-        supplier: b.supplier || null,
-        status: initialStatus,
-        remarks: b.remarks || null,
-        requestedBy: user.name || user.email,
-        userId: user.id,
-        inventoryItemId: b.inventoryItemId || null,
-        department: b.department || null,
-        requestedByPerson: b.requestedByPerson || null,
-        vendorId: b.vendorId || null,
-        companyId: getActiveCompanyId(req),
-      },
+
+    // Normalize lines — use body.lines[] if provided, else synthesize a single line
+    const rawLines = Array.isArray(b.lines) && b.lines.length > 0 ? b.lines : [{
+      itemName: b.itemName,
+      quantity: b.quantity,
+      unit: b.unit,
+      estimatedCost: b.estimatedCost,
+      inventoryItemId: b.inventoryItemId,
+      remarks: b.remarks,
+    }];
+
+    // Validate
+    for (let i = 0; i < rawLines.length; i++) {
+      const l = rawLines[i];
+      if (!l.itemName || !String(l.itemName).trim()) return res.status(400).json({ error: `Line ${i + 1}: item name required` });
+      const q = parseFloat(l.quantity);
+      if (isNaN(q) || q <= 0) return res.status(400).json({ error: `Line ${i + 1}: quantity must be > 0` });
+    }
+
+    // First line drives the PR header (itemName/quantity/unit kept for backward compat)
+    const first = rawLines[0];
+
+    const pr = await prisma.$transaction(async (tx) => {
+      const created = await tx.purchaseRequisition.create({
+        data: {
+          title: b.title || `Need ${first.itemName}${rawLines.length > 1 ? ` (+${rawLines.length - 1} more)` : ''}`,
+          itemName: String(first.itemName).trim(),
+          quantity: parseFloat(first.quantity) || 1,
+          unit: first.unit || 'nos',
+          estimatedCost: parseFloat(first.estimatedCost) || 0,
+          urgency: b.urgency || 'ROUTINE',
+          category: b.category || 'GENERAL',
+          justification: b.justification || null,
+          linkedIssueId: b.linkedIssueId || null,
+          supplier: b.supplier || null,
+          status: initialStatus,
+          remarks: b.remarks || null,
+          requestedBy: user.name || user.email,
+          userId: user.id,
+          inventoryItemId: first.inventoryItemId || null,
+          department: b.department || null,
+          requestedByPerson: b.requestedByPerson || null,
+          vendorId: b.vendorId || null,
+          companyId: getActiveCompanyId(req),
+        },
+      });
+
+      // Create line rows
+      await tx.purchaseRequisitionLine.createMany({
+        data: rawLines.map((l: Record<string, unknown>, i: number) => ({
+          requisitionId: created.id,
+          lineNo: i + 1,
+          itemName: String(l.itemName).trim(),
+          quantity: parseFloat(l.quantity as string) || 1,
+          unit: (l.unit as string) || 'nos',
+          estimatedCost: parseFloat(l.estimatedCost as string) || 0,
+          inventoryItemId: (l.inventoryItemId as string) || null,
+          remarks: (l.remarks as string) || null,
+        })),
+      });
+
+      return tx.purchaseRequisition.findUnique({
+        where: { id: created.id },
+        include: { lines: { orderBy: { lineNo: 'asc' } } },
+      });
     });
     res.status(201).json(pr);
+}));
+
+// POST /:id/lines — add a line to an existing indent
+router.post('/:id/lines', asyncHandler(async (req: AuthRequest, res: Response) => {
+    const b = req.body;
+    if (!b.itemName || !String(b.itemName).trim()) return res.status(400).json({ error: 'itemName required' });
+    const qty = parseFloat(b.quantity);
+    if (isNaN(qty) || qty <= 0) return res.status(400).json({ error: 'quantity must be > 0' });
+
+    const maxLine = await prisma.purchaseRequisitionLine.findFirst({
+      where: { requisitionId: req.params.id },
+      orderBy: { lineNo: 'desc' },
+      select: { lineNo: true },
+    });
+    const line = await prisma.purchaseRequisitionLine.create({
+      data: {
+        requisitionId: req.params.id,
+        lineNo: (maxLine?.lineNo || 0) + 1,
+        itemName: String(b.itemName).trim(),
+        quantity: qty,
+        unit: b.unit || 'nos',
+        estimatedCost: parseFloat(b.estimatedCost) || 0,
+        inventoryItemId: b.inventoryItemId || null,
+        remarks: b.remarks || null,
+      },
+    });
+    res.status(201).json(line);
+}));
+
+// PUT /:id/lines/:lineId — update a line
+router.put('/:id/lines/:lineId', asyncHandler(async (req: AuthRequest, res: Response) => {
+    const b = req.body;
+    const data: Record<string, unknown> = {};
+    if (b.itemName !== undefined) data.itemName = String(b.itemName).trim();
+    if (b.quantity !== undefined) data.quantity = parseFloat(b.quantity);
+    if (b.unit !== undefined) data.unit = b.unit;
+    if (b.estimatedCost !== undefined) data.estimatedCost = parseFloat(b.estimatedCost) || 0;
+    if (b.inventoryItemId !== undefined) data.inventoryItemId = b.inventoryItemId || null;
+    if (b.remarks !== undefined) data.remarks = b.remarks;
+    const line = await prisma.purchaseRequisitionLine.update({
+      where: { id: req.params.lineId },
+      data,
+    });
+    res.json(line);
+}));
+
+// DELETE /:id/lines/:lineId
+router.delete('/:id/lines/:lineId', asyncHandler(async (req: AuthRequest, res: Response) => {
+    await prisma.purchaseRequisitionLine.delete({ where: { id: req.params.lineId } });
+    res.json({ ok: true });
 }));
 
 // GET /:id/stock-check — check available stock for this indent's item

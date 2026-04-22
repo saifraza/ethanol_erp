@@ -1258,6 +1258,7 @@ model InventoryItem {
   vendorItems             VendorItem[]
   fuelConsumptions        FuelConsumption[]
   rawMaterialConsumptions RawMaterialConsumption[]
+  indentLines             PurchaseRequisitionLine[]
 
   division  String?  @default("ETHANOL") // SUGAR | POWER | ETHANOL | COMMON
   companyId String? // FK → Company (null = MSPIL default)
@@ -1633,6 +1634,7 @@ model PurchaseRequisition {
 
   purchaseOrders PurchaseOrder[] // auto-generated POs from this indent
   quotes         PurchaseRequisitionVendor[] // one row per vendor we're asking for a quote from
+  lines          PurchaseRequisitionLine[] // multi-item indents — 1+ items in the same request
   companyId      String? // FK → Company (null = MSPIL default)
   company        Company?        @relation(fields: [companyId], references: [id])
 
@@ -1669,6 +1671,29 @@ model PurchaseRequisitionVendor {
   @@unique([requisitionId, vendorId])
   @@index([requisitionId])
   @@index([vendorId])
+}
+
+// ── Indent Line — one item in a multi-item indent ──
+// An indent can have many lines. The parent PurchaseRequisition keeps
+// itemName/quantity/unit populated with the first line's values for
+// backward-compat (existing code + reports).
+model PurchaseRequisitionLine {
+  id              String              @id @default(cuid())
+  requisitionId   String
+  requisition     PurchaseRequisition @relation(fields: [requisitionId], references: [id], onDelete: Cascade)
+  lineNo          Int                 @default(1)
+  itemName        String
+  inventoryItemId String?
+  inventoryItem   InventoryItem?      @relation(fields: [inventoryItemId], references: [id])
+  quantity        Float               @default(1)
+  unit            String              @default("nos")
+  estimatedCost   Float               @default(0) // per unit
+  remarks         String?
+  createdAt       DateTime            @default(now())
+  updatedAt       DateTime            @updatedAt
+
+  @@index([requisitionId])
+  @@index([inventoryItemId])
 }
 
 // ═══════════════════════════════════════════════
