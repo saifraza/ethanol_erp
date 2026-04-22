@@ -465,40 +465,63 @@ export default function PurchaseRequisition() {
 
       {/* ── LIST ── */}
       {tab === 'list' && (
-        <div className="border-x border-b border-slate-300 -mx-3 md:-mx-6 bg-white">
-          {filtered.length === 0 && <div className="p-8 text-center text-xs text-slate-400">No indents match the filter</div>}
-          {filtered.map(pr => {
-            const isExpanded = expanded === pr.id;
-            const bestQuote = pr.quotes.reduce<Quote | null>((best, q) => (q.vendorRate != null && (!best || (q.vendorRate as number) < (best.vendorRate as number))) ? q : best, null);
-            return (
-              <div key={pr.id} className={`border-b border-slate-200 last:border-b-0 ${isExpanded ? 'bg-slate-50' : ''}`}>
-                {/* Row header */}
-                <div className="px-4 py-2.5 flex items-start gap-3 cursor-pointer hover:bg-blue-50/60"
-                  onClick={() => toggleExpand(pr)}>
-                  <div className="flex-1 min-w-0">
-                    <div className="flex items-center gap-2 flex-wrap">
-                      <span className="text-xs font-mono tabular-nums text-slate-400">#{pr.reqNo}</span>
-                      <span className="text-xs font-bold text-slate-800">{pr.itemName}</span>
-                      <span className="text-[10px] text-slate-500 font-mono tabular-nums">{pr.quantity} {pr.unit}</span>
-                      <span className={`text-[9px] font-bold uppercase px-1.5 py-0.5 border ${URG_COLORS[pr.urgency]}`}>{pr.urgency}</span>
-                      <span className={`text-[9px] font-bold uppercase px-1.5 py-0.5 border ${STATUS_COLORS[pr.status]}`}>{pr.status.replace('_', ' ')}</span>
-                      {pr.vendor && <span className="text-[9px] text-slate-500">{pr.vendor.name}</span>}
-                      {pr.quotes.length > 0 && <span className="text-[9px] px-1 py-0 border border-slate-300 bg-slate-50 font-bold text-slate-600 uppercase">{pr.quotes.length} quote{pr.quotes.length > 1 ? 's' : ''}</span>}
-                      {bestQuote && bestQuote.vendorRate != null && <span className="text-[9px] text-green-700 font-bold">Best Rs.{bestQuote.vendorRate.toLocaleString('en-IN')}</span>}
-                    </div>
-                    <div className="text-[10px] text-slate-500 mt-0.5 flex items-center gap-2 flex-wrap">
-                      {pr.department && <span className="text-[9px] px-1 py-0 border border-slate-300 bg-slate-100 font-bold uppercase">{pr.department}</span>}
-                      {pr.requestedByPerson && <span>{pr.requestedByPerson}</span>}
-                      <span className="text-slate-400">{fmtDate(pr.createdAt)}</span>
-                      {pr.issuedQty > 0 && <span className="text-green-700 font-bold">{pr.issuedQty} issued</span>}
-                      {pr.purchaseQty > 0 && <span className="text-amber-600 font-bold">{pr.purchaseQty} to buy</span>}
-                    </div>
-                  </div>
-                </div>
-
-                {/* ── Expanded detail ── */}
-                {isExpanded && (
-                  <div className="border-t border-slate-200 px-4 py-3 space-y-3" onClick={e => e.stopPropagation()}>
+        <div className="border-x border-b border-slate-300 -mx-3 md:-mx-6 bg-white overflow-x-auto">
+          {filtered.length === 0 ? (
+            <div className="p-8 text-center text-xs text-slate-400">No indents match the filter</div>
+          ) : (
+          <table className="w-full text-xs min-w-[1100px]">
+            <thead>
+              <tr className="bg-slate-800 text-white">
+                <th className="text-left px-3 py-2 font-semibold text-[10px] uppercase tracking-widest border-r border-slate-700 w-12">Req#</th>
+                <th className="text-left px-3 py-2 font-semibold text-[10px] uppercase tracking-widest border-r border-slate-700 w-20">Date</th>
+                <th className="text-left px-3 py-2 font-semibold text-[10px] uppercase tracking-widest border-r border-slate-700">Item</th>
+                <th className="text-right px-3 py-2 font-semibold text-[10px] uppercase tracking-widest border-r border-slate-700 w-20">Qty</th>
+                <th className="text-left px-3 py-2 font-semibold text-[10px] uppercase tracking-widest border-r border-slate-700 w-24">Dept</th>
+                <th className="text-left px-3 py-2 font-semibold text-[10px] uppercase tracking-widest border-r border-slate-700 w-24">Person</th>
+                <th className="text-center px-3 py-2 font-semibold text-[10px] uppercase tracking-widest border-r border-slate-700 w-20">Urgency</th>
+                <th className="text-center px-3 py-2 font-semibold text-[10px] uppercase tracking-widest border-r border-slate-700 w-24">Status</th>
+                <th className="text-left px-3 py-2 font-semibold text-[10px] uppercase tracking-widest border-r border-slate-700 w-32">Vendor</th>
+                <th className="text-right px-3 py-2 font-semibold text-[10px] uppercase tracking-widest w-24">Best Rate</th>
+              </tr>
+            </thead>
+            <tbody>
+              {filtered.map((pr, idx) => {
+                const isExpanded = expanded === pr.id;
+                const bestQuote = pr.quotes.reduce<Quote | null>((best, q) => (q.vendorRate != null && (!best || (q.vendorRate as number) < (best.vendorRate as number))) ? q : best, null);
+                const awardedQuote = pr.quotes.find(q => q.isAwarded);
+                const shownVendor = awardedQuote?.vendor.name || pr.vendor?.name || (pr.quotes.length > 0 ? `${pr.quotes.length} quote${pr.quotes.length > 1 ? 's' : ''}` : '—');
+                return (
+                  <React.Fragment key={pr.id}>
+                    <tr
+                      className={`border-b border-slate-100 cursor-pointer hover:bg-blue-50/60 ${idx % 2 ? 'bg-slate-50/70' : 'bg-white'} ${isExpanded ? 'bg-blue-50' : ''}`}
+                      onClick={() => toggleExpand(pr)}
+                    >
+                      <td className="px-3 py-1.5 text-slate-500 border-r border-slate-100 font-mono tabular-nums">{pr.reqNo}</td>
+                      <td className="px-3 py-1.5 text-slate-500 border-r border-slate-100 text-[10px]">{fmtDate(pr.createdAt)}</td>
+                      <td className="px-3 py-1.5 text-slate-800 font-medium border-r border-slate-100 truncate max-w-[320px]" title={pr.itemName}>{pr.itemName}</td>
+                      <td className="px-3 py-1.5 text-right font-mono tabular-nums border-r border-slate-100 text-slate-700">{pr.quantity} <span className="text-[9px] text-slate-400">{pr.unit}</span></td>
+                      <td className="px-3 py-1.5 text-slate-600 border-r border-slate-100 text-[10px]">{pr.department || '—'}</td>
+                      <td className="px-3 py-1.5 text-slate-600 border-r border-slate-100 text-[10px]">{pr.requestedByPerson || '—'}</td>
+                      <td className="px-3 py-1.5 text-center border-r border-slate-100">
+                        <span className={`text-[9px] font-bold uppercase px-1.5 py-0.5 border ${URG_COLORS[pr.urgency]}`}>{pr.urgency}</span>
+                      </td>
+                      <td className="px-3 py-1.5 text-center border-r border-slate-100">
+                        <span className={`text-[9px] font-bold uppercase px-1.5 py-0.5 border ${STATUS_COLORS[pr.status]}`}>{pr.status.replace('_', ' ')}</span>
+                      </td>
+                      <td className="px-3 py-1.5 text-slate-600 border-r border-slate-100 text-[10px] truncate max-w-[140px]" title={shownVendor}>
+                        {awardedQuote && <Award size={10} className="inline text-green-600 mr-0.5" />}
+                        {shownVendor}
+                      </td>
+                      <td className="px-3 py-1.5 text-right font-mono tabular-nums">
+                        {bestQuote?.vendorRate != null ? (
+                          <span className="text-green-700 font-bold">Rs.{bestQuote.vendorRate.toLocaleString('en-IN')}</span>
+                        ) : <span className="text-slate-300">—</span>}
+                      </td>
+                    </tr>
+                    {isExpanded && (
+                      <tr className="bg-slate-50">
+                        <td colSpan={10} className="px-4 py-3" onClick={e => e.stopPropagation()}>
+                          <div className="space-y-3">
                     {/* Pipeline */}
                     <div className="bg-white border border-slate-200 p-3">
                       <div className="flex items-center justify-between mb-2">
@@ -779,11 +802,16 @@ export default function PurchaseRequisition() {
                         </tbody>
                       </table>
                     </div>
-                  </div>
-                )}
-              </div>
-            );
-          })}
+                          </div>
+                        </td>
+                      </tr>
+                    )}
+                  </React.Fragment>
+                );
+              })}
+            </tbody>
+          </table>
+          )}
         </div>
       )}
 
