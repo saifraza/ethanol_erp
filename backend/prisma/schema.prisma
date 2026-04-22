@@ -53,6 +53,7 @@ model Company {
   contractors           Contractor[]
   departments           Department[]
   businessDivisions     BusinessDivision[]
+  emailThreads          EmailThread[]
   designations          Designation[]
   purchaseRequisitions  PurchaseRequisition[]
   contractorBills       ContractorBill[]
@@ -1673,6 +1674,92 @@ model PurchaseRequisitionVendor {
   @@index([vendorId])
 }
 
+// ═══════════════════════════════════════════════
+// EMAIL SYSTEM — polymorphic, reusable across modules
+// ═══════════════════════════════════════════════
+
+// A single email we sent FROM the ERP. One thread = one outbound message.
+// Replies from the recipient are stored in EmailReply linked back.
+//
+// entityType + entityId is polymorphic:
+//   INDENT_QUOTE  → PurchaseRequisitionVendor.id
+//   PURCHASE_ORDER → PurchaseOrder.id
+//   VENDOR_INVOICE → VendorInvoice.id
+//   SALES_INVOICE → Invoice.id
+//   PAYMENT_CONFIRMATION → VendorPayment.id
+//   etc.
+model EmailThread {
+  id             String    @id @default(cuid())
+  entityType     String    // see comment above
+  entityId       String
+  // vendorId allows a vendor-centric view — "show every email I ever sent to
+  // Vendor X across all POs/indents/invoices". Nullable because some emails
+  // aren't vendor-related (internal notifications, customer emails, etc.)
+  vendorId       String?
+  vendor         Vendor?   @relation("VendorEmailThreads", fields: [vendorId], references: [id])
+  customerId     String?   // symmetric — customer-centric view for sales emails
+  customer       Customer? @relation("CustomerEmailThreads", fields: [customerId], references: [id])
+  subject        String
+  fromEmail      String
+  fromName       String?
+  toEmail        String    // comma-separated allowed
+  ccEmail        String?
+  bccEmail       String?
+  bodyText       String
+  bodyHtml       String?
+  messageId      String?   // RFC 5322 Message-ID of the SENT message, used to match replies
+  threadId       String?   // provider thread id (Gmail X-GM-THRID if we can get it)
+  sentAt         DateTime  @default(now())
+  sentBy         String    // user name / email who triggered send
+  status         String    @default("SENT") // SENT | FAILED | BOUNCED | QUEUED
+  errorMessage   String?
+  attachments    Json? // [{filename, size, contentType, storagePath?}]
+  lastCheckedAt  DateTime? // last time we pulled replies via IMAP
+  replyCount     Int       @default(0)
+  hasUnreadReply Boolean   @default(false)
+  companyId      String?
+  company        Company?  @relation(fields: [companyId], references: [id])
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+  replies        EmailReply[]
+
+  @@index([entityType, entityId])
+  @@index([vendorId])
+  @@index([customerId])
+  @@index([companyId])
+  @@index([messageId])
+  @@index([sentAt])
+}
+
+// A reply to one of our EmailThreads, fetched from IMAP and persisted.
+// Persisting means the user can see the full history without re-polling.
+model EmailReply {
+  id               String       @id @default(cuid())
+  threadId         String
+  thread           EmailThread  @relation(fields: [threadId], references: [id], onDelete: Cascade)
+  providerMessageId String      // RFC 5322 Message-ID of the reply
+  fromEmail        String
+  fromName         String?
+  toEmail          String?
+  subject          String?
+  bodyText         String
+  bodyHtml         String?
+  inReplyTo        String?
+  refsHeaders      String?      // References header, space-separated
+  receivedAt       DateTime
+  attachments      Json?        // [{filename, size, contentType, contentBase64}]
+  aiExtractedJson  Json?        // structured AI extraction result if run
+  aiExtractedAt    DateTime?
+  aiConfidence     String?      // HIGH | MEDIUM | LOW
+  seenAt           DateTime?    // when user first opened it in the drawer
+  createdAt        DateTime     @default(now())
+  updatedAt        DateTime     @updatedAt
+
+  @@unique([threadId, providerMessageId])
+  @@index([threadId])
+  @@index([receivedAt])
+}
+
 // ── Indent Line — one item in a multi-item indent ──
 // An indent can have many lines. The parent PurchaseRequisition keeps
 // itemName/quantity/unit populated with the first line's values for
@@ -1740,6 +1827,7 @@ model Customer {
   sugarContracts           SugarContract[]
   sugarDispatchTrucks      SugarDispatchTruck[]
   directSales              DirectSale[]
+  emailThreads             EmailThread[]        @relation("CustomerEmailThreads")
   companyId                String? // FK → Company (null = MSPIL default)
   company                  Company?             @relation(fields: [companyId], references: [id])
 
@@ -2288,6 +2376,7 @@ model Vendor {
   purchaseOrders    PurchaseOrder[]
   indents           PurchaseRequisition[] @relation("VendorIndents")
   indentQuotes      PurchaseRequisitionVendor[] @relation("VendorIndentQuotes")
+  emailThreads      EmailThread[] @relation("VendorEmailThreads")
   grns              GoodsReceipt[]
   vendorInvoices    VendorInvoice[]
   vendorPayments    VendorPayment[]

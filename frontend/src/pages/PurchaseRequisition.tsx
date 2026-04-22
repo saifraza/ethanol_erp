@@ -2,6 +2,7 @@ import React, { useState, useEffect, useCallback } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import api from '../services/api';
 import { Plus, Check, X, Trash2, Mail, Award, RefreshCw, FileText, Send, Inbox, Sparkles, Paperclip } from 'lucide-react';
+import EmailThreadDrawer, { EmailThreadQuery } from '../components/EmailThreadDrawer';
 
 // ── Enums ──
 const URGENCIES = ['ROUTINE', 'SOON', 'URGENT', 'EMERGENCY'];
@@ -305,6 +306,12 @@ export default function PurchaseRequisition() {
   const [repliesLoading, setRepliesLoading] = useState(false);
   const [extracting, setExtracting] = useState<string | null>(null);
   const [extracted, setExtracted] = useState<Record<string, ExtractedQuote>>({});
+
+  // Gmail-style thread drawer — reusable across the app
+  const [threadDrawerQuery, setThreadDrawerQuery] = useState<EmailThreadQuery | null>(null);
+  const [threadDrawerTitle, setThreadDrawerTitle] = useState<string>('');
+  const [threadDrawerContext, setThreadDrawerContext] = useState<string>('');
+  const [threadDrawerOnExtract, setThreadDrawerOnExtract] = useState<((threadId: string, replyId: string) => Promise<void>) | null>(null);
 
   const [rfqPdfUrl, setRfqPdfUrl] = useState<string | null>(null);
   const fetchRfqPdfBlob = async (prId: string, quoteId: string) => {
@@ -681,9 +688,26 @@ export default function PurchaseRequisition() {
                       <td className="px-3 py-1.5 text-center border-r border-slate-100">
                         <span className={`text-[9px] font-bold uppercase px-1.5 py-0.5 border ${STATUS_COLORS[pr.status]}`}>{pr.status.replace('_', ' ')}</span>
                       </td>
-                      <td className="px-3 py-1.5 text-slate-600 border-r border-slate-100 text-[10px] truncate max-w-[140px]" title={shownVendor}>
-                        {awardedQuote && <Award size={10} className="inline text-green-600 mr-0.5" />}
-                        {shownVendor}
+                      <td className="px-3 py-1.5 text-slate-600 border-r border-slate-100 text-[10px] truncate max-w-[180px]" title={shownVendor}>
+                        <div className="flex items-center gap-1">
+                          {awardedQuote && <Award size={10} className="inline text-green-600" />}
+                          <span className="flex-1 truncate">{shownVendor}</span>
+                          {(awardedQuote?.vendor.id || pr.vendor?.id || (pr.quotes[0]?.vendor.id)) && (
+                            <button onClick={e => {
+                              e.stopPropagation();
+                              const vId = awardedQuote?.vendor.id || pr.vendor?.id || pr.quotes[0]?.vendor.id;
+                              const vName = awardedQuote?.vendor.name || pr.vendor?.name || pr.quotes[0]?.vendor.name || 'Vendor';
+                              if (!vId) return;
+                              setThreadDrawerQuery({ vendorId: vId });
+                              setThreadDrawerTitle(`All emails with ${vName}`);
+                              setThreadDrawerContext('Across all indents, POs, invoices');
+                              setThreadDrawerOnExtract(null);
+                            }} title="See all emails with this vendor"
+                              className="text-slate-400 hover:text-blue-600 p-0.5 shrink-0">
+                              <Inbox size={11} />
+                            </button>
+                          )}
+                        </div>
                       </td>
                       <td className="px-3 py-1.5 text-right font-mono tabular-nums">
                         {bestQuote?.vendorRate != null ? (
@@ -1116,10 +1140,26 @@ export default function PurchaseRequisition() {
                       <div className="text-[10px] font-bold text-slate-700 uppercase tracking-widest flex items-center gap-1">
                         <Inbox size={12} /> Vendor Replies ({replies.length})
                       </div>
-                      <button onClick={() => loadReplies(rfqDrawer.prId, q.id)} disabled={repliesLoading}
-                        className="px-2 py-0.5 bg-white border border-slate-400 text-slate-700 text-[10px] font-medium hover:bg-slate-100 disabled:opacity-50 flex items-center gap-1">
-                        <RefreshCw size={10} className={repliesLoading ? 'animate-spin' : ''} /> {repliesLoading ? 'Checking...' : 'Check Replies'}
-                      </button>
+                      <div className="flex items-center gap-2">
+                        <button onClick={() => {
+                          setThreadDrawerQuery({ entityType: 'INDENT_QUOTE', entityId: q.id });
+                          setThreadDrawerTitle(`Thread — ${q.vendor.name}`);
+                          setThreadDrawerContext(`Indent #${pr.reqNo} · ${q.vendor.email || ''}`);
+                          setThreadDrawerOnExtract(() => async (tId: string, _rId: string) => {
+                            // Delegate AI extraction to the existing indent-specific endpoint
+                            await api.post(`/purchase-requisition/${rfqDrawer.prId}/vendors/${q.id}/extract-quote`, { autoApply: true });
+                            load();
+                          });
+                          closeRfqDrawer();
+                        }}
+                          className="px-2 py-0.5 bg-blue-600 text-white text-[10px] font-medium hover:bg-blue-700 flex items-center gap-1">
+                          <Mail size={10} /> Open Full Thread View
+                        </button>
+                        <button onClick={() => loadReplies(rfqDrawer.prId, q.id)} disabled={repliesLoading}
+                          className="px-2 py-0.5 bg-white border border-slate-400 text-slate-700 text-[10px] font-medium hover:bg-slate-100 disabled:opacity-50 flex items-center gap-1">
+                          <RefreshCw size={10} className={repliesLoading ? 'animate-spin' : ''} /> {repliesLoading ? 'Checking...' : 'Check Replies'}
+                        </button>
+                      </div>
                     </div>
                     <div className="p-3 space-y-2">
                       {!repliesLoading && replies.length === 0 && (
@@ -1262,6 +1302,17 @@ export default function PurchaseRequisition() {
             </div>
           </div>
         </div>
+      )}
+
+      {/* ── Reusable Gmail-style thread drawer ── */}
+      {threadDrawerQuery && (
+        <EmailThreadDrawer
+          query={threadDrawerQuery}
+          title={threadDrawerTitle}
+          contextLabel={threadDrawerContext}
+          onClose={() => setThreadDrawerQuery(null)}
+          onExtractAI={threadDrawerOnExtract || undefined}
+        />
       )}
     </div>
   );

@@ -5,8 +5,7 @@ import { asyncHandler } from '../shared/middleware';
 import { createPurchaseOrder } from '../services/purchaseOrderService';
 import { COMPANY } from '../shared/config/company';
 import { renderDocumentPdf } from '../services/documentRenderer';
-import { sendEmail } from '../services/messaging';
-import { fetchRepliesToMessage } from '../services/emailReader';
+import { sendThreadEmail, syncAndListReplies, latestThreadFor } from '../services/emailService';
 import { extractQuoteFromReply } from '../services/rfqQuoteExtractor';
 
 const router = Router();
@@ -218,64 +217,65 @@ Mahakaushal Sugar and Power Industries Ltd (MSPIL)
 ${extraMessage ? `<p>${extraMessage}</p>` : ''}
 <p>Regards,<br>${data.preparedBy}<br>Mahakaushal Sugar and Power Industries Ltd (MSPIL)</p>`;
 
-    const result = await sendEmail({
-      to: cc ? `${vr.vendor.email}, ${cc}` : vr.vendor.email,
+    const result = await sendThreadEmail({
+      entityType: 'INDENT_QUOTE',
+      entityId: req.params.vrId,
+      vendorId: vr.vendorId,
       subject,
-      text,
-      html,
+      to: vr.vendor.email,
+      cc: cc || undefined,
+      bodyText: text,
+      bodyHtml: html,
       attachments: [{
         filename: `RFQ-${pr.reqNo}-${req.params.vrId.slice(0, 6)}.pdf`,
         content: pdf,
         contentType: 'application/pdf',
       }],
+      sentBy: req.user!.name || req.user!.email,
+      companyId: pr.companyId,
     });
 
     if (!result.success) return res.status(502).json({ error: result.error || 'Failed to send email' });
 
-    // Store the messageId so we can match replies
-    const cleanMsgId = (result.messageId || '').replace(/^<|>$/g, '');
+    // Mirror the messageId on the quote row so older UI/reports keep working
     await prisma.purchaseRequisitionVendor.update({
       where: { id: req.params.vrId },
       data: {
         quoteRequestedAt: new Date(),
         quoteRequestedBy: req.user!.name || req.user!.email,
         quoteEmailSubject: subject,
-        quoteEmailMessageId: cleanMsgId,
-        quoteEmailThreadId: cleanMsgId, // Gmail threads by message-id seed
+        quoteEmailMessageId: result.messageId || null,
+        quoteEmailThreadId: result.messageId || null,
       },
     });
 
-    res.json({ ok: true, messageId: cleanMsgId, sentTo: vr.vendor.email });
+    res.json({ ok: true, messageId: result.messageId, sentTo: vr.vendor.email, threadDbId: result.thread.id });
 }));
 
-// GET /:id/vendors/:vrId/replies — fetch vendor replies from IMAP (live)
+// GET /:id/vendors/:vrId/replies — sync IMAP + return persisted replies + threadDbId
 router.get('/:id/vendors/:vrId/replies', asyncHandler(async (req: AuthRequest, res: Response) => {
-    const vr = await prisma.purchaseRequisitionVendor.findUnique({
-      where: { id: req.params.vrId },
-      include: { vendor: { select: { email: true } }, requisition: { select: { reqNo: true } } },
-    });
-    if (!vr) return res.status(404).json({ error: 'Not found' });
-    if (!vr.quoteEmailMessageId) return res.json({ replies: [], error: 'RFQ email not sent yet — no message id to match' });
+    const thread = await latestThreadFor('INDENT_QUOTE', req.params.vrId);
+    if (!thread) return res.json({ replies: [], threadDbId: null, error: 'RFQ email not sent yet' });
 
-    try {
-      const replies = await fetchRepliesToMessage({
-        originalMessageId: vr.quoteEmailMessageId,
-        fromEmail: vr.vendor.email || undefined,
-        subjectContains: `RFQ-${vr.requisition.reqNo}`,
-        sinceDays: 60,
-      });
-      // Strip large base64 attachments from the list view — only send filenames + sizes
-      res.json({
-        replies: replies.map(r => ({
-          ...r,
-          attachments: r.attachments.map(a => ({ filename: a.filename, size: a.size, contentType: a.contentType })),
-        })),
-        count: replies.length,
-      });
-    } catch (err) {
-      const msg = err instanceof Error ? err.message : 'IMAP fetch failed';
-      res.status(502).json({ error: msg, replies: [] });
-    }
+    const result = await syncAndListReplies(thread.id);
+    res.json({
+      threadDbId: thread.id,
+      replies: result.replies.map(r => ({
+        id: r.id,
+        messageId: r.providerMessageId,
+        from: r.fromEmail,
+        fromName: r.fromName,
+        subject: r.subject,
+        date: r.receivedAt,
+        bodyText: r.bodyText,
+        bodyHtml: r.bodyHtml,
+        attachments: Array.isArray(r.attachments)
+          ? (r.attachments as Array<{ filename: string; size: number; contentType: string }>).map(a => ({ filename: a.filename, size: a.size, contentType: a.contentType }))
+          : [],
+      })),
+      newCount: result.newCount,
+      fetchError: result.fetchError,
+    });
 }));
 
 // POST /:id/vendors/:vrId/extract-quote — run Gemini on the latest reply + attachments
@@ -288,24 +288,29 @@ router.post('/:id/vendors/:vrId/extract-quote', asyncHandler(async (req: AuthReq
       },
     });
     if (!vr) return res.status(404).json({ error: 'Not found' });
-    if (!vr.quoteEmailMessageId) return res.status(400).json({ error: 'RFQ email not sent yet' });
 
-    const replies = await fetchRepliesToMessage({
-      originalMessageId: vr.quoteEmailMessageId,
-      fromEmail: vr.vendor.email || undefined,
-      subjectContains: `RFQ-${vr.requisition.reqNo}`,
-      sinceDays: 60,
+    const thread = await latestThreadFor('INDENT_QUOTE', req.params.vrId);
+    if (!thread) return res.status(400).json({ error: 'RFQ email not sent yet' });
+
+    // Sync + get the latest reply from the DB (full base64 attachments)
+    await syncAndListReplies(thread.id);
+    const latestReply = await prisma.emailReply.findFirst({
+      where: { threadId: thread.id },
+      orderBy: { receivedAt: 'desc' },
     });
-    if (replies.length === 0) return res.status(404).json({ error: 'No replies found yet' });
+    if (!latestReply) return res.status(404).json({ error: 'No replies found yet' });
 
-    const latest = replies[0];
+    const attachments = Array.isArray(latestReply.attachments)
+      ? (latestReply.attachments as Array<{ filename: string; contentType: string; contentBase64: string }>)
+      : [];
+
     const expectedLines = (vr.requisition.lines.length > 0 ? vr.requisition.lines : [{
       lineNo: 1, itemName: vr.requisition.itemName, quantity: vr.requisition.quantity, unit: vr.requisition.unit,
     }]).map(l => ({ lineNo: l.lineNo ?? 1, itemName: l.itemName, quantity: l.quantity, unit: l.unit }));
 
     const extracted = await extractQuoteFromReply({
-      replyBody: latest.bodyText || latest.bodyHtml || '',
-      attachments: latest.attachments,
+      replyBody: latestReply.bodyText || latestReply.bodyHtml || '',
+      attachments,
       expectedLines,
     });
 
@@ -339,28 +344,31 @@ router.post('/:id/vendors/:vrId/extract-quote', asyncHandler(async (req: AuthReq
       }
     }
 
-    res.json({ extracted, savedRate, reply: { from: latest.from, subject: latest.subject, date: latest.date } });
+    // Persist AI extraction on the reply row for future reference
+    await prisma.emailReply.update({
+      where: { id: latestReply.id },
+      data: {
+        aiExtractedJson: extracted as unknown as object,
+        aiExtractedAt: new Date(),
+        aiConfidence: extracted.confidence,
+      },
+    });
+
+    res.json({ extracted, savedRate, reply: { from: latestReply.fromEmail, subject: latestReply.subject, date: latestReply.receivedAt } });
 }));
 
-// GET /:id/vendors/:vrId/attachment/:filename — fetch a specific attachment body for preview
-// Returns the raw base64 so the frontend can render PDF inline
+// GET /:id/vendors/:vrId/attachment/:filename — serve reply attachment from persisted EmailReply
 router.get('/:id/vendors/:vrId/attachment/:filename', asyncHandler(async (req: AuthRequest, res: Response) => {
-    const vr = await prisma.purchaseRequisitionVendor.findUnique({
-      where: { id: req.params.vrId },
-      include: { vendor: { select: { email: true } }, requisition: { select: { reqNo: true } } },
-    });
-    if (!vr?.quoteEmailMessageId) return res.status(404).json({ error: 'Not found' });
-
-    const replies = await fetchRepliesToMessage({
-      originalMessageId: vr.quoteEmailMessageId,
-      fromEmail: vr.vendor.email || undefined,
-      subjectContains: `RFQ-${vr.requisition.reqNo}`,
-      sinceDays: 60,
-    });
+    const thread = await latestThreadFor('INDENT_QUOTE', req.params.vrId);
+    if (!thread) return res.status(404).json({ error: 'No thread' });
+    const replies = await prisma.emailReply.findMany({ where: { threadId: thread.id } });
     for (const r of replies) {
-      const att = r.attachments.find(a => a.filename === req.params.filename);
+      const atts = Array.isArray(r.attachments)
+        ? r.attachments as Array<{ filename: string; contentType: string; contentBase64: string }>
+        : [];
+      const att = atts.find(a => a.filename === req.params.filename);
       if (att) {
-        res.setHeader('Content-Type', att.contentType);
+        res.setHeader('Content-Type', att.contentType || 'application/octet-stream');
         res.setHeader('Content-Disposition', `inline; filename="${att.filename}"`);
         res.send(Buffer.from(att.contentBase64, 'base64'));
         return;
