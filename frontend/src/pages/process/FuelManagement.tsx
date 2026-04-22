@@ -320,17 +320,12 @@ export default function FuelManagement() {
     if (!dealForm.fuelItemId || !dealForm.rate) {
       alert('Select fuel type and enter rate'); return;
     }
-    if (!dealForm.vendorId && !dealForm.vendorName) {
-      alert('Select a vendor or add a new trader'); return;
-    }
-    if (dealForm.vendorId === '__new' && !dealForm.vendorName) {
-      alert('Enter the new trader name'); return;
+    if (!dealForm.vendorId) {
+      alert('Select a vendor. New vendors must be created in Procurement → Vendors first.');
+      return;
     }
     setSaving(true);
-    const payload = {
-      ...dealForm,
-      vendorId: dealForm.vendorId === '__new' ? undefined : dealForm.vendorId,
-    };
+    const payload = { ...dealForm };
     try {
       // Update vendor phone if changed
       const origVendor = vendors.find(v => v.id === dealForm.vendorId);
@@ -351,7 +346,7 @@ export default function FuelManagement() {
         await api.put(`/fuel/deals/${editingDealId}`, {
           rate: dealForm.rate,
           remarks: rParts.filter(Boolean).join(' | '),
-          vendorId: dealForm.vendorId === '__new' ? undefined : dealForm.vendorId,
+          vendorId: dealForm.vendorId,
           fuelItemId: dealForm.fuelItemId,
           quantityType: (dealForm as Record<string, string>).quantityType || undefined,
           quantity: (dealForm as Record<string, number>).quantity || undefined,
@@ -1063,8 +1058,10 @@ export default function FuelManagement() {
                   }} className="w-full border border-slate-300 px-2.5 py-1.5 text-xs focus:outline-none focus:ring-1 focus:ring-slate-400">
                     <option value="">-- Select Vendor --</option>
                     {vendors.map(v => <option key={v.id} value={v.id}>{v.name}</option>)}
-                    <option value="__new">+ Add New Trader</option>
                   </select>
+                  <div className="text-[10px] text-slate-500 mt-1">
+                    New vendor? Create in <span className="font-semibold">Procurement → Vendors</span> first.
+                  </div>
                 </div>
                 <div>
                   <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-0.5 block">Phone</label>
@@ -1079,20 +1076,6 @@ export default function FuelManagement() {
                     className="w-full border border-slate-300 px-2.5 py-1.5 text-xs focus:outline-none focus:ring-1 focus:ring-slate-400" placeholder="Auto-filled from vendor" />
                 </div>
               </div>
-              {dealForm.vendorId === '__new' && (
-                <div className="grid grid-cols-2 gap-3">
-                  <div>
-                    <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-0.5 block">New Trader Name</label>
-                    <input value={dealForm.vendorName} onChange={e => setDealForm({ ...dealForm, vendorName: e.target.value })}
-                      className="w-full border border-slate-300 px-2.5 py-1.5 text-xs focus:outline-none focus:ring-1 focus:ring-slate-400" placeholder="e.g., Ram Singh" />
-                  </div>
-                  <div>
-                    <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-0.5 block">Address / Village</label>
-                    <input value={(dealForm as Record<string, string>).vendorAddress || ''} onChange={e => setDealForm({ ...dealForm, vendorAddress: e.target.value } as typeof dealForm)}
-                      className="w-full border border-slate-300 px-2.5 py-1.5 text-xs focus:outline-none focus:ring-1 focus:ring-slate-400" placeholder="e.g., Narsinghpur" />
-                  </div>
-                </div>
-              )}
 
               {/* Section: Fuel & Pricing */}
               <div className="text-[9px] font-bold text-slate-400 uppercase tracking-widest border-b border-slate-200 pb-1 mt-2">Fuel & Pricing</div>

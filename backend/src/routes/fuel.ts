@@ -627,43 +627,21 @@ router.get('/deals', authenticate, asyncHandler(async (req: AuthRequest, res: Re
 router.post('/deals', authenticate, validate(openDealSchema), asyncHandler(async (req: AuthRequest, res: Response) => {
   const b = req.body;
 
-  // Resolve vendor — use existing ID or auto-create from name
-  let vendorId = b.vendorId;
-
-  // If vendorId provided, verify it exists
-  if (vendorId) {
-    const exists = await prisma.vendor.findUnique({ where: { id: vendorId }, select: { id: true } });
-    if (!exists) {
-      return res.status(400).json({ error: `Vendor not found: ${vendorId}` });
-    }
-  }
-
-  // If no vendorId but have vendorName, find or create
-  if (!vendorId && b.vendorName) {
-    const existing = await prisma.vendor.findFirst({
-      where: { name: { equals: b.vendorName, mode: 'insensitive' } },
-      select: { id: true },
+  // Vendor must exist in Vendor Master — no auto-create.
+  // Previous auto-create path (2026-04-22 removed) defaulted new vendors to
+  // category=FUEL + isAgent=true, which hid their POs from the factory gate
+  // dropdown filter. All fuel vendors must now be created via the Vendor
+  // Master so they get the right category + tax flags before any PO is cut.
+  const vendorId: string | undefined = b.vendorId;
+  if (!vendorId) {
+    return res.status(400).json({
+      error: 'Please select a vendor from Vendor Master. New vendors must be created in Procurement → Vendors first.',
     });
-    if (existing) {
-      vendorId = existing.id;
-    } else {
-      const count = await prisma.vendor.count();
-      const newVendor = await prisma.vendor.create({
-        data: {
-          name: b.vendorName,
-          vendorCode: `VND-${String(count + 1).padStart(4, '0')}`,
-          category: 'FUEL',
-          productTypes: 'FUEL',
-          isAgent: true,
-          phone: b.vendorPhone || '',
-          isActive: true,
-        },
-      });
-      vendorId = newVendor.id;
-    }
   }
-
-  if (!vendorId) return res.status(400).json({ error: 'Select a vendor or enter a trader name' });
+  const exists = await prisma.vendor.findUnique({ where: { id: vendorId }, select: { id: true } });
+  if (!exists) {
+    return res.status(400).json({ error: `Vendor not found: ${vendorId}` });
+  }
 
   // Get fuel item details
   const fuelItem = await prisma.inventoryItem.findUnique({
