@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import api from '../services/api';
-import { Plus, Check, X, Trash2, Mail, Award, RefreshCw } from 'lucide-react';
+import { Plus, Check, X, Trash2, Mail, Award, RefreshCw, FileText, Send, Inbox, Sparkles, Paperclip } from 'lucide-react';
 
 // ── Enums ──
 const URGENCIES = ['ROUTINE', 'SOON', 'URGENT', 'EMERGENCY'];
@@ -284,20 +284,84 @@ export default function PurchaseRequisition() {
     }
   };
 
-  const handleRequestQuote = async (prId: string, quote: Quote) => {
-    const pr = reqs.find(r => r.id === prId);
-    if (!pr) return;
-    const subject = `Quote Request - Indent #${pr.reqNo} - ${pr.itemName}`;
+  // ── RFQ drawer — preview PDF, edit message, send via SMTP, view replies ──
+  type RfqReply = {
+    messageId: string; from: string; fromName?: string; subject: string; date: string;
+    bodyText: string; bodyHtml: string | null;
+    attachments: Array<{ filename: string; size: number; contentType: string }>;
+  };
+  type ExtractedQuote = {
+    overallRateNote?: string;
+    lineRates: Array<{ lineNo?: number; itemName?: string; unitRate?: number; gstPercent?: number; hsnCode?: string; remarks?: string }>;
+    deliveryDays?: number; paymentTerms?: string; quoteValidityDays?: number;
+    freightTerms?: string; currency?: string; extractedTotal?: number; notes?: string;
+    confidence: 'HIGH' | 'MEDIUM' | 'LOW';
+  };
+  const [rfqDrawer, setRfqDrawer] = useState<{ prId: string; quote: Quote } | null>(null);
+  const [rfqExtraMessage, setRfqExtraMessage] = useState('');
+  const [rfqCc, setRfqCc] = useState('');
+  const [rfqSending, setRfqSending] = useState(false);
+  const [replies, setReplies] = useState<RfqReply[]>([]);
+  const [repliesLoading, setRepliesLoading] = useState(false);
+  const [extracting, setExtracting] = useState<string | null>(null);
+  const [extracted, setExtracted] = useState<Record<string, ExtractedQuote>>({});
+
+  const openRfqDrawer = (prId: string, quote: Quote) => {
+    setRfqDrawer({ prId, quote });
+    setRfqExtraMessage('');
+    setRfqCc('');
+    setReplies([]);
+    // If already sent, auto-load replies
+    if (quote.quoteRequestedAt) loadReplies(prId, quote.id);
+  };
+  const closeRfqDrawer = () => { setRfqDrawer(null); setReplies([]); setExtracted({}); };
+
+  const handleSendRfq = async () => {
+    if (!rfqDrawer) return;
+    if (!rfqDrawer.quote.vendor.email) { alert('This vendor has no email on file. Add one in the vendor master.'); return; }
+    setRfqSending(true);
     try {
-      await api.post(`/purchase-requisition/${prId}/vendors/${quote.id}/request-quote`, { emailSubject: subject });
+      const res = await api.post(`/purchase-requisition/${rfqDrawer.prId}/vendors/${rfqDrawer.quote.id}/send-rfq`, {
+        extraMessage: rfqExtraMessage || undefined,
+        cc: rfqCc || undefined,
+      });
+      alert(`RFQ sent to ${res.data.sentTo}. Watch this drawer for replies.`);
       load();
-      if (quote.vendor.email) {
-        const body = `Dear ${quote.vendor.name},%0D%0A%0D%0AKindly send us your best rate for the below item. Please REPLY ON THIS SAME EMAIL so our system can match your quote automatically.%0D%0A%0D%0AItem: ${pr.itemName}%0D%0AQuantity: ${pr.quantity} ${pr.unit}%0D%0A%0D%0ARegards,%0D%0AMSPIL Purchase Team%0D%0A%0D%0A[Ref: IND-${pr.reqNo}-${quote.id.slice(0, 6)}]`;
-        window.open(`mailto:${quote.vendor.email}?subject=${encodeURIComponent(subject)}&body=${body}`, '_blank');
-      } else {
-        alert('Marked as requested. Vendor has no email — please contact by phone.');
+      // Re-open drawer fresh so the sent state loads
+      setTimeout(() => loadReplies(rfqDrawer.prId, rfqDrawer.quote.id), 500);
+    } catch (e: unknown) {
+      alert((e as { response?: { data?: { error?: string } } }).response?.data?.error || 'Send failed — check SMTP_USER / SMTP_PASS env vars');
+    }
+    setRfqSending(false);
+  };
+
+  const loadReplies = async (prId: string, quoteId: string) => {
+    setRepliesLoading(true);
+    try {
+      const res = await api.get<{ replies: RfqReply[]; count: number; error?: string }>(`/purchase-requisition/${prId}/vendors/${quoteId}/replies`);
+      setReplies(res.data.replies || []);
+      if (res.data.error) console.warn('[rfq]', res.data.error);
+    } catch (e: unknown) {
+      console.error('Replies fetch failed', e);
+      setReplies([]);
+    }
+    setRepliesLoading(false);
+  };
+
+  const handleExtractQuote = async (prId: string, quoteId: string, autoApply: boolean) => {
+    setExtracting(quoteId);
+    try {
+      const res = await api.post<{ extracted: ExtractedQuote; savedRate: number | null }>(`/purchase-requisition/${prId}/vendors/${quoteId}/extract-quote`, { autoApply });
+      setExtracted(prev => ({ ...prev, [quoteId]: res.data.extracted }));
+      if (res.data.savedRate) {
+        alert(`AI extracted rate Rs.${res.data.savedRate.toLocaleString('en-IN')} and applied to this vendor.`);
+        load();
       }
-    } catch (e: unknown) { alert((e as { response?: { data?: { error?: string } } }).response?.data?.error || 'Failed'); }
+    } catch (e: unknown) {
+      const msg = (e as { response?: { data?: { error?: string } } }).response?.data?.error || 'AI extraction failed';
+      alert(msg);
+    }
+    setExtracting(null);
   };
 
   const handleSaveRate = async (prId: string, quoteId: string) => {
@@ -886,11 +950,10 @@ export default function PurchaseRequisition() {
                                 </td>
                                 <td className="px-3 py-1.5 text-center">
                                   <div className="flex items-center justify-center gap-1">
-                                    {!q.quoteRequestedAt && q.vendor.email && (
-                                      <button onClick={() => handleRequestQuote(pr.id, q)} title="Email quote request" className="text-blue-600 hover:text-blue-800 p-0.5">
-                                        <Mail size={14} />
-                                      </button>
-                                    )}
+                                    <button onClick={() => openRfqDrawer(pr.id, q)} title={q.quoteRequestedAt ? 'View RFQ + replies' : 'Preview & send RFQ'}
+                                      className={`p-0.5 ${q.quoteRequestedAt ? 'text-green-600 hover:text-green-800' : 'text-blue-600 hover:text-blue-800'}`}>
+                                      <Mail size={14} />
+                                    </button>
                                     {q.vendorRate == null && (
                                       <button onClick={() => setQuoteInput(prev => ({ ...prev, [q.id]: prev[q.id] ?? { rate: '', remarks: '' } }))}
                                         title="Enter rate manually" className="px-1.5 py-0.5 bg-white border border-blue-500 text-blue-600 text-[10px] font-medium hover:bg-blue-50">
@@ -937,6 +1000,174 @@ export default function PurchaseRequisition() {
           )}
         </div>
       )}
+
+      {/* ── RFQ Drawer — preview PDF, send email, track replies, AI-extract rate ── */}
+      {rfqDrawer && (() => {
+        const pr = reqs.find(r => r.id === rfqDrawer.prId);
+        if (!pr) return null;
+        const q = pr.quotes.find(qq => qq.id === rfqDrawer.quote.id) || rfqDrawer.quote;
+        const pdfUrl = `/api/purchase-requisition/${rfqDrawer.prId}/vendors/${q.id}/rfq-pdf`;
+        return (
+          <div className="fixed inset-0 bg-black/40 flex items-stretch justify-end z-50" onClick={closeRfqDrawer}>
+            <div className="bg-white shadow-2xl w-full max-w-4xl flex flex-col" onClick={e => e.stopPropagation()}>
+              <div className="bg-slate-800 text-white px-4 py-2.5 flex items-center justify-between shrink-0">
+                <div className="flex items-center gap-3">
+                  <FileText size={16} />
+                  <h2 className="text-xs font-bold uppercase tracking-widest">RFQ — Indent #{pr.reqNo} → {q.vendor.name}</h2>
+                </div>
+                <button onClick={closeRfqDrawer} className="text-slate-400 hover:text-white text-xs">✕</button>
+              </div>
+
+              <div className="flex-1 overflow-y-auto p-4 space-y-3">
+                {/* Status strip */}
+                <div className="grid grid-cols-3 gap-2 text-[11px]">
+                  <div className="bg-slate-50 border border-slate-200 px-3 py-2">
+                    <div className="text-[9px] text-slate-500 uppercase tracking-widest">To</div>
+                    <div className="font-bold text-slate-800 truncate" title={q.vendor.email || ''}>{q.vendor.email || <span className="text-red-500 italic">no email</span>}</div>
+                  </div>
+                  <div className="bg-slate-50 border border-slate-200 px-3 py-2">
+                    <div className="text-[9px] text-slate-500 uppercase tracking-widest">Sent</div>
+                    <div className="font-bold text-slate-800">{q.quoteRequestedAt ? fmtDate(q.quoteRequestedAt) : <span className="text-slate-400 italic">not sent</span>}</div>
+                  </div>
+                  <div className="bg-slate-50 border border-slate-200 px-3 py-2">
+                    <div className="text-[9px] text-slate-500 uppercase tracking-widest">Quoted Rate</div>
+                    <div className={`font-bold ${q.vendorRate ? 'text-green-700' : 'text-slate-400'}`}>
+                      {q.vendorRate ? `Rs.${q.vendorRate.toLocaleString('en-IN')}` : <span className="italic">awaiting</span>}
+                    </div>
+                  </div>
+                </div>
+
+                {/* PDF Preview */}
+                <div className="border border-slate-300">
+                  <div className="bg-slate-100 border-b border-slate-300 px-3 py-1.5 flex items-center justify-between">
+                    <div className="text-[10px] font-bold text-slate-700 uppercase tracking-widest flex items-center gap-1">
+                      <FileText size={12} /> RFQ Document Preview
+                    </div>
+                    <a href={pdfUrl} target="_blank" rel="noopener noreferrer" className="text-[10px] text-blue-600 hover:text-blue-800 underline">Open in new tab</a>
+                  </div>
+                  <iframe src={pdfUrl} className="w-full h-[480px]" title="RFQ PDF" />
+                </div>
+
+                {/* Send form (only if not sent yet) */}
+                {!q.quoteRequestedAt && (
+                  <div className="border border-slate-300 p-3 space-y-2">
+                    <div className="text-[10px] font-bold text-slate-700 uppercase tracking-widest">Send via Email</div>
+                    <div className="grid grid-cols-1 gap-2">
+                      <div>
+                        <label className="text-[9px] text-slate-500 uppercase tracking-widest">Additional Message (optional)</label>
+                        <textarea value={rfqExtraMessage} onChange={e => setRfqExtraMessage(e.target.value)} rows={3}
+                          placeholder="e.g. 'We need delivery by 30 April, please confirm earliest possible date.'"
+                          className="w-full border border-slate-300 px-2.5 py-1.5 text-xs outline-none resize-none" />
+                      </div>
+                      <div>
+                        <label className="text-[9px] text-slate-500 uppercase tracking-widest">CC (optional)</label>
+                        <input value={rfqCc} onChange={e => setRfqCc(e.target.value)} placeholder="another@email.com"
+                          className="w-full border border-slate-300 px-2.5 py-1.5 text-xs outline-none" />
+                      </div>
+                    </div>
+                    <div className="flex items-center justify-between pt-1">
+                      <div className="text-[10px] text-slate-500">The PDF above is attached. The vendor is asked to reply on the same thread.</div>
+                      <button onClick={handleSendRfq} disabled={rfqSending || !q.vendor.email}
+                        className="px-4 py-1.5 bg-blue-600 text-white text-[11px] font-bold uppercase tracking-wide hover:bg-blue-700 disabled:bg-slate-400 flex items-center gap-1">
+                        <Send size={12} /> {rfqSending ? 'Sending...' : 'Send Email'}
+                      </button>
+                    </div>
+                  </div>
+                )}
+
+                {/* Replies (after sent) */}
+                {q.quoteRequestedAt && (
+                  <div className="border border-slate-300">
+                    <div className="bg-slate-100 border-b border-slate-300 px-3 py-1.5 flex items-center justify-between">
+                      <div className="text-[10px] font-bold text-slate-700 uppercase tracking-widest flex items-center gap-1">
+                        <Inbox size={12} /> Vendor Replies ({replies.length})
+                      </div>
+                      <button onClick={() => loadReplies(rfqDrawer.prId, q.id)} disabled={repliesLoading}
+                        className="px-2 py-0.5 bg-white border border-slate-400 text-slate-700 text-[10px] font-medium hover:bg-slate-100 disabled:opacity-50 flex items-center gap-1">
+                        <RefreshCw size={10} className={repliesLoading ? 'animate-spin' : ''} /> {repliesLoading ? 'Checking...' : 'Check Replies'}
+                      </button>
+                    </div>
+                    <div className="p-3 space-y-2">
+                      {!repliesLoading && replies.length === 0 && (
+                        <div className="text-[11px] text-slate-400 italic text-center py-4">
+                          No replies yet. Vendor hasn't responded — click "Check Replies" to refresh.
+                        </div>
+                      )}
+                      {replies.map((r, i) => (
+                        <div key={i} className="border border-slate-200">
+                          <div className="bg-slate-50 border-b border-slate-200 px-3 py-1.5 flex items-center justify-between">
+                            <div className="text-[11px]">
+                              <span className="font-bold text-slate-800">{r.fromName || r.from}</span>
+                              <span className="text-slate-500 ml-2">&lt;{r.from}&gt;</span>
+                              <span className="text-slate-400 ml-2">· {fmtDate(r.date)}</span>
+                            </div>
+                            <button onClick={() => handleExtractQuote(rfqDrawer.prId, q.id, true)} disabled={extracting === q.id}
+                              className="px-2 py-0.5 bg-purple-600 text-white text-[10px] font-medium hover:bg-purple-700 disabled:opacity-50 flex items-center gap-1">
+                              <Sparkles size={10} /> {extracting === q.id ? 'AI Reading...' : 'AI Extract Rate'}
+                            </button>
+                          </div>
+                          <div className="p-3 text-[11px] text-slate-700 whitespace-pre-wrap max-h-60 overflow-y-auto bg-white">{r.bodyText.slice(0, 2000) || '(no text body — AI will read attachments)'}</div>
+                          {r.attachments.length > 0 && (
+                            <div className="border-t border-slate-200 px-3 py-1.5 flex items-center gap-2 flex-wrap">
+                              <Paperclip size={10} className="text-slate-500" />
+                              {r.attachments.map((a, ai) => (
+                                <a key={ai}
+                                  href={`/api/purchase-requisition/${rfqDrawer.prId}/vendors/${q.id}/attachment/${encodeURIComponent(a.filename)}`}
+                                  target="_blank" rel="noopener noreferrer"
+                                  className="text-[10px] text-blue-600 hover:text-blue-800 underline flex items-center gap-0.5"
+                                  title={`${(a.size / 1024).toFixed(1)} KB · ${a.contentType}`}>
+                                  {a.filename}
+                                </a>
+                              ))}
+                            </div>
+                          )}
+                        </div>
+                      ))}
+
+                      {/* Extracted quote preview */}
+                      {extracted[q.id] && (
+                        <div className="border border-purple-200 bg-purple-50/40 p-3 space-y-1">
+                          <div className="text-[10px] font-bold text-purple-800 uppercase tracking-widest flex items-center gap-1">
+                            <Sparkles size={10} /> AI-Extracted Quote (confidence: {extracted[q.id].confidence})
+                          </div>
+                          {extracted[q.id].overallRateNote && <div className="text-[11px] text-slate-700">{extracted[q.id].overallRateNote}</div>}
+                          {extracted[q.id].lineRates.length > 0 && (
+                            <table className="w-full text-[10px]">
+                              <thead><tr className="text-slate-500 border-b border-slate-200">
+                                <th className="text-left py-1">Line</th><th className="text-left py-1">Item (as quoted)</th>
+                                <th className="text-right py-1">Rate</th><th className="text-right py-1">GST%</th>
+                                <th className="text-left py-1">Remarks</th>
+                              </tr></thead>
+                              <tbody>
+                                {extracted[q.id].lineRates.map((l, li) => (
+                                  <tr key={li} className="border-b border-slate-100">
+                                    <td className="py-1 font-mono">{l.lineNo ?? '—'}</td>
+                                    <td className="py-1">{l.itemName || '—'}</td>
+                                    <td className="py-1 text-right font-mono tabular-nums font-bold">{l.unitRate != null ? `Rs.${l.unitRate.toLocaleString('en-IN')}` : '—'}</td>
+                                    <td className="py-1 text-right font-mono tabular-nums">{l.gstPercent ?? '—'}</td>
+                                    <td className="py-1 text-slate-500">{l.remarks || '—'}</td>
+                                  </tr>
+                                ))}
+                              </tbody>
+                            </table>
+                          )}
+                          <div className="grid grid-cols-3 gap-2 text-[10px] pt-1">
+                            {extracted[q.id].deliveryDays && <div><span className="text-slate-500">Delivery:</span> <b>{extracted[q.id].deliveryDays} days</b></div>}
+                            {extracted[q.id].paymentTerms && <div><span className="text-slate-500">Payment:</span> <b>{extracted[q.id].paymentTerms}</b></div>}
+                            {extracted[q.id].freightTerms && <div><span className="text-slate-500">Freight:</span> <b>{extracted[q.id].freightTerms}</b></div>}
+                            {extracted[q.id].quoteValidityDays && <div><span className="text-slate-500">Valid:</span> <b>{extracted[q.id].quoteValidityDays} days</b></div>}
+                            {extracted[q.id].extractedTotal && <div><span className="text-slate-500">Total:</span> <b>Rs.{extracted[q.id].extractedTotal!.toLocaleString('en-IN')}</b></div>}
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                )}
+              </div>
+            </div>
+          </div>
+        );
+      })()}
 
       {/* ── Vendor Picker Modal ── */}
       {vendorPickFor && (

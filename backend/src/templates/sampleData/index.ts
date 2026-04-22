@@ -245,4 +245,5 @@ export const DOC_TYPE_TO_TEMPLATE: Record<string, string> = {
   EWAY_BILL: 'eway-bill',
   ETHANOL_CHALLAN: 'ethanol-challan',
   ETHANOL_GATE_PASS: 'ethanol-gate-pass',
+  RFQ: 'rfq',
 };

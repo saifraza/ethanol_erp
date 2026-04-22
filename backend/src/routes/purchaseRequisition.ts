@@ -4,6 +4,10 @@ import { authenticate, AuthRequest, authorize, getCompanyFilter, getActiveCompan
 import { asyncHandler } from '../shared/middleware';
 import { createPurchaseOrder } from '../services/purchaseOrderService';
 import { COMPANY } from '../shared/config/company';
+import { renderDocumentPdf } from '../services/documentRenderer';
+import { sendEmail } from '../services/messaging';
+import { fetchRepliesToMessage } from '../services/emailReader';
+import { extractQuoteFromReply } from '../services/rfqQuoteExtractor';
 
 const router = Router();
 router.use(authenticate as any);
@@ -120,6 +124,249 @@ router.post('/:id/vendors/:vrId/award', asyncHandler(async (req: AuthRequest, re
 router.delete('/:id/vendors/:vrId', asyncHandler(async (req: AuthRequest, res: Response) => {
     await prisma.purchaseRequisitionVendor.delete({ where: { id: req.params.vrId } });
     res.json({ ok: true });
+}));
+
+// ── RFQ Email Flow ──
+// Helper — build the data passed into the HBS template
+async function buildRfqData(prId: string, vrId: string, preparedBy: string) {
+  const [pr, vr] = await Promise.all([
+    prisma.purchaseRequisition.findUnique({
+      where: { id: prId },
+      include: { lines: { orderBy: { lineNo: 'asc' } } },
+    }),
+    prisma.purchaseRequisitionVendor.findUnique({
+      where: { id: vrId },
+      include: { vendor: { select: { id: true, name: true, address: true, email: true, phone: true, contactPerson: true, gstin: true } } },
+    }),
+  ]);
+  if (!pr) throw new Error('Indent not found');
+  if (!vr) throw new Error('Vendor quote row not found');
+
+  const validUntil = new Date();
+  validUntil.setDate(validUntil.getDate() + 7); // default 7-day window
+
+  const lines = (pr.lines.length > 0 ? pr.lines : [{
+    lineNo: 1, itemName: pr.itemName, quantity: pr.quantity, unit: pr.unit, remarks: null,
+  }]).map(l => ({
+    lineNo: l.lineNo,
+    itemName: l.itemName,
+    quantity: l.quantity,
+    unit: l.unit,
+    remarks: l.remarks || '',
+  }));
+
+  return {
+    pr,
+    vr,
+    data: {
+      reqNo: pr.reqNo,
+      refSuffix: vrId.slice(0, 6),
+      createdAt: new Date().toISOString(),
+      validUntil: validUntil.toISOString(),
+      department: pr.department,
+      justification: pr.justification,
+      lines,
+      vendor: vr.vendor,
+      preparedBy,
+    },
+  };
+}
+
+// GET /:id/vendors/:vrId/rfq-pdf — RFQ PDF preview (streams PDF)
+router.get('/:id/vendors/:vrId/rfq-pdf', asyncHandler(async (req: AuthRequest, res: Response) => {
+    const { data, pr } = await buildRfqData(req.params.id, req.params.vrId, req.user!.name || req.user!.email);
+    const pdf = await renderDocumentPdf({ docType: 'RFQ', data });
+    res.setHeader('Content-Type', 'application/pdf');
+    res.setHeader('Content-Disposition', `inline; filename="RFQ-${pr.reqNo}-${req.params.vrId.slice(0, 6)}.pdf"`);
+    res.send(pdf);
+}));
+
+// POST /:id/vendors/:vrId/send-rfq — generate PDF + email vendor + store messageId
+// Body: { extraMessage?: string, cc?: string }
+router.post('/:id/vendors/:vrId/send-rfq', asyncHandler(async (req: AuthRequest, res: Response) => {
+    const { extraMessage, cc } = req.body as { extraMessage?: string; cc?: string };
+    const { pr, vr, data } = await buildRfqData(req.params.id, req.params.vrId, req.user!.name || req.user!.email);
+
+    if (!vr.vendor.email) return res.status(400).json({ error: 'Vendor has no email on file' });
+
+    const pdf = await renderDocumentPdf({ docType: 'RFQ', data });
+
+    const subject = `RFQ-${pr.reqNo}-${req.params.vrId.slice(0, 6)} — Request for Quotation from MSPIL`;
+    const linesSummary = data.lines.map(l => `  ${l.lineNo}. ${l.itemName} — ${l.quantity} ${l.unit}`).join('\n');
+    const text = `Dear ${vr.vendor.contactPerson || vr.vendor.name},
+
+Please find attached our Request for Quotation (RFQ-${pr.reqNo}-${req.params.vrId.slice(0, 6)}).
+
+Items requested:
+${linesSummary}
+
+Kindly send your best rate along with GST %, delivery time, and payment terms.
+
+IMPORTANT: Please REPLY ON THIS SAME EMAIL so our system can match your quote automatically. Do not start a new thread.
+${extraMessage ? `\n${extraMessage}\n` : ''}
+Regards,
+${data.preparedBy}
+Mahakaushal Sugar and Power Industries Ltd (MSPIL)
+`;
+
+    const html = `<p>Dear ${vr.vendor.contactPerson || vr.vendor.name},</p>
+<p>Please find attached our Request for Quotation (<b>RFQ-${pr.reqNo}-${req.params.vrId.slice(0, 6)}</b>).</p>
+<p><b>Items requested:</b></p>
+<ol>${data.lines.map(l => `<li>${l.itemName} — ${l.quantity} ${l.unit}${l.remarks ? ` (${l.remarks})` : ''}</li>`).join('')}</ol>
+<p>Kindly send your best rate along with GST %, delivery time, and payment terms.</p>
+<p style="background:#fff7ed;padding:8px;border-left:3px solid #f97316;"><b>IMPORTANT:</b> Please <b>REPLY ON THIS SAME EMAIL</b> so our system can match your quote automatically. Do not start a new thread.</p>
+${extraMessage ? `<p>${extraMessage}</p>` : ''}
+<p>Regards,<br>${data.preparedBy}<br>Mahakaushal Sugar and Power Industries Ltd (MSPIL)</p>`;
+
+    const result = await sendEmail({
+      to: cc ? `${vr.vendor.email}, ${cc}` : vr.vendor.email,
+      subject,
+      text,
+      html,
+      attachments: [{
+        filename: `RFQ-${pr.reqNo}-${req.params.vrId.slice(0, 6)}.pdf`,
+        content: pdf,
+        contentType: 'application/pdf',
+      }],
+    });
+
+    if (!result.success) return res.status(502).json({ error: result.error || 'Failed to send email' });
+
+    // Store the messageId so we can match replies
+    const cleanMsgId = (result.messageId || '').replace(/^<|>$/g, '');
+    await prisma.purchaseRequisitionVendor.update({
+      where: { id: req.params.vrId },
+      data: {
+        quoteRequestedAt: new Date(),
+        quoteRequestedBy: req.user!.name || req.user!.email,
+        quoteEmailSubject: subject,
+        quoteEmailMessageId: cleanMsgId,
+        quoteEmailThreadId: cleanMsgId, // Gmail threads by message-id seed
+      },
+    });
+
+    res.json({ ok: true, messageId: cleanMsgId, sentTo: vr.vendor.email });
+}));
+
+// GET /:id/vendors/:vrId/replies — fetch vendor replies from IMAP (live)
+router.get('/:id/vendors/:vrId/replies', asyncHandler(async (req: AuthRequest, res: Response) => {
+    const vr = await prisma.purchaseRequisitionVendor.findUnique({
+      where: { id: req.params.vrId },
+      include: { vendor: { select: { email: true } }, requisition: { select: { reqNo: true } } },
+    });
+    if (!vr) return res.status(404).json({ error: 'Not found' });
+    if (!vr.quoteEmailMessageId) return res.json({ replies: [], error: 'RFQ email not sent yet — no message id to match' });
+
+    try {
+      const replies = await fetchRepliesToMessage({
+        originalMessageId: vr.quoteEmailMessageId,
+        fromEmail: vr.vendor.email || undefined,
+        subjectContains: `RFQ-${vr.requisition.reqNo}`,
+        sinceDays: 60,
+      });
+      // Strip large base64 attachments from the list view — only send filenames + sizes
+      res.json({
+        replies: replies.map(r => ({
+          ...r,
+          attachments: r.attachments.map(a => ({ filename: a.filename, size: a.size, contentType: a.contentType })),
+        })),
+        count: replies.length,
+      });
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : 'IMAP fetch failed';
+      res.status(502).json({ error: msg, replies: [] });
+    }
+}));
+
+// POST /:id/vendors/:vrId/extract-quote — run Gemini on the latest reply + attachments
+router.post('/:id/vendors/:vrId/extract-quote', asyncHandler(async (req: AuthRequest, res: Response) => {
+    const vr = await prisma.purchaseRequisitionVendor.findUnique({
+      where: { id: req.params.vrId },
+      include: {
+        vendor: { select: { email: true } },
+        requisition: { select: { reqNo: true, lines: { orderBy: { lineNo: 'asc' } }, itemName: true, quantity: true, unit: true } },
+      },
+    });
+    if (!vr) return res.status(404).json({ error: 'Not found' });
+    if (!vr.quoteEmailMessageId) return res.status(400).json({ error: 'RFQ email not sent yet' });
+
+    const replies = await fetchRepliesToMessage({
+      originalMessageId: vr.quoteEmailMessageId,
+      fromEmail: vr.vendor.email || undefined,
+      subjectContains: `RFQ-${vr.requisition.reqNo}`,
+      sinceDays: 60,
+    });
+    if (replies.length === 0) return res.status(404).json({ error: 'No replies found yet' });
+
+    const latest = replies[0];
+    const expectedLines = (vr.requisition.lines.length > 0 ? vr.requisition.lines : [{
+      lineNo: 1, itemName: vr.requisition.itemName, quantity: vr.requisition.quantity, unit: vr.requisition.unit,
+    }]).map(l => ({ lineNo: l.lineNo ?? 1, itemName: l.itemName, quantity: l.quantity, unit: l.unit }));
+
+    const extracted = await extractQuoteFromReply({
+      replyBody: latest.bodyText || latest.bodyHtml || '',
+      attachments: latest.attachments,
+      expectedLines,
+    });
+
+    if (!extracted) return res.status(503).json({ error: 'AI extraction not configured (GEMINI_API_KEY missing)' });
+
+    // If we got a usable unit rate, optionally auto-save it
+    let savedRate: number | null = null;
+    if (req.body.autoApply && extracted.confidence !== 'LOW') {
+      // Prefer the first line's rate, else the overall extracted total / qty
+      const firstLine = extracted.lineRates.find(l => typeof l.unitRate === 'number' && l.unitRate > 0);
+      const rate = firstLine?.unitRate
+        ?? (extracted.extractedTotal && vr.requisition.quantity > 0
+            ? Math.round((extracted.extractedTotal / vr.requisition.quantity) * 100) / 100
+            : null);
+      if (rate) {
+        await prisma.purchaseRequisitionVendor.update({
+          where: { id: req.params.vrId },
+          data: {
+            vendorRate: rate,
+            quotedAt: new Date(),
+            quoteSource: 'EMAIL_AUTO',
+            quoteRemarks: [
+              extracted.overallRateNote,
+              extracted.paymentTerms ? `Payment: ${extracted.paymentTerms}` : null,
+              extracted.deliveryDays ? `Delivery: ${extracted.deliveryDays} days` : null,
+              extracted.freightTerms ? `Freight: ${extracted.freightTerms}` : null,
+            ].filter(Boolean).join(' · ') || null,
+          },
+        });
+        savedRate = rate;
+      }
+    }
+
+    res.json({ extracted, savedRate, reply: { from: latest.from, subject: latest.subject, date: latest.date } });
+}));
+
+// GET /:id/vendors/:vrId/attachment/:filename — fetch a specific attachment body for preview
+// Returns the raw base64 so the frontend can render PDF inline
+router.get('/:id/vendors/:vrId/attachment/:filename', asyncHandler(async (req: AuthRequest, res: Response) => {
+    const vr = await prisma.purchaseRequisitionVendor.findUnique({
+      where: { id: req.params.vrId },
+      include: { vendor: { select: { email: true } }, requisition: { select: { reqNo: true } } },
+    });
+    if (!vr?.quoteEmailMessageId) return res.status(404).json({ error: 'Not found' });
+
+    const replies = await fetchRepliesToMessage({
+      originalMessageId: vr.quoteEmailMessageId,
+      fromEmail: vr.vendor.email || undefined,
+      subjectContains: `RFQ-${vr.requisition.reqNo}`,
+      sinceDays: 60,
+    });
+    for (const r of replies) {
+      const att = r.attachments.find(a => a.filename === req.params.filename);
+      if (att) {
+        res.setHeader('Content-Type', att.contentType);
+        res.setHeader('Content-Disposition', `inline; filename="${att.filename}"`);
+        res.send(Buffer.from(att.contentBase64, 'base64'));
+        return;
+      }
+    }
+    res.status(404).json({ error: 'Attachment not found' });
 }));
 
 // GET /item-history/:itemId — past POs for an inventory item (last 10)
