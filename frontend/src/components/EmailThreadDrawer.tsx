@@ -80,6 +80,7 @@ interface Props {
   onClose: () => void;
   onExtractAI?: (threadId: string, replyId: string) => Promise<void>; // optional AI extract hook (parent knows how to extract for this entity)
   showComposer?: boolean;                             // true = show reply composer (default true)
+  emptyStateAction?: { label: string; onClick: () => void }; // e.g. "Send RFQ" when no threads exist yet
 }
 
 function fmtDate(d: string) {
@@ -94,7 +95,7 @@ function initials(name?: string | null, email?: string): string {
   return (parts[0]?.[0] || '?').toUpperCase() + (parts[1]?.[0] || '').toUpperCase();
 }
 
-export default function EmailThreadDrawer({ query, title, contextLabel, onClose, onExtractAI, showComposer = true }: Props) {
+export default function EmailThreadDrawer({ query, title, contextLabel, onClose, onExtractAI, showComposer = true, emptyStateAction }: Props) {
   const [threads, setThreads] = useState<Thread[]>([]);
   const [selectedThreadId, setSelectedThreadId] = useState<string | null>(null);
   const [detail, setDetail] = useState<ThreadDetail | null>(null);
@@ -235,14 +236,18 @@ export default function EmailThreadDrawer({ query, title, contextLabel, onClose,
             </div>
           </div>
           <div className="flex items-center gap-2">
-            <button onClick={handleSync} disabled={syncing || !selectedThreadId}
-              className="px-2 py-1 bg-slate-700 hover:bg-slate-600 text-[10px] flex items-center gap-1 disabled:opacity-50">
-              <RefreshCw size={11} className={syncing ? 'animate-spin' : ''} /> {syncing ? 'Checking...' : 'Check Replies'}
-            </button>
-            <button onClick={handleResend} disabled={resending || !selectedThreadId}
-              className="px-2 py-1 bg-slate-700 hover:bg-slate-600 text-[10px] flex items-center gap-1 disabled:opacity-50">
-              <Send size={11} /> {resending ? 'Resending...' : 'Resend'}
-            </button>
+            {selectedThreadId && (
+              <>
+                <button onClick={handleSync} disabled={syncing}
+                  className="px-2 py-1 bg-slate-700 hover:bg-slate-600 text-[10px] flex items-center gap-1 disabled:opacity-50">
+                  <RefreshCw size={11} className={syncing ? 'animate-spin' : ''} /> {syncing ? 'Checking...' : 'Check Replies'}
+                </button>
+                <button onClick={handleResend} disabled={resending}
+                  className="px-2 py-1 bg-slate-700 hover:bg-slate-600 text-[10px] flex items-center gap-1 disabled:opacity-50">
+                  <Send size={11} /> {resending ? 'Resending...' : 'Resend'}
+                </button>
+              </>
+            )}
             <button onClick={onClose} className="text-slate-400 hover:text-white text-xs px-1"><X size={14} /></button>
           </div>
         </div>
@@ -252,9 +257,21 @@ export default function EmailThreadDrawer({ query, title, contextLabel, onClose,
           <div className="w-72 border-r border-slate-200 overflow-y-auto bg-slate-50">
             {loading && <div className="p-4 text-[11px] text-slate-400 text-center">Loading...</div>}
             {!loading && threads.length === 0 && (
-              <div className="p-6 text-center">
-                <Inbox size={20} className="mx-auto text-slate-300 mb-2" />
-                <div className="text-[11px] text-slate-500">No emails yet</div>
+              <div className="p-6 text-center space-y-3">
+                <Inbox size={20} className="mx-auto text-slate-300" />
+                <div className="text-[11px] text-slate-500 leading-relaxed">
+                  No emails yet.
+                  <br />
+                  <span className="text-[10px] text-slate-400">
+                    Any RFQ / PO sent before this feature went live won't appear here. Send a fresh email to start tracking.
+                  </span>
+                </div>
+                {emptyStateAction && (
+                  <button onClick={emptyStateAction.onClick}
+                    className="w-full px-3 py-1.5 bg-blue-600 text-white text-[11px] font-bold uppercase tracking-wide hover:bg-blue-700 flex items-center justify-center gap-1">
+                    <Send size={11} /> {emptyStateAction.label}
+                  </button>
+                )}
               </div>
             )}
             {threads.map(t => {
@@ -279,6 +296,21 @@ export default function EmailThreadDrawer({ query, title, contextLabel, onClose,
           <div className="flex-1 overflow-y-auto">
             {!detail && !loading && threads.length > 0 && (
               <div className="p-8 text-center text-xs text-slate-400">Select a thread on the left</div>
+            )}
+            {!detail && !loading && threads.length === 0 && (
+              <div className="p-10 text-center space-y-3 max-w-md mx-auto">
+                <Inbox size={32} className="mx-auto text-slate-300" />
+                <div className="text-sm text-slate-600 font-medium">No email history for this yet</div>
+                <div className="text-[11px] text-slate-500 leading-relaxed">
+                  Either this is the first time we're emailing this contact, or previous emails were sent before email tracking was switched on.
+                </div>
+                {emptyStateAction && (
+                  <button onClick={emptyStateAction.onClick}
+                    className="px-4 py-2 bg-blue-600 text-white text-xs font-bold uppercase tracking-wide hover:bg-blue-700 flex items-center justify-center gap-1 mx-auto">
+                    <Send size={12} /> {emptyStateAction.label}
+                  </button>
+                )}
+              </div>
             )}
             {detail && (
               <div className="divide-y divide-slate-200">

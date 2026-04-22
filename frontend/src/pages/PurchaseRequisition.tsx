@@ -312,6 +312,7 @@ export default function PurchaseRequisition() {
   const [threadDrawerTitle, setThreadDrawerTitle] = useState<string>('');
   const [threadDrawerContext, setThreadDrawerContext] = useState<string>('');
   const [threadDrawerOnExtract, setThreadDrawerOnExtract] = useState<((threadId: string, replyId: string) => Promise<void>) | null>(null);
+  const [threadDrawerEmptyAction, setThreadDrawerEmptyAction] = useState<{ label: string; onClick: () => void } | null>(null);
 
   const [rfqPdfUrl, setRfqPdfUrl] = useState<string | null>(null);
   const fetchRfqPdfBlob = async (prId: string, quoteId: string) => {
@@ -1142,13 +1143,28 @@ export default function PurchaseRequisition() {
                       </div>
                       <div className="flex items-center gap-2">
                         <button onClick={() => {
-                          setThreadDrawerQuery({ entityType: 'INDENT_QUOTE', entityId: q.id });
+                          const prId = rfqDrawer.prId;
+                          const vrId = q.id;
+                          setThreadDrawerQuery({ entityType: 'INDENT_QUOTE', entityId: vrId });
                           setThreadDrawerTitle(`Thread — ${q.vendor.name}`);
                           setThreadDrawerContext(`Indent #${pr.reqNo} · ${q.vendor.email || ''}`);
-                          setThreadDrawerOnExtract(() => async (tId: string, _rId: string) => {
-                            // Delegate AI extraction to the existing indent-specific endpoint
-                            await api.post(`/purchase-requisition/${rfqDrawer.prId}/vendors/${q.id}/extract-quote`, { autoApply: true });
+                          setThreadDrawerOnExtract(() => async (_tId: string, _rId: string) => {
+                            await api.post(`/purchase-requisition/${prId}/vendors/${vrId}/extract-quote`, { autoApply: true });
                             load();
+                          });
+                          setThreadDrawerEmptyAction({
+                            label: 'Send RFQ Email Now',
+                            onClick: async () => {
+                              try {
+                                await api.post(`/purchase-requisition/${prId}/vendors/${vrId}/send-rfq`, {});
+                                alert('RFQ sent. The thread will appear shortly.');
+                                // Re-trigger drawer fetch
+                                setThreadDrawerQuery({ entityType: 'INDENT_QUOTE', entityId: vrId });
+                                load();
+                              } catch (e: unknown) {
+                                alert((e as { response?: { data?: { error?: string } } }).response?.data?.error || 'Send failed');
+                              }
+                            },
                           });
                           closeRfqDrawer();
                         }}
@@ -1310,8 +1326,9 @@ export default function PurchaseRequisition() {
           query={threadDrawerQuery}
           title={threadDrawerTitle}
           contextLabel={threadDrawerContext}
-          onClose={() => setThreadDrawerQuery(null)}
+          onClose={() => { setThreadDrawerQuery(null); setThreadDrawerEmptyAction(null); setThreadDrawerOnExtract(null); }}
           onExtractAI={threadDrawerOnExtract || undefined}
+          emptyStateAction={threadDrawerEmptyAction || undefined}
         />
       )}
     </div>
