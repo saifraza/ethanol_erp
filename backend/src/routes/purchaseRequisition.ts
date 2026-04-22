@@ -47,6 +47,52 @@ router.get('/:id', asyncHandler(async (req: AuthRequest, res: Response) => {
     res.json(pr);
 }));
 
+// POST /bulk — create multiple requisitions in one transaction (Excel-style entry)
+router.post('/bulk', asyncHandler(async (req: AuthRequest, res: Response) => {
+    const user = req.user!;
+    const common = req.body.common || {};
+    const rows = Array.isArray(req.body.rows) ? req.body.rows : [];
+    if (rows.length === 0) return res.status(400).json({ error: 'No rows provided' });
+    if (rows.length > 100) return res.status(400).json({ error: 'Max 100 rows per bulk submit' });
+
+    // Validate all rows first (fail fast before any DB write)
+    for (let i = 0; i < rows.length; i++) {
+      const r = rows[i];
+      const qty = parseFloat(r.quantity);
+      if (!r.itemName || !String(r.itemName).trim()) return res.status(400).json({ error: `Row ${i + 1}: item name required` });
+      if (isNaN(qty) || qty <= 0) return res.status(400).json({ error: `Row ${i + 1}: quantity must be > 0` });
+    }
+
+    const companyId = getActiveCompanyId(req);
+    const requestedBy = user.name || user.email;
+    const initialStatus = req.body.status === 'SUBMITTED' ? 'SUBMITTED' : 'DRAFT';
+
+    const created = await prisma.$transaction(
+      rows.map((r: any) => prisma.purchaseRequisition.create({
+        data: {
+          title: r.title || `Need ${r.itemName}`,
+          itemName: String(r.itemName).trim(),
+          quantity: parseFloat(r.quantity),
+          unit: r.unit || 'nos',
+          estimatedCost: parseFloat(r.estimatedCost) || 0,
+          urgency: r.urgency || common.urgency || 'ROUTINE',
+          category: r.category || common.category || 'GENERAL',
+          justification: r.justification || null,
+          supplier: r.supplier || null,
+          status: initialStatus,
+          remarks: r.remarks || null,
+          requestedBy,
+          userId: user.id,
+          inventoryItemId: r.inventoryItemId || null,
+          department: r.department || common.department || null,
+          requestedByPerson: r.requestedByPerson || common.requestedByPerson || null,
+          companyId,
+        },
+      }))
+    );
+    res.status(201).json({ created: created.length, requisitions: created });
+}));
+
 // POST / — create new requisition
 router.post('/', asyncHandler(async (req: AuthRequest, res: Response) => {
     const b = req.body;

@@ -52,6 +52,7 @@ model Company {
   transporters          Transporter[]
   contractors           Contractor[]
   departments           Department[]
+  businessDivisions     BusinessDivision[]
   designations          Designation[]
   purchaseRequisitions  PurchaseRequisition[]
   contractorBills       ContractorBill[]
@@ -1328,19 +1329,41 @@ model RawMaterialConsumption {
   @@index([materialItemId])
 }
 
+// ── Business Division Master (Ethanol / Sugar / Power / Co-Gen / Bio-CNG) ──
+// A single Company (MSPIL) runs multiple business divisions. Each department
+// belongs to one division. Helps scope indents, reports, and P&L per division.
+model BusinessDivision {
+  id          String       @id @default(cuid())
+  name        String       // "Ethanol", "Sugar", "Power", "Co-Gen", "Bio-CNG"
+  code        String?      // Short code: ETH, SUG, PWR, COG, CBG
+  description String?
+  isActive    Boolean      @default(true)
+  companyId   String?      // FK → Company (null = MSPIL default)
+  company     Company?     @relation(fields: [companyId], references: [id])
+  departments Department[]
+  createdAt   DateTime     @default(now())
+  updatedAt   DateTime     @updatedAt
+
+  @@unique([name, companyId])
+  @@index([companyId])
+}
+
 // ── Department Master ──
 model Department {
-  id        String     @id @default(cuid())
-  name      String     @unique
-  code      String?
-  isActive  Boolean    @default(true)
-  createdAt DateTime   @default(now())
-  updatedAt DateTime   @updatedAt
-  employees Employee[]
-  companyId String? // FK → Company (null = MSPIL default)
-  company   Company?   @relation(fields: [companyId], references: [id])
+  id                 String            @id @default(cuid())
+  name               String            @unique
+  code               String?
+  isActive           Boolean           @default(true)
+  createdAt          DateTime          @default(now())
+  updatedAt          DateTime          @updatedAt
+  employees          Employee[]
+  companyId          String? // FK → Company (null = MSPIL default)
+  company            Company?          @relation(fields: [companyId], references: [id])
+  businessDivisionId String? // FK → BusinessDivision (null = cross-division / legacy rows)
+  businessDivision   BusinessDivision? @relation(fields: [businessDivisionId], references: [id])
 
   @@index([companyId])
+  @@index([businessDivisionId])
 }
 
 // ── Warehouse / Storage Location ──

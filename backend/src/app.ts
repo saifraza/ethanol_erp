@@ -105,6 +105,7 @@ import inventoryStockRoutes from './routes/inventoryStock';
 import inventoryCountRoutes from './routes/inventoryCounts';
 import inventoryReorderRoutes from './routes/inventoryReorder';
 import departmentRoutes from './routes/departments';
+import businessDivisionRoutes from './routes/businessDivisions';
 // HR & Payroll
 import employeeRoutes from './routes/employees';
 import designationRoutes from './routes/designations';
@@ -221,6 +222,7 @@ app.use('/api/inventory/stock', inventoryStockRoutes);
 app.use('/api/inventory/counts', inventoryCountRoutes);
 app.use('/api/inventory/reorder', inventoryReorderRoutes);
 app.use('/api/departments', departmentRoutes);
+app.use('/api/business-divisions', businessDivisionRoutes);
 // HR & Payroll
 app.use('/api/employees', employeeRoutes);
 app.use('/api/designations', designationRoutes);

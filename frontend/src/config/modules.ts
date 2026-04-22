@@ -12,7 +12,7 @@ import {
   BookOpen, Calculator, TrendingUp, Landmark,
   PackageSearch, ArrowRightLeft, ClipboardCheck, BarChart2, Banknote, PieChart, HardHat,
   FolderArchive, Search, ShieldCheck, ListChecks, BotMessageSquare,
-  UserCheck as UserCheckIcon, Network, Wallet, CircleDollarSign, LayoutGrid, Sparkles
+  UserCheck as UserCheckIcon, Network, Wallet, CircleDollarSign, LayoutGrid, Sparkles, Plus
 } from 'lucide-react';
 
 export interface ModuleDef {
@@ -51,7 +51,6 @@ export const MODULE_DEFS: ModuleDef[] = [
   { key: 'fuel', label: 'Fuel', to: '/process/fuel', icon: Flame, group: 'procurement' },
   { key: 'opc-live', label: 'OPC Ethanol', to: '/process/opc-ethanol', icon: Radio, group: 'process' },
   { key: 'opc-sugar', label: 'OPC Sugar', to: '/process/opc-sugar', icon: Radio, group: 'process' },
-  { key: 'plant-indent', label: 'Indent / Request', to: '/purchase-requisition', icon: ShoppingCart, group: 'process' },
 
   // ── SALES (DDGS + Ethanol outward) ──
   { key: 'customers', label: 'Buyers', to: '/sales/customers', icon: UserCheck, group: 'sales' },
@@ -93,6 +92,7 @@ export const MODULE_DEFS: ModuleDef[] = [
   // ── INVENTORY / STORE ──
   { key: 'inventory-store', label: 'Inventory & Store', to: '/inventory', icon: Warehouse, group: 'inventory' },
   { key: 'store-module', label: 'Store (PO & GRN)', to: '/store/receipts', icon: PackageCheck, group: 'inventory' },
+  { key: 'plant-indent', label: 'New Indent', to: '/purchase-requisition', icon: Plus, group: 'inventory' },
   { key: 'store-indents', label: 'Store Indents', to: '/inventory/store-indents', icon: ShoppingCart, group: 'inventory' },
   { key: 'contractor-issues', label: 'Contractor Issues', to: '/inventory/contractor-issues', icon: HardHat, group: 'inventory' },
   { key: 'masters', label: 'Dept & Warehouses', to: '/inventory/masters', icon: Building2, group: 'inventory' },
