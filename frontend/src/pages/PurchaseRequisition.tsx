@@ -306,15 +306,45 @@ export default function PurchaseRequisition() {
   const [extracting, setExtracting] = useState<string | null>(null);
   const [extracted, setExtracted] = useState<Record<string, ExtractedQuote>>({});
 
+  const [rfqPdfUrl, setRfqPdfUrl] = useState<string | null>(null);
+  const fetchRfqPdfBlob = async (prId: string, quoteId: string) => {
+    try {
+      const res = await api.get(`/purchase-requisition/${prId}/vendors/${quoteId}/rfq-pdf`, { responseType: 'blob' });
+      const blob = new Blob([res.data as BlobPart], { type: 'application/pdf' });
+      const url = URL.createObjectURL(blob);
+      setRfqPdfUrl(url);
+    } catch {
+      setRfqPdfUrl(null);
+    }
+  };
+
+  // Open an authed endpoint in a new tab by fetching as blob first
+  const openAttachment = async (prId: string, quoteId: string, filename: string) => {
+    try {
+      const res = await api.get(`/purchase-requisition/${prId}/vendors/${quoteId}/attachment/${encodeURIComponent(filename)}`, { responseType: 'blob' });
+      const blob = res.data as Blob;
+      const url = URL.createObjectURL(blob);
+      window.open(url, '_blank');
+      // Don't revoke immediately — browser needs it for the tab; GC will handle eventually
+      setTimeout(() => URL.revokeObjectURL(url), 60000);
+    } catch (e: unknown) {
+      alert((e as { response?: { data?: { error?: string } } }).response?.data?.error || 'Failed to load attachment');
+    }
+  };
   const openRfqDrawer = (prId: string, quote: Quote) => {
     setRfqDrawer({ prId, quote });
     setRfqExtraMessage('');
     setRfqCc('');
     setReplies([]);
+    setRfqPdfUrl(null);
+    fetchRfqPdfBlob(prId, quote.id);
     // If already sent, auto-load replies
     if (quote.quoteRequestedAt) loadReplies(prId, quote.id);
   };
-  const closeRfqDrawer = () => { setRfqDrawer(null); setReplies([]); setExtracted({}); };
+  const closeRfqDrawer = () => {
+    if (rfqPdfUrl) URL.revokeObjectURL(rfqPdfUrl);
+    setRfqDrawer(null); setReplies([]); setExtracted({}); setRfqPdfUrl(null);
+  };
 
   const handleSendRfq = async () => {
     if (!rfqDrawer) return;
@@ -1006,7 +1036,7 @@ export default function PurchaseRequisition() {
         const pr = reqs.find(r => r.id === rfqDrawer.prId);
         if (!pr) return null;
         const q = pr.quotes.find(qq => qq.id === rfqDrawer.quote.id) || rfqDrawer.quote;
-        const pdfUrl = `/api/purchase-requisition/${rfqDrawer.prId}/vendors/${q.id}/rfq-pdf`;
+        const pdfSrc = rfqPdfUrl; // blob URL with auth already resolved
         return (
           <div className="fixed inset-0 bg-black/40 flex items-stretch justify-end z-50" onClick={closeRfqDrawer}>
             <div className="bg-white shadow-2xl w-full max-w-4xl flex flex-col" onClick={e => e.stopPropagation()}>
@@ -1043,9 +1073,13 @@ export default function PurchaseRequisition() {
                     <div className="text-[10px] font-bold text-slate-700 uppercase tracking-widest flex items-center gap-1">
                       <FileText size={12} /> RFQ Document Preview
                     </div>
-                    <a href={pdfUrl} target="_blank" rel="noopener noreferrer" className="text-[10px] text-blue-600 hover:text-blue-800 underline">Open in new tab</a>
+                    {pdfSrc
+                      ? <a href={pdfSrc} target="_blank" rel="noopener noreferrer" className="text-[10px] text-blue-600 hover:text-blue-800 underline">Open in new tab</a>
+                      : <span className="text-[10px] text-slate-400">loading...</span>}
                   </div>
-                  <iframe src={pdfUrl} className="w-full h-[480px]" title="RFQ PDF" />
+                  {pdfSrc
+                    ? <iframe src={pdfSrc} className="w-full h-[480px]" title="RFQ PDF" />
+                    : <div className="h-[480px] flex items-center justify-center text-xs text-slate-400">Generating PDF preview...</div>}
                 </div>
 
                 {/* Send form (only if not sent yet) */}
@@ -1111,13 +1145,12 @@ export default function PurchaseRequisition() {
                             <div className="border-t border-slate-200 px-3 py-1.5 flex items-center gap-2 flex-wrap">
                               <Paperclip size={10} className="text-slate-500" />
                               {r.attachments.map((a, ai) => (
-                                <a key={ai}
-                                  href={`/api/purchase-requisition/${rfqDrawer.prId}/vendors/${q.id}/attachment/${encodeURIComponent(a.filename)}`}
-                                  target="_blank" rel="noopener noreferrer"
-                                  className="text-[10px] text-blue-600 hover:text-blue-800 underline flex items-center gap-0.5"
+                                <button key={ai}
+                                  onClick={() => openAttachment(rfqDrawer.prId, q.id, a.filename)}
+                                  className="text-[10px] text-blue-600 hover:text-blue-800 underline flex items-center gap-0.5 bg-transparent border-0 cursor-pointer p-0"
                                   title={`${(a.size / 1024).toFixed(1)} KB · ${a.contentType}`}>
                                   {a.filename}
-                                </a>
+                                </button>
                               ))}
                             </div>
                           )}
