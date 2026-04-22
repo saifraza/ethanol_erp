@@ -1618,6 +1618,19 @@ model PurchaseRequisition {
   createdAt         DateTime  @default(now())
   updatedAt         DateTime  @updatedAt
 
+  // ── Quote / Vendor Tracking (one vendor per indent) ──
+  vendorId              String? // FK → Vendor for the quote / PO
+  vendor                Vendor?   @relation("VendorIndents", fields: [vendorId], references: [id])
+  quoteRequestedAt      DateTime? // when we emailed / asked vendor for quote
+  quoteRequestedBy      String?   // user name who triggered the quote request
+  quoteEmailSubject     String?   // subject line used in the quote request email
+  quoteEmailThreadId    String?   // Gmail thread id — used to match replies
+  quoteEmailMessageId   String?   // Gmail message id of the sent request
+  vendorRate            Float?    // rate quoted by the vendor (manual or AI-extracted)
+  vendorQuotedAt        DateTime? // when rate was entered / extracted
+  quoteSource           String?   // MANUAL | EMAIL_AUTO | PHONE | WHATSAPP
+  quoteRemarks          String?   // free-text notes on the quote
+
   purchaseOrders PurchaseOrder[] // auto-generated POs from this indent
   companyId      String? // FK → Company (null = MSPIL default)
   company        Company?        @relation(fields: [companyId], references: [id])
@@ -1627,6 +1640,7 @@ model PurchaseRequisition {
   @@index([userId])
   @@index([inventoryItemId])
   @@index([companyId])
+  @@index([vendorId])
 }
 
 // ═══════════════════════════════════════════════
@@ -2219,6 +2233,7 @@ model Vendor {
   updatedAt               DateTime    @updatedAt
 
   purchaseOrders    PurchaseOrder[]
+  indents           PurchaseRequisition[] @relation("VendorIndents")
   grns              GoodsReceipt[]
   vendorInvoices    VendorInvoice[]
   vendorPayments    VendorPayment[]

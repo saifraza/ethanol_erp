@@ -30,6 +30,11 @@ const STATUS_COLORS: Record<string, string> = {
   COMPLETED: 'border-emerald-600 bg-emerald-50 text-emerald-700',
 };
 
+interface Vendor {
+  id: string; name: string; email: string | null; phone: string | null;
+  contactPerson?: string | null;
+}
+
 interface PR {
   id: string; reqNo: number; title: string; itemName: string;
   quantity: number; unit: string; estimatedCost: number;
@@ -41,6 +46,25 @@ interface PR {
   requestedByPerson: string | null;
   issuedQty: number; purchaseQty: number;
   issuedBy: string | null; issuedAt: string | null;
+  // Quote / vendor tracking
+  vendorId: string | null;
+  vendor: Pick<Vendor, 'id' | 'name' | 'email' | 'phone'> | null;
+  quoteRequestedAt: string | null;
+  quoteRequestedBy: string | null;
+  quoteEmailSubject: string | null;
+  quoteEmailThreadId: string | null;
+  vendorRate: number | null;
+  vendorQuotedAt: string | null;
+  quoteSource: string | null;
+  quoteRemarks: string | null;
+}
+
+interface ItemHistory {
+  recent: Array<{
+    poNo: number; poDate: string; rate: number; quantity: number; unit: string;
+    status: string; vendorName?: string; vendorEmail?: string;
+  }>;
+  stats: { minRate: number; maxRate: number; avgRate: number; lastRate: number; totalPos: number } | null;
 }
 
 export default function PurchaseRequisition() {
@@ -192,13 +216,70 @@ export default function PurchaseRequisition() {
   const [showItemDropdown, setShowItemDropdown] = useState(false);
   const [departments, setDepartments] = useState<string[]>([]);
 
-  const [vendors, setVendors] = useState<Array<{ name: string; phone?: string; contactPerson?: string }>>([]);
+  const [vendors, setVendors] = useState<Vendor[]>([]);
+  const [itemHistory, setItemHistory] = useState<ItemHistory | null>(null);
+  const [historyLoading, setHistoryLoading] = useState(false);
+  const [quoteRateInput, setQuoteRateInput] = useState<Record<string, string>>({});
+  const [quoteRemarksInput, setQuoteRemarksInput] = useState<Record<string, string>>({});
+  const [selectVendorFor, setSelectVendorFor] = useState<string | null>(null);
+  const [vendorQuery, setVendorQuery] = useState('');
+
+  const fetchItemHistory = async (itemId: string) => {
+    setHistoryLoading(true);
+    try {
+      const res = await api.get<ItemHistory>(`/purchase-requisition/item-history/${itemId}`);
+      setItemHistory(res.data);
+    } catch {
+      setItemHistory(null);
+    }
+    setHistoryLoading(false);
+  };
+
+  const handleRequestQuote = async (prId: string, vendor: Vendor) => {
+    const subject = `Quote Request - Indent #${reqs.find(r => r.id === prId)?.reqNo || ''} - ${reqs.find(r => r.id === prId)?.itemName || ''}`;
+    try {
+      await api.post(`/purchase-requisition/${prId}/request-quote`, {
+        vendorId: vendor.id,
+        emailSubject: subject,
+      });
+      setSelectVendorFor(null);
+      setVendorQuery('');
+      load();
+      if (vendor.email) {
+        const body = `Dear ${vendor.name},%0D%0A%0D%0AKindly send us your best rate for the below item. Please reply on this same email so we can track it.%0D%0A%0D%0AItem: ${reqs.find(r => r.id === prId)?.itemName}%0D%0AQuantity: ${reqs.find(r => r.id === prId)?.quantity} ${reqs.find(r => r.id === prId)?.unit}%0D%0A%0D%0ARegards,%0D%0AMSPIL Purchase Team`;
+        window.open(`mailto:${vendor.email}?subject=${encodeURIComponent(subject)}&body=${body}`, '_blank');
+      } else {
+        alert(`Marked as quote-requested. Vendor has no email on file — contact by phone (${vendor.phone || 'n/a'}).`);
+      }
+    } catch (e: unknown) {
+      alert((e as { response?: { data?: { error?: string } } }).response?.data?.error || 'Failed to record quote request');
+    }
+  };
+
+  const handleSaveQuoteRate = async (prId: string) => {
+    const rate = quoteRateInput[prId];
+    if (!rate || parseFloat(rate) <= 0) { alert('Enter a valid rate'); return; }
+    try {
+      await api.put(`/purchase-requisition/${prId}/update-quote-rate`, {
+        vendorRate: parseFloat(rate),
+        quoteRemarks: quoteRemarksInput[prId] || '',
+        quoteSource: 'MANUAL',
+      });
+      setQuoteRateInput(prev => { const next = { ...prev }; delete next[prId]; return next; });
+      setQuoteRemarksInput(prev => { const next = { ...prev }; delete next[prId]; return next; });
+      load();
+    } catch (e: unknown) {
+      alert((e as { response?: { data?: { error?: string } } }).response?.data?.error || 'Failed to save rate');
+    }
+  };
 
   useEffect(() => {
     api.get('/inventory/items').then(r => setInvItems(r.data.items || [])).catch(() => {});
     api.get('/departments').then(r => setDepartments((r.data || []).filter((d: { isActive: boolean }) => d.isActive).map((d: { name: string }) => d.name))).catch(() => {});
-    api.get('/vendors?limit=200').then(r => {
-      const v = (r.data.vendors || r.data || []).map((v: { name: string; phone?: string; contactPerson?: string }) => ({ name: v.name, phone: v.phone, contactPerson: v.contactPerson }));
+    api.get('/vendors?limit=500').then(r => {
+      const v = (r.data.vendors || r.data || []).map((v: { id: string; name: string; phone?: string; email?: string; contactPerson?: string }) => ({
+        id: v.id, name: v.name, email: v.email || null, phone: v.phone || null, contactPerson: v.contactPerson || null,
+      }));
       setVendors(v);
     }).catch(() => {});
     // Pre-fill from URL params (linked from Inventory page)
@@ -671,8 +752,14 @@ export default function PurchaseRequisition() {
                     const next = isExpanded ? null : pr.id;
                     setExpanded(next);
                     setStockCheck(null);
-                    if (next && pr.inventoryItemId && ['DRAFT', 'SUBMITTED', 'APPROVED'].includes(pr.status)) {
-                      checkStock(pr.id, pr.quantity);
+                    setItemHistory(null);
+                    if (next) {
+                      if (pr.inventoryItemId && ['DRAFT', 'SUBMITTED', 'APPROVED'].includes(pr.status)) {
+                        checkStock(pr.id, pr.quantity);
+                      }
+                      if (pr.inventoryItemId) {
+                        fetchItemHistory(pr.inventoryItemId);
+                      }
                     }
                   }}
                 >
@@ -749,6 +836,126 @@ export default function PurchaseRequisition() {
                     )}
                     {pr.department && (
                       <div className="text-[10px] text-slate-500">Dept: <span className="font-bold">{pr.department}</span> {pr.requestedByPerson ? `| Person: ${pr.requestedByPerson}` : ''}</div>
+                    )}
+
+                    {/* ── Vendor & Quote Tracking ── */}
+                    <div className="border border-slate-300 bg-white p-3 space-y-2" onClick={e => e.stopPropagation()}>
+                      <div className="flex items-center justify-between">
+                        <div className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">Vendor / Quote</div>
+                        {pr.vendor && pr.quoteRequestedAt && (
+                          <span className="text-[9px] text-slate-500">
+                            Requested {new Date(pr.quoteRequestedAt).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: '2-digit' })}
+                            {pr.quoteRequestedBy ? ` by ${pr.quoteRequestedBy}` : ''}
+                          </span>
+                        )}
+                      </div>
+
+                      {pr.vendor ? (
+                        <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+                          <div>
+                            <div className="text-[10px] text-slate-400 uppercase tracking-widest">Vendor</div>
+                            <div className="text-xs font-bold text-slate-800">{pr.vendor.name}</div>
+                            <div className="text-[10px] text-slate-500">
+                              {pr.vendor.email || 'no email'} {pr.vendor.phone ? `| ${pr.vendor.phone}` : ''}
+                            </div>
+                          </div>
+                          <div>
+                            <div className="text-[10px] text-slate-400 uppercase tracking-widest">Quoted Rate</div>
+                            {pr.vendorRate != null && pr.vendorRate > 0 ? (
+                              <>
+                                <div className="text-sm font-bold text-green-700 font-mono tabular-nums">Rs.{pr.vendorRate.toLocaleString('en-IN')}</div>
+                                <div className="text-[10px] text-slate-500">
+                                  {pr.quoteSource || 'MANUAL'} · {pr.vendorQuotedAt && new Date(pr.vendorQuotedAt).toLocaleDateString('en-IN', { day: '2-digit', month: 'short' })}
+                                </div>
+                              </>
+                            ) : (
+                              <div className="flex gap-1">
+                                <input type="number" step="any" placeholder="Enter rate" value={quoteRateInput[pr.id] || ''}
+                                  onChange={e => setQuoteRateInput(prev => ({ ...prev, [pr.id]: e.target.value }))}
+                                  className="border border-slate-300 px-2 py-1 text-xs w-24 font-mono tabular-nums" />
+                                <button onClick={() => handleSaveQuoteRate(pr.id)}
+                                  className="px-2 py-1 bg-blue-600 text-white text-[10px] font-medium hover:bg-blue-700">Save</button>
+                              </div>
+                            )}
+                          </div>
+                          <div>
+                            <div className="text-[10px] text-slate-400 uppercase tracking-widest">Total (Qty × Rate)</div>
+                            <div className="text-sm font-bold text-slate-800 font-mono tabular-nums">
+                              {pr.vendorRate ? `Rs.${(pr.vendorRate * pr.quantity).toLocaleString('en-IN')}` : '—'}
+                            </div>
+                          </div>
+                          {pr.vendorRate != null && pr.vendorRate > 0 && (
+                            <div className="md:col-span-3 flex items-center gap-2 pt-1">
+                              <input type="number" step="any" placeholder="Update rate" value={quoteRateInput[pr.id] || ''}
+                                onChange={e => setQuoteRateInput(prev => ({ ...prev, [pr.id]: e.target.value }))}
+                                className="border border-slate-300 px-2 py-1 text-xs w-28 font-mono tabular-nums" />
+                              <input placeholder="Remarks" value={quoteRemarksInput[pr.id] || ''}
+                                onChange={e => setQuoteRemarksInput(prev => ({ ...prev, [pr.id]: e.target.value }))}
+                                className="border border-slate-300 px-2 py-1 text-xs flex-1" />
+                              <button onClick={() => handleSaveQuoteRate(pr.id)}
+                                className="px-2 py-1 bg-white border border-blue-500 text-blue-700 text-[10px] font-medium hover:bg-blue-50">Update Rate</button>
+                              <button onClick={() => setSelectVendorFor(pr.id)}
+                                className="px-2 py-1 bg-white border border-slate-400 text-slate-700 text-[10px] font-medium hover:bg-slate-50">Change Vendor</button>
+                            </div>
+                          )}
+                        </div>
+                      ) : (
+                        <div className="flex items-center justify-between">
+                          <div className="text-xs text-slate-500">
+                            {pr.supplier ? `Preferred supplier: ${pr.supplier}` : 'No vendor selected yet'}
+                          </div>
+                          <button onClick={() => setSelectVendorFor(pr.id)}
+                            className="px-3 py-1 bg-blue-600 text-white text-[11px] font-medium hover:bg-blue-700">
+                            Select Vendor & Request Quote
+                          </button>
+                        </div>
+                      )}
+                    </div>
+
+                    {/* ── Item History: past POs + rate stats ── */}
+                    {pr.inventoryItemId && (
+                      <div className="border border-slate-300 bg-white p-3 space-y-2" onClick={e => e.stopPropagation()}>
+                        <div className="flex items-center justify-between">
+                          <div className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">Past Orders for this Item</div>
+                          {itemHistory?.stats && (
+                            <div className="text-[10px] text-slate-500">
+                              Last {itemHistory.stats.totalPos} POs · Min Rs.{itemHistory.stats.minRate.toLocaleString('en-IN')} / Avg Rs.{itemHistory.stats.avgRate.toLocaleString('en-IN')} / Max Rs.{itemHistory.stats.maxRate.toLocaleString('en-IN')}
+                            </div>
+                          )}
+                        </div>
+                        {historyLoading ? (
+                          <div className="text-xs text-slate-400">Loading history...</div>
+                        ) : !itemHistory || itemHistory.recent.length === 0 ? (
+                          <div className="text-xs text-slate-400 italic">No prior POs found for this item</div>
+                        ) : (
+                          <div className="overflow-x-auto">
+                            <table className="w-full text-[11px]">
+                              <thead>
+                                <tr className="bg-slate-100 text-slate-600">
+                                  <th className="text-left px-2 py-1 font-semibold">PO#</th>
+                                  <th className="text-left px-2 py-1 font-semibold">Date</th>
+                                  <th className="text-left px-2 py-1 font-semibold">Vendor</th>
+                                  <th className="text-right px-2 py-1 font-semibold">Qty</th>
+                                  <th className="text-right px-2 py-1 font-semibold">Rate</th>
+                                  <th className="text-left px-2 py-1 font-semibold">Status</th>
+                                </tr>
+                              </thead>
+                              <tbody>
+                                {itemHistory.recent.map((h, idx) => (
+                                  <tr key={idx} className="border-b border-slate-100">
+                                    <td className="px-2 py-1 font-mono tabular-nums text-slate-700">{h.poNo}</td>
+                                    <td className="px-2 py-1 text-slate-600">{h.poDate ? new Date(h.poDate).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: '2-digit' }) : '—'}</td>
+                                    <td className="px-2 py-1 text-slate-800">{h.vendorName || '—'}</td>
+                                    <td className="px-2 py-1 text-right font-mono tabular-nums">{h.quantity} {h.unit}</td>
+                                    <td className="px-2 py-1 text-right font-mono tabular-nums font-bold">Rs.{h.rate.toLocaleString('en-IN')}</td>
+                                    <td className="px-2 py-1 text-[9px] text-slate-500">{h.status}</td>
+                                  </tr>
+                                ))}
+                              </tbody>
+                            </table>
+                          </div>
+                        )}
+                      </div>
                     )}
 
                     {/* Pipeline Status (read-only — approval/issue happens on Store page) */}
@@ -869,6 +1076,58 @@ export default function PurchaseRequisition() {
               </div>
             );
           })}
+        </div>
+      )}
+
+      {/* Vendor Selection Modal — for Request Quote */}
+      {selectVendorFor && (
+        <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50" onClick={() => { setSelectVendorFor(null); setVendorQuery(''); }}>
+          <div className="bg-white shadow-2xl w-full max-w-2xl" onClick={e => e.stopPropagation()}>
+            <div className="bg-slate-800 text-white px-4 py-2.5 flex items-center justify-between">
+              <h2 className="text-xs font-bold uppercase tracking-widest">Select Vendor & Request Quote</h2>
+              <button onClick={() => { setSelectVendorFor(null); setVendorQuery(''); }} className="text-slate-400 hover:text-white text-xs">✕</button>
+            </div>
+            <div className="p-4 space-y-3">
+              <input
+                type="text"
+                value={vendorQuery}
+                onChange={e => setVendorQuery(e.target.value)}
+                placeholder="Search vendor name, email, or phone..."
+                autoFocus
+                className="w-full border border-slate-300 px-3 py-2 text-xs focus:outline-none focus:ring-1 focus:ring-blue-500"
+              />
+              <div className="max-h-80 overflow-y-auto border border-slate-200">
+                {(() => {
+                  const q = vendorQuery.toLowerCase().trim();
+                  const matches = q.length === 0
+                    ? vendors.slice(0, 50)
+                    : vendors.filter(v => v.name.toLowerCase().includes(q) || (v.email || '').toLowerCase().includes(q) || (v.phone || '').includes(q)).slice(0, 50);
+                  if (matches.length === 0) {
+                    return <div className="px-3 py-6 text-center text-xs text-slate-400">No vendors match your search</div>;
+                  }
+                  return matches.map(v => (
+                    <div key={v.id}
+                      className="px-3 py-2 text-xs border-b border-slate-100 hover:bg-blue-50 cursor-pointer flex items-center justify-between"
+                      onClick={() => handleRequestQuote(selectVendorFor, v)}>
+                      <div>
+                        <div className="font-bold text-slate-800">{v.name}</div>
+                        <div className="text-[10px] text-slate-500">
+                          {v.email || <span className="text-red-500 italic">no email</span>}
+                          {v.phone ? ` · ${v.phone}` : ''}
+                        </div>
+                      </div>
+                      <button className="px-2 py-1 bg-blue-600 text-white text-[10px] font-medium hover:bg-blue-700">
+                        {v.email ? 'Email Quote Request' : 'Mark Requested'}
+                      </button>
+                    </div>
+                  ));
+                })()}
+              </div>
+              <div className="text-[10px] text-slate-500">
+                Tip: Indent is for one vendor. If you want quotes from multiple vendors, create separate indents (or ask Saif to enable the multi-vendor RFQ flow).
+              </div>
+            </div>
+          </div>
         </div>
       )}
 

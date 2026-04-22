@@ -19,8 +19,61 @@ router.get('/', asyncHandler(async (req: AuthRequest, res: Response) => {
       where,
       orderBy: { createdAt: 'desc' },
       take: 200,
+      include: {
+        vendor: { select: { id: true, name: true, email: true, phone: true } },
+      },
     });
     res.json({ requisitions: reqs });
+}));
+
+// GET /item-history/:itemId — past POs for an inventory item (last 10)
+// Used in the indent detail to show "we've bought this before at these rates".
+router.get('/item-history/:itemId', asyncHandler(async (req: AuthRequest, res: Response) => {
+    const itemId = req.params.itemId;
+    const lines = await prisma.pOLine.findMany({
+      where: { inventoryItemId: itemId },
+      orderBy: { po: { poDate: 'desc' } },
+      take: 10,
+      select: {
+        id: true,
+        rate: true,
+        quantity: true,
+        unit: true,
+        po: {
+          select: {
+            id: true,
+            poNo: true,
+            poDate: true,
+            status: true,
+            vendor: { select: { id: true, name: true, phone: true, email: true } },
+          },
+        },
+      },
+    });
+    const recent = lines.map(l => ({
+      lineId: l.id,
+      rate: l.rate,
+      quantity: l.quantity,
+      unit: l.unit,
+      poId: l.po?.id,
+      poNo: l.po?.poNo,
+      poDate: l.po?.poDate,
+      status: l.po?.status,
+      vendorId: l.po?.vendor?.id,
+      vendorName: l.po?.vendor?.name,
+      vendorPhone: l.po?.vendor?.phone,
+      vendorEmail: l.po?.vendor?.email,
+    }));
+    // Also compute stats
+    const rates = recent.map(r => r.rate).filter(r => r > 0);
+    const stats = rates.length === 0 ? null : {
+      minRate: Math.min(...rates),
+      maxRate: Math.max(...rates),
+      avgRate: Math.round((rates.reduce((a, b) => a + b, 0) / rates.length) * 100) / 100,
+      lastRate: rates[0],
+      totalPos: rates.length,
+    };
+    res.json({ recent, stats });
 }));
 
 // GET /stats
@@ -118,6 +171,7 @@ router.post('/', asyncHandler(async (req: AuthRequest, res: Response) => {
         inventoryItemId: b.inventoryItemId || null,
         department: b.department || null,
         requestedByPerson: b.requestedByPerson || null,
+        vendorId: b.vendorId || null,
         companyId: getActiveCompanyId(req),
       },
     });
@@ -143,6 +197,57 @@ router.get('/:id/stock-check', asyncHandler(async (req: AuthRequest, res: Respon
     const shortfall = Math.max(0, requested - available);
 
     res.json({ available, requested, canFulfillFromStock, shortfall, unit: itemUnit });
+}));
+
+// POST /:id/request-quote — record that we've asked a vendor for a quote.
+// Optionally triggers an email via the Gmail MCP integration (caller passes sendEmail: true).
+// For now this just persists the metadata; the Gmail send is a follow-up enhancement.
+router.post('/:id/request-quote', asyncHandler(async (req: AuthRequest, res: Response) => {
+    const user = req.user!;
+    const { vendorId, emailSubject, threadId, messageId } = req.body as {
+      vendorId?: string; emailSubject?: string; threadId?: string; messageId?: string;
+    };
+    if (!vendorId) return res.status(400).json({ error: 'vendorId required' });
+
+    const vendor = await prisma.vendor.findUnique({ where: { id: vendorId }, select: { id: true, name: true, email: true } });
+    if (!vendor) return res.status(404).json({ error: 'Vendor not found' });
+
+    const pr = await prisma.purchaseRequisition.update({
+      where: { id: req.params.id },
+      data: {
+        vendorId,
+        quoteRequestedAt: new Date(),
+        quoteRequestedBy: user.name || user.email,
+        quoteEmailSubject: emailSubject || null,
+        quoteEmailThreadId: threadId || null,
+        quoteEmailMessageId: messageId || null,
+      },
+    });
+    res.json({ requisition: pr, vendor });
+}));
+
+// PUT /:id/update-quote-rate — manually enter or update the vendor's quoted rate.
+// Also used by the future AI email-extractor (source = EMAIL_AUTO).
+router.put('/:id/update-quote-rate', asyncHandler(async (req: AuthRequest, res: Response) => {
+    const { vendorRate, quoteSource, quoteRemarks, vendorId } = req.body as {
+      vendorRate?: number | string; quoteSource?: string; quoteRemarks?: string; vendorId?: string;
+    };
+    const rate = typeof vendorRate === 'number' ? vendorRate : parseFloat(vendorRate as string);
+    if (isNaN(rate) || rate < 0) return res.status(400).json({ error: 'Invalid rate' });
+
+    const data: Record<string, unknown> = {
+      vendorRate: rate,
+      vendorQuotedAt: new Date(),
+      quoteSource: quoteSource || 'MANUAL',
+    };
+    if (quoteRemarks !== undefined) data.quoteRemarks = quoteRemarks;
+    if (vendorId) data.vendorId = vendorId;
+
+    const pr = await prisma.purchaseRequisition.update({
+      where: { id: req.params.id },
+      data,
+    });
+    res.json(pr);
 }));
 
 // PUT /:id/issue — warehouse issues stock and splits remaining to purchase
@@ -373,6 +478,7 @@ router.put('/:id', asyncHandler(async (req: AuthRequest, res: Response) => {
     if (b.department !== undefined) data.department = b.department;
     if (b.requestedByPerson !== undefined) data.requestedByPerson = b.requestedByPerson;
     if (b.inventoryItemId !== undefined) data.inventoryItemId = b.inventoryItemId;
+    if (b.vendorId !== undefined) data.vendorId = b.vendorId || null;
     // Status transitions — enforce valid paths server-side
     if (b.status !== undefined) {
       const existing = await prisma.purchaseRequisition.findUnique({ where: { id: req.params.id }, select: { status: true } });
