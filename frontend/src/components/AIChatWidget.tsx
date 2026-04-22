@@ -58,6 +58,25 @@ function extractDatasets(toolCalls: ToolCall[] | undefined): Array<{ name: strin
 export default function AIChatWidget({ pageContext }: { pageContext?: string }) {
   const [open, setOpen] = useState(false);
   const [expanded, setExpanded] = useState(false);
+  // Hidden = user dismissed the floating button so it doesn't block content behind it.
+  // Persists in localStorage; they can re-enable with Alt+Shift+A or by clearing storage.
+  const [hidden, setHidden] = useState<boolean>(() => {
+    try { return localStorage.getItem('ai-widget-hidden') === '1'; } catch { return false; }
+  });
+
+  useEffect(() => {
+    const handler = (e: KeyboardEvent) => {
+      if (e.altKey && e.shiftKey && e.key.toLowerCase() === 'a') {
+        setHidden(h => {
+          const next = !h;
+          try { localStorage.setItem('ai-widget-hidden', next ? '1' : '0'); } catch { /* noop */ }
+          return next;
+        });
+      }
+    };
+    window.addEventListener('keydown', handler);
+    return () => window.removeEventListener('keydown', handler);
+  }, []);
   const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState('');
   const [loading, setLoading] = useState(false);
@@ -70,9 +89,28 @@ export default function AIChatWidget({ pageContext }: { pageContext?: string }) 
 
   useEffect(() => { messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' }); }, [messages, loading]);
 
+  // Lightweight probe on mount — if user's role isn't on the AI allowlist
+  // the backend returns 403, and we self-hide so the floating button stops
+  // blocking clicks. No user action needed.
+  useEffect(() => {
+    api.get('/ai/config')
+      .then(res => setConfig(res.data))
+      .catch((err: { response?: { status?: number } }) => {
+        if (err.response?.status === 403) {
+          setHidden(true); // auto-hide — don't persist to localStorage so admins still see it
+        } else {
+          setConfig({ configured: true });
+        }
+      });
+  }, []);
+
   useEffect(() => {
     if (open && config === null) {
-      api.get('/ai/config').then(res => setConfig(res.data)).catch(() => setConfig({ configured: true }));
+      api.get('/ai/config')
+        .then(res => setConfig(res.data))
+        .catch((err: { response?: { status?: number } }) => {
+          if (err.response?.status !== 403) setConfig({ configured: true });
+        });
     }
   }, [open, config]);
 
@@ -208,12 +246,25 @@ export default function AIChatWidget({ pageContext }: { pageContext?: string }) 
     ? 'fixed inset-6 z-50 bg-white border border-slate-200 shadow-2xl flex flex-col overflow-hidden'
     : 'fixed bottom-6 right-6 z-50 w-[480px] h-[640px] bg-white border border-slate-200 shadow-2xl flex flex-col overflow-hidden';
 
+  if (hidden) return null;
+
   return (
     <>
       {!open && (
-        <button onClick={() => setOpen(true)} className="fixed bottom-6 right-6 z-50 w-14 h-14 bg-purple-600 text-white shadow-lg hover:bg-purple-700 flex items-center justify-center transition-all hover:scale-105" title="AI Reports & Assistant">
-          <Sparkles className="w-6 h-6" />
-        </button>
+        <div className="fixed bottom-4 right-4 z-50 flex items-center gap-1 group">
+          <button
+            onClick={() => { setHidden(true); try { localStorage.setItem('ai-widget-hidden', '1'); } catch { /* noop */ } }}
+            className="w-5 h-5 bg-slate-700 text-white text-[10px] opacity-0 group-hover:opacity-90 hover:bg-red-600 flex items-center justify-center transition-opacity"
+            title="Hide (Alt+Shift+A to restore)"
+          >×</button>
+          <button
+            onClick={() => setOpen(true)}
+            className="w-10 h-10 bg-purple-600/80 hover:bg-purple-600 text-white shadow-lg flex items-center justify-center transition-all hover:scale-105"
+            title="AI Reports & Assistant (Alt+Shift+A to hide)"
+          >
+            <Sparkles className="w-4 h-4" />
+          </button>
+        </div>
       )}
 
       {open && (
