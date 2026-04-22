@@ -6,6 +6,17 @@ interface Department {
   name: string;
   code: string | null;
   isActive: boolean;
+  businessDivisionId: string | null;
+  businessDivision?: { id: string; name: string; code: string | null } | null;
+}
+
+interface BusinessDivision {
+  id: string;
+  name: string;
+  code: string | null;
+  description: string | null;
+  isActive: boolean;
+  _count?: { departments: number };
 }
 
 interface Warehouse {
@@ -21,17 +32,32 @@ interface Warehouse {
 export default function Masters() {
   const [departments, setDepartments] = useState<Department[]>([]);
   const [warehouses, setWarehouses] = useState<Warehouse[]>([]);
+  const [divisions, setDivisions] = useState<BusinessDivision[]>([]);
   const [loadingDepts, setLoadingDepts] = useState(true);
   const [loadingWh, setLoadingWh] = useState(true);
+  const [loadingDiv, setLoadingDiv] = useState(true);
 
   // Department form state
   const [showDeptForm, setShowDeptForm] = useState(false);
   const [deptName, setDeptName] = useState('');
   const [deptCode, setDeptCode] = useState('');
+  const [deptDivisionId, setDeptDivisionId] = useState<string>('');
   const [editingDeptId, setEditingDeptId] = useState<string | null>(null);
   const [editDeptName, setEditDeptName] = useState('');
   const [editDeptCode, setEditDeptCode] = useState('');
+  const [editDeptDivisionId, setEditDeptDivisionId] = useState<string>('');
   const [savingDept, setSavingDept] = useState(false);
+
+  // Business Division form state
+  const [showDivForm, setShowDivForm] = useState(false);
+  const [divName, setDivName] = useState('');
+  const [divCode, setDivCode] = useState('');
+  const [divDesc, setDivDesc] = useState('');
+  const [editingDivId, setEditingDivId] = useState<string | null>(null);
+  const [editDivName, setEditDivName] = useState('');
+  const [editDivCode, setEditDivCode] = useState('');
+  const [editDivDesc, setEditDivDesc] = useState('');
+  const [savingDiv, setSavingDiv] = useState(false);
 
   // Warehouse form state
   const [showWhForm, setShowWhForm] = useState(false);
@@ -66,18 +92,36 @@ export default function Masters() {
     }
   }, []);
 
+  const fetchDivisions = useCallback(async () => {
+    try {
+      setLoadingDiv(true);
+      const res = await api.get<BusinessDivision[]>('/business-divisions');
+      setDivisions(res.data);
+    } catch (err) {
+      console.error('Failed to fetch divisions:', err);
+    } finally {
+      setLoadingDiv(false);
+    }
+  }, []);
+
   useEffect(() => {
     fetchDepartments();
     fetchWarehouses();
-  }, [fetchDepartments, fetchWarehouses]);
+    fetchDivisions();
+  }, [fetchDepartments, fetchWarehouses, fetchDivisions]);
 
   const handleAddDept = async () => {
     if (!deptName.trim()) return;
     try {
       setSavingDept(true);
-      await api.post('/departments', { name: deptName.trim(), code: deptCode.trim() || null });
+      await api.post('/departments', {
+        name: deptName.trim(),
+        code: deptCode.trim() || null,
+        businessDivisionId: deptDivisionId || null,
+      });
       setDeptName('');
       setDeptCode('');
+      setDeptDivisionId('');
       setShowDeptForm(false);
       await fetchDepartments();
     } catch (err) {
@@ -91,7 +135,11 @@ export default function Masters() {
     if (!editDeptName.trim()) return;
     try {
       setSavingDept(true);
-      await api.put(`/departments/${id}`, { name: editDeptName.trim(), code: editDeptCode.trim() || null });
+      await api.put(`/departments/${id}`, {
+        name: editDeptName.trim(),
+        code: editDeptCode.trim() || null,
+        businessDivisionId: editDeptDivisionId || null,
+      });
       setEditingDeptId(null);
       await fetchDepartments();
     } catch (err) {
@@ -99,6 +147,60 @@ export default function Masters() {
     } finally {
       setSavingDept(false);
     }
+  };
+
+  // ── Business Division handlers ──
+  const handleAddDiv = async () => {
+    if (!divName.trim()) return;
+    try {
+      setSavingDiv(true);
+      await api.post('/business-divisions', {
+        name: divName.trim(),
+        code: divCode.trim() || null,
+        description: divDesc.trim() || null,
+      });
+      setDivName(''); setDivCode(''); setDivDesc('');
+      setShowDivForm(false);
+      await fetchDivisions();
+    } catch (err) {
+      console.error('Failed to create division:', err);
+    } finally {
+      setSavingDiv(false);
+    }
+  };
+
+  const handleUpdateDiv = async (id: string) => {
+    if (!editDivName.trim()) return;
+    try {
+      setSavingDiv(true);
+      await api.put(`/business-divisions/${id}`, {
+        name: editDivName.trim(),
+        code: editDivCode.trim() || null,
+        description: editDivDesc.trim() || null,
+      });
+      setEditingDivId(null);
+      await fetchDivisions();
+    } catch (err) {
+      console.error('Failed to update division:', err);
+    } finally {
+      setSavingDiv(false);
+    }
+  };
+
+  const handleDeactivateDiv = async (id: string) => {
+    try {
+      await api.delete(`/business-divisions/${id}`);
+      await fetchDivisions();
+    } catch (err) {
+      console.error('Failed to deactivate division:', err);
+    }
+  };
+
+  const startEditDiv = (div: BusinessDivision) => {
+    setEditingDivId(div.id);
+    setEditDivName(div.name);
+    setEditDivCode(div.code || '');
+    setEditDivDesc(div.description || '');
   };
 
   const handleDeactivateDept = async (id: string) => {
@@ -144,6 +246,7 @@ export default function Masters() {
     setEditingDeptId(dept.id);
     setEditDeptName(dept.name);
     setEditDeptCode(dept.code || '');
+    setEditDeptDivisionId(dept.businessDivisionId || '');
   };
 
   const startEditWh = (wh: Warehouse) => {
@@ -152,7 +255,7 @@ export default function Masters() {
     setEditWhAddress(wh.address || '');
   };
 
-  const [activeTab, setActiveTab] = useState<'departments' | 'warehouses'>('departments');
+  const [activeTab, setActiveTab] = useState<'divisions' | 'departments' | 'warehouses'>('divisions');
 
   if (loadingDepts && loadingWh) {
     return (
@@ -170,12 +273,15 @@ export default function Masters() {
           <div className="flex items-center gap-3">
             <h1 className="text-sm font-bold tracking-wide uppercase">Masters</h1>
             <span className="text-[10px] text-slate-400">|</span>
-            <span className="text-[10px] text-slate-400">Departments & Warehouses</span>
+            <span className="text-[10px] text-slate-400">Business Divisions, Departments & Warehouses</span>
           </div>
         </div>
 
         {/* Tab Bar */}
         <div className="flex border-b border-slate-300 -mx-3 md:-mx-6 px-4 bg-white">
+          <button onClick={() => setActiveTab('divisions')} className={`py-2 px-4 text-[11px] font-bold uppercase tracking-widest ${activeTab === 'divisions' ? 'border-b-2 border-blue-600 text-blue-700' : 'text-slate-400 hover:text-slate-600'}`}>
+            Business Divisions ({divisions.length})
+          </button>
           <button onClick={() => setActiveTab('departments')} className={`py-2 px-4 text-[11px] font-bold uppercase tracking-widest ${activeTab === 'departments' ? 'border-b-2 border-blue-600 text-blue-700' : 'text-slate-400 hover:text-slate-600'}`}>
             Departments ({departments.length})
           </button>
@@ -183,6 +289,113 @@ export default function Masters() {
             Warehouses ({warehouses.length})
           </button>
         </div>
+
+        {/* BUSINESS DIVISIONS TAB */}
+        {activeTab === 'divisions' && <>
+          <div className="bg-slate-800 text-white px-4 py-2 -mx-3 md:-mx-6 flex items-center justify-between">
+            <span className="text-[10px] font-bold uppercase tracking-widest">Business Divisions</span>
+            <button onClick={() => { setShowDivForm(!showDivForm); setEditingDivId(null); }}
+              className="px-3 py-1 bg-blue-600 text-white text-[11px] font-medium hover:bg-blue-700">+ Add</button>
+          </div>
+
+          {showDivForm && (
+            <div className="-mx-3 md:-mx-6 border-x border-b border-slate-300 bg-blue-50/40 px-4 py-2 flex items-center gap-3 flex-wrap">
+              <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">Name</label>
+              <input type="text" value={divName} onChange={e => setDivName(e.target.value)} placeholder="e.g. Ethanol / Sugar / Power"
+                className="border border-slate-300 px-2.5 py-1.5 text-xs focus:outline-none focus:ring-1 focus:ring-slate-400 w-48" />
+              <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">Code</label>
+              <input type="text" value={divCode} onChange={e => setDivCode(e.target.value.toUpperCase())} placeholder="ETH / SUG / PWR"
+                className="border border-slate-300 px-2.5 py-1.5 text-xs focus:outline-none focus:ring-1 focus:ring-slate-400 w-24 font-mono" />
+              <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">Description</label>
+              <input type="text" value={divDesc} onChange={e => setDivDesc(e.target.value)} placeholder="Optional description"
+                className="border border-slate-300 px-2.5 py-1.5 text-xs focus:outline-none focus:ring-1 focus:ring-slate-400 flex-1 min-w-[200px]" />
+              <button onClick={handleAddDiv} disabled={savingDiv || !divName.trim()}
+                className="px-3 py-1 bg-blue-600 text-white text-[11px] font-medium hover:bg-blue-700 disabled:opacity-50">
+                {savingDiv ? 'Saving...' : 'Save'}
+              </button>
+              <button onClick={() => { setShowDivForm(false); setDivName(''); setDivCode(''); setDivDesc(''); }}
+                className="px-3 py-1 bg-white border border-slate-300 text-slate-600 text-[11px] font-medium hover:bg-slate-50">Cancel</button>
+            </div>
+          )}
+
+          <div className="-mx-3 md:-mx-6 border-x border-b border-slate-300 overflow-hidden">
+            <table className="w-full text-xs">
+              <thead>
+                <tr className="bg-slate-800 text-white">
+                  <th className="text-left px-3 py-2 font-semibold text-[10px] uppercase tracking-widest border-r border-slate-700">Name</th>
+                  <th className="text-left px-3 py-2 font-semibold text-[10px] uppercase tracking-widest border-r border-slate-700 w-24">Code</th>
+                  <th className="text-left px-3 py-2 font-semibold text-[10px] uppercase tracking-widest border-r border-slate-700">Description</th>
+                  <th className="text-right px-3 py-2 font-semibold text-[10px] uppercase tracking-widest border-r border-slate-700 w-24">Depts</th>
+                  <th className="text-left px-3 py-2 font-semibold text-[10px] uppercase tracking-widest border-r border-slate-700 w-20">Status</th>
+                  <th className="text-left px-3 py-2 font-semibold text-[10px] uppercase tracking-widest w-40">Actions</th>
+                </tr>
+              </thead>
+              <tbody>
+                {loadingDiv && (
+                  <tr><td colSpan={6} className="px-3 py-4 text-center text-xs text-slate-400">Loading...</td></tr>
+                )}
+                {!loadingDiv && divisions.length === 0 && (
+                  <tr><td colSpan={6} className="px-3 py-4 text-center text-xs text-slate-400 uppercase tracking-widest">No divisions found</td></tr>
+                )}
+                {divisions.map((div, i) => (
+                  <tr key={div.id} className={`border-b border-slate-100 hover:bg-blue-50/60 ${i % 2 ? 'bg-slate-50/70' : ''}`}>
+                    {editingDivId === div.id ? (
+                      <>
+                        <td className="px-3 py-1.5 border-r border-slate-100">
+                          <input type="text" value={editDivName} onChange={e => setEditDivName(e.target.value)}
+                            className="w-full border border-slate-300 px-2 py-1 text-xs outline-none focus:ring-1 focus:ring-slate-400" />
+                        </td>
+                        <td className="px-3 py-1.5 border-r border-slate-100">
+                          <input type="text" value={editDivCode} onChange={e => setEditDivCode(e.target.value.toUpperCase())}
+                            className="w-full border border-slate-300 px-2 py-1 text-xs outline-none font-mono" />
+                        </td>
+                        <td className="px-3 py-1.5 border-r border-slate-100" colSpan={2}>
+                          <input type="text" value={editDivDesc} onChange={e => setEditDivDesc(e.target.value)}
+                            className="w-full border border-slate-300 px-2 py-1 text-xs outline-none" />
+                        </td>
+                        <td className="px-3 py-1.5 border-r border-slate-100">
+                          <span className="text-[10px] text-slate-500">—</span>
+                        </td>
+                        <td className="px-3 py-1.5">
+                          <div className="flex gap-1">
+                            <button onClick={() => handleUpdateDiv(div.id)} disabled={savingDiv}
+                              className="px-2 py-0.5 bg-green-600 text-white text-[10px] font-medium hover:bg-green-700 disabled:opacity-50">Save</button>
+                            <button onClick={() => setEditingDivId(null)}
+                              className="px-2 py-0.5 bg-white border border-slate-300 text-slate-600 text-[10px] font-medium hover:bg-slate-50">Cancel</button>
+                          </div>
+                        </td>
+                      </>
+                    ) : (
+                      <>
+                        <td className="px-3 py-1.5 text-slate-800 font-medium border-r border-slate-100">{div.name}</td>
+                        <td className="px-3 py-1.5 text-slate-500 border-r border-slate-100 font-mono">{div.code || '—'}</td>
+                        <td className="px-3 py-1.5 text-slate-600 border-r border-slate-100 text-[11px]">{div.description || '—'}</td>
+                        <td className="px-3 py-1.5 text-right font-mono tabular-nums border-r border-slate-100 text-slate-700">
+                          {div._count?.departments ?? 0}
+                        </td>
+                        <td className="px-3 py-1.5 border-r border-slate-100">
+                          <span className={`text-[9px] font-bold uppercase px-1.5 py-0.5 border ${div.isActive ? 'border-green-500 bg-green-50 text-green-700' : 'border-slate-300 bg-slate-50 text-slate-500'}`}>
+                            {div.isActive ? 'Active' : 'Inactive'}
+                          </span>
+                        </td>
+                        <td className="px-3 py-1.5">
+                          <div className="flex gap-1">
+                            <button onClick={() => startEditDiv(div)}
+                              className="px-2 py-0.5 bg-white border border-slate-300 text-slate-700 text-[10px] font-medium hover:bg-slate-100">Edit</button>
+                            {div.isActive && (
+                              <button onClick={() => handleDeactivateDiv(div.id)}
+                                className="px-2 py-0.5 bg-white border border-red-300 text-red-600 text-[10px] font-medium hover:bg-red-50">Deactivate</button>
+                            )}
+                          </div>
+                        </td>
+                      </>
+                    )}
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </>}
 
         {/* DEPARTMENTS TAB */}
         {activeTab === 'departments' && <>
@@ -198,7 +411,7 @@ export default function Masters() {
 
         {/* Department Add Form */}
         {showDeptForm && (
-          <div className="-mx-3 md:-mx-6 border-x border-b border-slate-300 bg-blue-50/40 px-4 py-2 flex items-center gap-3">
+          <div className="-mx-3 md:-mx-6 border-x border-b border-slate-300 bg-blue-50/40 px-4 py-2 flex items-center gap-3 flex-wrap">
             <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">Name</label>
             <input
               type="text"
@@ -215,6 +428,17 @@ export default function Masters() {
               placeholder="e.g. PROD"
               className="border border-slate-300 px-2.5 py-1.5 text-xs focus:outline-none focus:ring-1 focus:ring-slate-400 w-32"
             />
+            <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">Business Division</label>
+            <select
+              value={deptDivisionId}
+              onChange={(e) => setDeptDivisionId(e.target.value)}
+              className="border border-slate-300 px-2.5 py-1.5 text-xs focus:outline-none focus:ring-1 focus:ring-slate-400 w-40 bg-white"
+            >
+              <option value="">— Common / None —</option>
+              {divisions.filter(d => d.isActive).map(d => (
+                <option key={d.id} value={d.id}>{d.name}{d.code ? ` (${d.code})` : ''}</option>
+              ))}
+            </select>
             <button
               onClick={handleAddDept}
               disabled={savingDept || !deptName.trim()}
@@ -223,7 +447,7 @@ export default function Masters() {
               {savingDept ? 'Saving...' : 'Save'}
             </button>
             <button
-              onClick={() => { setShowDeptForm(false); setDeptName(''); setDeptCode(''); }}
+              onClick={() => { setShowDeptForm(false); setDeptName(''); setDeptCode(''); setDeptDivisionId(''); }}
               className="px-3 py-1 bg-white border border-slate-300 text-slate-600 text-[11px] font-medium hover:bg-slate-50"
             >
               Cancel
@@ -237,15 +461,16 @@ export default function Masters() {
             <thead>
               <tr className="bg-slate-800 text-white">
                 <th className="text-left px-3 py-2 font-semibold text-[10px] uppercase tracking-widest border-r border-slate-700">Name</th>
-                <th className="text-left px-3 py-2 font-semibold text-[10px] uppercase tracking-widest border-r border-slate-700">Code</th>
-                <th className="text-left px-3 py-2 font-semibold text-[10px] uppercase tracking-widest border-r border-slate-700">Status</th>
-                <th className="text-left px-3 py-2 font-semibold text-[10px] uppercase tracking-widest">Actions</th>
+                <th className="text-left px-3 py-2 font-semibold text-[10px] uppercase tracking-widest border-r border-slate-700 w-32">Code</th>
+                <th className="text-left px-3 py-2 font-semibold text-[10px] uppercase tracking-widest border-r border-slate-700 w-40">Business Division</th>
+                <th className="text-left px-3 py-2 font-semibold text-[10px] uppercase tracking-widest border-r border-slate-700 w-24">Status</th>
+                <th className="text-left px-3 py-2 font-semibold text-[10px] uppercase tracking-widest w-40">Actions</th>
               </tr>
             </thead>
             <tbody>
               {departments.length === 0 && (
                 <tr>
-                  <td colSpan={4} className="px-3 py-4 text-center text-xs text-slate-400 uppercase tracking-widest">
+                  <td colSpan={5} className="px-3 py-4 text-center text-xs text-slate-400 uppercase tracking-widest">
                     No departments found
                   </td>
                 </tr>
@@ -269,6 +494,18 @@ export default function Masters() {
                           onChange={(e) => setEditDeptCode(e.target.value)}
                           className="border border-slate-300 px-2.5 py-1.5 text-xs focus:outline-none focus:ring-1 focus:ring-slate-400 w-full"
                         />
+                      </td>
+                      <td className="px-3 py-1.5 border-r border-slate-100">
+                        <select
+                          value={editDeptDivisionId}
+                          onChange={(e) => setEditDeptDivisionId(e.target.value)}
+                          className="w-full border border-slate-300 px-2 py-1 text-xs outline-none bg-white"
+                        >
+                          <option value="">— Common / None —</option>
+                          {divisions.filter(d => d.isActive).map(d => (
+                            <option key={d.id} value={d.id}>{d.name}</option>
+                          ))}
+                        </select>
                       </td>
                       <td className="px-3 py-1.5 border-r border-slate-100">
                         <span className={`text-[9px] font-bold uppercase px-1.5 py-0.5 border ${dept.isActive ? 'border-green-300 bg-green-50 text-green-700' : 'border-red-300 bg-red-50 text-red-700'}`}>
@@ -297,6 +534,13 @@ export default function Masters() {
                     <>
                       <td className="px-3 py-1.5 text-slate-800 border-r border-slate-100">{dept.name}</td>
                       <td className="px-3 py-1.5 text-slate-600 border-r border-slate-100 font-mono">{dept.code || '--'}</td>
+                      <td className="px-3 py-1.5 border-r border-slate-100">
+                        {dept.businessDivision ? (
+                          <span className="text-[10px] font-bold uppercase px-1.5 py-0.5 border border-blue-400 bg-blue-50 text-blue-700">{dept.businessDivision.name}</span>
+                        ) : (
+                          <span className="text-[10px] text-slate-400 italic">Common</span>
+                        )}
+                      </td>
                       <td className="px-3 py-1.5 border-r border-slate-100">
                         <span className={`text-[9px] font-bold uppercase px-1.5 py-0.5 border ${dept.isActive ? 'border-green-300 bg-green-50 text-green-700' : 'border-red-300 bg-red-50 text-red-700'}`}>
                           {dept.isActive ? 'Active' : 'Inactive'}
