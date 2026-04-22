@@ -21,9 +21,101 @@ router.get('/', asyncHandler(async (req: AuthRequest, res: Response) => {
       take: 200,
       include: {
         vendor: { select: { id: true, name: true, email: true, phone: true } },
+        quotes: {
+          include: { vendor: { select: { id: true, name: true, email: true, phone: true } } },
+          orderBy: { createdAt: 'asc' },
+        },
       },
     });
     res.json({ requisitions: reqs });
+}));
+
+// POST /:id/vendors — add a vendor row to the indent (quote candidate)
+router.post('/:id/vendors', asyncHandler(async (req: AuthRequest, res: Response) => {
+    const { vendorId } = req.body as { vendorId?: string };
+    if (!vendorId) return res.status(400).json({ error: 'vendorId required' });
+    const exists = await prisma.purchaseRequisitionVendor.findUnique({
+      where: { requisitionId_vendorId: { requisitionId: req.params.id, vendorId } },
+    });
+    if (exists) return res.status(409).json({ error: 'Vendor already added to this indent' });
+    const row = await prisma.purchaseRequisitionVendor.create({
+      data: { requisitionId: req.params.id, vendorId },
+      include: { vendor: { select: { id: true, name: true, email: true, phone: true } } },
+    });
+    res.status(201).json(row);
+}));
+
+// PUT /:id/vendors/:vrId — update quote rate / remarks / email meta
+router.put('/:id/vendors/:vrId', asyncHandler(async (req: AuthRequest, res: Response) => {
+    const b = req.body as Record<string, unknown>;
+    const data: Record<string, unknown> = {};
+    if (b.vendorRate !== undefined) {
+      const rate = typeof b.vendorRate === 'number' ? b.vendorRate : parseFloat(b.vendorRate as string);
+      if (isNaN(rate) || rate < 0) return res.status(400).json({ error: 'Invalid rate' });
+      data.vendorRate = rate;
+      data.quotedAt = new Date();
+      data.quoteSource = b.quoteSource || 'MANUAL';
+    }
+    if (b.quoteRemarks !== undefined) data.quoteRemarks = b.quoteRemarks;
+    if (b.quoteSource !== undefined) data.quoteSource = b.quoteSource;
+    if (b.quoteEmailSubject !== undefined) data.quoteEmailSubject = b.quoteEmailSubject;
+    if (b.quoteEmailThreadId !== undefined) data.quoteEmailThreadId = b.quoteEmailThreadId;
+    if (b.quoteEmailMessageId !== undefined) data.quoteEmailMessageId = b.quoteEmailMessageId;
+
+    const row = await prisma.purchaseRequisitionVendor.update({
+      where: { id: req.params.vrId },
+      data,
+      include: { vendor: { select: { id: true, name: true, email: true, phone: true } } },
+    });
+    res.json(row);
+}));
+
+// POST /:id/vendors/:vrId/request-quote — mark as requested (stores email meta)
+router.post('/:id/vendors/:vrId/request-quote', asyncHandler(async (req: AuthRequest, res: Response) => {
+    const user = req.user!;
+    const { emailSubject, threadId, messageId } = req.body as {
+      emailSubject?: string; threadId?: string; messageId?: string;
+    };
+    const row = await prisma.purchaseRequisitionVendor.update({
+      where: { id: req.params.vrId },
+      data: {
+        quoteRequestedAt: new Date(),
+        quoteRequestedBy: user.name || user.email,
+        quoteEmailSubject: emailSubject || null,
+        quoteEmailThreadId: threadId || null,
+        quoteEmailMessageId: messageId || null,
+      },
+      include: { vendor: { select: { id: true, name: true, email: true, phone: true } } },
+    });
+    res.json(row);
+}));
+
+// POST /:id/vendors/:vrId/award — award this vendor as the winning one.
+// Sets PR.vendorId to this vendor, marks this row isAwarded=true, clears others.
+router.post('/:id/vendors/:vrId/award', asyncHandler(async (req: AuthRequest, res: Response) => {
+    const row = await prisma.purchaseRequisitionVendor.findUnique({ where: { id: req.params.vrId } });
+    if (!row || row.requisitionId !== req.params.id) return res.status(404).json({ error: 'Quote row not found' });
+    if (row.vendorRate == null || row.vendorRate <= 0) return res.status(400).json({ error: 'Cannot award — enter a rate first' });
+
+    const [, , pr] = await prisma.$transaction([
+      prisma.purchaseRequisitionVendor.updateMany({ where: { requisitionId: req.params.id }, data: { isAwarded: false } }),
+      prisma.purchaseRequisitionVendor.update({ where: { id: req.params.vrId }, data: { isAwarded: true } }),
+      prisma.purchaseRequisition.update({
+        where: { id: req.params.id },
+        data: { vendorId: row.vendorId, vendorRate: row.vendorRate, vendorQuotedAt: row.quotedAt, quoteSource: row.quoteSource },
+        include: {
+          vendor: { select: { id: true, name: true, email: true, phone: true } },
+          quotes: { include: { vendor: { select: { id: true, name: true, email: true, phone: true } } } },
+        },
+      }),
+    ]);
+    res.json(pr);
+}));
+
+// DELETE /:id/vendors/:vrId — remove a vendor quote row
+router.delete('/:id/vendors/:vrId', asyncHandler(async (req: AuthRequest, res: Response) => {
+    await prisma.purchaseRequisitionVendor.delete({ where: { id: req.params.vrId } });
+    res.json({ ok: true });
 }));
 
 // GET /item-history/:itemId — past POs for an inventory item (last 10)

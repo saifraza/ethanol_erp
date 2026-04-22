@@ -1,24 +1,23 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import api from '../services/api';
-import { Plus, Check, X, ChevronDown, ChevronUp, Search, Copy, Trash2 } from 'lucide-react';
+import { Plus, Check, X, Trash2, Mail, Award, RefreshCw } from 'lucide-react';
 
+// ── Enums ──
 const URGENCIES = ['ROUTINE', 'SOON', 'URGENT', 'EMERGENCY'];
 const GOODS_CATEGORIES = ['SPARE_PART', 'RAW_MATERIAL', 'CONSUMABLE', 'TOOL', 'SAFETY', 'CHEMICAL', 'MECHANICAL', 'ELECTRICAL', 'GENERAL'];
 const SERVICE_CATEGORIES = ['CONSULTANCY', 'PROFESSIONAL_SERVICE', 'IT_SERVICE', 'AMC_SERVICE', 'CONTRACT_LABOR', 'CIVIL_WORK', 'TRANSPORT_SERVICE', 'OTHER_SERVICE'];
-const CATEGORIES = [...GOODS_CATEGORIES, ...SERVICE_CATEGORIES];
 const GOODS_UNITS = ['nos', 'kg', 'ltr', 'mtr', 'set', 'pair', 'roll'];
 const SERVICE_UNITS = ['lump-sum', 'man-day', 'man-hour', 'month', 'visit', 'job'];
-const ALL_UNITS = [...GOODS_UNITS, ...SERVICE_UNITS];
-const STATUSES = ['DRAFT', 'SUBMITTED', 'APPROVED', 'PO_PENDING', 'ORDERED', 'RECEIVED', 'COMPLETED', 'REJECTED'];
+const STATUS_TABS = ['ALL', 'DRAFT', 'SUBMITTED', 'APPROVED', 'PO_PENDING', 'ORDERED', 'RECEIVED', 'COMPLETED', 'REJECTED'];
 
-interface InvItem { id: string; name: string; code: string; category: string; unit: string; currentStock: number; minStock: number; costPerUnit: number; supplier: string | null; }
 const URG_COLORS: Record<string, string> = {
   ROUTINE: 'border-slate-400 bg-slate-50 text-slate-700',
   SOON: 'border-blue-500 bg-blue-50 text-blue-700',
   URGENT: 'border-orange-500 bg-orange-50 text-orange-700',
   EMERGENCY: 'border-red-600 bg-red-50 text-red-700',
 };
+
 const STATUS_COLORS: Record<string, string> = {
   DRAFT: 'border-slate-400 bg-slate-50 text-slate-600',
   SUBMITTED: 'border-blue-500 bg-blue-50 text-blue-700',
@@ -30,9 +29,24 @@ const STATUS_COLORS: Record<string, string> = {
   COMPLETED: 'border-emerald-600 bg-emerald-50 text-emerald-700',
 };
 
-interface Vendor {
-  id: string; name: string; email: string | null; phone: string | null;
-  contactPerson?: string | null;
+// ── Types ──
+interface InvItem { id: string; name: string; code: string; category: string; unit: string; currentStock: number; minStock: number; costPerUnit: number; supplier: string | null; }
+interface Vendor { id: string; name: string; email: string | null; phone: string | null; contactPerson?: string | null; }
+
+interface Quote {
+  id: string;
+  vendorId: string;
+  vendor: Pick<Vendor, 'id' | 'name' | 'email' | 'phone'>;
+  quoteRequestedAt: string | null;
+  quoteRequestedBy: string | null;
+  quoteEmailSubject: string | null;
+  quoteEmailThreadId: string | null;
+  vendorRate: number | null;
+  quotedAt: string | null;
+  quoteSource: string | null;
+  quoteRemarks: string | null;
+  isAwarded: boolean;
+  createdAt: string;
 }
 
 interface PR {
@@ -46,232 +60,96 @@ interface PR {
   requestedByPerson: string | null;
   issuedQty: number; purchaseQty: number;
   issuedBy: string | null; issuedAt: string | null;
-  // Quote / vendor tracking
   vendorId: string | null;
   vendor: Pick<Vendor, 'id' | 'name' | 'email' | 'phone'> | null;
-  quoteRequestedAt: string | null;
-  quoteRequestedBy: string | null;
-  quoteEmailSubject: string | null;
-  quoteEmailThreadId: string | null;
   vendorRate: number | null;
-  vendorQuotedAt: string | null;
-  quoteSource: string | null;
-  quoteRemarks: string | null;
+  quotes: Quote[];
 }
 
 interface ItemHistory {
   recent: Array<{
     poNo: number; poDate: string; rate: number; quantity: number; unit: string;
-    status: string; vendorName?: string; vendorEmail?: string;
+    status: string; vendorName?: string;
   }>;
   stats: { minRate: number; maxRate: number; avgRate: number; lastRate: number; totalPos: number } | null;
 }
 
+interface StockCheckData { id: string; available: number; requested: number; canFulfillFromStock: number; shortfall: number; unit: string; }
+
+// ── Pipeline step helper ──
+type StepState = 'done' | 'current' | 'pending';
+
+function pipelineSteps(pr: PR): Array<{ label: string; state: StepState; sub?: string }> {
+  const status = pr.status;
+  const hasQuotes = pr.quotes.length > 0;
+  const hasAwarded = pr.quotes.some(q => q.isAwarded);
+  return [
+    { label: 'Raised', state: 'done', sub: new Date(pr.createdAt).toLocaleDateString('en-IN', { day: '2-digit', month: 'short' }) },
+    { label: 'Quotes', state: hasAwarded ? 'done' : hasQuotes ? 'current' : status === 'DRAFT' ? 'pending' : 'pending', sub: hasQuotes ? `${pr.quotes.length} vendor${pr.quotes.length > 1 ? 's' : ''}` : '' },
+    { label: 'Approved', state: ['APPROVED', 'PO_PENDING', 'ORDERED', 'RECEIVED', 'COMPLETED'].includes(status) ? 'done' : status === 'SUBMITTED' ? 'current' : 'pending', sub: pr.approvedAt ? new Date(pr.approvedAt).toLocaleDateString('en-IN', { day: '2-digit', month: 'short' }) : '' },
+    { label: 'Issued', state: pr.issuedQty > 0 ? 'done' : 'pending', sub: pr.issuedQty > 0 ? `${pr.issuedQty} ${pr.unit}` : '' },
+    { label: 'PO', state: ['ORDERED', 'RECEIVED', 'COMPLETED'].includes(status) ? 'done' : status === 'PO_PENDING' ? 'current' : 'pending', sub: pr.purchaseQty > 0 ? `${pr.purchaseQty} ${pr.unit}` : '' },
+    { label: 'Received', state: ['RECEIVED', 'COMPLETED'].includes(status) ? 'done' : status === 'ORDERED' ? 'current' : 'pending' },
+    { label: 'Paid', state: status === 'COMPLETED' ? 'done' : 'pending' },
+  ];
+}
+
+// ──────────────────────────────────────────────────────────────
+// Main component
+// ──────────────────────────────────────────────────────────────
 export default function PurchaseRequisition() {
   const [searchParams] = useSearchParams();
   const [reqs, setReqs] = useState<PR[]>([]);
   const [stats, setStats] = useState<{ byStatus?: Record<string, number>; total?: number; totalValue?: number; pendingValue?: number }>({});
   const [loading, setLoading] = useState(true);
-  const [tab, setTab] = useState<'list' | 'new' | 'bulk'>(searchParams.get('new') ? 'new' : 'list');
-  const [filterStatus, setFilterStatus] = useState('');
+  const [tab, setTab] = useState<'list' | 'new'>(searchParams.get('new') ? 'new' : 'list');
+  const [filterStatus, setFilterStatus] = useState<string>('ALL');
+  const [search, setSearch] = useState('');
   const [expanded, setExpanded] = useState<string | null>(null);
+
+  // ── Create-indent form ──
   const [form, setForm] = useState({
-    title: '', itemName: '', quantity: '1', unit: 'nos', estimatedCost: '',
-    urgency: 'ROUTINE', category: 'GENERAL', justification: '', supplier: '', supplierPhone: '', remarks: '',
+    itemName: '', quantity: '1', unit: 'nos', estimatedCost: '',
+    urgency: 'ROUTINE', category: 'GENERAL', justification: '', remarks: '',
     department: '', inventoryItemId: '', requestedByPerson: '',
   });
-  const [saving, setSaving] = useState(false);
-
-  // --- Bulk entry (Excel-style) ---
-  type BulkRow = {
-    itemQuery: string;
-    itemName: string;
-    inventoryItemId: string;
-    quantity: string;
-    unit: string;
-    estimatedCost: string;
-    urgency: string;
-    category: string;
-    supplier: string;
-    justification: string;
-  };
-  const blankRow = (): BulkRow => ({
-    itemQuery: '', itemName: '', inventoryItemId: '', quantity: '1', unit: 'nos',
-    estimatedCost: '', urgency: 'ROUTINE', category: 'GENERAL', supplier: '', justification: '',
-  });
-  const [bulkCommon, setBulkCommon] = useState({ department: '', requestedByPerson: '' });
-  const [bulkRows, setBulkRows] = useState<BulkRow[]>([blankRow(), blankRow(), blankRow()]);
-  const [bulkFocused, setBulkFocused] = useState<number | null>(null);
-  const [bulkSaving, setBulkSaving] = useState(false);
-
-  const updateBulkRow = (i: number, patch: Partial<BulkRow>) => {
-    setBulkRows(rows => rows.map((r, idx) => idx === i ? { ...r, ...patch } : r));
-  };
-  const pickItemForBulk = (i: number, it: InvItem) => {
-    updateBulkRow(i, {
-      itemQuery: it.name,
-      itemName: it.name,
-      inventoryItemId: it.id,
-      unit: it.unit,
-      estimatedCost: it.costPerUnit && it.costPerUnit > 0 ? String(it.costPerUnit) : '',
-      category: it.category || 'GENERAL',
-      supplier: it.supplier || '',
-    });
-    setBulkFocused(null);
-  };
-  const addBulkRow = () => setBulkRows(rows => [...rows, blankRow()]);
-  const copyBulkRow = (i: number) => setBulkRows(rows => [...rows.slice(0, i + 1), { ...rows[i] }, ...rows.slice(i + 1)]);
-  const deleteBulkRow = (i: number) => setBulkRows(rows => rows.length === 1 ? [blankRow()] : rows.filter((_, idx) => idx !== i));
-  const submitBulk = async () => {
-    if (!bulkCommon.department) { alert('Department is required'); return; }
-    const valid = bulkRows.filter(r => r.itemName.trim() && parseFloat(r.quantity) > 0);
-    if (valid.length === 0) { alert('Add at least one row with item name and quantity'); return; }
-    setBulkSaving(true);
-    try {
-      await api.post('/purchase-requisition/bulk', {
-        status: 'SUBMITTED',
-        common: bulkCommon,
-        rows: valid,
-      });
-      setBulkRows([blankRow(), blankRow(), blankRow()]);
-      setBulkCommon({ department: '', requestedByPerson: '' });
-      setTab('list');
-      load();
-    } catch (e: unknown) {
-      alert((e as { response?: { data?: { error?: string } } }).response?.data?.error || 'Bulk submit failed');
-    }
-    setBulkSaving(false);
-  };
-
-  // Warehouse issue state
-  const [stockCheck, setStockCheck] = useState<{ id: string; available: number; requested: number; canFulfillFromStock: number; shortfall: number; unit: string } | null>(null);
-  const [issueQty, setIssueQty] = useState('');
-  const [issuing, setIssuing] = useState(false);
-
-  const checkStock = async (prId: string, requested: number) => {
-    try {
-      const res = await api.get(`/purchase-requisition/${prId}/stock-check`);
-      setStockCheck({ id: prId, ...res.data });
-      setIssueQty(String(Math.min(res.data.available, requested)));
-    } catch { setStockCheck({ id: prId, available: 0, requested, canFulfillFromStock: 0, shortfall: requested, unit: 'nos' }); }
-  };
-
-  const handleIssue = async (prId: string) => {
-    setIssuing(true);
-    try {
-      const res = await api.put(`/purchase-requisition/${prId}/issue`, { issuedQty: parseFloat(issueQty) || 0 });
-      const autoPO = (res.data as { autoPO?: { created: boolean; poNo?: number; reason?: string } }).autoPO;
-      setStockCheck(null);
-      setIssueQty('');
-      load();
-      if (autoPO) {
-        alert(autoPO.created
-          ? `Draft PO #${autoPO.poNo} created for the shortfall`
-          : `Purchase shortfall logged — ${autoPO.reason || 'manual PO required'}`);
-      }
-    } catch (e: unknown) { alert((e as { response?: { data?: { error?: string } } }).response?.data?.error || 'Issue failed'); }
-    setIssuing(false);
-  };
-
-  // Store-side action handlers (merged from StoreIndents page)
-  const [rejectingId, setRejectingId] = useState<string | null>(null);
-  const [rejectReason, setRejectReason] = useState('');
-  const handleFullPurchase = async (prId: string) => {
-    setIssuing(true);
-    try {
-      const res = await api.put(`/purchase-requisition/${prId}/issue`, { issuedQty: 0 });
-      const autoPO = (res.data as { autoPO?: { created: boolean; poNo?: number; reason?: string } }).autoPO;
-      setStockCheck(null);
-      setIssueQty('');
-      load();
-      if (autoPO) {
-        alert(autoPO.created
-          ? `Draft PO #${autoPO.poNo} created — review and send to vendor`
-          : `Sent to purchase queue — ${autoPO.reason || 'manual PO required'}`);
-      }
-    } catch (e: unknown) { alert((e as { response?: { data?: { error?: string } } }).response?.data?.error || 'Failed'); }
-    setIssuing(false);
-  };
-  const handleReject = async () => {
-    if (!rejectingId || !rejectReason.trim()) return;
-    try {
-      await api.put(`/purchase-requisition/${rejectingId}`, { status: 'REJECTED', rejectionReason: rejectReason });
-      setRejectingId(null);
-      setRejectReason('');
-      load();
-    } catch (e: unknown) { alert((e as { response?: { data?: { error?: string } } }).response?.data?.error || 'Failed'); }
-  };
-  const handleMarkOrdered = async (prId: string) => {
-    try { await api.put(`/purchase-requisition/${prId}`, { status: 'ORDERED' }); load(); }
-    catch (e: unknown) { alert((e as { response?: { data?: { error?: string } } }).response?.data?.error || 'Failed'); }
-  };
-  const handleMarkReceived = async (prId: string) => {
-    try { await api.put(`/purchase-requisition/${prId}`, { status: 'RECEIVED' }); load(); }
-    catch (e: unknown) { alert((e as { response?: { data?: { error?: string } } }).response?.data?.error || 'Failed'); }
-  };
-
-  // Inventory item search for linking
-  const [invItems, setInvItems] = useState<InvItem[]>([]);
   const [itemQuery, setItemQuery] = useState('');
   const [showItemDropdown, setShowItemDropdown] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [invItems, setInvItems] = useState<InvItem[]>([]);
   const [departments, setDepartments] = useState<string[]>([]);
-
   const [vendors, setVendors] = useState<Vendor[]>([]);
+
+  // ── Detail-drawer state ──
+  const [stockCheck, setStockCheck] = useState<StockCheckData | null>(null);
+  const [issueQty, setIssueQty] = useState('');
+  const [actionLoading, setActionLoading] = useState(false);
   const [itemHistory, setItemHistory] = useState<ItemHistory | null>(null);
   const [historyLoading, setHistoryLoading] = useState(false);
-  const [quoteRateInput, setQuoteRateInput] = useState<Record<string, string>>({});
-  const [quoteRemarksInput, setQuoteRemarksInput] = useState<Record<string, string>>({});
-  const [selectVendorFor, setSelectVendorFor] = useState<string | null>(null);
+  const [rejectingId, setRejectingId] = useState<string | null>(null);
+  const [rejectReason, setRejectReason] = useState('');
+
+  // ── Vendor-pick modal ──
+  const [vendorPickFor, setVendorPickFor] = useState<string | null>(null);
   const [vendorQuery, setVendorQuery] = useState('');
 
-  const fetchItemHistory = async (itemId: string) => {
-    setHistoryLoading(true);
-    try {
-      const res = await api.get<ItemHistory>(`/purchase-requisition/item-history/${itemId}`);
-      setItemHistory(res.data);
-    } catch {
-      setItemHistory(null);
-    }
-    setHistoryLoading(false);
-  };
+  // ── Per-row inputs for quote rate / remarks ──
+  const [quoteInput, setQuoteInput] = useState<Record<string, { rate: string; remarks: string }>>({});
 
-  const handleRequestQuote = async (prId: string, vendor: Vendor) => {
-    const subject = `Quote Request - Indent #${reqs.find(r => r.id === prId)?.reqNo || ''} - ${reqs.find(r => r.id === prId)?.itemName || ''}`;
+  const load = useCallback(async () => {
     try {
-      await api.post(`/purchase-requisition/${prId}/request-quote`, {
-        vendorId: vendor.id,
-        emailSubject: subject,
-      });
-      setSelectVendorFor(null);
-      setVendorQuery('');
-      load();
-      if (vendor.email) {
-        const body = `Dear ${vendor.name},%0D%0A%0D%0AKindly send us your best rate for the below item. Please reply on this same email so we can track it.%0D%0A%0D%0AItem: ${reqs.find(r => r.id === prId)?.itemName}%0D%0AQuantity: ${reqs.find(r => r.id === prId)?.quantity} ${reqs.find(r => r.id === prId)?.unit}%0D%0A%0D%0ARegards,%0D%0AMSPIL Purchase Team`;
-        window.open(`mailto:${vendor.email}?subject=${encodeURIComponent(subject)}&body=${body}`, '_blank');
-      } else {
-        alert(`Marked as quote-requested. Vendor has no email on file — contact by phone (${vendor.phone || 'n/a'}).`);
-      }
-    } catch (e: unknown) {
-      alert((e as { response?: { data?: { error?: string } } }).response?.data?.error || 'Failed to record quote request');
-    }
-  };
+      const params = filterStatus !== 'ALL' ? `?status=${filterStatus}` : '';
+      const [listRes, statsRes] = await Promise.all([
+        api.get<{ requisitions: PR[] }>(`/purchase-requisition${params}`),
+        api.get('/purchase-requisition/stats'),
+      ]);
+      setReqs((listRes.data as { requisitions: PR[] }).requisitions || []);
+      setStats(statsRes.data as typeof stats);
+    } catch (e) { console.error(e); }
+    setLoading(false);
+  }, [filterStatus]);
 
-  const handleSaveQuoteRate = async (prId: string) => {
-    const rate = quoteRateInput[prId];
-    if (!rate || parseFloat(rate) <= 0) { alert('Enter a valid rate'); return; }
-    try {
-      await api.put(`/purchase-requisition/${prId}/update-quote-rate`, {
-        vendorRate: parseFloat(rate),
-        quoteRemarks: quoteRemarksInput[prId] || '',
-        quoteSource: 'MANUAL',
-      });
-      setQuoteRateInput(prev => { const next = { ...prev }; delete next[prId]; return next; });
-      setQuoteRemarksInput(prev => { const next = { ...prev }; delete next[prId]; return next; });
-      load();
-    } catch (e: unknown) {
-      alert((e as { response?: { data?: { error?: string } } }).response?.data?.error || 'Failed to save rate');
-    }
-  };
+  useEffect(() => { load(); }, [load]);
 
   useEffect(() => {
     api.get('/inventory/items').then(r => setInvItems(r.data.items || [])).catch(() => {});
@@ -282,225 +160,266 @@ export default function PurchaseRequisition() {
       }));
       setVendors(v);
     }).catch(() => {});
-    // Pre-fill from URL params (linked from Inventory page)
     const itemId = searchParams.get('itemId');
     const itemName = searchParams.get('itemName');
     if (itemName) {
-      setForm(f => ({ ...f, itemName: itemName, inventoryItemId: itemId || '' }));
+      setForm(f => ({ ...f, itemName, inventoryItemId: itemId || '' }));
       setItemQuery(itemName);
     }
   }, [searchParams]);
 
-  const load = async () => {
-    try {
-      const [reqsRes, statsRes] = await Promise.all([
-        api.get('/purchase-requisition' + (filterStatus ? `?status=${filterStatus}` : '')),
-        api.get('/purchase-requisition/stats'),
-      ]);
-      setReqs(reqsRes.data.requisitions);
-      setStats(statsRes.data);
-    } catch (e) { console.error(e); }
-    setLoading(false);
-  };
-
-  useEffect(() => { load(); }, [filterStatus]);
-
+  // ── Create a new indent ──
   const handleCreate = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (!form.itemName.trim()) { alert('Item name is required'); return; }
+    if (!(parseFloat(form.quantity) > 0)) { alert('Quantity must be > 0'); return; }
+    if (!form.department) { alert('Department is required'); return; }
     setSaving(true);
     try {
-      const submitForm = { ...form, title: form.title || `Need ${form.itemName}`, status: 'SUBMITTED' };
-      await api.post('/purchase-requisition', submitForm);
-      setForm({ title: '', itemName: '', quantity: '1', unit: 'nos', estimatedCost: '', urgency: 'ROUTINE', category: 'GENERAL', justification: '', supplier: '', supplierPhone: '', remarks: '', department: '', inventoryItemId: '', requestedByPerson: '' });
+      await api.post('/purchase-requisition', { ...form, title: `Need ${form.itemName}`, status: 'SUBMITTED' });
+      setForm({ itemName: '', quantity: '1', unit: 'nos', estimatedCost: '', urgency: 'ROUTINE', category: 'GENERAL', justification: '', remarks: '', department: '', inventoryItemId: '', requestedByPerson: '' });
       setItemQuery('');
       setTab('list');
       load();
-    } catch (e: any) { alert(e.response?.data?.error || 'Error'); }
+    } catch (e: unknown) { alert((e as { response?: { data?: { error?: string } } }).response?.data?.error || 'Failed'); }
     setSaving(false);
   };
 
-  const updateStatus = async (id: string, status: string, extra?: any) => {
-    try {
-      await api.put(`/purchase-requisition/${id}`, { status, ...extra });
-      load();
-    } catch (e: any) { alert(e.response?.data?.error || 'Error'); }
+  // ── Expand row: fetch stock + history ──
+  const toggleExpand = (pr: PR) => {
+    const next = expanded === pr.id ? null : pr.id;
+    setExpanded(next);
+    setStockCheck(null);
+    setItemHistory(null);
+    setIssueQty('');
+    if (next) {
+      if (pr.inventoryItemId && ['DRAFT', 'SUBMITTED', 'APPROVED'].includes(pr.status)) {
+        api.get(`/purchase-requisition/${pr.id}/stock-check`)
+          .then(r => { setStockCheck({ id: pr.id, ...r.data } as StockCheckData); setIssueQty(String(Math.min(r.data.available, pr.quantity))); })
+          .catch(() => setStockCheck({ id: pr.id, available: 0, requested: pr.quantity, canFulfillFromStock: 0, shortfall: pr.quantity, unit: pr.unit }));
+      }
+      if (pr.inventoryItemId) {
+        setHistoryLoading(true);
+        api.get(`/purchase-requisition/item-history/${pr.inventoryItemId}`).then(r => setItemHistory(r.data as ItemHistory)).catch(() => setItemHistory(null)).finally(() => setHistoryLoading(false));
+      }
+    }
   };
 
-  if (loading) return <div className="p-6 text-center text-xs text-slate-400">Loading requisitions...</div>;
+  // ── Store actions ──
+  const handleIssue = async (prId: string) => {
+    setActionLoading(true);
+    try {
+      const res = await api.put(`/purchase-requisition/${prId}/issue`, { issuedQty: parseFloat(issueQty) || 0 });
+      const autoPO = (res.data as { autoPO?: { created: boolean; poNo?: number; reason?: string } }).autoPO;
+      setStockCheck(null); setIssueQty(''); load();
+      if (autoPO) alert(autoPO.created ? `Draft PO #${autoPO.poNo} created for the shortfall` : `Shortfall queued — ${autoPO.reason || 'manual PO required'}`);
+    } catch (e: unknown) { alert((e as { response?: { data?: { error?: string } } }).response?.data?.error || 'Issue failed'); }
+    setActionLoading(false);
+  };
+
+  const handleFullPurchase = async (prId: string) => {
+    setActionLoading(true);
+    try {
+      const res = await api.put(`/purchase-requisition/${prId}/issue`, { issuedQty: 0 });
+      const autoPO = (res.data as { autoPO?: { created: boolean; poNo?: number; reason?: string } }).autoPO;
+      setStockCheck(null); load();
+      if (autoPO) alert(autoPO.created ? `Draft PO #${autoPO.poNo} created` : `Queued — ${autoPO.reason || 'manual PO required'}`);
+    } catch (e: unknown) { alert((e as { response?: { data?: { error?: string } } }).response?.data?.error || 'Failed'); }
+    setActionLoading(false);
+  };
+
+  const handleReject = async () => {
+    if (!rejectingId || !rejectReason.trim()) return;
+    try {
+      await api.put(`/purchase-requisition/${rejectingId}`, { status: 'REJECTED', rejectionReason: rejectReason });
+      setRejectingId(null); setRejectReason(''); load();
+    } catch (e: unknown) { alert((e as { response?: { data?: { error?: string } } }).response?.data?.error || 'Failed'); }
+  };
+
+  const updateStatus = async (id: string, status: string) => {
+    try { await api.put(`/purchase-requisition/${id}`, { status }); load(); }
+    catch (e: unknown) { alert((e as { response?: { data?: { error?: string } } }).response?.data?.error || 'Failed'); }
+  };
+
+  // ── Vendor/quote actions ──
+  const handleAddVendor = async (prId: string, vendor: Vendor) => {
+    try {
+      await api.post(`/purchase-requisition/${prId}/vendors`, { vendorId: vendor.id });
+      setVendorPickFor(null); setVendorQuery('');
+      load();
+    } catch (e: unknown) {
+      const status = (e as { response?: { status?: number } }).response?.status;
+      if (status === 409) alert('This vendor is already on the indent');
+      else alert((e as { response?: { data?: { error?: string } } }).response?.data?.error || 'Failed');
+    }
+  };
+
+  const handleRequestQuote = async (prId: string, quote: Quote) => {
+    const pr = reqs.find(r => r.id === prId);
+    if (!pr) return;
+    const subject = `Quote Request - Indent #${pr.reqNo} - ${pr.itemName}`;
+    try {
+      await api.post(`/purchase-requisition/${prId}/vendors/${quote.id}/request-quote`, { emailSubject: subject });
+      load();
+      if (quote.vendor.email) {
+        const body = `Dear ${quote.vendor.name},%0D%0A%0D%0AKindly send us your best rate for the below item. Please REPLY ON THIS SAME EMAIL so our system can match your quote automatically.%0D%0A%0D%0AItem: ${pr.itemName}%0D%0AQuantity: ${pr.quantity} ${pr.unit}%0D%0A%0D%0ARegards,%0D%0AMSPIL Purchase Team%0D%0A%0D%0A[Ref: IND-${pr.reqNo}-${quote.id.slice(0, 6)}]`;
+        window.open(`mailto:${quote.vendor.email}?subject=${encodeURIComponent(subject)}&body=${body}`, '_blank');
+      } else {
+        alert('Marked as requested. Vendor has no email — please contact by phone.');
+      }
+    } catch (e: unknown) { alert((e as { response?: { data?: { error?: string } } }).response?.data?.error || 'Failed'); }
+  };
+
+  const handleSaveRate = async (prId: string, quoteId: string) => {
+    const input = quoteInput[quoteId];
+    if (!input || !input.rate || parseFloat(input.rate) <= 0) { alert('Enter a valid rate'); return; }
+    try {
+      await api.put(`/purchase-requisition/${prId}/vendors/${quoteId}`, {
+        vendorRate: parseFloat(input.rate),
+        quoteRemarks: input.remarks || '',
+        quoteSource: 'MANUAL',
+      });
+      setQuoteInput(prev => { const n = { ...prev }; delete n[quoteId]; return n; });
+      load();
+    } catch (e: unknown) { alert((e as { response?: { data?: { error?: string } } }).response?.data?.error || 'Failed'); }
+  };
+
+  const handleAward = async (prId: string, quoteId: string) => {
+    if (!confirm('Award this vendor? They will become the supplier for the PO.')) return;
+    try { await api.post(`/purchase-requisition/${prId}/vendors/${quoteId}/award`); load(); }
+    catch (e: unknown) { alert((e as { response?: { data?: { error?: string } } }).response?.data?.error || 'Failed'); }
+  };
+
+  const handleDeleteQuote = async (prId: string, quoteId: string) => {
+    if (!confirm('Remove this vendor row?')) return;
+    try { await api.delete(`/purchase-requisition/${prId}/vendors/${quoteId}`); load(); }
+    catch (e: unknown) { alert((e as { response?: { data?: { error?: string } } }).response?.data?.error || 'Failed'); }
+  };
+
+  // ── Filter list ──
+  const filtered = reqs.filter(pr => {
+    if (!search.trim()) return true;
+    const q = search.toLowerCase();
+    return pr.itemName.toLowerCase().includes(q) || pr.title.toLowerCase().includes(q) || String(pr.reqNo).includes(q) || (pr.department || '').toLowerCase().includes(q) || (pr.vendor?.name || '').toLowerCase().includes(q);
+  });
+
+  const fmtDate = (d: string) => new Date(d).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: '2-digit' });
+
+  if (loading) return <div className="p-6 text-center text-xs text-slate-400">Loading indents...</div>;
 
   return (
     <div className="space-y-0">
-      {/* Page Toolbar */}
+      {/* ── Toolbar ── */}
       <div className="bg-slate-800 text-white px-4 py-2.5 -mx-3 md:-mx-6 -mt-3 md:-mt-6 flex items-center justify-between">
         <div className="flex items-center gap-3">
           <h1 className="text-sm font-bold tracking-wide uppercase">Indents</h1>
           <span className="text-[10px] text-slate-400">|</span>
-          <span className="text-[10px] text-slate-400">Plant raises → Store reviews → Issue or send to Purchase</span>
+          <span className="text-[10px] text-slate-400">Raise need → Request quotes → Award vendor → Issue / Purchase → Receive → Pay</span>
         </div>
-        <button
-          onClick={() => setTab('new')}
-          className="px-3 py-1 bg-blue-600 text-white text-[11px] font-medium hover:bg-blue-700 flex items-center gap-1"
-        >
-          <Plus size={14} /> New Request
+        <button onClick={() => setTab('new')}
+          className="px-3 py-1 bg-blue-600 text-white text-[11px] font-medium hover:bg-blue-700 flex items-center gap-1">
+          <Plus size={14} /> New Indent
         </button>
       </div>
 
-      {/* Status Filter KPI Strip */}
-      <div className="grid grid-cols-3 md:grid-cols-6 gap-0 border-x border-b border-slate-300 -mx-3 md:-mx-6">
-        {STATUSES.map(s => (
-          <div
-            key={s}
-            className={`bg-white px-3 py-2.5 text-center cursor-pointer border-r border-slate-200 hover:bg-blue-50/60 transition ${
-              filterStatus === s ? 'ring-2 ring-inset ring-blue-500 bg-blue-50' : ''
-            }`}
-            onClick={() => setFilterStatus(filterStatus === s ? '' : s)}
-          >
-            <div className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">{s}</div>
-            <div className="text-lg font-bold text-slate-800">{stats.byStatus?.[s] || 0}</div>
-          </div>
-        ))}
+      {/* ── Compact stats strip ── */}
+      <div className="grid grid-cols-4 md:grid-cols-8 gap-0 border-x border-b border-slate-300 -mx-3 md:-mx-6">
+        {STATUS_TABS.map(s => {
+          const count = s === 'ALL' ? (stats.total || 0) : (stats.byStatus?.[s] || 0);
+          const active = filterStatus === s;
+          return (
+            <button key={s} onClick={() => { setFilterStatus(s); setExpanded(null); }}
+              className={`bg-white px-3 py-2 text-left border-r border-slate-200 hover:bg-blue-50/60 transition ${active ? 'ring-2 ring-inset ring-blue-500 bg-blue-50' : ''}`}>
+              <div className="text-[9px] font-bold text-slate-500 uppercase tracking-widest">{s.replace('_', ' ')}</div>
+              <div className="text-lg font-bold text-slate-800 font-mono tabular-nums">{count}</div>
+            </button>
+          );
+        })}
       </div>
 
-      {/* Summary KPI Strip */}
-      <div className="grid grid-cols-3 gap-0 border-x border-b border-slate-300 -mx-3 md:-mx-6">
-        <div className="bg-white px-4 py-3 border-l-4 border-l-blue-600 border-r border-slate-200">
-          <div className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-0.5">Total Requests</div>
-          <div className="text-xl font-bold text-slate-800">{stats.total || 0}</div>
+      {/* ── Search + Tabs ── */}
+      <div className="bg-slate-100 border-x border-b border-slate-300 -mx-3 md:-mx-6 flex items-center justify-between px-4">
+        <div className="flex gap-0">
+          <button onClick={() => setTab('list')}
+            className={`px-4 py-2 text-[11px] font-bold uppercase tracking-widest border-b-2 transition ${tab === 'list' ? 'border-blue-600 text-blue-700 bg-white' : 'border-transparent text-slate-500 hover:text-slate-700'}`}>
+            All Indents ({reqs.length})
+          </button>
+          <button onClick={() => setTab('new')}
+            className={`px-4 py-2 text-[11px] font-bold uppercase tracking-widest border-b-2 transition ${tab === 'new' ? 'border-blue-600 text-blue-700 bg-white' : 'border-transparent text-slate-500 hover:text-slate-700'}`}>
+            + New Indent
+          </button>
         </div>
-        <div className="bg-white px-4 py-3 border-l-4 border-l-orange-500 border-r border-slate-200">
-          <div className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-0.5">Pending Value</div>
-          <div className="text-xl font-bold text-orange-600 font-mono tabular-nums">Rs.{((stats.pendingValue || 0) / 1000).toFixed(1)}K</div>
-        </div>
-        <div className="bg-white px-4 py-3 border-l-4 border-l-emerald-600">
-          <div className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-0.5">Total Value</div>
-          <div className="text-xl font-bold text-slate-800 font-mono tabular-nums">Rs.{((stats.totalValue || 0) / 1000).toFixed(1)}K</div>
-        </div>
+        {tab === 'list' && (
+          <input type="text" value={search} onChange={e => setSearch(e.target.value)} placeholder="Search item, req#, vendor, dept..."
+            className="border border-slate-300 px-2.5 py-1 text-xs w-64 focus:outline-none focus:ring-1 focus:ring-blue-500" />
+        )}
       </div>
 
-      {/* Tabs */}
-      <div className="bg-slate-100 border-x border-b border-slate-300 px-4 py-0 -mx-3 md:-mx-6 flex gap-0">
-        <button
-          onClick={() => setTab('list')}
-          className={`px-4 py-2 text-[11px] font-bold uppercase tracking-widest border-b-2 transition ${
-            tab === 'list'
-              ? 'border-blue-600 text-blue-700 bg-white'
-              : 'border-transparent text-slate-500 hover:text-slate-700'
-          }`}
-        >
-          All Requests ({reqs.length})
-        </button>
-        <button
-          onClick={() => setTab('new')}
-          className={`px-4 py-2 text-[11px] font-bold uppercase tracking-widest border-b-2 transition ${
-            tab === 'new'
-              ? 'border-blue-600 text-blue-700 bg-white'
-              : 'border-transparent text-slate-500 hover:text-slate-700'
-          }`}
-        >
-          + New Request
-        </button>
-        <button
-          onClick={() => setTab('bulk')}
-          className={`px-4 py-2 text-[11px] font-bold uppercase tracking-widest border-b-2 transition ${
-            tab === 'bulk'
-              ? 'border-blue-600 text-blue-700 bg-white'
-              : 'border-transparent text-slate-500 hover:text-slate-700'
-          }`}
-        >
-          Bulk Entry (Excel)
-        </button>
-      </div>
-
-      {/* New Request Form */}
+      {/* ── NEW INDENT FORM ── */}
       {tab === 'new' && (
-        <div className="border-x border-b border-slate-300 -mx-3 md:-mx-6">
+        <div className="border-x border-b border-slate-300 -mx-3 md:-mx-6 bg-white">
           <div className="bg-slate-100 border-b border-slate-300 px-4 py-2">
-            <h3 className="text-[11px] font-bold uppercase tracking-widest text-slate-700">New Purchase Request</h3>
+            <div className="text-[11px] font-bold uppercase tracking-widest text-slate-700">New Indent — What do you need?</div>
+            <div className="text-[10px] text-slate-500 mt-0.5">After saving, open the indent to add vendors and request quotes.</div>
           </div>
           <form onSubmit={handleCreate} className="p-4 space-y-3">
-            {/* Row 1: Item search + Qty */}
+            {/* Row 1: Item + Qty */}
             <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
               <div className="relative md:col-span-2">
-                <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-0.5 block">Item (search inventory) *</label>
-                <div className="relative">
-                  <input
-                    className="w-full border border-slate-300 px-2.5 py-1.5 text-xs focus:ring-1 focus:ring-blue-500 focus:border-blue-500 outline-none"
-                    placeholder="Type to search items or enter new item name..."
-                    required
-                    value={itemQuery}
-                    onChange={e => { setItemQuery(e.target.value); setForm(f => ({ ...f, itemName: e.target.value, title: `Need ${e.target.value}` })); setShowItemDropdown(true); }}
-                    onFocus={() => setShowItemDropdown(true)}
-                    onBlur={() => setTimeout(() => setShowItemDropdown(false), 200)}
-                  />
-                  {showItemDropdown && itemQuery.length >= 2 && (
-                    <div className="absolute z-10 w-full bg-white border border-slate-300 shadow-lg max-h-40 overflow-y-auto mt-0.5">
-                      {invItems.filter(it => it.name.toLowerCase().includes(itemQuery.toLowerCase()) || it.code.toLowerCase().includes(itemQuery.toLowerCase())).slice(0, 8).map(it => (
-                        <div key={it.id} className="px-2.5 py-1.5 text-xs hover:bg-blue-50 cursor-pointer border-b border-slate-100 flex justify-between"
-                          onMouseDown={() => {
-                            setItemQuery(it.name);
-                            setForm(f => ({
-                              ...f,
-                              itemName: it.name,
-                              inventoryItemId: it.id,
-                              unit: it.unit,
-                              estimatedCost: it.costPerUnit && it.costPerUnit > 0 ? String(it.costPerUnit) : f.estimatedCost,
-                              category: it.category || f.category,
-                              supplier: it.supplier || f.supplier,
-                              title: `Need ${it.name}`,
-                            }));
-                            setShowItemDropdown(false);
-                          }}>
-                          <span className="text-slate-800 font-medium">{it.name}</span>
-                          <span className="text-slate-400 text-[10px]">{it.code} | Stock: {it.currentStock} {it.unit}</span>
-                        </div>
-                      ))}
-                      {invItems.filter(it => it.name.toLowerCase().includes(itemQuery.toLowerCase())).length === 0 && (
-                        <div className="px-2.5 py-1.5 text-[10px] text-slate-400">No matching item — will be created as new request</div>
-                      )}
-                    </div>
-                  )}
-                </div>
+                <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-0.5 block">Item *</label>
+                <input className="w-full border border-slate-300 px-2.5 py-1.5 text-xs focus:ring-1 focus:ring-blue-500 outline-none" placeholder="Type to search items or enter new name"
+                  required value={itemQuery}
+                  onChange={e => { setItemQuery(e.target.value); setForm(f => ({ ...f, itemName: e.target.value, inventoryItemId: '' })); setShowItemDropdown(true); }}
+                  onFocus={() => setShowItemDropdown(true)}
+                  onBlur={() => setTimeout(() => setShowItemDropdown(false), 200)} />
+                {showItemDropdown && itemQuery.length >= 2 && (
+                  <div className="absolute z-10 w-full bg-white border border-slate-300 shadow-lg max-h-40 overflow-y-auto mt-0.5">
+                    {invItems.filter(it => it.name.toLowerCase().includes(itemQuery.toLowerCase()) || it.code.toLowerCase().includes(itemQuery.toLowerCase())).slice(0, 8).map(it => (
+                      <div key={it.id} className="px-2.5 py-1.5 text-xs hover:bg-blue-50 cursor-pointer border-b border-slate-100 flex justify-between"
+                        onMouseDown={() => {
+                          setItemQuery(it.name);
+                          setForm(f => ({ ...f, itemName: it.name, inventoryItemId: it.id, unit: it.unit, estimatedCost: it.costPerUnit > 0 ? String(it.costPerUnit) : f.estimatedCost, category: it.category || f.category }));
+                          setShowItemDropdown(false);
+                        }}>
+                        <span className="text-slate-800 font-medium">{it.name}</span>
+                        <span className="text-slate-400 text-[10px]">{it.code} | Stock: {it.currentStock} {it.unit}</span>
+                      </div>
+                    ))}
+                  </div>
+                )}
                 {form.inventoryItemId && (() => {
-                  const item = invItems.find(i => i.id === form.inventoryItemId);
-                  if (!item) return null;
+                  const it = invItems.find(i => i.id === form.inventoryItemId);
+                  if (!it) return null;
                   const qty = parseFloat(form.quantity) || 0;
-                  const inStock = item.currentStock >= qty;
-                  const partial = item.currentStock > 0 && item.currentStock < qty;
-                  return (
-                    <div className={`text-[9px] mt-0.5 font-bold ${inStock ? 'text-green-600' : partial ? 'text-amber-600' : 'text-red-600'}`}>
-                      In Stock: {item.currentStock} {item.unit}
-                      {inStock && ' — available from warehouse'}
-                      {partial && ` — ${item.currentStock} from warehouse, ${qty - item.currentStock} needs purchase`}
-                      {!inStock && item.currentStock === 0 && ' — not in stock, full purchase needed'}
-                    </div>
-                  );
+                  const ok = it.currentStock >= qty;
+                  return <div className={`text-[9px] mt-0.5 font-bold ${ok ? 'text-green-600' : it.currentStock > 0 ? 'text-amber-600' : 'text-red-600'}`}>
+                    Stock on hand: {it.currentStock} {it.unit} {ok ? '✓' : ''}
+                  </div>;
                 })()}
               </div>
               <div>
-                <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-0.5 block">Qty / Unit</label>
-                <div className="flex gap-2">
-                  <input className="flex-1 border border-slate-300 px-2.5 py-1.5 text-xs focus:ring-1 focus:ring-blue-500 outline-none" type="number" step="any" placeholder="Qty" value={form.quantity}
-                    onChange={e => setForm({ ...form, quantity: e.target.value })} />
-                  <select className="w-28 border border-slate-300 px-2.5 py-1.5 text-xs outline-none" value={form.unit} onChange={e => setForm({ ...form, unit: e.target.value })}>
+                <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-0.5 block">Qty / Unit *</label>
+                <div className="flex gap-1">
+                  <input className="flex-1 border border-slate-300 px-2.5 py-1.5 text-xs outline-none" type="number" step="any" value={form.quantity} onChange={e => setForm({ ...form, quantity: e.target.value })} required />
+                  <select className="w-28 border border-slate-300 px-2 py-1.5 text-xs outline-none" value={form.unit} onChange={e => setForm({ ...form, unit: e.target.value })}>
                     <optgroup label="Goods">{GOODS_UNITS.map(u => <option key={u} value={u}>{u}</option>)}</optgroup>
                     <optgroup label="Service">{SERVICE_UNITS.map(u => <option key={u} value={u}>{u}</option>)}</optgroup>
                   </select>
                 </div>
               </div>
             </div>
-
-            {/* Row 2: Who is requesting */}
+            {/* Row 2: Dept/Person/Urgency */}
             <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
               <div>
                 <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-0.5 block">Department *</label>
-                <select className="w-full border border-slate-300 px-2.5 py-1.5 text-xs outline-none" value={form.department} onChange={e => setForm({ ...form, department: e.target.value })}>
+                <select required className="w-full border border-slate-300 px-2.5 py-1.5 text-xs outline-none" value={form.department} onChange={e => setForm({ ...form, department: e.target.value })}>
                   <option value="">Select department</option>
                   {departments.map(d => <option key={d} value={d}>{d}</option>)}
                 </select>
               </div>
               <div>
-                <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-0.5 block">Person Name</label>
-                <input className="w-full border border-slate-300 px-2.5 py-1.5 text-xs outline-none" placeholder="Who needs this?" value={form.requestedByPerson || ''} onChange={e => setForm({ ...form, requestedByPerson: e.target.value })} />
+                <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-0.5 block">Requested By</label>
+                <input className="w-full border border-slate-300 px-2.5 py-1.5 text-xs outline-none" placeholder="Person name" value={form.requestedByPerson} onChange={e => setForm({ ...form, requestedByPerson: e.target.value })} />
               </div>
               <div>
                 <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-0.5 block">Urgency</label>
@@ -509,568 +428,357 @@ export default function PurchaseRequisition() {
                 </select>
               </div>
             </div>
-
-            {/* Row 3: Supplier (search from vendor master) + Cost */}
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
-              <div className="relative">
-                <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-0.5 block">Supplier (search vendors)</label>
-                <input className="w-full border border-slate-300 px-2.5 py-1.5 text-xs outline-none" placeholder="Type to search suppliers..."
-                  value={form.supplier} onChange={e => { setForm({ ...form, supplier: e.target.value }); }}
-                  onFocus={e => (e.target as HTMLInputElement).setAttribute('data-open', '1')}
-                  onBlur={e => setTimeout(() => (e.target as HTMLInputElement).removeAttribute('data-open'), 200)}
-                />
-                {form.supplier && form.supplier.length >= 2 && (() => {
-                  const q = form.supplier.toLowerCase();
-                  const vendorMatches = vendors.filter(v => v.name.toLowerCase().includes(q)).slice(0, 5);
-                  if (vendorMatches.length === 0) return null;
-                  return (
-                    <div className="absolute z-10 w-full bg-white border border-slate-300 shadow-lg max-h-32 overflow-y-auto mt-0.5">
-                      {vendorMatches.map((v, i) => (
-                        <div key={i} className="px-2.5 py-1.5 text-xs hover:bg-blue-50 cursor-pointer border-b border-slate-100"
-                          onMouseDown={() => setForm(f => ({ ...f, supplier: v.name, supplierPhone: v.phone || f.supplierPhone }))}>
-                          <span className="text-slate-800 font-medium">{v.name}</span>
-                          {v.phone && <span className="text-slate-400 ml-2">{v.phone}</span>}
-                        </div>
-                      ))}
-                    </div>
-                  );
-                })()}
-              </div>
-              <div>
-                <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-0.5 block">Supplier Phone</label>
-                <input className="w-full border border-slate-300 px-2.5 py-1.5 text-xs outline-none" placeholder="Phone (optional)" value={form.supplierPhone} onChange={e => setForm({ ...form, supplierPhone: e.target.value })} />
-              </div>
-              <div>
-                <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-0.5 block">Estimated Cost/Unit (Rs)</label>
-                <input className="w-full border border-slate-300 px-2.5 py-1.5 text-xs outline-none" type="number" step="any" placeholder="Cost per unit" value={form.estimatedCost} onChange={e => setForm({ ...form, estimatedCost: e.target.value })} />
-              </div>
-            </div>
-
-            {/* Row 4: Category + Justification */}
+            {/* Row 3: Category + Est cost */}
             <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
               <div>
                 <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-0.5 block">Category</label>
                 <select className="w-full border border-slate-300 px-2.5 py-1.5 text-xs outline-none" value={form.category} onChange={e => setForm({ ...form, category: e.target.value })}>
-                  <optgroup label="Goods / Material">{GOODS_CATEGORIES.map(c => <option key={c} value={c}>{c.replace(/_/g, ' ')}</option>)}</optgroup>
-                  <optgroup label="Service / Contract">{SERVICE_CATEGORIES.map(c => <option key={c} value={c}>{c.replace(/_/g, ' ')}</option>)}</optgroup>
+                  <optgroup label="Goods">{GOODS_CATEGORIES.map(c => <option key={c} value={c}>{c.replace(/_/g, ' ')}</option>)}</optgroup>
+                  <optgroup label="Service">{SERVICE_CATEGORIES.map(c => <option key={c} value={c}>{c.replace(/_/g, ' ')}</option>)}</optgroup>
                 </select>
               </div>
-              <div className="md:col-span-2">
-                <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-0.5 block">Justification / Remarks</label>
+              <div>
+                <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-0.5 block">Est. Cost/Unit (Rs, optional)</label>
+                <input type="number" step="any" className="w-full border border-slate-300 px-2.5 py-1.5 text-xs outline-none" placeholder="Leave blank — vendors will quote" value={form.estimatedCost} onChange={e => setForm({ ...form, estimatedCost: e.target.value })} />
+              </div>
+              <div>
+                <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-0.5 block">Justification</label>
                 <input className="w-full border border-slate-300 px-2.5 py-1.5 text-xs outline-none" placeholder="Why is this needed?" value={form.justification} onChange={e => setForm({ ...form, justification: e.target.value })} />
               </div>
             </div>
-
-            {/* Hidden title — auto-generated */}
-            <input type="hidden" value={form.title || `Need ${form.itemName}`} />
             <div>
               <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-0.5 block">Remarks</label>
-              <textarea
-                className="w-full border border-slate-300 px-2.5 py-1.5 text-xs focus:ring-1 focus:ring-blue-500 focus:border-blue-500 outline-none"
-                rows={2}
-                placeholder="Additional Remarks"
-                value={form.remarks}
-                onChange={e => setForm({ ...form, remarks: e.target.value })}
-              />
+              <textarea className="w-full border border-slate-300 px-2.5 py-1.5 text-xs outline-none resize-none" rows={2} value={form.remarks} onChange={e => setForm({ ...form, remarks: e.target.value })} />
             </div>
-            <button
-              type="submit"
-              disabled={saving}
-              className="px-3 py-1 bg-blue-600 text-white text-[11px] font-medium hover:bg-blue-700 disabled:bg-slate-400 w-full md:w-auto uppercase tracking-wide"
-            >
-              {saving ? 'Submitting...' : 'Submit Request'}
-            </button>
+            <div className="flex items-center justify-between pt-1">
+              <div className="text-[10px] text-slate-500">After saving, open the indent to add vendors and track quotes.</div>
+              <div className="flex gap-2">
+                <button type="button" onClick={() => setTab('list')} className="px-3 py-1 bg-white border border-slate-300 text-slate-600 text-[11px] font-medium hover:bg-slate-50">Cancel</button>
+                <button type="submit" disabled={saving} className="px-4 py-1 bg-blue-600 text-white text-[11px] font-bold uppercase tracking-wide hover:bg-blue-700 disabled:bg-slate-400">
+                  {saving ? 'Saving...' : 'Save & Open'}
+                </button>
+              </div>
+            </div>
           </form>
         </div>
       )}
 
-      {/* Bulk Entry (Excel-style grid) */}
-      {tab === 'bulk' && (
-        <div className="border-x border-b border-slate-300 -mx-3 md:-mx-6">
-          <div className="bg-slate-100 border-b border-slate-300 px-4 py-2 flex items-center justify-between">
-            <h3 className="text-[11px] font-bold uppercase tracking-widest text-slate-700">Bulk Indent Entry — add multiple items at once</h3>
-            <div className="text-[10px] text-slate-500">{bulkRows.filter(r => r.itemName.trim()).length} / {bulkRows.length} rows filled</div>
-          </div>
-
-          {/* Shared context — applies to every row unless overridden */}
-          <div className="bg-slate-50 border-b border-slate-300 px-4 py-3 grid grid-cols-1 md:grid-cols-3 gap-3">
-            <div>
-              <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-0.5 block">Department *</label>
-              <select className="w-full border border-slate-300 px-2.5 py-1.5 text-xs outline-none bg-white" value={bulkCommon.department} onChange={e => setBulkCommon(c => ({ ...c, department: e.target.value }))}>
-                <option value="">Select department</option>
-                {departments.map(d => <option key={d} value={d}>{d}</option>)}
-              </select>
-            </div>
-            <div>
-              <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-0.5 block">Requested By (Person)</label>
-              <input className="w-full border border-slate-300 px-2.5 py-1.5 text-xs outline-none" placeholder="Who needs this?" value={bulkCommon.requestedByPerson} onChange={e => setBulkCommon(c => ({ ...c, requestedByPerson: e.target.value }))} />
-            </div>
-            <div className="text-[10px] text-slate-500 self-end pb-1">
-              Tip: Tab to move between cells. Each row becomes one indent — all will be submitted together.
-            </div>
-          </div>
-
-          {/* Grid */}
-          <div className="overflow-x-auto">
-            <table className="w-full text-xs min-w-[1100px]">
-              <thead>
-                <tr className="bg-slate-800 text-white">
-                  <th className="text-left px-2 py-1.5 font-semibold text-[10px] uppercase tracking-widest border-r border-slate-700 w-8">#</th>
-                  <th className="text-left px-2 py-1.5 font-semibold text-[10px] uppercase tracking-widest border-r border-slate-700 min-w-[240px]">Item *</th>
-                  <th className="text-right px-2 py-1.5 font-semibold text-[10px] uppercase tracking-widest border-r border-slate-700 w-20">Qty *</th>
-                  <th className="text-left px-2 py-1.5 font-semibold text-[10px] uppercase tracking-widest border-r border-slate-700 w-20">Unit</th>
-                  <th className="text-left px-2 py-1.5 font-semibold text-[10px] uppercase tracking-widest border-r border-slate-700 w-28">Category</th>
-                  <th className="text-right px-2 py-1.5 font-semibold text-[10px] uppercase tracking-widest border-r border-slate-700 w-24">Cost/Unit</th>
-                  <th className="text-left px-2 py-1.5 font-semibold text-[10px] uppercase tracking-widest border-r border-slate-700 w-24">Urgency</th>
-                  <th className="text-left px-2 py-1.5 font-semibold text-[10px] uppercase tracking-widest border-r border-slate-700 min-w-[160px]">Supplier</th>
-                  <th className="text-left px-2 py-1.5 font-semibold text-[10px] uppercase tracking-widest border-r border-slate-700 min-w-[160px]">Justification</th>
-                  <th className="text-center px-2 py-1.5 font-semibold text-[10px] uppercase tracking-widest w-16">Actions</th>
-                </tr>
-              </thead>
-              <tbody>
-                {bulkRows.map((row, i) => {
-                  const showDropdown = bulkFocused === i && row.itemQuery.length >= 2;
-                  const matches = showDropdown ? invItems.filter(it => it.name.toLowerCase().includes(row.itemQuery.toLowerCase()) || it.code.toLowerCase().includes(row.itemQuery.toLowerCase())).slice(0, 8) : [];
-                  const qty = parseFloat(row.quantity) || 0;
-                  const cost = parseFloat(row.estimatedCost) || 0;
-                  const total = qty * cost;
-                  return (
-                    <tr key={i} className={`border-b border-slate-100 ${i % 2 ? 'bg-slate-50/60' : 'bg-white'}`}>
-                      <td className="px-2 py-0.5 text-slate-400 font-mono tabular-nums border-r border-slate-100 text-center">{i + 1}</td>
-                      <td className="px-1 py-0.5 border-r border-slate-100 relative">
-                        <input
-                          className="w-full border-0 px-1.5 py-1 text-xs outline-none focus:bg-blue-50 bg-transparent"
-                          placeholder="Type to search or enter new..."
-                          value={row.itemQuery}
-                          onChange={e => updateBulkRow(i, { itemQuery: e.target.value, itemName: e.target.value, inventoryItemId: '' })}
-                          onFocus={() => setBulkFocused(i)}
-                          onBlur={() => setTimeout(() => setBulkFocused(f => f === i ? null : f), 200)}
-                        />
-                        {showDropdown && matches.length > 0 && (
-                          <div className="absolute z-20 left-0 right-0 top-full bg-white border border-slate-300 shadow-lg max-h-40 overflow-y-auto">
-                            {matches.map(it => (
-                              <div key={it.id} className="px-2 py-1 text-xs hover:bg-blue-50 cursor-pointer border-b border-slate-100 flex justify-between"
-                                onMouseDown={() => pickItemForBulk(i, it)}>
-                                <span className="text-slate-800 font-medium">{it.name}</span>
-                                <span className="text-slate-400 text-[10px]">{it.code} | {it.currentStock} {it.unit}</span>
-                              </div>
-                            ))}
-                          </div>
-                        )}
-                      </td>
-                      <td className="px-1 py-0.5 border-r border-slate-100">
-                        <input type="number" step="any" className="w-full border-0 px-1.5 py-1 text-xs outline-none focus:bg-blue-50 bg-transparent text-right font-mono tabular-nums"
-                          value={row.quantity} onChange={e => updateBulkRow(i, { quantity: e.target.value })} />
-                      </td>
-                      <td className="px-1 py-0.5 border-r border-slate-100">
-                        <select className="w-full border-0 px-1 py-1 text-xs outline-none focus:bg-blue-50 bg-transparent" value={row.unit} onChange={e => updateBulkRow(i, { unit: e.target.value })}>
-                          <optgroup label="Goods">{GOODS_UNITS.map(u => <option key={u} value={u}>{u}</option>)}</optgroup>
-                          <optgroup label="Service">{SERVICE_UNITS.map(u => <option key={u} value={u}>{u}</option>)}</optgroup>
-                        </select>
-                      </td>
-                      <td className="px-1 py-0.5 border-r border-slate-100">
-                        <select className="w-full border-0 px-1 py-1 text-xs outline-none focus:bg-blue-50 bg-transparent" value={row.category} onChange={e => updateBulkRow(i, { category: e.target.value })}>
-                          <optgroup label="Goods">{GOODS_CATEGORIES.map(c => <option key={c} value={c}>{c.replace(/_/g, ' ')}</option>)}</optgroup>
-                          <optgroup label="Service">{SERVICE_CATEGORIES.map(c => <option key={c} value={c}>{c.replace(/_/g, ' ')}</option>)}</optgroup>
-                        </select>
-                      </td>
-                      <td className="px-1 py-0.5 border-r border-slate-100">
-                        <input type="number" step="any" className="w-full border-0 px-1.5 py-1 text-xs outline-none focus:bg-blue-50 bg-transparent text-right font-mono tabular-nums"
-                          value={row.estimatedCost} onChange={e => updateBulkRow(i, { estimatedCost: e.target.value })} />
-                      </td>
-                      <td className="px-1 py-0.5 border-r border-slate-100">
-                        <select className="w-full border-0 px-1 py-1 text-xs outline-none focus:bg-blue-50 bg-transparent" value={row.urgency} onChange={e => updateBulkRow(i, { urgency: e.target.value })}>
-                          {URGENCIES.map(u => <option key={u} value={u}>{u}</option>)}
-                        </select>
-                      </td>
-                      <td className="px-1 py-0.5 border-r border-slate-100">
-                        <input className="w-full border-0 px-1.5 py-1 text-xs outline-none focus:bg-blue-50 bg-transparent"
-                          placeholder="Supplier (optional)" list={`vendor-list-${i}`} value={row.supplier} onChange={e => updateBulkRow(i, { supplier: e.target.value })} />
-                        <datalist id={`vendor-list-${i}`}>
-                          {vendors.map((v, vi) => <option key={vi} value={v.name} />)}
-                        </datalist>
-                      </td>
-                      <td className="px-1 py-0.5 border-r border-slate-100">
-                        <input className="w-full border-0 px-1.5 py-1 text-xs outline-none focus:bg-blue-50 bg-transparent"
-                          placeholder="Why needed?" value={row.justification} onChange={e => updateBulkRow(i, { justification: e.target.value })} />
-                      </td>
-                      <td className="px-1 py-0.5 text-center">
-                        <button onClick={() => copyBulkRow(i)} className="text-slate-400 hover:text-blue-600 mx-0.5" title="Copy row"><Copy size={12} /></button>
-                        <button onClick={() => deleteBulkRow(i)} className="text-slate-400 hover:text-red-600 mx-0.5" title="Delete row"><Trash2 size={12} /></button>
-                        {total > 0 && <div className="text-[9px] text-slate-400 font-mono tabular-nums mt-0.5">Rs.{total.toLocaleString('en-IN')}</div>}
-                      </td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-              <tfoot>
-                <tr className="bg-slate-100 border-t-2 border-slate-400">
-                  <td colSpan={9} className="px-2 py-1.5 text-right text-[10px] font-bold text-slate-600 uppercase tracking-widest">Grand Total</td>
-                  <td className="px-2 py-1.5 text-center text-xs font-bold text-slate-800 font-mono tabular-nums">
-                    Rs.{bulkRows.reduce((s, r) => s + (parseFloat(r.quantity) || 0) * (parseFloat(r.estimatedCost) || 0), 0).toLocaleString('en-IN')}
-                  </td>
-                </tr>
-              </tfoot>
-            </table>
-          </div>
-
-          {/* Bulk footer actions */}
-          <div className="bg-slate-50 border-t border-slate-300 px-4 py-2.5 flex items-center justify-between">
-            <button onClick={addBulkRow} className="px-3 py-1 bg-white border border-slate-400 text-slate-700 text-[11px] font-medium hover:bg-slate-100 flex items-center gap-1">
-              <Plus size={12} /> Add Row
-            </button>
-            <div className="flex gap-2">
-              <button onClick={() => { setBulkRows([blankRow(), blankRow(), blankRow()]); setBulkCommon({ department: '', requestedByPerson: '' }); }}
-                className="px-3 py-1 bg-white border border-slate-300 text-slate-600 text-[11px] font-medium hover:bg-slate-50">
-                Reset
-              </button>
-              <button onClick={submitBulk} disabled={bulkSaving}
-                className="px-4 py-1 bg-blue-600 text-white text-[11px] font-bold uppercase tracking-wide hover:bg-blue-700 disabled:bg-slate-400">
-                {bulkSaving ? 'Submitting...' : `Submit All (${bulkRows.filter(r => r.itemName.trim() && parseFloat(r.quantity) > 0).length})`}
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* Requisition List */}
+      {/* ── LIST ── */}
       {tab === 'list' && (
-        <div className="border-x border-b border-slate-300 -mx-3 md:-mx-6">
-          {reqs.length === 0 && (
-            <div className="p-8 text-center text-xs text-slate-400">No requisitions found</div>
-          )}
-          {reqs.map(pr => {
+        <div className="border-x border-b border-slate-300 -mx-3 md:-mx-6 bg-white">
+          {filtered.length === 0 && <div className="p-8 text-center text-xs text-slate-400">No indents match the filter</div>}
+          {filtered.map(pr => {
             const isExpanded = expanded === pr.id;
-            const totalCost = pr.quantity * pr.estimatedCost;
+            const bestQuote = pr.quotes.reduce<Quote | null>((best, q) => (q.vendorRate != null && (!best || (q.vendorRate as number) < (best.vendorRate as number))) ? q : best, null);
             return (
-              <div key={pr.id} className="border-b border-slate-200 last:border-b-0">
-                <div
-                  className={`px-4 py-2.5 flex items-start gap-3 cursor-pointer hover:bg-blue-50/60 transition ${
-                    isExpanded ? 'bg-slate-50' : 'even:bg-slate-50/70'
-                  }`}
-                  onClick={() => {
-                    const next = isExpanded ? null : pr.id;
-                    setExpanded(next);
-                    setStockCheck(null);
-                    setItemHistory(null);
-                    if (next) {
-                      if (pr.inventoryItemId && ['DRAFT', 'SUBMITTED', 'APPROVED'].includes(pr.status)) {
-                        checkStock(pr.id, pr.quantity);
-                      }
-                      if (pr.inventoryItemId) {
-                        fetchItemHistory(pr.inventoryItemId);
-                      }
-                    }
-                  }}
-                >
+              <div key={pr.id} className={`border-b border-slate-200 last:border-b-0 ${isExpanded ? 'bg-slate-50' : ''}`}>
+                {/* Row header */}
+                <div className="px-4 py-2.5 flex items-start gap-3 cursor-pointer hover:bg-blue-50/60"
+                  onClick={() => toggleExpand(pr)}>
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center gap-2 flex-wrap">
-                      <span className="text-xs font-bold text-slate-800">#{pr.reqNo} {pr.title}</span>
+                      <span className="text-xs font-mono tabular-nums text-slate-400">#{pr.reqNo}</span>
+                      <span className="text-xs font-bold text-slate-800">{pr.itemName}</span>
+                      <span className="text-[10px] text-slate-500 font-mono tabular-nums">{pr.quantity} {pr.unit}</span>
                       <span className={`text-[9px] font-bold uppercase px-1.5 py-0.5 border ${URG_COLORS[pr.urgency]}`}>{pr.urgency}</span>
-                      <span className={`text-[9px] font-bold uppercase px-1.5 py-0.5 border ${STATUS_COLORS[pr.status]}`}>{pr.status}</span>
+                      <span className={`text-[9px] font-bold uppercase px-1.5 py-0.5 border ${STATUS_COLORS[pr.status]}`}>{pr.status.replace('_', ' ')}</span>
+                      {pr.vendor && <span className="text-[9px] text-slate-500">{pr.vendor.name}</span>}
+                      {pr.quotes.length > 0 && <span className="text-[9px] px-1 py-0 border border-slate-300 bg-slate-50 font-bold text-slate-600 uppercase">{pr.quotes.length} quote{pr.quotes.length > 1 ? 's' : ''}</span>}
+                      {bestQuote && bestQuote.vendorRate != null && <span className="text-[9px] text-green-700 font-bold">Best Rs.{bestQuote.vendorRate.toLocaleString('en-IN')}</span>}
                     </div>
                     <div className="text-[10px] text-slate-500 mt-0.5 flex items-center gap-2 flex-wrap">
-                      <span>{pr.itemName} -- {pr.quantity} {pr.unit}</span>
-                      <span className="font-mono tabular-nums">Rs.{totalCost.toLocaleString()}</span>
                       {pr.department && <span className="text-[9px] px-1 py-0 border border-slate-300 bg-slate-100 font-bold uppercase">{pr.department}</span>}
-                      {pr.issuedQty > 0 && <span className="text-[9px] text-green-700 font-bold">{pr.issuedQty} issued</span>}
-                      {pr.purchaseQty > 0 && <span className="text-[9px] text-amber-600 font-bold">{pr.purchaseQty} to buy</span>}
-                      <span className="text-slate-400">{pr.requestedBy} | {new Date(pr.createdAt).toLocaleDateString()}</span>
+                      {pr.requestedByPerson && <span>{pr.requestedByPerson}</span>}
+                      <span className="text-slate-400">{fmtDate(pr.createdAt)}</span>
+                      {pr.issuedQty > 0 && <span className="text-green-700 font-bold">{pr.issuedQty} issued</span>}
+                      {pr.purchaseQty > 0 && <span className="text-amber-600 font-bold">{pr.purchaseQty} to buy</span>}
                     </div>
                   </div>
-                  {isExpanded ? <ChevronUp size={16} className="text-slate-400 mt-0.5" /> : <ChevronDown size={16} className="text-slate-400 mt-0.5" />}
                 </div>
 
+                {/* ── Expanded detail ── */}
                 {isExpanded && (
-                  <div className="border-t border-slate-200 px-4 py-3 space-y-3 bg-slate-50">
-                    <div className="grid grid-cols-2 md:grid-cols-4 gap-3 text-xs">
-                      <div>
-                        <span className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">Item</span>
-                        <div className="font-medium text-slate-800">{pr.itemName}</div>
+                  <div className="border-t border-slate-200 px-4 py-3 space-y-3" onClick={e => e.stopPropagation()}>
+                    {/* Pipeline */}
+                    <div className="bg-white border border-slate-200 p-3">
+                      <div className="flex items-center justify-between mb-2">
+                        <div className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">Pipeline</div>
+                        <div className="text-[10px] text-slate-500">Req# {pr.reqNo} · raised by {pr.requestedBy}</div>
                       </div>
-                      <div>
-                        <span className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">Qty</span>
-                        <div className="font-medium text-slate-800">{pr.quantity} {pr.unit}</div>
-                      </div>
-                      <div>
-                        <span className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">Cost/Unit</span>
-                        <div className="font-medium text-slate-800 font-mono tabular-nums">Rs.{pr.estimatedCost}</div>
-                      </div>
-                      <div>
-                        <span className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">Total</span>
-                        <div className="font-bold text-slate-900 font-mono tabular-nums">Rs.{totalCost.toLocaleString()}</div>
+                      <div className="flex items-stretch gap-0">
+                        {pipelineSteps(pr).map((step, i, arr) => (
+                          <React.Fragment key={step.label}>
+                            <div className={`flex-1 px-2 py-1 border-l-4 text-center ${
+                              step.state === 'done' ? 'border-l-green-500 bg-green-50' :
+                              step.state === 'current' ? 'border-l-blue-500 bg-blue-50' :
+                              'border-l-slate-300 bg-slate-50'
+                            }`}>
+                              <div className={`text-[9px] font-bold uppercase tracking-widest ${
+                                step.state === 'done' ? 'text-green-700' :
+                                step.state === 'current' ? 'text-blue-700' :
+                                'text-slate-400'
+                              }`}>{step.label}</div>
+                              <div className="text-[10px] text-slate-500 font-mono tabular-nums">{step.sub || (step.state === 'done' ? '✓' : step.state === 'current' ? '…' : '')}</div>
+                            </div>
+                            {i < arr.length - 1 && <div className={`w-1 ${step.state === 'done' ? 'bg-green-400' : 'bg-slate-200'}`} />}
+                          </React.Fragment>
+                        ))}
                       </div>
                     </div>
 
-                    {pr.justification && (
-                      <div className="text-xs text-slate-700">
-                        <span className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">Justification: </span>
-                        {pr.justification}
-                      </div>
-                    )}
-                    {pr.remarks && (
-                      <div className="text-xs text-slate-500">
-                        <span className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">Remarks: </span>
-                        {pr.remarks}
-                      </div>
-                    )}
-                    {pr.approvedBy && (
-                      <div className="text-xs text-green-700 flex items-center gap-1">
-                        <Check size={12} /> Approved by {pr.approvedBy} on {new Date(pr.approvedAt!).toLocaleDateString()}
-                      </div>
-                    )}
-                    {pr.rejectionReason && (
-                      <div className="text-xs text-red-700 flex items-center gap-1">
-                        <X size={12} /> Rejected: {pr.rejectionReason}
-                      </div>
-                    )}
-                    {pr.issuedQty > 0 && (
-                      <div className="text-xs text-green-700 flex items-center gap-1">
-                        <Check size={12} /> {pr.issuedQty} {pr.unit} issued from warehouse {pr.issuedBy ? `by ${pr.issuedBy}` : ''} {pr.issuedAt ? `on ${new Date(pr.issuedAt).toLocaleDateString()}` : ''}
-                      </div>
-                    )}
-                    {pr.purchaseQty > 0 && ['PO_PENDING', 'ORDERED'].includes(pr.status) && (
-                      <div className="text-xs text-amber-600 font-bold">
-                        {pr.purchaseQty} {pr.unit} pending purchase
-                      </div>
-                    )}
-                    {pr.department && (
-                      <div className="text-[10px] text-slate-500">Dept: <span className="font-bold">{pr.department}</span> {pr.requestedByPerson ? `| Person: ${pr.requestedByPerson}` : ''}</div>
-                    )}
-
-                    {/* ── Vendor & Quote Tracking ── */}
-                    <div className="border border-slate-300 bg-white p-3 space-y-2" onClick={e => e.stopPropagation()}>
-                      <div className="flex items-center justify-between">
-                        <div className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">Vendor / Quote</div>
-                        {pr.vendor && pr.quoteRequestedAt && (
-                          <span className="text-[9px] text-slate-500">
-                            Requested {new Date(pr.quoteRequestedAt).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: '2-digit' })}
-                            {pr.quoteRequestedBy ? ` by ${pr.quoteRequestedBy}` : ''}
-                          </span>
-                        )}
+                    <div className="grid grid-cols-1 lg:grid-cols-3 gap-3">
+                      {/* ── LEFT: Request Details ── */}
+                      <div className="bg-white border border-slate-200 p-3 space-y-2">
+                        <div className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">Request Details</div>
+                        <div className="grid grid-cols-2 gap-2 text-[11px]">
+                          <div><div className="text-[9px] text-slate-400 uppercase">Item</div><div className="font-medium text-slate-800">{pr.itemName}</div></div>
+                          <div><div className="text-[9px] text-slate-400 uppercase">Qty</div><div className="font-medium font-mono tabular-nums">{pr.quantity} {pr.unit}</div></div>
+                          <div><div className="text-[9px] text-slate-400 uppercase">Dept</div><div className="font-medium text-slate-800">{pr.department || '—'}</div></div>
+                          <div><div className="text-[9px] text-slate-400 uppercase">Person</div><div className="font-medium text-slate-800">{pr.requestedByPerson || '—'}</div></div>
+                          <div><div className="text-[9px] text-slate-400 uppercase">Category</div><div className="font-medium text-slate-800">{pr.category.replace(/_/g, ' ')}</div></div>
+                          <div><div className="text-[9px] text-slate-400 uppercase">Est. Cost</div><div className="font-medium font-mono tabular-nums">{pr.estimatedCost > 0 ? `Rs.${pr.estimatedCost.toLocaleString('en-IN')}` : '—'}</div></div>
+                        </div>
+                        {pr.justification && <div className="text-[11px] pt-1 border-t border-slate-100"><span className="text-[9px] text-slate-400 uppercase">Why:</span> <span className="text-slate-700">{pr.justification}</span></div>}
+                        {pr.remarks && <div className="text-[11px] text-slate-600 italic">{pr.remarks}</div>}
+                        {pr.rejectionReason && <div className="text-[11px] text-red-700 pt-1 border-t border-slate-100"><span className="text-[9px] text-slate-400 uppercase">Rejected:</span> {pr.rejectionReason}</div>}
                       </div>
 
-                      {pr.vendor ? (
-                        <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
-                          <div>
-                            <div className="text-[10px] text-slate-400 uppercase tracking-widest">Vendor</div>
-                            <div className="text-xs font-bold text-slate-800">{pr.vendor.name}</div>
-                            <div className="text-[10px] text-slate-500">
-                              {pr.vendor.email || 'no email'} {pr.vendor.phone ? `| ${pr.vendor.phone}` : ''}
-                            </div>
-                          </div>
-                          <div>
-                            <div className="text-[10px] text-slate-400 uppercase tracking-widest">Quoted Rate</div>
-                            {pr.vendorRate != null && pr.vendorRate > 0 ? (
-                              <>
-                                <div className="text-sm font-bold text-green-700 font-mono tabular-nums">Rs.{pr.vendorRate.toLocaleString('en-IN')}</div>
-                                <div className="text-[10px] text-slate-500">
-                                  {pr.quoteSource || 'MANUAL'} · {pr.vendorQuotedAt && new Date(pr.vendorQuotedAt).toLocaleDateString('en-IN', { day: '2-digit', month: 'short' })}
+                      {/* ── MIDDLE: Store Actions ── */}
+                      <div className="bg-white border border-slate-200 p-3 space-y-2">
+                        <div className="flex items-center justify-between">
+                          <div className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">Store Actions</div>
+                          {['DRAFT', 'SUBMITTED', 'APPROVED'].includes(pr.status) && (
+                            <button onClick={() => { setRejectingId(pr.id); setRejectReason(''); }} className="px-2 py-0.5 bg-white border border-red-300 text-red-600 text-[10px] font-medium hover:bg-red-50">Reject</button>
+                          )}
+                        </div>
+                        {['DRAFT', 'SUBMITTED', 'APPROVED'].includes(pr.status) && (
+                          <>
+                            {pr.inventoryItemId && stockCheck?.id === pr.id ? (
+                              <div className="space-y-2">
+                                <div className="flex items-center gap-4 text-[11px]">
+                                  <div><div className="text-[9px] text-slate-400 uppercase">On hand</div><div className={`font-bold font-mono tabular-nums ${stockCheck.available > 0 ? 'text-green-700' : 'text-red-600'}`}>{stockCheck.available} {stockCheck.unit}</div></div>
+                                  <div><div className="text-[9px] text-slate-400 uppercase">Needed</div><div className="font-bold font-mono tabular-nums">{stockCheck.requested} {stockCheck.unit}</div></div>
+                                  <div><div className="text-[9px] text-slate-400 uppercase">Verdict</div>
+                                    {stockCheck.available >= stockCheck.requested ? <div className="font-bold text-green-700 text-[11px]">In Stock</div> :
+                                     stockCheck.available > 0 ? <div className="font-bold text-amber-600 text-[11px]">Partial</div> :
+                                     <div className="font-bold text-red-600 text-[11px]">None</div>}
+                                  </div>
                                 </div>
-                              </>
+                                <div className="flex items-end gap-2">
+                                  <div>
+                                    <label className="text-[9px] text-slate-400 uppercase">Issue Qty</label>
+                                    <input type="number" min={0} max={Math.min(stockCheck.available, stockCheck.requested)} value={issueQty}
+                                      onChange={e => setIssueQty(String(Math.max(0, Math.min(Number(e.target.value), Math.min(stockCheck.available, stockCheck.requested)))))}
+                                      className="border border-slate-300 px-2 py-1 text-xs w-24 font-mono tabular-nums" />
+                                  </div>
+                                  <div className="flex gap-1">
+                                    <button onClick={() => handleIssue(pr.id)} disabled={actionLoading} className="px-2 py-1 bg-green-600 text-white text-[10px] font-medium hover:bg-green-700 disabled:opacity-50">
+                                      {pr.status !== 'APPROVED' ? 'Approve & Issue' : 'Issue'}
+                                    </button>
+                                    <button onClick={() => handleFullPurchase(pr.id)} disabled={actionLoading} className="px-2 py-1 bg-purple-600 text-white text-[10px] font-medium hover:bg-purple-700 disabled:opacity-50">
+                                      Full Purchase
+                                    </button>
+                                  </div>
+                                </div>
+                              </div>
+                            ) : pr.inventoryItemId ? (
+                              <div className="text-[11px] text-slate-400">Checking stock…</div>
                             ) : (
-                              <div className="flex gap-1">
-                                <input type="number" step="any" placeholder="Enter rate" value={quoteRateInput[pr.id] || ''}
-                                  onChange={e => setQuoteRateInput(prev => ({ ...prev, [pr.id]: e.target.value }))}
-                                  className="border border-slate-300 px-2 py-1 text-xs w-24 font-mono tabular-nums" />
-                                <button onClick={() => handleSaveQuoteRate(pr.id)}
-                                  className="px-2 py-1 bg-blue-600 text-white text-[10px] font-medium hover:bg-blue-700">Save</button>
+                              <div className="flex items-center justify-between">
+                                <div className="text-[11px] text-slate-500">Service / one-off — no stock to check</div>
+                                <button onClick={() => handleFullPurchase(pr.id)} disabled={actionLoading} className="px-2 py-1 bg-purple-600 text-white text-[10px] font-medium hover:bg-purple-700 disabled:opacity-50">
+                                  Approve & Purchase
+                                </button>
                               </div>
                             )}
-                          </div>
-                          <div>
-                            <div className="text-[10px] text-slate-400 uppercase tracking-widest">Total (Qty × Rate)</div>
-                            <div className="text-sm font-bold text-slate-800 font-mono tabular-nums">
-                              {pr.vendorRate ? `Rs.${(pr.vendorRate * pr.quantity).toLocaleString('en-IN')}` : '—'}
+                          </>
+                        )}
+                        {pr.status === 'PO_PENDING' && (
+                          <div className="flex flex-col gap-2">
+                            <div className="text-[11px] text-amber-700">{pr.purchaseQty} {pr.unit} pending purchase {pr.vendor ? `from ${pr.vendor.name}` : ''}</div>
+                            <div className="flex gap-1">
+                              <a href={`/procurement/purchase-orders?newPO=1&item=${encodeURIComponent(pr.itemName)}&qty=${pr.purchaseQty}&unit=${encodeURIComponent(pr.unit)}&requisitionId=${pr.id}`} className="px-2 py-1 bg-blue-600 text-white text-[10px] font-medium hover:bg-blue-700">Create PO</a>
+                              <button onClick={() => updateStatus(pr.id, 'ORDERED')} className="px-2 py-1 bg-white border border-slate-300 text-slate-600 text-[10px] font-medium hover:bg-slate-50">Mark Ordered</button>
                             </div>
                           </div>
-                          {pr.vendorRate != null && pr.vendorRate > 0 && (
-                            <div className="md:col-span-3 flex items-center gap-2 pt-1">
-                              <input type="number" step="any" placeholder="Update rate" value={quoteRateInput[pr.id] || ''}
-                                onChange={e => setQuoteRateInput(prev => ({ ...prev, [pr.id]: e.target.value }))}
-                                className="border border-slate-300 px-2 py-1 text-xs w-28 font-mono tabular-nums" />
-                              <input placeholder="Remarks" value={quoteRemarksInput[pr.id] || ''}
-                                onChange={e => setQuoteRemarksInput(prev => ({ ...prev, [pr.id]: e.target.value }))}
-                                className="border border-slate-300 px-2 py-1 text-xs flex-1" />
-                              <button onClick={() => handleSaveQuoteRate(pr.id)}
-                                className="px-2 py-1 bg-white border border-blue-500 text-blue-700 text-[10px] font-medium hover:bg-blue-50">Update Rate</button>
-                              <button onClick={() => setSelectVendorFor(pr.id)}
-                                className="px-2 py-1 bg-white border border-slate-400 text-slate-700 text-[10px] font-medium hover:bg-slate-50">Change Vendor</button>
-                            </div>
-                          )}
-                        </div>
-                      ) : (
-                        <div className="flex items-center justify-between">
-                          <div className="text-xs text-slate-500">
-                            {pr.supplier ? `Preferred supplier: ${pr.supplier}` : 'No vendor selected yet'}
-                          </div>
-                          <button onClick={() => setSelectVendorFor(pr.id)}
-                            className="px-3 py-1 bg-blue-600 text-white text-[11px] font-medium hover:bg-blue-700">
-                            Select Vendor & Request Quote
-                          </button>
-                        </div>
-                      )}
-                    </div>
-
-                    {/* ── Item History: past POs + rate stats ── */}
-                    {pr.inventoryItemId && (
-                      <div className="border border-slate-300 bg-white p-3 space-y-2" onClick={e => e.stopPropagation()}>
-                        <div className="flex items-center justify-between">
-                          <div className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">Past Orders for this Item</div>
-                          {itemHistory?.stats && (
-                            <div className="text-[10px] text-slate-500">
-                              Last {itemHistory.stats.totalPos} POs · Min Rs.{itemHistory.stats.minRate.toLocaleString('en-IN')} / Avg Rs.{itemHistory.stats.avgRate.toLocaleString('en-IN')} / Max Rs.{itemHistory.stats.maxRate.toLocaleString('en-IN')}
-                            </div>
-                          )}
-                        </div>
-                        {historyLoading ? (
-                          <div className="text-xs text-slate-400">Loading history...</div>
-                        ) : !itemHistory || itemHistory.recent.length === 0 ? (
-                          <div className="text-xs text-slate-400 italic">No prior POs found for this item</div>
-                        ) : (
-                          <div className="overflow-x-auto">
-                            <table className="w-full text-[11px]">
-                              <thead>
-                                <tr className="bg-slate-100 text-slate-600">
-                                  <th className="text-left px-2 py-1 font-semibold">PO#</th>
-                                  <th className="text-left px-2 py-1 font-semibold">Date</th>
-                                  <th className="text-left px-2 py-1 font-semibold">Vendor</th>
-                                  <th className="text-right px-2 py-1 font-semibold">Qty</th>
-                                  <th className="text-right px-2 py-1 font-semibold">Rate</th>
-                                  <th className="text-left px-2 py-1 font-semibold">Status</th>
-                                </tr>
-                              </thead>
-                              <tbody>
-                                {itemHistory.recent.map((h, idx) => (
-                                  <tr key={idx} className="border-b border-slate-100">
-                                    <td className="px-2 py-1 font-mono tabular-nums text-slate-700">{h.poNo}</td>
-                                    <td className="px-2 py-1 text-slate-600">{h.poDate ? new Date(h.poDate).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: '2-digit' }) : '—'}</td>
-                                    <td className="px-2 py-1 text-slate-800">{h.vendorName || '—'}</td>
-                                    <td className="px-2 py-1 text-right font-mono tabular-nums">{h.quantity} {h.unit}</td>
-                                    <td className="px-2 py-1 text-right font-mono tabular-nums font-bold">Rs.{h.rate.toLocaleString('en-IN')}</td>
-                                    <td className="px-2 py-1 text-[9px] text-slate-500">{h.status}</td>
-                                  </tr>
-                                ))}
-                              </tbody>
-                            </table>
+                        )}
+                        {pr.status === 'ORDERED' && (
+                          <button onClick={() => updateStatus(pr.id, 'RECEIVED')} className="px-2 py-1 bg-blue-600 text-white text-[10px] font-medium hover:bg-blue-700">Mark Received</button>
+                        )}
+                        {pr.status === 'REJECTED' && (
+                          <button onClick={() => updateStatus(pr.id, 'DRAFT')} className="px-2 py-1 border border-slate-400 bg-white text-slate-700 text-[10px] font-medium hover:bg-slate-100">Resubmit as Draft</button>
+                        )}
+                        {['RECEIVED', 'COMPLETED'].includes(pr.status) && (
+                          <div className="text-[11px] text-slate-600 space-y-0.5">
+                            {pr.issuedBy && <div><span className="text-[9px] text-slate-400 uppercase">Issued by:</span> {pr.issuedBy}</div>}
+                            {pr.issuedAt && <div><span className="text-[9px] text-slate-400 uppercase">Issued:</span> {fmtDate(pr.issuedAt)}</div>}
+                            {pr.approvedBy && <div><span className="text-[9px] text-slate-400 uppercase">Approved by:</span> {pr.approvedBy}</div>}
                           </div>
                         )}
                       </div>
-                    )}
 
-                    {/* Pipeline Status (read-only — approval/issue happens on Store page) */}
-                    <div className="flex items-center gap-0 pt-2">
-                      {[
-                        { label: 'Submitted', done: !['DRAFT'].includes(pr.status) },
-                        { label: 'Store Review', done: ['APPROVED', 'PO_PENDING', 'ORDERED', 'RECEIVED', 'COMPLETED'].includes(pr.status) },
-                        { label: 'Issued', done: pr.issuedQty > 0, sub: pr.issuedQty > 0 ? `${pr.issuedQty} ${pr.unit}` : '' },
-                        { label: 'Purchase', done: ['ORDERED', 'RECEIVED', 'COMPLETED'].includes(pr.status), sub: pr.purchaseQty > 0 ? `${pr.purchaseQty} ${pr.unit}` : '' },
-                        { label: 'Done', done: ['RECEIVED', 'COMPLETED'].includes(pr.status) },
-                      ].map((step, i) => (
-                        <React.Fragment key={step.label}>
-                          {i > 0 && <div className={`h-0.5 w-4 ${step.done ? 'bg-green-400' : 'bg-slate-200'}`} />}
-                          <div className={`text-center px-2 py-1 border text-[8px] font-bold uppercase tracking-widest ${step.done ? 'border-green-300 bg-green-50 text-green-700' : 'border-slate-200 bg-slate-50 text-slate-400'}`}>
-                            {step.label}
-                            {step.sub && <div className="text-[9px] font-mono">{step.sub}</div>}
-                          </div>
-                        </React.Fragment>
-                      ))}
-                    </div>
-                    {/* Store Action Panel — stock check + issue / purchase / reject */}
-                    {['DRAFT', 'SUBMITTED', 'APPROVED'].includes(pr.status) && (
-                      <div className="border border-slate-300 bg-white p-3 space-y-2" onClick={e => e.stopPropagation()}>
+                      {/* ── RIGHT: Item History ── */}
+                      <div className="bg-white border border-slate-200 p-3 space-y-2">
                         <div className="flex items-center justify-between">
-                          <div className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">Store Stock & Issue</div>
-                          <button onClick={() => { setRejectingId(pr.id); setRejectReason(''); }}
-                            className="px-2 py-0.5 bg-white border border-red-300 text-red-600 text-[10px] font-medium hover:bg-red-50">Reject</button>
+                          <div className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">Past Orders</div>
+                          {itemHistory?.stats && (
+                            <div className="text-[9px] text-slate-500">
+                              {itemHistory.stats.totalPos} POs · Last Rs.{itemHistory.stats.lastRate.toLocaleString('en-IN')}
+                            </div>
+                          )}
                         </div>
-                        {pr.inventoryItemId && stockCheck?.id === pr.id ? (
+                        {!pr.inventoryItemId ? (
+                          <div className="text-[11px] text-slate-400 italic">No item linked — history N/A</div>
+                        ) : historyLoading ? (
+                          <div className="text-[11px] text-slate-400">Loading…</div>
+                        ) : !itemHistory || itemHistory.recent.length === 0 ? (
+                          <div className="text-[11px] text-slate-400 italic">No prior POs for this item</div>
+                        ) : (
                           <>
-                            <div className="grid grid-cols-3 gap-4 text-xs">
-                              <div>
-                                <span className="text-[10px] font-bold text-slate-500 uppercase tracking-widest block">Available</span>
-                                <span className={`font-mono tabular-nums text-sm font-bold ${stockCheck.available > 0 ? 'text-green-700' : 'text-red-600'}`}>
-                                  {stockCheck.available} {stockCheck.unit}
-                                </span>
+                            {itemHistory.stats && (
+                              <div className="text-[10px] text-slate-600 grid grid-cols-3 gap-1 p-2 bg-slate-50 border border-slate-100">
+                                <div>Min <span className="font-bold font-mono">Rs.{itemHistory.stats.minRate.toLocaleString('en-IN')}</span></div>
+                                <div>Avg <span className="font-bold font-mono">Rs.{itemHistory.stats.avgRate.toLocaleString('en-IN')}</span></div>
+                                <div>Max <span className="font-bold font-mono">Rs.{itemHistory.stats.maxRate.toLocaleString('en-IN')}</span></div>
                               </div>
-                              <div>
-                                <span className="text-[10px] font-bold text-slate-500 uppercase tracking-widest block">Requested</span>
-                                <span className="font-mono tabular-nums text-sm font-bold text-slate-800">{stockCheck.requested} {stockCheck.unit}</span>
-                              </div>
-                              <div>
-                                <span className="text-[10px] font-bold text-slate-500 uppercase tracking-widest block">Verdict</span>
-                                {stockCheck.available >= stockCheck.requested ? (
-                                  <span className="text-sm font-bold text-green-700">In Stock</span>
-                                ) : stockCheck.available > 0 ? (
-                                  <span className="text-sm font-bold text-amber-600">Partial — need {stockCheck.shortfall} more</span>
-                                ) : (
-                                  <span className="text-sm font-bold text-red-600">Not in Stock</span>
-                                )}
-                              </div>
-                            </div>
-                            <div className="flex items-end gap-3">
-                              <div>
-                                <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-0.5 block">Issue Qty</label>
-                                <input type="number" min={0} max={Math.min(stockCheck.available, stockCheck.requested)} value={issueQty}
-                                  onChange={e => setIssueQty(String(Math.max(0, Math.min(Number(e.target.value), Math.min(stockCheck.available, stockCheck.requested)))))}
-                                  className="border border-slate-300 px-2.5 py-1.5 text-xs focus:outline-none focus:ring-1 focus:ring-slate-400 w-28 font-mono tabular-nums" />
-                              </div>
-                              <div className="text-xs text-slate-500 pb-1.5">
-                                {Number(issueQty) > 0 && <span className="text-green-700 font-medium">{issueQty} from store</span>}
-                                {Number(issueQty) > 0 && stockCheck.requested > Number(issueQty) && <span> + </span>}
-                                {stockCheck.requested > Number(issueQty) && <span className="text-purple-700 font-medium">{stockCheck.requested - Number(issueQty)} to purchase</span>}
-                              </div>
-                            </div>
-                            <div className="flex gap-2 pt-1">
-                              <button onClick={() => handleIssue(pr.id)} disabled={issuing}
-                                className="px-3 py-1 bg-green-600 text-white text-[11px] font-medium hover:bg-green-700 disabled:opacity-50">
-                                {pr.status !== 'APPROVED' ? 'Approve & Issue' : 'Issue from Store'}
-                              </button>
-                              <button onClick={() => handleFullPurchase(pr.id)} disabled={issuing}
-                                className="px-3 py-1 bg-purple-600 text-white text-[11px] font-medium hover:bg-purple-700 disabled:opacity-50">
-                                Approve & Send to Purchase
-                              </button>
+                            )}
+                            <div className="max-h-40 overflow-y-auto">
+                              <table className="w-full text-[10px]">
+                                <thead>
+                                  <tr className="text-slate-500 border-b border-slate-200">
+                                    <th className="text-left py-1 px-1">PO#</th>
+                                    <th className="text-left py-1 px-1">Vendor</th>
+                                    <th className="text-right py-1 px-1">Rate</th>
+                                    <th className="text-left py-1 px-1">Date</th>
+                                  </tr>
+                                </thead>
+                                <tbody>
+                                  {itemHistory.recent.map((h, i) => (
+                                    <tr key={i} className="border-b border-slate-100">
+                                      <td className="py-1 px-1 font-mono tabular-nums text-slate-700">{h.poNo}</td>
+                                      <td className="py-1 px-1 text-slate-800 truncate max-w-[100px]" title={h.vendorName || ''}>{h.vendorName || '—'}</td>
+                                      <td className="py-1 px-1 text-right font-mono tabular-nums font-bold">{h.rate.toLocaleString('en-IN')}</td>
+                                      <td className="py-1 px-1 text-[9px] text-slate-500">{h.poDate ? new Date(h.poDate).toLocaleDateString('en-IN', { day: '2-digit', month: 'short' }) : '—'}</td>
+                                    </tr>
+                                  ))}
+                                </tbody>
+                              </table>
                             </div>
                           </>
-                        ) : pr.inventoryItemId ? (
-                          <div className="text-xs text-slate-400">Checking stock…</div>
-                        ) : (
-                          <div className="flex items-center justify-between">
-                            <div className="text-xs text-slate-500">No inventory item linked — service / one-off indent</div>
-                            <button onClick={() => handleFullPurchase(pr.id)} disabled={issuing}
-                              className="px-3 py-1 bg-purple-600 text-white text-[11px] font-medium hover:bg-purple-700 disabled:opacity-50">
-                              Approve & Send to Purchase
-                            </button>
-                          </div>
                         )}
                       </div>
-                    )}
+                    </div>
 
-                    {/* PO_PENDING → Create PO / Mark Ordered */}
-                    {pr.status === 'PO_PENDING' && (
-                      <div className="flex gap-2 pt-1" onClick={e => e.stopPropagation()}>
-                        <a href={`/procurement/purchase-orders?newPO=1&item=${encodeURIComponent(pr.itemName)}&qty=${pr.purchaseQty}&unit=${encodeURIComponent(pr.unit)}&requisitionId=${pr.id}`}
-                          className="px-3 py-1 bg-blue-600 text-white text-[11px] font-medium hover:bg-blue-700">Create PO</a>
-                        <button onClick={() => handleMarkOrdered(pr.id)}
-                          className="px-3 py-1 bg-white border border-slate-300 text-slate-600 text-[11px] font-medium hover:bg-slate-50">Mark Ordered</button>
+                    {/* ── VENDOR QUOTE TABLE — each row is one vendor ── */}
+                    <div className="bg-white border border-slate-200">
+                      <div className="bg-slate-100 border-b border-slate-200 px-3 py-2 flex items-center justify-between">
+                        <div>
+                          <div className="text-[11px] font-bold text-slate-700 uppercase tracking-widest">Vendor Quotes — each row = one vendor</div>
+                          <div className="text-[10px] text-slate-500">Add multiple vendors to compare rates. Click "Award" once you've picked the winner.</div>
+                        </div>
+                        <button onClick={() => { setVendorPickFor(pr.id); setVendorQuery(''); }}
+                          className="px-3 py-1 bg-blue-600 text-white text-[11px] font-medium hover:bg-blue-700 flex items-center gap-1">
+                          <Plus size={12} /> Add Vendor
+                        </button>
                       </div>
-                    )}
-
-                    {/* ORDERED → Mark Received */}
-                    {pr.status === 'ORDERED' && (
-                      <div className="pt-1" onClick={e => e.stopPropagation()}>
-                        <button onClick={() => handleMarkReceived(pr.id)}
-                          className="px-3 py-1 bg-blue-600 text-white text-[11px] font-medium hover:bg-blue-700">Mark Received</button>
-                      </div>
-                    )}
-
-                    {/* REJECTED → Resubmit */}
-                    {pr.status === 'REJECTED' && (
-                      <div className="pt-1" onClick={e => e.stopPropagation()}>
-                        <button onClick={() => updateStatus(pr.id, 'DRAFT')}
-                          className="px-3 py-1 border border-slate-400 bg-white text-slate-700 text-[11px] font-medium hover:bg-slate-100">Resubmit (→ Draft)</button>
-                      </div>
-                    )}
+                      <table className="w-full text-[11px]">
+                        <thead>
+                          <tr className="bg-slate-50 border-b border-slate-200 text-slate-600">
+                            <th className="text-left px-3 py-1.5 font-semibold text-[10px] uppercase tracking-widest">Vendor</th>
+                            <th className="text-left px-3 py-1.5 font-semibold text-[10px] uppercase tracking-widest">Contact</th>
+                            <th className="text-left px-3 py-1.5 font-semibold text-[10px] uppercase tracking-widest">Requested</th>
+                            <th className="text-right px-3 py-1.5 font-semibold text-[10px] uppercase tracking-widest">Rate (Rs)</th>
+                            <th className="text-right px-3 py-1.5 font-semibold text-[10px] uppercase tracking-widest">Total (Rs)</th>
+                            <th className="text-left px-3 py-1.5 font-semibold text-[10px] uppercase tracking-widest">Source</th>
+                            <th className="text-center px-3 py-1.5 font-semibold text-[10px] uppercase tracking-widest">Actions</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {pr.quotes.length === 0 && (
+                            <tr><td colSpan={7} className="px-3 py-6 text-center text-[11px] text-slate-400 italic">No vendors added yet — click "Add Vendor" to request quotes</td></tr>
+                          )}
+                          {pr.quotes.map(q => {
+                            const editing = quoteInput[q.id];
+                            const total = q.vendorRate ? q.vendorRate * pr.quantity : 0;
+                            return (
+                              <tr key={q.id} className={`border-b border-slate-100 ${q.isAwarded ? 'bg-green-50' : ''}`}>
+                                <td className="px-3 py-1.5">
+                                  <div className="flex items-center gap-1">
+                                    {q.isAwarded && <Award size={12} className="text-green-600" />}
+                                    <span className="font-bold text-slate-800">{q.vendor.name}</span>
+                                  </div>
+                                </td>
+                                <td className="px-3 py-1.5 text-slate-500 text-[10px]">
+                                  {q.vendor.email || <span className="italic">no email</span>}
+                                  {q.vendor.phone && <div>{q.vendor.phone}</div>}
+                                </td>
+                                <td className="px-3 py-1.5 text-slate-500 text-[10px]">
+                                  {q.quoteRequestedAt ? (
+                                    <>
+                                      <div>{fmtDate(q.quoteRequestedAt)}</div>
+                                      {q.quoteRequestedBy && <div className="text-[9px]">by {q.quoteRequestedBy}</div>}
+                                    </>
+                                  ) : <span className="italic">not requested</span>}
+                                </td>
+                                <td className="px-3 py-1.5 text-right">
+                                  {q.vendorRate != null && !editing ? (
+                                    <div className="font-bold text-green-700 font-mono tabular-nums">{q.vendorRate.toLocaleString('en-IN')}</div>
+                                  ) : (
+                                    <input type="number" step="any" placeholder="Rate"
+                                      value={editing?.rate ?? ''}
+                                      onChange={e => setQuoteInput(prev => ({ ...prev, [q.id]: { rate: e.target.value, remarks: prev[q.id]?.remarks || '' } }))}
+                                      className="border border-slate-300 px-2 py-0.5 text-xs w-24 font-mono tabular-nums text-right" />
+                                  )}
+                                  {q.quotedAt && <div className="text-[9px] text-slate-400">{fmtDate(q.quotedAt)}</div>}
+                                </td>
+                                <td className="px-3 py-1.5 text-right font-mono tabular-nums text-slate-800">
+                                  {total > 0 ? total.toLocaleString('en-IN') : '—'}
+                                </td>
+                                <td className="px-3 py-1.5 text-[10px] text-slate-500">
+                                  {q.quoteSource || <span className="italic">—</span>}
+                                  {q.quoteRemarks && <div className="text-[9px] italic truncate max-w-[120px]" title={q.quoteRemarks}>{q.quoteRemarks}</div>}
+                                </td>
+                                <td className="px-3 py-1.5 text-center">
+                                  <div className="flex items-center justify-center gap-1">
+                                    {!q.quoteRequestedAt && q.vendor.email && (
+                                      <button onClick={() => handleRequestQuote(pr.id, q)} title="Email quote request" className="text-blue-600 hover:text-blue-800 p-0.5">
+                                        <Mail size={14} />
+                                      </button>
+                                    )}
+                                    {q.vendorRate == null && (
+                                      <button onClick={() => setQuoteInput(prev => ({ ...prev, [q.id]: prev[q.id] ?? { rate: '', remarks: '' } }))}
+                                        title="Enter rate manually" className="px-1.5 py-0.5 bg-white border border-blue-500 text-blue-600 text-[10px] font-medium hover:bg-blue-50">
+                                        Enter Rate
+                                      </button>
+                                    )}
+                                    {editing && (
+                                      <button onClick={() => handleSaveRate(pr.id, q.id)} className="px-1.5 py-0.5 bg-blue-600 text-white text-[10px] font-medium hover:bg-blue-700">Save</button>
+                                    )}
+                                    {q.vendorRate != null && !editing && !q.isAwarded && ['DRAFT', 'SUBMITTED', 'APPROVED'].includes(pr.status) && (
+                                      <button onClick={() => handleAward(pr.id, q.id)} title="Award this vendor"
+                                        className="px-1.5 py-0.5 bg-green-600 text-white text-[10px] font-medium hover:bg-green-700 flex items-center gap-0.5">
+                                        <Award size={10} /> Award
+                                      </button>
+                                    )}
+                                    {q.vendorRate != null && !editing && (
+                                      <button onClick={() => setQuoteInput(prev => ({ ...prev, [q.id]: { rate: String(q.vendorRate), remarks: q.quoteRemarks || '' } }))} title="Update rate"
+                                        className="text-slate-500 hover:text-slate-700 p-0.5">
+                                        <RefreshCw size={12} />
+                                      </button>
+                                    )}
+                                    {!q.isAwarded && (
+                                      <button onClick={() => handleDeleteQuote(pr.id, q.id)} title="Remove vendor" className="text-slate-400 hover:text-red-600 p-0.5">
+                                        <Trash2 size={12} />
+                                      </button>
+                                    )}
+                                  </div>
+                                </td>
+                              </tr>
+                            );
+                          })}
+                        </tbody>
+                      </table>
+                    </div>
                   </div>
                 )}
               </div>
@@ -1079,59 +787,48 @@ export default function PurchaseRequisition() {
         </div>
       )}
 
-      {/* Vendor Selection Modal — for Request Quote */}
-      {selectVendorFor && (
-        <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50" onClick={() => { setSelectVendorFor(null); setVendorQuery(''); }}>
+      {/* ── Vendor Picker Modal ── */}
+      {vendorPickFor && (
+        <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50" onClick={() => { setVendorPickFor(null); setVendorQuery(''); }}>
           <div className="bg-white shadow-2xl w-full max-w-2xl" onClick={e => e.stopPropagation()}>
             <div className="bg-slate-800 text-white px-4 py-2.5 flex items-center justify-between">
-              <h2 className="text-xs font-bold uppercase tracking-widest">Select Vendor & Request Quote</h2>
-              <button onClick={() => { setSelectVendorFor(null); setVendorQuery(''); }} className="text-slate-400 hover:text-white text-xs">✕</button>
+              <h2 className="text-xs font-bold uppercase tracking-widest">Add Vendor to Indent</h2>
+              <button onClick={() => { setVendorPickFor(null); setVendorQuery(''); }} className="text-slate-400 hover:text-white text-xs">✕</button>
             </div>
             <div className="p-4 space-y-3">
-              <input
-                type="text"
-                value={vendorQuery}
-                onChange={e => setVendorQuery(e.target.value)}
-                placeholder="Search vendor name, email, or phone..."
-                autoFocus
-                className="w-full border border-slate-300 px-3 py-2 text-xs focus:outline-none focus:ring-1 focus:ring-blue-500"
-              />
+              <input type="text" value={vendorQuery} onChange={e => setVendorQuery(e.target.value)} placeholder="Search vendor name / email / phone..." autoFocus
+                className="w-full border border-slate-300 px-3 py-2 text-xs focus:outline-none focus:ring-1 focus:ring-blue-500" />
               <div className="max-h-80 overflow-y-auto border border-slate-200">
                 {(() => {
                   const q = vendorQuery.toLowerCase().trim();
-                  const matches = q.length === 0
-                    ? vendors.slice(0, 50)
-                    : vendors.filter(v => v.name.toLowerCase().includes(q) || (v.email || '').toLowerCase().includes(q) || (v.phone || '').includes(q)).slice(0, 50);
-                  if (matches.length === 0) {
-                    return <div className="px-3 py-6 text-center text-xs text-slate-400">No vendors match your search</div>;
-                  }
-                  return matches.map(v => (
-                    <div key={v.id}
-                      className="px-3 py-2 text-xs border-b border-slate-100 hover:bg-blue-50 cursor-pointer flex items-center justify-between"
-                      onClick={() => handleRequestQuote(selectVendorFor, v)}>
-                      <div>
-                        <div className="font-bold text-slate-800">{v.name}</div>
-                        <div className="text-[10px] text-slate-500">
-                          {v.email || <span className="text-red-500 italic">no email</span>}
-                          {v.phone ? ` · ${v.phone}` : ''}
+                  const already = new Set((reqs.find(r => r.id === vendorPickFor)?.quotes || []).map(q => q.vendorId));
+                  const matches = (q.length === 0 ? vendors : vendors.filter(v =>
+                    v.name.toLowerCase().includes(q) || (v.email || '').toLowerCase().includes(q) || (v.phone || '').includes(q)
+                  )).slice(0, 60);
+                  if (matches.length === 0) return <div className="px-3 py-6 text-center text-xs text-slate-400">No vendors match</div>;
+                  return matches.map(v => {
+                    const isAdded = already.has(v.id);
+                    return (
+                      <div key={v.id} className={`px-3 py-2 text-xs border-b border-slate-100 flex items-center justify-between ${isAdded ? 'opacity-40' : 'hover:bg-blue-50 cursor-pointer'}`}
+                        onClick={() => !isAdded && handleAddVendor(vendorPickFor, v)}>
+                        <div>
+                          <div className="font-bold text-slate-800">{v.name}</div>
+                          <div className="text-[10px] text-slate-500">{v.email || <span className="italic text-red-500">no email</span>}{v.phone ? ` · ${v.phone}` : ''}</div>
                         </div>
+                        {isAdded
+                          ? <span className="text-[10px] text-slate-400 italic">already added</span>
+                          : <button className="px-2 py-1 bg-blue-600 text-white text-[10px] font-medium hover:bg-blue-700">Add</button>}
                       </div>
-                      <button className="px-2 py-1 bg-blue-600 text-white text-[10px] font-medium hover:bg-blue-700">
-                        {v.email ? 'Email Quote Request' : 'Mark Requested'}
-                      </button>
-                    </div>
-                  ));
+                    );
+                  });
                 })()}
-              </div>
-              <div className="text-[10px] text-slate-500">
-                Tip: Indent is for one vendor. If you want quotes from multiple vendors, create separate indents (or ask Saif to enable the multi-vendor RFQ flow).
               </div>
             </div>
           </div>
         </div>
       )}
 
-      {/* Reject Modal */}
+      {/* ── Reject Modal ── */}
       {rejectingId && (
         <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50" onClick={() => setRejectingId(null)}>
           <div className="bg-white shadow-2xl w-full max-w-md" onClick={e => e.stopPropagation()}>
@@ -1142,12 +839,10 @@ export default function PurchaseRequisition() {
               <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest block">Reason for Rejection</label>
               <textarea value={rejectReason} onChange={e => setRejectReason(e.target.value)} rows={3}
                 className="w-full border border-slate-300 px-2.5 py-1.5 text-xs focus:outline-none focus:ring-1 focus:ring-slate-400 resize-none"
-                placeholder="Enter reason..." />
+                placeholder="Why is this rejected?" />
               <div className="flex justify-end gap-2">
-                <button onClick={() => { setRejectingId(null); setRejectReason(''); }}
-                  className="px-3 py-1 bg-white border border-slate-300 text-slate-600 text-[11px] font-medium hover:bg-slate-50">Cancel</button>
-                <button onClick={handleReject} disabled={!rejectReason.trim()}
-                  className="px-3 py-1 bg-red-600 text-white text-[11px] font-medium hover:bg-red-700 disabled:opacity-50">Confirm Reject</button>
+                <button onClick={() => { setRejectingId(null); setRejectReason(''); }} className="px-3 py-1 bg-white border border-slate-300 text-slate-600 text-[11px] font-medium hover:bg-slate-50">Cancel</button>
+                <button onClick={handleReject} disabled={!rejectReason.trim()} className="px-3 py-1 bg-red-600 text-white text-[11px] font-medium hover:bg-red-700 disabled:opacity-50">Confirm Reject</button>
               </div>
             </div>
           </div>

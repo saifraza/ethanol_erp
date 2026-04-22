@@ -1632,6 +1632,7 @@ model PurchaseRequisition {
   quoteRemarks          String?   // free-text notes on the quote
 
   purchaseOrders PurchaseOrder[] // auto-generated POs from this indent
+  quotes         PurchaseRequisitionVendor[] // one row per vendor we're asking for a quote from
   companyId      String? // FK → Company (null = MSPIL default)
   company        Company?        @relation(fields: [companyId], references: [id])
 
@@ -1640,6 +1641,33 @@ model PurchaseRequisition {
   @@index([userId])
   @@index([inventoryItemId])
   @@index([companyId])
+  @@index([vendorId])
+}
+
+// ── Per-vendor quote row inside an indent ──
+// Each indent can have many of these — one per vendor we're asking for a quote.
+// When one is awarded, PurchaseRequisition.vendorId points at the winner.
+model PurchaseRequisitionVendor {
+  id                  String              @id @default(cuid())
+  requisitionId       String
+  requisition         PurchaseRequisition @relation(fields: [requisitionId], references: [id], onDelete: Cascade)
+  vendorId            String
+  vendor              Vendor              @relation("VendorIndentQuotes", fields: [vendorId], references: [id])
+  quoteRequestedAt    DateTime?
+  quoteRequestedBy    String?
+  quoteEmailSubject   String?
+  quoteEmailThreadId  String?             // gmail thread id (match replies)
+  quoteEmailMessageId String?
+  vendorRate          Float?              // quoted rate from vendor (manual or AI)
+  quotedAt            DateTime?
+  quoteSource         String?             // MANUAL | EMAIL_AUTO | PHONE | WHATSAPP
+  quoteRemarks        String?
+  isAwarded           Boolean             @default(false)
+  createdAt           DateTime            @default(now())
+  updatedAt           DateTime            @updatedAt
+
+  @@unique([requisitionId, vendorId])
+  @@index([requisitionId])
   @@index([vendorId])
 }
 
@@ -2234,6 +2262,7 @@ model Vendor {
 
   purchaseOrders    PurchaseOrder[]
   indents           PurchaseRequisition[] @relation("VendorIndents")
+  indentQuotes      PurchaseRequisitionVendor[] @relation("VendorIndentQuotes")
   grns              GoodsReceipt[]
   vendorInvoices    VendorInvoice[]
   vendorPayments    VendorPayment[]
