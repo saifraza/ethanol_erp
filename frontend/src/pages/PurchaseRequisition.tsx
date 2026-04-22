@@ -135,12 +135,55 @@ export default function PurchaseRequisition() {
   const handleIssue = async (prId: string) => {
     setIssuing(true);
     try {
-      await api.put(`/purchase-requisition/${prId}/issue`, { issuedQty: parseFloat(issueQty) || 0 });
+      const res = await api.put(`/purchase-requisition/${prId}/issue`, { issuedQty: parseFloat(issueQty) || 0 });
+      const autoPO = (res.data as { autoPO?: { created: boolean; poNo?: number; reason?: string } }).autoPO;
       setStockCheck(null);
       setIssueQty('');
       load();
+      if (autoPO) {
+        alert(autoPO.created
+          ? `Draft PO #${autoPO.poNo} created for the shortfall`
+          : `Purchase shortfall logged — ${autoPO.reason || 'manual PO required'}`);
+      }
     } catch (e: unknown) { alert((e as { response?: { data?: { error?: string } } }).response?.data?.error || 'Issue failed'); }
     setIssuing(false);
+  };
+
+  // Store-side action handlers (merged from StoreIndents page)
+  const [rejectingId, setRejectingId] = useState<string | null>(null);
+  const [rejectReason, setRejectReason] = useState('');
+  const handleFullPurchase = async (prId: string) => {
+    setIssuing(true);
+    try {
+      const res = await api.put(`/purchase-requisition/${prId}/issue`, { issuedQty: 0 });
+      const autoPO = (res.data as { autoPO?: { created: boolean; poNo?: number; reason?: string } }).autoPO;
+      setStockCheck(null);
+      setIssueQty('');
+      load();
+      if (autoPO) {
+        alert(autoPO.created
+          ? `Draft PO #${autoPO.poNo} created — review and send to vendor`
+          : `Sent to purchase queue — ${autoPO.reason || 'manual PO required'}`);
+      }
+    } catch (e: unknown) { alert((e as { response?: { data?: { error?: string } } }).response?.data?.error || 'Failed'); }
+    setIssuing(false);
+  };
+  const handleReject = async () => {
+    if (!rejectingId || !rejectReason.trim()) return;
+    try {
+      await api.put(`/purchase-requisition/${rejectingId}`, { status: 'REJECTED', rejectionReason: rejectReason });
+      setRejectingId(null);
+      setRejectReason('');
+      load();
+    } catch (e: unknown) { alert((e as { response?: { data?: { error?: string } } }).response?.data?.error || 'Failed'); }
+  };
+  const handleMarkOrdered = async (prId: string) => {
+    try { await api.put(`/purchase-requisition/${prId}`, { status: 'ORDERED' }); load(); }
+    catch (e: unknown) { alert((e as { response?: { data?: { error?: string } } }).response?.data?.error || 'Failed'); }
+  };
+  const handleMarkReceived = async (prId: string) => {
+    try { await api.put(`/purchase-requisition/${prId}`, { status: 'RECEIVED' }); load(); }
+    catch (e: unknown) { alert((e as { response?: { data?: { error?: string } } }).response?.data?.error || 'Failed'); }
   };
 
   // Inventory item search for linking
@@ -208,7 +251,11 @@ export default function PurchaseRequisition() {
     <div className="space-y-0">
       {/* Page Toolbar */}
       <div className="bg-slate-800 text-white px-4 py-2.5 -mx-3 md:-mx-6 -mt-3 md:-mt-6 flex items-center justify-between">
-        <h1 className="text-sm font-bold tracking-wide uppercase">Purchase Requisitions</h1>
+        <div className="flex items-center gap-3">
+          <h1 className="text-sm font-bold tracking-wide uppercase">Indents</h1>
+          <span className="text-[10px] text-slate-400">|</span>
+          <span className="text-[10px] text-slate-400">Plant raises → Store reviews → Issue or send to Purchase</span>
+        </div>
         <button
           onClick={() => setTab('new')}
           className="px-3 py-1 bg-blue-600 text-white text-[11px] font-medium hover:bg-blue-700 flex items-center gap-1"
@@ -620,7 +667,14 @@ export default function PurchaseRequisition() {
                   className={`px-4 py-2.5 flex items-start gap-3 cursor-pointer hover:bg-blue-50/60 transition ${
                     isExpanded ? 'bg-slate-50' : 'even:bg-slate-50/70'
                   }`}
-                  onClick={() => setExpanded(isExpanded ? null : pr.id)}
+                  onClick={() => {
+                    const next = isExpanded ? null : pr.id;
+                    setExpanded(next);
+                    setStockCheck(null);
+                    if (next && pr.inventoryItemId && ['DRAFT', 'SUBMITTED', 'APPROVED'].includes(pr.status)) {
+                      checkStock(pr.id, pr.quantity);
+                    }
+                  }}
                 >
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center gap-2 flex-wrap">
@@ -715,15 +769,99 @@ export default function PurchaseRequisition() {
                         </React.Fragment>
                       ))}
                     </div>
-                    {/* Only resubmit for rejected — all other actions on Store page */}
+                    {/* Store Action Panel — stock check + issue / purchase / reject */}
+                    {['DRAFT', 'SUBMITTED', 'APPROVED'].includes(pr.status) && (
+                      <div className="border border-slate-300 bg-white p-3 space-y-2" onClick={e => e.stopPropagation()}>
+                        <div className="flex items-center justify-between">
+                          <div className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">Store Stock & Issue</div>
+                          <button onClick={() => { setRejectingId(pr.id); setRejectReason(''); }}
+                            className="px-2 py-0.5 bg-white border border-red-300 text-red-600 text-[10px] font-medium hover:bg-red-50">Reject</button>
+                        </div>
+                        {pr.inventoryItemId && stockCheck?.id === pr.id ? (
+                          <>
+                            <div className="grid grid-cols-3 gap-4 text-xs">
+                              <div>
+                                <span className="text-[10px] font-bold text-slate-500 uppercase tracking-widest block">Available</span>
+                                <span className={`font-mono tabular-nums text-sm font-bold ${stockCheck.available > 0 ? 'text-green-700' : 'text-red-600'}`}>
+                                  {stockCheck.available} {stockCheck.unit}
+                                </span>
+                              </div>
+                              <div>
+                                <span className="text-[10px] font-bold text-slate-500 uppercase tracking-widest block">Requested</span>
+                                <span className="font-mono tabular-nums text-sm font-bold text-slate-800">{stockCheck.requested} {stockCheck.unit}</span>
+                              </div>
+                              <div>
+                                <span className="text-[10px] font-bold text-slate-500 uppercase tracking-widest block">Verdict</span>
+                                {stockCheck.available >= stockCheck.requested ? (
+                                  <span className="text-sm font-bold text-green-700">In Stock</span>
+                                ) : stockCheck.available > 0 ? (
+                                  <span className="text-sm font-bold text-amber-600">Partial — need {stockCheck.shortfall} more</span>
+                                ) : (
+                                  <span className="text-sm font-bold text-red-600">Not in Stock</span>
+                                )}
+                              </div>
+                            </div>
+                            <div className="flex items-end gap-3">
+                              <div>
+                                <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-0.5 block">Issue Qty</label>
+                                <input type="number" min={0} max={Math.min(stockCheck.available, stockCheck.requested)} value={issueQty}
+                                  onChange={e => setIssueQty(String(Math.max(0, Math.min(Number(e.target.value), Math.min(stockCheck.available, stockCheck.requested)))))}
+                                  className="border border-slate-300 px-2.5 py-1.5 text-xs focus:outline-none focus:ring-1 focus:ring-slate-400 w-28 font-mono tabular-nums" />
+                              </div>
+                              <div className="text-xs text-slate-500 pb-1.5">
+                                {Number(issueQty) > 0 && <span className="text-green-700 font-medium">{issueQty} from store</span>}
+                                {Number(issueQty) > 0 && stockCheck.requested > Number(issueQty) && <span> + </span>}
+                                {stockCheck.requested > Number(issueQty) && <span className="text-purple-700 font-medium">{stockCheck.requested - Number(issueQty)} to purchase</span>}
+                              </div>
+                            </div>
+                            <div className="flex gap-2 pt-1">
+                              <button onClick={() => handleIssue(pr.id)} disabled={issuing}
+                                className="px-3 py-1 bg-green-600 text-white text-[11px] font-medium hover:bg-green-700 disabled:opacity-50">
+                                {pr.status !== 'APPROVED' ? 'Approve & Issue' : 'Issue from Store'}
+                              </button>
+                              <button onClick={() => handleFullPurchase(pr.id)} disabled={issuing}
+                                className="px-3 py-1 bg-purple-600 text-white text-[11px] font-medium hover:bg-purple-700 disabled:opacity-50">
+                                Approve & Send to Purchase
+                              </button>
+                            </div>
+                          </>
+                        ) : pr.inventoryItemId ? (
+                          <div className="text-xs text-slate-400">Checking stock…</div>
+                        ) : (
+                          <div className="flex items-center justify-between">
+                            <div className="text-xs text-slate-500">No inventory item linked — service / one-off indent</div>
+                            <button onClick={() => handleFullPurchase(pr.id)} disabled={issuing}
+                              className="px-3 py-1 bg-purple-600 text-white text-[11px] font-medium hover:bg-purple-700 disabled:opacity-50">
+                              Approve & Send to Purchase
+                            </button>
+                          </div>
+                        )}
+                      </div>
+                    )}
+
+                    {/* PO_PENDING → Create PO / Mark Ordered */}
+                    {pr.status === 'PO_PENDING' && (
+                      <div className="flex gap-2 pt-1" onClick={e => e.stopPropagation()}>
+                        <a href={`/procurement/purchase-orders?newPO=1&item=${encodeURIComponent(pr.itemName)}&qty=${pr.purchaseQty}&unit=${encodeURIComponent(pr.unit)}&requisitionId=${pr.id}`}
+                          className="px-3 py-1 bg-blue-600 text-white text-[11px] font-medium hover:bg-blue-700">Create PO</a>
+                        <button onClick={() => handleMarkOrdered(pr.id)}
+                          className="px-3 py-1 bg-white border border-slate-300 text-slate-600 text-[11px] font-medium hover:bg-slate-50">Mark Ordered</button>
+                      </div>
+                    )}
+
+                    {/* ORDERED → Mark Received */}
+                    {pr.status === 'ORDERED' && (
+                      <div className="pt-1" onClick={e => e.stopPropagation()}>
+                        <button onClick={() => handleMarkReceived(pr.id)}
+                          className="px-3 py-1 bg-blue-600 text-white text-[11px] font-medium hover:bg-blue-700">Mark Received</button>
+                      </div>
+                    )}
+
+                    {/* REJECTED → Resubmit */}
                     {pr.status === 'REJECTED' && (
-                      <div className="pt-1">
-                        <button
-                          onClick={() => updateStatus(pr.id, 'SUBMITTED')}
-                          className="px-3 py-1 border border-slate-400 bg-white text-slate-700 text-[11px] font-medium hover:bg-slate-100"
-                        >
-                          Resubmit
-                        </button>
+                      <div className="pt-1" onClick={e => e.stopPropagation()}>
+                        <button onClick={() => updateStatus(pr.id, 'DRAFT')}
+                          className="px-3 py-1 border border-slate-400 bg-white text-slate-700 text-[11px] font-medium hover:bg-slate-100">Resubmit (→ Draft)</button>
                       </div>
                     )}
                   </div>
@@ -731,6 +869,29 @@ export default function PurchaseRequisition() {
               </div>
             );
           })}
+        </div>
+      )}
+
+      {/* Reject Modal */}
+      {rejectingId && (
+        <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50" onClick={() => setRejectingId(null)}>
+          <div className="bg-white shadow-2xl w-full max-w-md" onClick={e => e.stopPropagation()}>
+            <div className="bg-slate-800 text-white px-4 py-2.5">
+              <h2 className="text-xs font-bold uppercase tracking-widest">Reject Indent</h2>
+            </div>
+            <div className="p-4 space-y-3">
+              <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest block">Reason for Rejection</label>
+              <textarea value={rejectReason} onChange={e => setRejectReason(e.target.value)} rows={3}
+                className="w-full border border-slate-300 px-2.5 py-1.5 text-xs focus:outline-none focus:ring-1 focus:ring-slate-400 resize-none"
+                placeholder="Enter reason..." />
+              <div className="flex justify-end gap-2">
+                <button onClick={() => { setRejectingId(null); setRejectReason(''); }}
+                  className="px-3 py-1 bg-white border border-slate-300 text-slate-600 text-[11px] font-medium hover:bg-slate-50">Cancel</button>
+                <button onClick={handleReject} disabled={!rejectReason.trim()}
+                  className="px-3 py-1 bg-red-600 text-white text-[11px] font-medium hover:bg-red-700 disabled:opacity-50">Confirm Reject</button>
+              </div>
+            </div>
+          </div>
         </div>
       )}
     </div>

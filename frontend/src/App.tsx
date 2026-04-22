@@ -208,7 +208,8 @@ export default function App() {
         {/* raw-material-testing merged into raw-material */}
         <Route path="inventory" element={<Inventory />} />
         <Route path="inventory/masters" element={<InventoryMasters />} />
-        <Route path="inventory/store-indents" element={<StoreIndents />} />
+        <Route path="inventory/indents" element={<PurchaseRequisition />} />
+        <Route path="inventory/store-indents" element={<Navigate to="/inventory/indents" replace />} />
         <Route path="inventory/contractor-issues" element={<ContractorIssues />} />
         <Route path="inventory/store-deals" element={<Navigate to="/store/receipts?tab=pos" replace />} />
         {/* Inventory (SAP-style) */}
@@ -250,7 +251,7 @@ export default function App() {
         <Route path="hr/salary-structure" element={<HrSalaryStructure />} />
         <Route path="hr/payroll" element={<HrPayroll />} />
         <Route path="hr/pay-today" element={<HrPayToday />} />
-        <Route path="purchase-requisition" element={<PurchaseRequisition />} />
+        <Route path="purchase-requisition" element={<Navigate to="/inventory/indents" replace />} />
         {/* Sales & Distribution */}
         <Route path="sales/customers" element={<Customers />} />
         <Route path="sales/pipeline" element={<Navigate to="/sales/orders" replace />} />
