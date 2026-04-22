@@ -4751,8 +4751,12 @@ model ProjectPurchase {
   awardedBy          String? // user.id
   awardReason        String? // why this quote was picked
   // Post-award negotiation (oral discussions before PO is raised)
-  negotiatedTotal    Float? // final negotiated total (overrides awarded quote total if set)
+  negotiatedTotal    Float? // final negotiated amount user agreed with vendor
   negotiationNotes   String? // what was negotiated (discount, extras, etc.)
+  // What does the negotiated amount include? (drives PO breakdown)
+  negotiationInclGst       Boolean @default(true)
+  negotiationInclFreight   Boolean @default(true)
+  negotiationInclErection  Boolean @default(true)
   aiAnalysis         Json? // cached AI comparison summary (criteria, ranking, pros/cons)
   aiAnalysisAt       DateTime?
   remarks            String?

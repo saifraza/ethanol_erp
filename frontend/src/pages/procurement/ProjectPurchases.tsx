@@ -101,6 +101,9 @@ interface Project {
   awardReason: string | null;
   negotiatedTotal: number | null;
   negotiationNotes: string | null;
+  negotiationInclGst?: boolean;
+  negotiationInclFreight?: boolean;
+  negotiationInclErection?: boolean;
   aiAnalysis: AIAnalysis | null;
   aiAnalysisAt: string | null;
   remarks: string | null;
@@ -679,9 +682,15 @@ const ProjectDetailDrawer: React.FC<DrawerProps> = ({ projectId, detail, loading
                 awardedQuote={detail.quotations?.find((q) => q.id === detail.awardedQuotationId) || null}
                 busy={generatingPO}
                 onClose={() => setShowNegotiate(false)}
-                onGenerate={async (finalTotal: number, notes: string) => {
+                onGenerate={async (finalTotal, notes, inclGst, inclFreight, inclErection) => {
                   try {
-                    await api.put(`/project-purchases/${projectId}/negotiate`, { negotiatedTotal: finalTotal, negotiationNotes: notes });
+                    await api.put(`/project-purchases/${projectId}/negotiate`, {
+                      negotiatedTotal: finalTotal,
+                      negotiationNotes: notes,
+                      inclGst,
+                      inclFreight,
+                      inclErection,
+                    });
                     await handleGeneratePO();
                     setShowNegotiate(false);
                   } catch (err) {
@@ -721,14 +730,37 @@ const NegotiateModal: React.FC<{
   awardedQuote: Quotation | null;
   busy: boolean;
   onClose: () => void;
-  onGenerate: (finalTotal: number, notes: string) => Promise<void>;
+  onGenerate: (finalTotal: number, notes: string, inclGst: boolean, inclFreight: boolean, inclErection: boolean) => Promise<void>;
 }> = ({ project, awardedQuote, busy, onClose, onGenerate }) => {
-  const quoteTotal = awardedQuote?.totalAmount || 0;
-  const [finalTotal, setFinalTotal] = useState<number>(project.negotiatedTotal ?? quoteTotal);
+  const qSubtotal = awardedQuote?.subtotal || 0;
+  const qGst = awardedQuote?.gstAmount || 0;
+  const qFreight = awardedQuote?.freight || 0;
+  const qOther = awardedQuote?.otherCharges || 0;
+  const quoteTotal = awardedQuote?.totalAmount || (qSubtotal + qGst + qFreight + qOther);
+
+  // Force user to type a value — no dangerous pre-fill
+  const [finalTotalStr, setFinalTotalStr] = useState<string>(
+    project.negotiatedTotal && project.negotiatedTotal > 0 ? String(project.negotiatedTotal) : '',
+  );
   const [notes, setNotes] = useState<string>(project.negotiationNotes || '');
-  const discount = quoteTotal - finalTotal;
+  const [inclGst, setInclGst] = useState<boolean>(project.negotiationInclGst ?? true);
+  const [inclFreight, setInclFreight] = useState<boolean>(project.negotiationInclFreight ?? true);
+  const [inclErection, setInclErection] = useState<boolean>(project.negotiationInclErection ?? true);
+
+  const finalTotal = parseFloat(finalTotalStr) || 0;
+
+  // Live breakdown preview — mirror of backend logic
+  const denom = qSubtotal + (inclGst ? qGst : 0) + (inclFreight ? qFreight : 0) + (inclErection ? qOther : 0);
+  const scale = denom > 0 && finalTotal > 0 ? finalTotal / denom : 0;
+  const newSubtotal = qSubtotal * scale;
+  const newGst = qGst * scale;
+  const newFreight = inclFreight ? qFreight * scale : qFreight;
+  const newOther = inclErection ? qOther * scale : qOther;
+  const newGrand = newSubtotal + newGst + newFreight + newOther;
+
+  const discount = quoteTotal - newGrand;
   const discountPct = quoteTotal > 0 ? (discount / quoteTotal) * 100 : 0;
-  const overBudget = finalTotal > project.budgetAmount && project.budgetAmount > 0;
+  const overBudget = newGrand > project.budgetAmount && project.budgetAmount > 0;
 
   return (
     <div className="fixed inset-0 bg-black/50 flex items-start justify-center z-50 overflow-y-auto py-8" onClick={onClose}>
@@ -739,7 +771,7 @@ const NegotiateModal: React.FC<{
         </div>
         <div className="p-4 space-y-3">
           <div className="text-xs text-slate-600">
-            Capture the result of your oral negotiation. You can adjust the final amount (typically lower than the quote). Line rates on the PO will be scaled proportionally.
+            Enter the final amount you agreed with the vendor, and tick what that number already includes. The PO breakdown is computed from these flags.
           </div>
 
           <div className="grid grid-cols-1 md:grid-cols-3 gap-0 border border-slate-300">
@@ -749,24 +781,50 @@ const NegotiateModal: React.FC<{
           </div>
 
           <div>
-            <Label required>Final Negotiated Total (₹)</Label>
+            <Label required>Final Negotiated Amount (₹)</Label>
             <input
               type="number"
-              value={finalTotal || ''}
-              onChange={(e) => setFinalTotal(parseFloat(e.target.value) || 0)}
+              value={finalTotalStr}
+              onChange={(e) => setFinalTotalStr(e.target.value)}
+              placeholder="e.g. 1650000"
+              autoFocus
               className="border-2 border-amber-400 bg-amber-50 px-3 py-2 text-lg font-bold font-mono tabular-nums w-full focus:outline-none focus:ring-2 focus:ring-amber-500"
             />
-            <div className="flex gap-3 mt-1 text-[11px]">
-              {discount > 0 && <span className="text-green-700 font-bold">Negotiated discount: ₹ {fmtINR(discount)} ({discountPct.toFixed(1)}%)</span>}
-              {discount < 0 && <span className="text-red-700 font-bold">Over quote by ₹ {fmtINR(-discount)}</span>}
-              {overBudget && <span className="text-red-700 font-bold">⚠ Over budget by ₹ {fmtINR(finalTotal - project.budgetAmount)}</span>}
+            <div className="text-[10px] text-slate-500 mt-1">Empty by design — type the number you negotiated. Do not leave it at the quote amount unless no discount was agreed.</div>
+          </div>
+
+          <div>
+            <Label>This amount includes:</Label>
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-2 mt-1">
+              <label className={`flex items-center gap-2 border-2 px-3 py-2 cursor-pointer ${inclGst ? 'border-green-500 bg-green-50' : 'border-slate-300 bg-white'}`}>
+                <input type="checkbox" checked={inclGst} onChange={(e) => setInclGst(e.target.checked)} className="w-4 h-4" />
+                <div>
+                  <div className="text-xs font-bold uppercase tracking-widest">GST</div>
+                  <div className="text-[10px] text-slate-500">quote GST: ₹{fmtINR(qGst)}</div>
+                </div>
+              </label>
+              <label className={`flex items-center gap-2 border-2 px-3 py-2 cursor-pointer ${inclFreight ? 'border-green-500 bg-green-50' : 'border-slate-300 bg-white'}`}>
+                <input type="checkbox" checked={inclFreight} onChange={(e) => setInclFreight(e.target.checked)} className="w-4 h-4" />
+                <div>
+                  <div className="text-xs font-bold uppercase tracking-widest">Delivery / Freight</div>
+                  <div className="text-[10px] text-slate-500">quote freight: ₹{fmtINR(qFreight)}</div>
+                </div>
+              </label>
+              <label className={`flex items-center gap-2 border-2 px-3 py-2 cursor-pointer ${inclErection ? 'border-green-500 bg-green-50' : 'border-slate-300 bg-white'}`}>
+                <input type="checkbox" checked={inclErection} onChange={(e) => setInclErection(e.target.checked)} className="w-4 h-4" />
+                <div>
+                  <div className="text-xs font-bold uppercase tracking-widest">Erection</div>
+                  <div className="text-[10px] text-slate-500">quote other: ₹{fmtINR(qOther)}</div>
+                </div>
+              </label>
             </div>
+            <div className="text-[10px] text-slate-500 mt-1">Untick a component if it's NOT in your negotiated amount — it will be added on top using the quote value.</div>
           </div>
 
           <div>
             <Label>Negotiation Notes (what was agreed)</Label>
             <textarea
-              rows={3}
+              rows={2}
               value={notes}
               onChange={(e) => setNotes(e.target.value)}
               placeholder="e.g. Agreed 8% discount after phone call with Mr. Sharma on 21/04. Includes free on-site commissioning."
@@ -774,14 +832,28 @@ const NegotiateModal: React.FC<{
             />
           </div>
 
-          <div className="border border-slate-200 bg-slate-50 px-3 py-2 text-[11px] text-slate-600">
-            <b>What happens next:</b> A DRAFT Purchase Order will be created with the final total ₹ {fmtINR(finalTotal)}. All line rates from the awarded quote will be scaled proportionally. You can review & edit the PO before approval, then email it to the vendor.
-          </div>
+          {finalTotal > 0 && (
+            <div className="border border-slate-300 bg-slate-50">
+              <div className="bg-slate-800 text-white px-3 py-1.5 text-[10px] font-bold uppercase tracking-widest">Computed PO Breakdown</div>
+              <div className="divide-y divide-slate-200 text-xs font-mono tabular-nums">
+                <div className="px-3 py-1.5 flex justify-between"><span>Subtotal (taxable value)</span><span>₹ {fmtINR(newSubtotal)}</span></div>
+                <div className="px-3 py-1.5 flex justify-between"><span>GST {inclGst ? '(scaled with subtotal)' : '(kept at quote, added on top)'}</span><span>₹ {fmtINR(newGst)}</span></div>
+                <div className="px-3 py-1.5 flex justify-between"><span>Freight {inclFreight ? '(scaled)' : '(quote value, added on top)'}</span><span>₹ {fmtINR(newFreight)}</span></div>
+                <div className="px-3 py-1.5 flex justify-between"><span>Other / Erection {inclErection ? '(scaled)' : '(quote value, added on top)'}</span><span>₹ {fmtINR(newOther)}</span></div>
+                <div className="px-3 py-2 flex justify-between bg-amber-50 font-bold text-sm"><span>PO Grand Total</span><span>₹ {fmtINR(newGrand)}</span></div>
+              </div>
+              <div className="px-3 py-1.5 flex flex-wrap gap-3 text-[11px] border-t border-slate-300">
+                {discount > 0 && <span className="text-green-700 font-bold">Savings vs quote: ₹ {fmtINR(discount)} ({discountPct.toFixed(1)}%)</span>}
+                {discount < 0 && <span className="text-red-700 font-bold">Over quote by ₹ {fmtINR(-discount)}</span>}
+                {overBudget && <span className="text-red-700 font-bold">Over budget by ₹ {fmtINR(newGrand - project.budgetAmount)}</span>}
+              </div>
+            </div>
+          )}
 
           <div className="flex gap-2 justify-end pt-2 border-t border-slate-200">
             <button onClick={onClose} disabled={busy} className="px-3 py-1.5 border border-slate-300 text-xs font-bold uppercase tracking-widest text-slate-600 hover:bg-slate-50">Cancel</button>
             <button
-              onClick={() => onGenerate(finalTotal, notes)}
+              onClick={() => onGenerate(finalTotal, notes, inclGst, inclFreight, inclErection)}
               disabled={busy || finalTotal <= 0}
               className="px-3 py-1.5 bg-green-600 text-white text-xs font-bold uppercase tracking-widest hover:bg-green-700 disabled:bg-slate-300 flex items-center gap-1"
             >

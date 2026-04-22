@@ -589,8 +589,8 @@ router.post('/:id/award', asyncHandler(async (req: AuthRequest, res: Response) =
         awardedAt: new Date(),
         awardedBy: req.user!.id,
         awardReason: reason || null,
-        // Initialize negotiatedTotal to awarded quote total (user can override before PO)
-        negotiatedTotal: q.totalAmount,
+        // Leave negotiatedTotal null — user MUST enter it explicitly in the Negotiate modal
+        negotiatedTotal: null,
         status: 'AWARDED',
       },
     });
@@ -603,16 +603,29 @@ router.post('/:id/award', asyncHandler(async (req: AuthRequest, res: Response) =
 // PUT /:id/negotiate — update post-award negotiated total + notes
 // ═══════════════════════════════════════════════
 router.put('/:id/negotiate', asyncHandler(async (req: AuthRequest, res: Response) => {
-  const { negotiatedTotal, negotiationNotes } = req.body as { negotiatedTotal?: number; negotiationNotes?: string };
+  const { negotiatedTotal, negotiationNotes, inclGst, inclFreight, inclErection } = req.body as {
+    negotiatedTotal?: number;
+    negotiationNotes?: string;
+    inclGst?: boolean;
+    inclFreight?: boolean;
+    inclErection?: boolean;
+  };
   const project = await prisma.projectPurchase.findUnique({ where: { id: req.params.id } });
   if (!project) { res.status(404).json({ error: 'Project not found' }); return; }
   if (project.status !== 'AWARDED') { res.status(400).json({ error: 'Project must be AWARDED to set negotiated total' }); return; }
+  if (typeof negotiatedTotal !== 'number' || negotiatedTotal <= 0) {
+    res.status(400).json({ error: 'negotiatedTotal must be a positive number' });
+    return;
+  }
 
   const updated = await prisma.projectPurchase.update({
     where: { id: project.id },
     data: {
-      negotiatedTotal: typeof negotiatedTotal === 'number' ? negotiatedTotal : project.negotiatedTotal,
+      negotiatedTotal,
       negotiationNotes: negotiationNotes ?? project.negotiationNotes,
+      negotiationInclGst: typeof inclGst === 'boolean' ? inclGst : project.negotiationInclGst,
+      negotiationInclFreight: typeof inclFreight === 'boolean' ? inclFreight : project.negotiationInclFreight,
+      negotiationInclErection: typeof inclErection === 'boolean' ? inclErection : project.negotiationInclErection,
     },
   });
   res.json(updated);
@@ -643,22 +656,41 @@ router.post('/:id/generate-po', asyncHandler(async (req: AuthRequest, res: Respo
   const companyId = getActiveCompanyId(req);
   const poNo = await nextDocNo('PurchaseOrder', 'poNo', companyId);
 
-  // Apply negotiated total: scale line rates + subtotal proportionally, keep GST ratio intact.
-  // If no negotiation, use quote values as-is.
-  const negotiatedGrand = typeof project.negotiatedTotal === 'number' && project.negotiatedTotal > 0
-    ? project.negotiatedTotal
-    : q.totalAmount;
-  const scaleFactor = q.totalAmount > 0 ? negotiatedGrand / q.totalAmount : 1;
+  // Resolve what the negotiated amount covers. Default to quote if user never negotiated.
+  if (typeof project.negotiatedTotal !== 'number' || project.negotiatedTotal <= 0) {
+    res.status(400).json({ error: 'Set a negotiated total before generating PO' });
+    return;
+  }
+  const negotiated = project.negotiatedTotal;
+  const inclGst = project.negotiationInclGst;
+  const inclFreight = project.negotiationInclFreight;
+  const inclErection = project.negotiationInclErection;
+
+  // Denominator = the part of the quote the negotiated amount is meant to represent.
+  // GST scales 1:1 with subtotal (line rates × gstPct), so it tracks subtotal always when inclGst.
+  const denom = q.subtotal
+    + (inclGst ? q.gstAmount : 0)
+    + (inclFreight ? q.freight : 0)
+    + (inclErection ? q.otherCharges : 0);
+  const scaleFactor = denom > 0 ? negotiated / denom : 1;
+
   const scaledSubtotal = q.subtotal * scaleFactor;
-  const scaledGst = q.gstAmount * scaleFactor;
-  const scaledFreight = q.freight * scaleFactor;
-  const scaledOther = q.otherCharges * scaleFactor;
+  const scaledGst = q.gstAmount * scaleFactor; // GST always follows subtotal
+  const scaledFreight = inclFreight ? q.freight * scaleFactor : q.freight;
+  const scaledOther = inclErection ? q.otherCharges * scaleFactor : q.otherCharges;
+  const newGrandTotal = scaledSubtotal + scaledGst + scaledFreight + scaledOther;
+
+  const inclFlags = [
+    inclGst ? 'GST' : null,
+    inclFreight ? 'Freight' : null,
+    inclErection ? 'Erection' : null,
+  ].filter(Boolean).join('+') || 'ex-all';
 
   const remarkParts = [
     q.warranty ? `Warranty: ${q.warranty}` : '',
     q.deliveryPeriod ? `Delivery: ${q.deliveryPeriod}` : '',
     project.negotiationNotes ? `Negotiation: ${project.negotiationNotes}` : '',
-    scaleFactor !== 1 ? `Negotiated ₹${negotiatedGrand.toFixed(0)} (quote was ₹${q.totalAmount.toFixed(0)})` : '',
+    `Negotiated ₹${negotiated.toFixed(0)} (incl ${inclFlags}); quote ₹${q.totalAmount.toFixed(0)}; final PO ₹${newGrandTotal.toFixed(0)}`,
   ].filter(Boolean).join(' | ');
 
   const po = await prisma.$transaction(async (tx) => {
@@ -677,7 +709,7 @@ router.post('/:id/generate-po', asyncHandler(async (req: AuthRequest, res: Respo
         totalGst: scaledGst,
         freightCharge: scaledFreight,
         otherCharges: scaledOther,
-        grandTotal: negotiatedGrand,
+        grandTotal: newGrandTotal,
         quotationNo: q.quotationNo,
         quotationDate: q.quotationDate,
         projectName: project.name,
