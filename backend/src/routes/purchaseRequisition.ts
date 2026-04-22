@@ -52,6 +52,26 @@ router.post('/:id/vendors', asyncHandler(async (req: AuthRequest, res: Response)
     res.status(201).json(row);
 }));
 
+// Link a vendor to every inventory-item on an indent (creates / updates VendorItem
+// with the latest rate). Called after a rate is saved or a vendor is awarded so
+// the Item Master can surface "we've asked these vendors, at these rates".
+async function upsertVendorItemsForQuote(prId: string, vendorId: string, rate: number) {
+  const pr = await prisma.purchaseRequisition.findUnique({
+    where: { id: prId },
+    include: { lines: { select: { inventoryItemId: true } } },
+  });
+  if (!pr) return;
+  const itemIds = pr.lines.map(l => l.inventoryItemId).filter((id): id is string => !!id);
+  if (pr.inventoryItemId && !itemIds.includes(pr.inventoryItemId)) itemIds.push(pr.inventoryItemId);
+  for (const inventoryItemId of itemIds) {
+    await prisma.vendorItem.upsert({
+      where: { vendorId_inventoryItemId: { vendorId, inventoryItemId } },
+      update: { rate, updatedAt: new Date() },
+      create: { vendorId, inventoryItemId, rate, isPreferred: false, isActive: true },
+    });
+  }
+}
+
 // PUT /:id/vendors/:vrId — update quote rate / remarks / email meta
 router.put('/:id/vendors/:vrId', asyncHandler(async (req: AuthRequest, res: Response) => {
     const b = req.body as Record<string, unknown>;
@@ -74,6 +94,10 @@ router.put('/:id/vendors/:vrId', asyncHandler(async (req: AuthRequest, res: Resp
       data,
       include: { vendor: { select: { id: true, name: true, email: true, phone: true } } },
     });
+    // When a rate is saved, link this vendor to all the items on the indent
+    if (data.vendorRate != null) {
+      await upsertVendorItemsForQuote(req.params.id, row.vendorId, data.vendorRate as number);
+    }
     res.json(row);
 }));
 
@@ -116,6 +140,15 @@ router.post('/:id/vendors/:vrId/award', asyncHandler(async (req: AuthRequest, re
         },
       }),
     ]);
+    // Mark awarded vendor as the PREFERRED vendor for these items
+    await upsertVendorItemsForQuote(req.params.id, row.vendorId, row.vendorRate);
+    const itemsOnIndent = await prisma.purchaseRequisitionLine.findMany({ where: { requisitionId: req.params.id }, select: { inventoryItemId: true } });
+    const awardedItemIds = itemsOnIndent.map(l => l.inventoryItemId).filter((id): id is string => !!id);
+    for (const inventoryItemId of awardedItemIds) {
+      // Unset preferred on other vendors for this item, set on the awarded one
+      await prisma.vendorItem.updateMany({ where: { inventoryItemId }, data: { isPreferred: false } });
+      await prisma.vendorItem.updateMany({ where: { inventoryItemId, vendorId: row.vendorId }, data: { isPreferred: true } });
+    }
     res.json(pr);
 }));
 
@@ -127,7 +160,7 @@ router.delete('/:id/vendors/:vrId', asyncHandler(async (req: AuthRequest, res: R
 
 // ── RFQ Email Flow ──
 // Helper — build the data passed into the HBS template
-async function buildRfqData(prId: string, vrId: string, preparedBy: string) {
+async function buildRfqData(prId: string, vrId: string, preparedBy: string, specialRemarks?: string) {
   const [pr, vr] = await Promise.all([
     prisma.purchaseRequisition.findUnique({
       where: { id: prId },
@@ -164,6 +197,7 @@ async function buildRfqData(prId: string, vrId: string, preparedBy: string) {
       validUntil: validUntil.toISOString(),
       department: pr.department,
       justification: pr.justification,
+      specialRemarks: specialRemarks || null,
       lines,
       vendor: vr.vendor,
       preparedBy,
@@ -172,8 +206,10 @@ async function buildRfqData(prId: string, vrId: string, preparedBy: string) {
 }
 
 // GET /:id/vendors/:vrId/rfq-pdf — RFQ PDF preview (streams PDF)
+// Accepts ?remarks=... query param so the drawer preview can show the same remarks the user will send
 router.get('/:id/vendors/:vrId/rfq-pdf', asyncHandler(async (req: AuthRequest, res: Response) => {
-    const { data, pr } = await buildRfqData(req.params.id, req.params.vrId, req.user!.name || req.user!.email);
+    const remarks = typeof req.query.remarks === 'string' ? req.query.remarks : undefined;
+    const { data, pr } = await buildRfqData(req.params.id, req.params.vrId, req.user!.name || req.user!.email, remarks);
     const pdf = await renderDocumentPdf({ docType: 'RFQ', data });
     res.setHeader('Content-Type', 'application/pdf');
     res.setHeader('Content-Disposition', `inline; filename="RFQ-${pr.reqNo}-${req.params.vrId.slice(0, 6)}.pdf"`);
@@ -181,10 +217,10 @@ router.get('/:id/vendors/:vrId/rfq-pdf', asyncHandler(async (req: AuthRequest, r
 }));
 
 // POST /:id/vendors/:vrId/send-rfq — generate PDF + email vendor + store messageId
-// Body: { extraMessage?: string, cc?: string }
+// Body: { extraMessage?: string (shown in BOTH the email body and the PDF's "Additional Notes"), cc?: string }
 router.post('/:id/vendors/:vrId/send-rfq', asyncHandler(async (req: AuthRequest, res: Response) => {
     const { extraMessage, cc } = req.body as { extraMessage?: string; cc?: string };
-    const { pr, vr, data } = await buildRfqData(req.params.id, req.params.vrId, req.user!.name || req.user!.email);
+    const { pr, vr, data } = await buildRfqData(req.params.id, req.params.vrId, req.user!.name || req.user!.email, extraMessage);
 
     if (!vr.vendor.email) return res.status(400).json({ error: 'Vendor has no email on file' });
 
@@ -326,7 +362,7 @@ router.post('/:id/vendors/:vrId/extract-quote', asyncHandler(async (req: AuthReq
             ? Math.round((extracted.extractedTotal / vr.requisition.quantity) * 100) / 100
             : null);
       if (rate) {
-        await prisma.purchaseRequisitionVendor.update({
+        const updatedRow = await prisma.purchaseRequisitionVendor.update({
           where: { id: req.params.vrId },
           data: {
             vendorRate: rate,
@@ -341,6 +377,7 @@ router.post('/:id/vendors/:vrId/extract-quote', asyncHandler(async (req: AuthReq
           },
         });
         savedRate = rate;
+        await upsertVendorItemsForQuote(req.params.id, updatedRow.vendorId, rate);
       }
     }
 

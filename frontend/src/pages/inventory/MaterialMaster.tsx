@@ -115,6 +115,10 @@ export default function MaterialMaster() {
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const [stockLevels, setStockLevels] = useState<StockLevel[]>([]);
   const [itemMovements, setItemMovements] = useState<RecentMovement[]>([]);
+  const [itemVendors, setItemVendors] = useState<Array<{
+    id: string; rate: number; isPreferred: boolean; updatedAt: string;
+    vendor: { id: string; name: string; email: string | null; phone: string | null; contactPerson: string | null };
+  }>>([]);
   const [reorderRule, setReorderRule] = useState<ReorderRule | null>(null);
   const [expandLoading, setExpandLoading] = useState(false);
 
@@ -232,16 +236,18 @@ export default function MaterialMaster() {
     setExpandedId(id);
     setExpandLoading(true);
     try {
-      const [levelsRes, movRes, ruleRes] = await Promise.all([
+      const [levelsRes, movRes, ruleRes, vendorsRes] = await Promise.all([
         api.get(`/inventory/stock/levels/${id}`),
         api.get('/inventory/movements', { params: { itemId: id, limit: 5 } }),
         api.get('/inventory/reorder/rules', { params: { itemId: id } }).catch(() => ({ data: null })),
+        api.get(`/inventory/items/${id}/vendors`).catch(() => ({ data: { vendors: [] } })),
       ]);
       setStockLevels(Array.isArray(levelsRes.data) ? levelsRes.data : levelsRes.data.levels ?? []);
       const movData = movRes.data;
       setItemMovements(Array.isArray(movData) ? movData : movData.movements ?? []);
       const ruleData = ruleRes.data;
       setReorderRule(ruleData && !Array.isArray(ruleData) ? ruleData : Array.isArray(ruleData) && ruleData.length > 0 ? ruleData[0] : null);
+      setItemVendors((vendorsRes.data as { vendors?: typeof itemVendors })?.vendors || []);
     } catch {
       // non-critical
     } finally {
@@ -335,6 +341,7 @@ export default function MaterialMaster() {
                     expandLoading={expandLoading && expandedId === item.id}
                     stockLevels={expandedId === item.id ? stockLevels : []}
                     itemMovements={expandedId === item.id ? itemMovements : []}
+                    itemVendors={expandedId === item.id ? itemVendors : []}
                     reorderRule={expandedId === item.id ? reorderRule : null}
                     onToggle={() => toggleExpand(item.id)}
                     onEdit={() => openEdit(item)}
@@ -479,10 +486,16 @@ function FormField({ label, value, onChange, type = 'text', placeholder }: {
   );
 }
 
-function ItemRow({ item, expanded, expandLoading, stockLevels, itemMovements, reorderRule,
+interface ItemVendor {
+  id: string; rate: number; isPreferred: boolean; updatedAt: string;
+  vendor: { id: string; name: string; email: string | null; phone: string | null; contactPerson: string | null };
+}
+
+function ItemRow({ item, expanded, expandLoading, stockLevels, itemMovements, itemVendors, reorderRule,
   onToggle, onEdit, onDeactivate, onReorderChange, onReorderSave, formatCurrency }: {
   item: InventoryItem; expanded: boolean; expandLoading: boolean;
   stockLevels: StockLevel[]; itemMovements: RecentMovement[];
+  itemVendors: ItemVendor[];
   reorderRule: ReorderRule | null;
   onToggle: () => void; onEdit: () => void; onDeactivate: () => void;
   onReorderChange: (r: ReorderRule | null) => void; onReorderSave: () => void;
@@ -557,6 +570,48 @@ function ItemRow({ item, expanded, expandLoading, stockLevels, itemMovements, re
                           </span>
                         </div>
                       ))}
+                    </div>
+                  )}
+                </div>
+
+                {/* Vendors — who quoted / supplied this item */}
+                <div className="md:col-span-3">
+                  <h4 className="text-sm font-semibold text-gray-700 mb-2">
+                    Vendors ({itemVendors.length})
+                    {itemVendors.length > 0 && <span className="text-xs text-gray-500 font-normal ml-2">⭐ = preferred (awarded)</span>}
+                  </h4>
+                  {itemVendors.length === 0 ? (
+                    <p className="text-gray-400 text-xs italic">No vendors linked yet. When someone enters a quote rate or awards a vendor via an indent, the vendor is auto-linked here.</p>
+                  ) : (
+                    <div className="bg-white border border-gray-200 overflow-hidden">
+                      <table className="w-full text-xs">
+                        <thead>
+                          <tr className="bg-gray-50 text-gray-600 border-b border-gray-200">
+                            <th className="text-left px-3 py-1.5 font-semibold text-[10px] uppercase tracking-widest">Vendor</th>
+                            <th className="text-left px-3 py-1.5 font-semibold text-[10px] uppercase tracking-widest">Contact</th>
+                            <th className="text-right px-3 py-1.5 font-semibold text-[10px] uppercase tracking-widest w-24">Last Rate</th>
+                            <th className="text-left px-3 py-1.5 font-semibold text-[10px] uppercase tracking-widest w-24">Updated</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {itemVendors.map(v => (
+                            <tr key={v.id} className={`border-b border-gray-100 last:border-b-0 ${v.isPreferred ? 'bg-green-50' : ''}`}>
+                              <td className="px-3 py-1.5 font-medium text-gray-800">
+                                {v.isPreferred && <span className="mr-1">⭐</span>}
+                                {v.vendor.name}
+                              </td>
+                              <td className="px-3 py-1.5 text-[10px] text-gray-500">
+                                {v.vendor.email || '—'}
+                                {v.vendor.phone && <div>{v.vendor.phone}</div>}
+                              </td>
+                              <td className="px-3 py-1.5 text-right font-mono tabular-nums font-bold text-green-700">
+                                {v.rate > 0 ? `Rs.${v.rate.toLocaleString('en-IN')}` : '—'}
+                              </td>
+                              <td className="px-3 py-1.5 text-[10px] text-gray-500">{formatDate(v.updatedAt)}</td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
                     </div>
                   )}
                 </div>

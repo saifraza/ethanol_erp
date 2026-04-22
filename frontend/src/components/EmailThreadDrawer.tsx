@@ -80,7 +80,14 @@ interface Props {
   onClose: () => void;
   onExtractAI?: (threadId: string, replyId: string) => Promise<void>; // optional AI extract hook (parent knows how to extract for this entity)
   showComposer?: boolean;                             // true = show reply composer (default true)
-  emptyStateAction?: { label: string; onClick: () => void }; // e.g. "Send RFQ" when no threads exist yet
+  emptyStateAction?: {
+    label: string;
+    onClick: (remarks?: string) => void | Promise<void>;
+    /** Optional prompt text shown above the textarea in the empty state */
+    remarksLabel?: string;
+    /** If provided, an extra "Preview PDF" button appears */
+    previewUrl?: string;
+  };
 }
 
 function fmtDate(d: string) {
@@ -96,6 +103,7 @@ function initials(name?: string | null, email?: string): string {
 }
 
 export default function EmailThreadDrawer({ query, title, contextLabel, onClose, onExtractAI, showComposer = true, emptyStateAction }: Props) {
+  const [emptyRemarks, setEmptyRemarks] = useState('');
   const [threads, setThreads] = useState<Thread[]>([]);
   const [selectedThreadId, setSelectedThreadId] = useState<string | null>(null);
   const [detail, setDetail] = useState<ThreadDetail | null>(null);
@@ -267,10 +275,7 @@ export default function EmailThreadDrawer({ query, title, contextLabel, onClose,
                   </span>
                 </div>
                 {emptyStateAction && (
-                  <button onClick={emptyStateAction.onClick}
-                    className="w-full px-3 py-1.5 bg-blue-600 text-white text-[11px] font-bold uppercase tracking-wide hover:bg-blue-700 flex items-center justify-center gap-1">
-                    <Send size={11} /> {emptyStateAction.label}
-                  </button>
+                  <div className="text-[10px] text-slate-400 italic">→ Use the panel on the right to send</div>
                 )}
               </div>
             )}
@@ -305,10 +310,31 @@ export default function EmailThreadDrawer({ query, title, contextLabel, onClose,
                   Either this is the first time we're emailing this contact, or previous emails were sent before email tracking was switched on.
                 </div>
                 {emptyStateAction && (
-                  <button onClick={emptyStateAction.onClick}
-                    className="px-4 py-2 bg-blue-600 text-white text-xs font-bold uppercase tracking-wide hover:bg-blue-700 flex items-center justify-center gap-1 mx-auto">
-                    <Send size={12} /> {emptyStateAction.label}
-                  </button>
+                  <div className="space-y-2 pt-2 text-left">
+                    <label className="text-[9px] font-bold text-slate-500 uppercase tracking-widest block">
+                      {emptyStateAction.remarksLabel || 'Special Remarks (optional)'}
+                    </label>
+                    <textarea value={emptyRemarks} onChange={e => setEmptyRemarks(e.target.value)} rows={3}
+                      placeholder="Anything specific you want the vendor to note — delivery deadline, quality spec, preferred brand, etc."
+                      className="w-full border border-slate-300 px-2 py-1.5 text-xs outline-none resize-none bg-white" />
+                    <div className="flex gap-2 justify-center pt-1">
+                      {emptyStateAction.previewUrl && (
+                        <button onClick={async () => {
+                          const res = await api.get(emptyStateAction.previewUrl + (emptyRemarks ? `?remarks=${encodeURIComponent(emptyRemarks)}` : ''), { responseType: 'blob' });
+                          const url = URL.createObjectURL(res.data as Blob);
+                          window.open(url, '_blank');
+                          setTimeout(() => URL.revokeObjectURL(url), 60000);
+                        }}
+                          className="px-3 py-2 bg-white border border-slate-400 text-slate-700 text-xs font-medium hover:bg-slate-100 flex items-center justify-center gap-1">
+                          Preview PDF
+                        </button>
+                      )}
+                      <button onClick={() => emptyStateAction.onClick(emptyRemarks || undefined)}
+                        className="px-4 py-2 bg-blue-600 text-white text-xs font-bold uppercase tracking-wide hover:bg-blue-700 flex items-center justify-center gap-1">
+                        <Send size={12} /> {emptyStateAction.label}
+                      </button>
+                    </div>
+                  </div>
                 )}
               </div>
             )}

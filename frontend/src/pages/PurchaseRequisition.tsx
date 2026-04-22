@@ -312,7 +312,7 @@ export default function PurchaseRequisition() {
   const [threadDrawerTitle, setThreadDrawerTitle] = useState<string>('');
   const [threadDrawerContext, setThreadDrawerContext] = useState<string>('');
   const [threadDrawerOnExtract, setThreadDrawerOnExtract] = useState<((threadId: string, replyId: string) => Promise<void>) | null>(null);
-  const [threadDrawerEmptyAction, setThreadDrawerEmptyAction] = useState<{ label: string; onClick: () => void } | null>(null);
+  const [threadDrawerEmptyAction, setThreadDrawerEmptyAction] = useState<{ label: string; onClick: (remarks?: string) => void | Promise<void>; remarksLabel?: string; previewUrl?: string } | null>(null);
 
   const [rfqPdfUrl, setRfqPdfUrl] = useState<string | null>(null);
   const fetchRfqPdfBlob = async (prId: string, quoteId: string) => {
@@ -1005,9 +1005,43 @@ export default function PurchaseRequisition() {
                                 </td>
                                 <td className="px-3 py-1.5 text-center">
                                   <div className="flex items-center justify-center gap-1">
-                                    <button onClick={() => openRfqDrawer(pr.id, q)} title={q.quoteRequestedAt ? 'View RFQ + replies' : 'Preview & send RFQ'}
+                                    <button
+                                      onClick={() => {
+                                        const prId = pr.id;
+                                        const vrId = q.id;
+                                        setThreadDrawerQuery({ entityType: 'INDENT_QUOTE', entityId: vrId });
+                                        setThreadDrawerTitle(`Thread — ${q.vendor.name}`);
+                                        setThreadDrawerContext(`Indent #${pr.reqNo} · ${q.vendor.email || 'no email'}`);
+                                        setThreadDrawerOnExtract(() => async (_tId: string, _rId: string) => {
+                                          await api.post(`/purchase-requisition/${prId}/vendors/${vrId}/extract-quote`, { autoApply: true });
+                                          load();
+                                        });
+                                        setThreadDrawerEmptyAction({
+                                          label: 'Send RFQ Email Now',
+                                          remarksLabel: 'Special Remarks for this RFQ (added to PDF + email body, optional)',
+                                          previewUrl: `/purchase-requisition/${prId}/vendors/${vrId}/rfq-pdf`,
+                                          onClick: async (remarks?: string) => {
+                                            try {
+                                              await api.post(`/purchase-requisition/${prId}/vendors/${vrId}/send-rfq`, {
+                                                extraMessage: remarks || undefined,
+                                              });
+                                              setThreadDrawerQuery(null);
+                                              setTimeout(() => setThreadDrawerQuery({ entityType: 'INDENT_QUOTE', entityId: vrId }), 200);
+                                              load();
+                                            } catch (e: unknown) {
+                                              alert((e as { response?: { data?: { error?: string } } }).response?.data?.error || 'Send failed');
+                                            }
+                                          },
+                                        });
+                                      }}
+                                      title={q.quoteRequestedAt ? 'Email thread + replies' : 'Send RFQ & track replies'}
                                       className={`p-0.5 ${q.quoteRequestedAt ? 'text-green-600 hover:text-green-800' : 'text-blue-600 hover:text-blue-800'}`}>
                                       <Mail size={14} />
+                                    </button>
+                                    {/* Keep the RFQ-preview drawer accessible as a secondary action — file icon for "Preview PDF first" */}
+                                    <button onClick={() => openRfqDrawer(pr.id, q)} title="Preview RFQ PDF before sending"
+                                      className="p-0.5 text-slate-400 hover:text-slate-700">
+                                      <FileText size={12} />
                                     </button>
                                     {q.vendorRate == null && (
                                       <button onClick={() => setQuoteInput(prev => ({ ...prev, [q.id]: prev[q.id] ?? { rate: '', remarks: '' } }))}
@@ -1154,11 +1188,12 @@ export default function PurchaseRequisition() {
                           });
                           setThreadDrawerEmptyAction({
                             label: 'Send RFQ Email Now',
-                            onClick: async () => {
+                            remarksLabel: 'Special Remarks for this RFQ (added to PDF + email body, optional)',
+                            previewUrl: `/purchase-requisition/${prId}/vendors/${vrId}/rfq-pdf`,
+                            onClick: async (remarks?: string) => {
                               try {
-                                await api.post(`/purchase-requisition/${prId}/vendors/${vrId}/send-rfq`, {});
+                                await api.post(`/purchase-requisition/${prId}/vendors/${vrId}/send-rfq`, { extraMessage: remarks || undefined });
                                 alert('RFQ sent. The thread will appear shortly.');
-                                // Re-trigger drawer fetch
                                 setThreadDrawerQuery({ entityType: 'INDENT_QUOTE', entityId: vrId });
                                 load();
                               } catch (e: unknown) {

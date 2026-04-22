@@ -75,10 +75,27 @@ router.get('/items/po-status', asyncHandler(async (_req: AuthRequest, res: Respo
 router.get('/items/:id', asyncHandler(async (req: AuthRequest, res: Response) => {
   const item = await prisma.inventoryItem.findUnique({
     where: { id: req.params.id },
-    include: { transactions: { orderBy: { createdAt: 'desc' }, take: 50 } },
+    include: {
+      transactions: { orderBy: { createdAt: 'desc' }, take: 50 },
+      vendorItems: {
+        where: { isActive: true },
+        orderBy: [{ isPreferred: 'desc' }, { updatedAt: 'desc' }],
+        include: { vendor: { select: { id: true, name: true, email: true, phone: true, contactPerson: true } } },
+      },
+    },
   });
   if (!item) return res.status(404).json({ error: 'Item not found' });
   res.json(item);
+}));
+
+// GET /items/:id/vendors — list of vendors who've supplied/quoted this item
+router.get('/items/:id/vendors', asyncHandler(async (req: AuthRequest, res: Response) => {
+  const vendors = await prisma.vendorItem.findMany({
+    where: { inventoryItemId: req.params.id, isActive: true },
+    orderBy: [{ isPreferred: 'desc' }, { rate: 'asc' }],
+    include: { vendor: { select: { id: true, name: true, email: true, phone: true, contactPerson: true } } },
+  });
+  res.json({ vendors });
 }));
 
 // GET /items/:id/details — full item with PO history + transactions
