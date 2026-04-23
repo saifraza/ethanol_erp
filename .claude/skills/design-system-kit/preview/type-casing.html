@@ -1,0 +1,23 @@
+<!doctype html><html><head><meta charset="utf-8"><link rel="stylesheet" href="_card.css">
+<style>
+.label { font-size: 10px; font-weight: 700; letter-spacing: 0.1em; text-transform: uppercase; color: #64748b; margin-bottom: 10px; }
+.grid { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 12px; }
+.tile { background: #fff; border: 1px solid #e2e8f0; padding: 10px 12px; }
+.h { font-size: 9px; color: #94a3b8; font-weight: 700; letter-spacing: 0.1em; text-transform: uppercase; font-family: ui-monospace, Menlo, monospace; margin-bottom: 6px; }
+.caps { font-size: 11px; font-weight: 700; letter-spacing: 0.1em; text-transform: uppercase; color: #1e293b; }
+.title { font-size: 14px; font-weight: 600; color: #111827; }
+.sentence { font-size: 13px; color: #334155; line-height: 1.5; }
+.foot { margin-top: 10px; font-size: 10px; color: #64748b; line-height: 1.5; }
+.foot code { font-family: ui-monospace, Menlo, monospace; font-size: 10px; background: #f1f5f9; padding: 1px 5px; border: 1px solid #e2e8f0; }
+</style></head><body><div class="card-root">
+<div class="label">Casing rules</div>
+<div class="grid">
+  <div class="tile"><div class="h">UPPERCASE · widest</div><div class="caps">Inventory Dashboard</div><div class="caps" style="color:#64748b;margin-top:4px">Total Value · Posted</div></div>
+  <div class="tile"><div class="h">Title Case</div><div class="title">Purchase Orders</div><div class="title" style="color:#475569;margin-top:4px">Mark All Read</div></div>
+  <div class="tile"><div class="h">Sentence case</div><div class="sentence">All items above reorder level.</div><div class="sentence" style="color:#64748b;margin-top:4px">No modules assigned. Contact admin.</div></div>
+</div>
+<div class="foot">
+<b>UPPER</b>: page titles, KPI labels, table headers, tabs, badges. Always with <code>letter-spacing: 0.1em</code>.<br>
+<b>Title</b>: sidebar nav, buttons, modal headings. &nbsp; <b>Sentence</b>: body, toasts, empty states, help.
+</div>
+</div></body></html>

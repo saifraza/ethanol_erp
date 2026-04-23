@@ -40,6 +40,13 @@ grep -n 'shadow-sm\b' file   # shadow-sm banned (only shadow-2xl for modals)
 - `parseFloat(...) || 0` without Zod (warn)
 - 24-hour time formatting like `toLocaleTimeString()` (fail — must be 12-hour AM/PM)
 
+### Mobile-hostile patterns (WARN)
+- `style={{minWidth:` on toolbars / filter rows — breaks mobile wrap
+- Table NOT wrapped in `<div className="overflow-x-auto">` — phones can't scroll sideways
+- Bare `grid-cols-4` / `grid-cols-5` / `grid-cols-6` without `md:grid-cols-*` prefix — phone sees cramped grid
+- Per-page `@media` queries in inline style — must use Tailwind `md:` instead
+- `className="flex"` on filter rows without `flex-wrap` — items overflow on phone
+
 ## Your output
 
 Per file:

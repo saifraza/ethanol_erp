@@ -1,0 +1,36 @@
+<!doctype html><html><head><meta charset="utf-8"><link rel="stylesheet" href="_card.css">
+<style>
+.label { font-size: 10px; font-weight: 700; letter-spacing: 0.1em; text-transform: uppercase; color: #64748b; margin-bottom: 12px; }
+.row { display: flex; gap: 14px; align-items: stretch; }
+.btn { font-size: 11px; font-weight: 500; padding: 6px 14px; cursor: pointer; border: 0; display: inline-flex; align-items: center; gap: 6px; }
+.p { background: #2563eb; color: #fff; }
+.p:hover, .p.hover { background: #1d4ed8; }
+.s { background: #fff; color: #475569; border: 1px solid #cbd5e1; }
+.s:hover, .s.hover { background: #f8fafc; }
+.d { background: #dc2626; color: #fff; }
+.d:hover, .d.hover { background: #b91c1c; }
+.meta { margin-top: 12px; font-size: 10px; color: #64748b; line-height: 1.5; display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 10px; }
+.meta .tile { background: #f8fafc; border: 1px solid #e2e8f0; padding: 8px 10px; }
+.meta .tile b { color: #0f172a; font-family: ui-monospace, Menlo, monospace; font-size: 10px; font-weight: 600; }
+.label-sub { font-size: 9px; color: #94a3b8; font-weight: 700; letter-spacing: 0.1em; text-transform: uppercase; font-family: ui-monospace, Menlo, monospace; margin: 10px 0 6px; }
+</style></head><body><div class="card-root">
+<div class="label">Buttons · Tier 2 (SAP)</div>
+<div class="row">
+  <button class="btn p">Save &amp; Post</button>
+  <button class="btn p hover">Save &amp; Post <span style="font-size:9px;opacity:.7;letter-spacing:.1em;text-transform:uppercase">hover</span></button>
+  <button class="btn s">Cancel</button>
+  <button class="btn s hover">Cancel <span style="font-size:9px;opacity:.7;letter-spacing:.1em;text-transform:uppercase">hover</span></button>
+  <button class="btn d">Delete</button>
+</div>
+<div class="label-sub">Refresh / export toolbar buttons</div>
+<div class="row">
+  <button class="btn p" style="padding:4px 12px"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M23 4v6h-6M1 20v-6h6M3.51 9a9 9 0 0114.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0020.49 15" stroke-linecap="round" stroke-linejoin="round"/></svg> Refresh</button>
+  <button class="btn s" style="padding:4px 12px"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4M7 10l5 5 5-5M12 15V3" stroke-linecap="round" stroke-linejoin="round"/></svg> Export</button>
+  <button class="btn s" style="padding:4px 12px"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M12 5v14M5 12h14" stroke-linecap="round"/></svg> New PO</button>
+</div>
+<div class="meta">
+  <div class="tile">Padding · <b>px-3 py-1</b></div>
+  <div class="tile">Text · <b>text-[11px]</b> · 500</div>
+  <div class="tile">Radius · <b>0</b></div>
+</div>
+</div></body></html>

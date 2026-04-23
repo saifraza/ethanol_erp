@@ -1,0 +1,21 @@
+<!doctype html><html><head><meta charset="utf-8"><link rel="stylesheet" href="_card.css">
+<style>
+.label { font-size: 10px; font-weight: 700; letter-spacing: 0.1em; text-transform: uppercase; color: #64748b; margin-bottom: 10px; }
+.kpi-strip { display: grid; grid-template-columns: repeat(4, 1fr); border: 1px solid #cbd5e1; background: #fff; }
+.kpi { padding: 10px 14px; border-right: 1px solid #e2e8f0; border-left: 4px solid var(--c); }
+.kpi:last-child { border-right: 0; }
+.kpi .k { font-size: 10px; font-weight: 700; color: #94a3b8; letter-spacing: 0.1em; text-transform: uppercase; }
+.kpi .v { font-size: 20px; font-weight: 700; color: #1e293b; font-family: ui-monospace, Menlo, monospace; font-variant-numeric: tabular-nums; margin-top: 2px; }
+.kpi .d { font-size: 10px; color: #64748b; margin-top: 2px; font-family: ui-monospace, Menlo, monospace; }
+.note { margin-top: 10px; font-size: 10px; color: #64748b; line-height: 1.55; }
+.note code { font-family: ui-monospace, Menlo, monospace; background: #f1f5f9; padding: 1px 5px; border: 1px solid #e2e8f0; font-size: 10px; }
+</style></head><body><div class="card-root">
+<div class="label">KPI strip · Tier 2 signature</div>
+<div class="kpi-strip">
+  <div class="kpi" style="--c:#3b82f6"><div class="k">Total Items</div><div class="v">1,428</div><div class="d">across 6 warehouses</div></div>
+  <div class="kpi" style="--c:#059669"><div class="k">Total Value</div><div class="v">₹4,28,91,450</div><div class="d">avg cost basis</div></div>
+  <div class="kpi" style="--c:#f59e0b"><div class="k">Low Stock Alerts</div><div class="v">12</div><div class="d">4 critical</div></div>
+  <div class="kpi" style="--c:#64748b"><div class="k">Pending Counts</div><div class="v">3</div><div class="d">draft stock counts</div></div>
+</div>
+<div class="note">Each card wears a <code>border-l-4</code> accent to encode meaning (<code>blue / emerald / amber / slate</code>). Values always <code>font-mono tabular-nums</code>. Edge-to-edge via <code>-mx-3 md:-mx-6</code> on the page.</div>
+</div></body></html>

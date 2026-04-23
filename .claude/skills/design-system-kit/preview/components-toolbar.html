@@ -1,0 +1,36 @@
+<!doctype html><html><head><meta charset="utf-8"><link rel="stylesheet" href="_card.css">
+<style>
+.label { font-size: 10px; font-weight: 700; letter-spacing: 0.1em; text-transform: uppercase; color: #64748b; margin-bottom: 10px; }
+.stack > * + * { margin-top: 10px; }
+.tb { background: #1e293b; color: #fff; padding: 9px 14px; display: flex; justify-content: space-between; align-items: center; }
+.tb .l { font-size: 13px; font-weight: 700; letter-spacing: 0.05em; text-transform: uppercase; display: flex; align-items: baseline; gap: 10px; }
+.tb .l .sub { font-size: 10px; font-weight: 400; color: #94a3b8; letter-spacing: 0; text-transform: none; }
+.tb .r { display: flex; gap: 6px; }
+.tb button { background: #2563eb; color: #fff; border: 0; font-size: 11px; font-weight: 500; padding: 4px 10px; }
+.tb button.sec { background: #fff; color: #475569; border: 1px solid #cbd5e1; }
+.fb { background: #f1f5f9; border: 1px solid #cbd5e1; border-top: 0; padding: 6px 14px; display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
+.fb .chip { font-size: 10px; font-weight: 700; letter-spacing: 0.1em; text-transform: uppercase; color: #64748b; }
+.fb input, .fb select { border: 1px solid #cbd5e1; padding: 4px 8px; font-size: 11px; background: #fff; outline: 0; }
+.hl { font-size: 10px; color: #94a3b8; font-weight: 700; letter-spacing: 0.1em; text-transform: uppercase; font-family: ui-monospace, Menlo, monospace; margin: 0 0 4px; }
+</style></head><body><div class="card-root">
+<div class="label">Toolbar &amp; filter bar</div>
+<div class="stack">
+<div class="hl">Page toolbar (slate-800)</div>
+<div class="tb">
+  <div class="l">Purchase Orders <span class="sub">| all vendors · FY 2025-26</span></div>
+  <div class="r"><button class="sec">Export</button><button>+ New PO</button></div>
+</div>
+<div class="hl">Filter bar (slate-100)</div>
+<div class="fb">
+  <span class="chip">Vendor</span>
+  <select><option>All vendors</option></select>
+  <span class="chip">Status</span>
+  <select><option>Open / Partial</option></select>
+  <span class="chip">From</span>
+  <input value="01-Apr-2026" style="width:100px"/>
+  <span class="chip">To</span>
+  <input value="24-Apr-2026" style="width:100px"/>
+  <input value="Search by PO no., vendor…" style="flex:1;min-width:160px"/>
+</div>
+</div>
+</div></body></html>

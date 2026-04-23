@@ -1,0 +1,25 @@
+<!doctype html><html><head><meta charset="utf-8"><link rel="stylesheet" href="_card.css">
+<style>
+.label { font-size: 10px; font-weight: 700; letter-spacing: 0.1em; text-transform: uppercase; color: #64748b; margin-bottom: 12px; }
+.row { display: flex; align-items: flex-end; gap: 14px; }
+.tok { display: flex; flex-direction: column; align-items: flex-start; gap: 4px; }
+.tok .swatch { background: #2563eb; height: 24px; }
+.tok .k { font-family: ui-monospace, Menlo, monospace; font-size: 9px; color: #64748b; letter-spacing: 0; font-weight: 600; }
+.tok .v { font-size: 10px; color: #0f172a; font-weight: 600; }
+.note { margin-top: 14px; font-size: 11px; color: #475569; line-height: 1.55; }
+.note code { font-family: ui-monospace, Menlo, monospace; font-size: 10px; background: #f1f5f9; padding: 1px 5px; border: 1px solid #e2e8f0; }
+</style></head><body><div class="card-root">
+<div class="label">Spacing scale · Tailwind compatible</div>
+<div class="row">
+  <div class="tok"><div class="swatch" style="width:2px"></div><div class="k">--space-0.5</div><div class="v">2px</div></div>
+  <div class="tok"><div class="swatch" style="width:4px"></div><div class="k">--space-1</div><div class="v">4px</div></div>
+  <div class="tok"><div class="swatch" style="width:8px"></div><div class="k">--space-2</div><div class="v">8px</div></div>
+  <div class="tok"><div class="swatch" style="width:12px"></div><div class="k">--space-3</div><div class="v">12px</div></div>
+  <div class="tok"><div class="swatch" style="width:16px"></div><div class="k">--space-4</div><div class="v">16px</div></div>
+  <div class="tok"><div class="swatch" style="width:24px"></div><div class="k">--space-6</div><div class="v">24px</div></div>
+  <div class="tok"><div class="swatch" style="width:32px"></div><div class="k">--space-8</div><div class="v">32px</div></div>
+  <div class="tok"><div class="swatch" style="width:48px"></div><div class="k">--space-12</div><div class="v">48px</div></div>
+  <div class="tok"><div class="swatch" style="width:64px"></div><div class="k">--space-16</div><div class="v">64px</div></div>
+</div>
+<div class="note">Tier 2 pages are tight: table rows <code>py-1.5</code> (6px), toolbars <code>py-2</code>–<code>py-2.5</code>, KPI cards <code>py-3 px-4</code>. Page padding is <code>p-3</code> mobile, <code>p-6</code> desktop — and Tier 2 blocks then cancel it with <code>-mx-3 md:-mx-6</code> to bleed edge-to-edge.</div>
+</div></body></html>

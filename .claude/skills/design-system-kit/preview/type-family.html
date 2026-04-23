@@ -1,0 +1,17 @@
+<!doctype html><html><head><meta charset="utf-8"><link rel="stylesheet" href="_card.css">
+<style>
+.label { font-size: 10px; font-weight: 700; letter-spacing: 0.1em; text-transform: uppercase; color: #64748b; margin-bottom: 10px; }
+.font-stack { background: #0f172a; color: #e2e8f0; padding: 14px 16px; font-family: ui-monospace, Menlo, Consolas, monospace; font-size: 11px; line-height: 1.6; }
+.font-stack b { color: #60a5fa; font-weight: 500; }
+.note { margin-top: 12px; font-size: 11px; color: #475569; line-height: 1.55; }
+.note code { font-family: ui-monospace, Menlo, monospace; font-size: 10px; background: #f1f5f9; padding: 1px 5px; border: 1px solid #e2e8f0; }
+</style></head><body><div class="card-root">
+<div class="label">Type · Family (system stack, no webfont)</div>
+<div class="font-stack">
+<b>--font-sans:</b> ui-sans-serif, system-ui, -apple-system, "Segoe UI",<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;Roboto, "Helvetica Neue", Arial, sans-serif;<br><br>
+<b>--font-mono:</b> ui-monospace, SFMono-Regular, "SF Mono",<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;Menlo, Consolas, "Liberation Mono", monospace;
+</div>
+<div class="note">Zero webfonts load — the product runs on factory Windows boxes over flaky LAN. Mono is used for every number, hex, ID, and currency (<code>font-mono tabular-nums</code>). For off-product decks or hand-offs, substitute <b>Inter</b> + <b>JetBrains Mono</b> and flag the swap.</div>
+</div></body></html>

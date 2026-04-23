@@ -43,3 +43,28 @@ All enterprise/back-office pages MUST use these exact tokens. Plant/process page
 - **Row striping**: `even:bg-slate-50/70`
 - **Row hover**: global rule in `frontend/src/index.css` paints `tbody tr:hover` with `blue-200` + `blue-600` left accent bar. Do NOT override per-table.
 - **Group headers** in tables: `bg-slate-200 border-b border-slate-300` with `text-[10px] font-bold uppercase tracking-widest`
+
+## Mobile (< 768px) — handled globally
+
+**`frontend/src/design-kit.css` has a `@media (max-width: 767px)` layer that cascades mobile fixes to every page. You do NOT need per-page media queries.** What the global layer does automatically:
+
+- KPI grids (`grid-cols-4/5/6`) collapse to 2 columns
+- 3-col layouts without explicit `md:grid-cols-*` collapse to 1 column
+- Toolbars (`sap-toolbar` / `bg-slate-800 flex`) wrap to 2 rows instead of truncating
+- Tables get `-webkit-overflow-scrolling: touch` + min 44px row height
+- All buttons, links, selects get min 44px touch target
+- Modals (`fixed inset-0 shadow-2xl`) go full-screen
+- `main` padding tightens to 0.5rem
+- iOS safe-area insets respected on header + sticky bottoms
+
+**Escape-hatch utilities** (use sparingly):
+- `.mobile-stack` — flex-column on phone, flex-row on desktop
+- `.mobile-hide` — hide on phone only
+- `.mobile-only` — show on phone only
+- `.hide-mobile` — same as mobile-hide (legacy alias)
+
+**What you MUST still do per page:**
+1. **Wrap tables in `<div class="overflow-x-auto">`** — phones need horizontal scroll on dense tables
+2. **Use `md:` breakpoint** when you want a different desktop layout (e.g. `grid-cols-1 md:grid-cols-4`)
+3. **Never set `style={{minWidth: '...'}}`** on toolbars — breaks the wrap behavior
+4. **Test at 375px** (iPhone SE width) before shipping. `preview_resize preset: mobile`.

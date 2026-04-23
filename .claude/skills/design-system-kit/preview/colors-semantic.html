@@ -1,0 +1,36 @@
+<!doctype html><html><head><meta charset="utf-8"><link rel="stylesheet" href="_card.css">
+<style>
+.label { font-size: 10px; font-weight: 700; letter-spacing: 0.1em; text-transform: uppercase; color: #64748b; margin-bottom: 10px; display: flex; align-items: baseline; gap: 10px; }
+.label .rule { font-family: ui-monospace, Menlo, monospace; font-size: 10px; color: #94a3b8; text-transform: none; letter-spacing: 0; }
+.row { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; }
+.sem { border: 1px solid #e2e8f0; background: #fff; }
+.sem .bar { height: 44px; display: flex; align-items: center; padding: 0 14px; color: #fff; font-size: 11px; font-weight: 700; letter-spacing: 0.1em; text-transform: uppercase; }
+.sem .meta { padding: 8px 12px 10px; display: grid; grid-template-columns: 1fr auto; gap: 6px; font-size: 10px; }
+.sem .meta .k { color: #64748b; font-weight: 700; text-transform: uppercase; letter-spacing: 0.1em; font-size: 9px; }
+.sem .meta .v { color: #0f172a; font-family: ui-monospace, Menlo, monospace; font-size: 10px; }
+.badges { margin-top: 14px; display: flex; gap: 8px; flex-wrap: wrap; }
+.badge { font-size: 9px; font-weight: 700; letter-spacing: 0.05em; text-transform: uppercase; padding: 3px 7px; border: 1px solid; }
+</style></head><body><div class="card-root">
+<div class="label">Semantic · Status <span class="rule">Badges &amp; indicators only — never on action buttons</span></div>
+<div class="row">
+  <div class="sem">
+    <div class="bar" style="background:#059669">Success</div>
+    <div class="meta"><span class="k">Token</span><span class="v">emerald-600</span><span class="k">Hex</span><span class="v">#059669</span><span class="k">Use</span><span class="v">Completed, posted</span></div>
+  </div>
+  <div class="sem">
+    <div class="bar" style="background:#dc2626">Danger</div>
+    <div class="meta"><span class="k">Token</span><span class="v">red-600</span><span class="k">Hex</span><span class="v">#dc2626</span><span class="k">Use</span><span class="v">Error, delete</span></div>
+  </div>
+  <div class="sem">
+    <div class="bar" style="background:#f59e0b">Warning</div>
+    <div class="meta"><span class="k">Token</span><span class="v">amber-500</span><span class="k">Hex</span><span class="v">#f59e0b</span><span class="k">Use</span><span class="v">In progress, low stock</span></div>
+  </div>
+</div>
+<div class="badges">
+  <span class="badge" style="border-color:#86efac;background:#d1fae5;color:#065f46">Posted</span>
+  <span class="badge" style="border-color:#fca5a5;background:#fee2e2;color:#991b1b">Cancelled</span>
+  <span class="badge" style="border-color:#fcd34d;background:#fef3c7;color:#92400e">Pending</span>
+  <span class="badge" style="border-color:#93c5fd;background:#dbeafe;color:#1e40af">Draft</span>
+  <span class="badge" style="border-color:#cbd5e1;background:#f1f5f9;color:#334155">Closed</span>
+</div>
+</div></body></html>
