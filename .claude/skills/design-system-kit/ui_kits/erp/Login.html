@@ -1,0 +1,121 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Sign in — MSPIL Distillery ERP</title>
+<meta name="viewport" content="width=1440">
+<style>
+  * { box-sizing: border-box; }
+  html, body { margin: 0; height: 100%;
+    font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+    color: #0f172a; -webkit-font-smoothing: antialiased; }
+  body { background: #f1f5f9; display: grid; grid-template-columns: 1.3fr 1fr; }
+  .side { position: relative; background: #0f172a; color: #fff; padding: 48px; display: flex; flex-direction: column; justify-content: space-between; overflow: hidden; }
+  .side::before { content: ""; position: absolute; inset: 0; background:
+    radial-gradient(1200px 600px at 20% 0%, rgba(37,99,235,0.28), transparent 60%),
+    radial-gradient(900px 500px at 100% 100%, rgba(141,198,65,0.18), transparent 60%);
+    pointer-events: none; }
+  .side .top { position: relative; display: flex; gap: 14px; align-items: center; }
+  .side .top img { width: 56px; }
+  .side .top .t1 { font-size: 11px; letter-spacing: 0.2em; text-transform: uppercase; color: #94a3b8; font-weight: 600; }
+  .side .top .t2 { font-size: 19px; font-weight: 700; letter-spacing: 0.02em; margin-top: 2px; }
+  .side .mid { position: relative; max-width: 520px; }
+  .side .mid h1 { font-size: 34px; line-height: 1.2; font-weight: 700; letter-spacing: -0.01em; margin: 0 0 16px; }
+  .side .mid p { font-size: 14px; line-height: 1.6; color: #cbd5e1; margin: 0 0 28px; max-width: 480px; }
+  .stats { display: grid; grid-template-columns: repeat(3, 1fr); gap: 20px; max-width: 520px; }
+  .stats .s { border-left: 2px solid #8DC641; padding: 4px 0 4px 14px; }
+  .stats .s .k { font-size: 10px; font-weight: 700; color: #94a3b8; letter-spacing: 0.12em; text-transform: uppercase; }
+  .stats .s .v { font-size: 22px; font-weight: 700; font-family: ui-monospace, Menlo, monospace; font-variant-numeric: tabular-nums; margin-top: 4px; color: #fff; }
+  .stats .s .d { font-size: 11px; color: #94a3b8; margin-top: 3px; }
+  .side .foot { position: relative; font-size: 11px; color: #64748b; font-family: ui-monospace, Menlo, monospace; display: flex; justify-content: space-between; }
+  .side .foot a { color: #94a3b8; text-decoration: none; }
+
+  .form { display: flex; align-items: center; justify-content: center; padding: 40px; }
+  .box { width: 100%; max-width: 380px; }
+  .box .cap { font-size: 10px; font-weight: 700; color: #64748b; letter-spacing: 0.12em; text-transform: uppercase; margin-bottom: 6px; }
+  .box h2 { font-size: 24px; font-weight: 700; margin: 0 0 6px; color: #0f172a; }
+  .box .sub { font-size: 13px; color: #64748b; line-height: 1.5; margin-bottom: 28px; }
+  .field { margin-bottom: 14px; }
+  .field label { display: block; font-size: 10px; font-weight: 700; color: #64748b; letter-spacing: 0.1em; text-transform: uppercase; margin-bottom: 5px; }
+  .field input { width: 100%; border: 1px solid #cbd5e1; padding: 10px 12px; font-size: 16px; background: #fff; outline: 0; }
+  .field input:focus { border-color: #64748b; box-shadow: 0 0 0 1px #94a3b8; }
+  .field .help { font-size: 11px; color: #64748b; margin-top: 4px; }
+  .row { display: flex; justify-content: space-between; align-items: center; font-size: 12px; color: #475569; margin-bottom: 18px; }
+  .row label { display: flex; gap: 6px; align-items: center; cursor: pointer; }
+  .row a { color: #2563eb; text-decoration: none; font-weight: 500; }
+  .btn { width: 100%; background: #2563eb; color: #fff; border: 0; padding: 12px; font-size: 14px; font-weight: 600; letter-spacing: 0.02em; cursor: pointer; }
+  .btn:hover { background: #1d4ed8; }
+  .divider { font-size: 10px; color: #94a3b8; font-weight: 600; letter-spacing: 0.15em; text-transform: uppercase; text-align: center; margin: 22px 0 16px; position: relative; }
+  .divider::before, .divider::after { content: ""; position: absolute; top: 50%; width: 34%; height: 1px; background: #e2e8f0; }
+  .divider::before { left: 0; } .divider::after { right: 0; }
+  .sso { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+  .sso button { background: #fff; border: 1px solid #cbd5e1; padding: 9px; font-size: 12px; font-weight: 500; color: #334155; cursor: pointer; display: inline-flex; align-items: center; justify-content: center; gap: 8px; }
+  .sso button:hover { background: #f8fafc; }
+  .legal { margin-top: 26px; font-size: 10px; color: #94a3b8; line-height: 1.6; font-family: ui-monospace, Menlo, monospace; }
+  .legal b { color: #64748b; font-weight: 600; }
+</style>
+</head>
+<body>
+  <aside class="side">
+    <div class="top">
+      <img src="../../assets/MSPIL_logo_transparent.png" alt="MSPIL">
+      <div>
+        <div class="t1">Mahakaushal Sugar &amp; Power</div>
+        <div class="t2">Distillery ERP</div>
+      </div>
+    </div>
+
+    <div class="mid">
+      <h1>The plant runs 24/7.<br>So does the system of record.</h1>
+      <p>Grain receipt to ethanol dispatch, vendor bills to GST, fermentation to DDGS bagging — one log, one source of truth, timestamped in IST.</p>
+      <div class="stats">
+        <div class="s"><div class="k">Ethanol · FY-TD</div><div class="v">18.42 ML</div><div class="d">104% of plan</div></div>
+        <div class="s"><div class="k">Grain crushed</div><div class="v">52,140 T</div><div class="d">241 T / day avg</div></div>
+        <div class="s"><div class="k">DDGS sold</div><div class="v">14,880 T</div><div class="d">₹32.6 Cr billed</div></div>
+      </div>
+    </div>
+
+    <div class="foot">
+      <span>CIN U01543MP2005PLC017514 · GSTIN 23AAECM3666P1Z1</span>
+      <span><a href="#">app.mspil.in</a> · v2026.4.18-b3</span>
+    </div>
+  </aside>
+
+  <section class="form">
+    <div class="box">
+      <div class="cap">Sign in</div>
+      <h2>Welcome back.</h2>
+      <div class="sub">Use your plant ID or office email. Access is revoked at shift handover for terminated users — check with your supervisor if login fails.</div>
+
+      <div class="field">
+        <label>Email / Plant ID</label>
+        <input value="saif.raza@mspil.in"/>
+      </div>
+      <div class="field">
+        <label>Password</label>
+        <input type="password" value="••••••••••••"/>
+        <div class="help">Passwords rotate every 90 days. Admins cannot recover yours — only reset it.</div>
+      </div>
+      <div class="row">
+        <label><input type="checkbox" checked/> Keep me signed in on this device</label>
+        <a href="#">Forgot password</a>
+      </div>
+      <button class="btn">Sign in</button>
+
+      <div class="divider">or continue with</div>
+      <div class="sso">
+        <button>
+          <svg width="14" height="14" viewBox="0 0 24 24"><path fill="#4285F4" d="M22 12.2c0-.8-.1-1.5-.2-2.2H12v4.2h5.6c-.2 1.3-1 2.4-2.1 3.2v2.6h3.4c2-1.8 3.1-4.5 3.1-7.8Z"/><path fill="#34A853" d="M12 22c2.8 0 5.2-.9 6.9-2.5l-3.4-2.6c-.9.6-2.1 1-3.5 1-2.7 0-5-1.8-5.8-4.3H2.7v2.7A10 10 0 0 0 12 22Z"/><path fill="#FBBC05" d="M6.2 13.6c-.2-.6-.3-1.3-.3-2s.1-1.4.3-2V6.9H2.7a10 10 0 0 0 0 10.2l3.5-2.7Z"/><path fill="#EA4335" d="M12 5.8c1.5 0 2.9.5 4 1.5l3-3A10 10 0 0 0 12 2 10 10 0 0 0 2.7 6.9l3.5 2.7C7 7.1 9.3 5.8 12 5.8Z"/></svg>
+          Google Workspace
+        </button>
+        <button>
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#334155" stroke-width="2"><rect x="3" y="3" width="18" height="18"/><path d="M3 9h18M9 3v18"/></svg>
+          Factory Server SSO
+        </button>
+      </div>
+
+      <div class="legal"><b>Factory-floor access</b> via Telegram — ask your supervisor to link your bot ID. <br><b>Audit:</b> every sign-in is logged with IP, user-agent, and shift.</div>
+    </div>
+  </section>
+</body>
+</html>

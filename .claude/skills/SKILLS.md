@@ -39,7 +39,7 @@
 - **[admin-settings.md](admin-settings.md)** — Auth, users, settings, audit.
 - **[debt-register.md](debt-register.md)** — Known tech debt with severity + fix direction.
 - **[code-templates.md](code-templates.md)** — Backend route + frontend page templates, IST timezone pattern.
-- **[sap-design-tokens.md](sap-design-tokens.md)** — SAP Tier 2 Tailwind classes (exact copy-paste tokens).
+- **[sap-design-tokens.md](sap-design-tokens.md)** — SAP Tier 2 Tailwind classes (exact copy-paste tokens). **For full brand + voice + 4 HTML page mockups see [design-system-kit/](design-system-kit/) (README.md + ui_kits/erp/*.html + colors_and_type.css).**
 - **[module-index.md](module-index.md)** — All modules: routes, pages, models, Telegram status, maturity tracker.
 
 ---
@@ -52,8 +52,8 @@
 | deploy-checker | scripts/smoke-test.sh + CLAUDE.md pre-push section |
 | payment-code-reviewer | accounts-module.md, ubi-h2h-banking.md |
 | backend-route-builder | code-templates.md + relevant module skill |
-| sap-page-builder | sap-design-tokens.md + code-templates.md |
-| sap-ui-linter | sap-design-tokens.md |
+| sap-page-builder | sap-design-tokens.md + design-system-kit/ui_kits/erp/ + code-templates.md |
+| sap-ui-linter | sap-design-tokens.md + design-system-kit/README.md (voice/casing/forbidden rules) |
 | telegram-module-adder | backend/src/services/autoCollectModules/_template.ts |
 | rag-vault-wirer | compliance-tax-system.md (RAG section) |
 | debt-fixer | debt-register.md |

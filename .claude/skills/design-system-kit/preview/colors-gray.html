@@ -1,0 +1,33 @@
+<!doctype html><html><head><meta charset="utf-8"><link rel="stylesheet" href="_card.css">
+<style>
+.row { display: grid; grid-template-columns: repeat(10, 1fr); gap: 8px; }
+.sw { aspect-ratio: 1/1; display: flex; flex-direction: column; justify-content: flex-end; padding: 6px 8px; color: #111827; }
+.sw.dark { color: #fff; }
+.sw .name { font-weight: 700; letter-spacing: 0.05em; text-transform: uppercase; font-size: 9px; }
+.sw .hex { font-family: ui-monospace, Menlo, monospace; font-size: 9px; opacity: 0.85; }
+.label { font-size: 10px; font-weight: 700; letter-spacing: 0.1em; text-transform: uppercase; color: #64748b; margin-bottom: 10px; display: flex; align-items: baseline; gap: 10px; }
+.label .rule { font-family: ui-monospace, Menlo, monospace; font-size: 10px; color: #94a3b8; text-transform: none; letter-spacing: 0; }
+.usage { margin-top: 14px; display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; font-size: 11px; color: #374151; }
+.usage .u { background: #fff; border: 1px solid #e5e7eb; padding: 8px 10px; }
+.usage .u b { display:block; font-size: 9px; color: #6b7280; font-weight: 700; letter-spacing: 0.1em; text-transform: uppercase; margin-bottom: 3px; }
+</style></head><body><div class="card-root">
+<div class="label">Neutrals · Gray <span class="rule">Tier 1 plant surfaces + sidebar + body text</span></div>
+<div class="row">
+  <div class="sw" style="background:#f9fafb"><span class="name">50</span><span class="hex">#f9fafb</span></div>
+  <div class="sw" style="background:#f3f4f6"><span class="name">100</span><span class="hex">#f3f4f6</span></div>
+  <div class="sw" style="background:#e5e7eb"><span class="name">200</span><span class="hex">#e5e7eb</span></div>
+  <div class="sw" style="background:#d1d5db"><span class="name">300</span><span class="hex">#d1d5db</span></div>
+  <div class="sw" style="background:#9ca3af"><span class="name">400</span><span class="hex">#9ca3af</span></div>
+  <div class="sw dark" style="background:#6b7280"><span class="name">500</span><span class="hex">#6b7280</span></div>
+  <div class="sw dark" style="background:#4b5563"><span class="name">600</span><span class="hex">#4b5563</span></div>
+  <div class="sw dark" style="background:#374151"><span class="name">700</span><span class="hex">#374151</span></div>
+  <div class="sw dark" style="background:#1f2937"><span class="name">800</span><span class="hex">#1f2937</span></div>
+  <div class="sw dark" style="background:#111827"><span class="name">900★</span><span class="hex">#111827</span></div>
+</div>
+<div class="usage">
+  <div class="u"><b>Page bg (T1)</b>gray-50</div>
+  <div class="u"><b>Card border</b>gray-200</div>
+  <div class="u"><b>Sidebar</b>gray-900</div>
+  <div class="u"><b>Body text</b>gray-900 / 700</div>
+</div>
+</div></body></html>

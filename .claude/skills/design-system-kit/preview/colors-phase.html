@@ -1,0 +1,25 @@
+<!doctype html><html><head><meta charset="utf-8"><link rel="stylesheet" href="_card.css">
+<style>
+.label { font-size: 10px; font-weight: 700; letter-spacing: 0.1em; text-transform: uppercase; color: #64748b; margin-bottom: 10px; display: flex; align-items: baseline; gap: 10px; }
+.label .rule { font-family: ui-monospace, Menlo, monospace; font-size: 10px; color: #94a3b8; text-transform: none; letter-spacing: 0; }
+.flow { display: flex; align-items: stretch; }
+.phase { flex: 1; color: #fff; padding: 14px 10px 12px; font-size: 10px; font-weight: 700; letter-spacing: 0.1em; text-transform: uppercase; position: relative; }
+.phase .h { font-size: 9px; opacity: 0.9; font-weight: 600; letter-spacing: 0.1em; }
+.phase .n { font-size: 12px; margin-top: 4px; letter-spacing: 0.1em; }
+.phase .hex { font-family: ui-monospace, Menlo, monospace; font-size: 9px; opacity: 0.85; margin-top: 3px; text-transform: none; letter-spacing: 0; font-weight: 500; }
+.legend { margin-top: 12px; font-size: 10px; color: #475569; line-height: 1.5; }
+.legend code { font-family: ui-monospace, Menlo, monospace; font-size: 10px; background: #f1f5f9; padding: 1px 5px; border: 1px solid #e2e8f0; }
+</style></head><body><div class="card-root">
+<div class="label">Fermentation Phase Colors <span class="rule">Process phases — same colors on every plant page</span></div>
+<div class="flow">
+  <div class="phase" style="background:#6366f1"><div class="h">1</div><div class="n">Filling</div><div class="hex">#6366f1</div></div>
+  <div class="phase" style="background:#f59e0b"><div class="h">2</div><div class="n">Dosing</div><div class="hex">#f59e0b</div></div>
+  <div class="phase" style="background:#22c55e"><div class="h">3</div><div class="n">Reaction</div><div class="hex">#22c55e</div></div>
+  <div class="phase" style="background:#10b981"><div class="h">4</div><div class="n">Lab</div><div class="hex">#10b981</div></div>
+  <div class="phase" style="background:#06b6d4"><div class="h">5</div><div class="n">Retention</div><div class="hex">#06b6d4</div></div>
+  <div class="phase" style="background:#3b82f6"><div class="h">6</div><div class="n">Transfer</div><div class="hex">#3b82f6</div></div>
+  <div class="phase" style="background:#8b5cf6"><div class="h">7</div><div class="n">CIP</div><div class="hex">#8b5cf6</div></div>
+  <div class="phase" style="background:#6b7280"><div class="h">8</div><div class="n">Done</div><div class="hex">#6b7280</div></div>
+</div>
+<div class="legend">Source of truth: <code>DESIGN.md · phaseColors</code>. Applies to fermenter chips, pre-fermentation vessels, timeline badges.</div>
+</div></body></html>

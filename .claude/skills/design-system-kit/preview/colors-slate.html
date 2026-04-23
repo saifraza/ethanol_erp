@@ -1,0 +1,33 @@
+<!doctype html><html><head><meta charset="utf-8"><link rel="stylesheet" href="_card.css">
+<style>
+.row { display: grid; grid-template-columns: repeat(10, 1fr); gap: 8px; }
+.sw { aspect-ratio: 1/1; display: flex; flex-direction: column; justify-content: flex-end; padding: 6px 8px; color: #0f172a; }
+.sw.dark { color: #fff; }
+.sw .name { font-weight: 700; letter-spacing: 0.05em; text-transform: uppercase; font-size: 9px; }
+.sw .hex { font-family: ui-monospace, Menlo, monospace; font-size: 9px; opacity: 0.85; }
+.label { font-size: 10px; font-weight: 700; letter-spacing: 0.1em; text-transform: uppercase; color: #64748b; margin-bottom: 10px; display: flex; align-items: baseline; gap: 10px; }
+.label .rule { font-family: ui-monospace, Menlo, monospace; font-size: 10px; color: #94a3b8; text-transform: none; letter-spacing: 0; }
+.usage { margin-top: 14px; display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; font-size: 11px; color: #475569; }
+.usage .u { background: #fff; border: 1px solid #cbd5e1; padding: 8px 10px; }
+.usage .u b { display:block; font-size: 9px; color: #64748b; font-weight: 700; letter-spacing: 0.1em; text-transform: uppercase; margin-bottom: 3px; }
+</style></head><body><div class="card-root">
+<div class="label">Neutrals · Slate <span class="rule">Tier 2 / SAP surfaces — toolbars, table headers, gridlines</span></div>
+<div class="row">
+  <div class="sw" style="background:#f8fafc"><span class="name">50</span><span class="hex">#f8fafc</span></div>
+  <div class="sw" style="background:#f1f5f9"><span class="name">100</span><span class="hex">#f1f5f9</span></div>
+  <div class="sw" style="background:#e2e8f0"><span class="name">200</span><span class="hex">#e2e8f0</span></div>
+  <div class="sw" style="background:#cbd5e1"><span class="name">300</span><span class="hex">#cbd5e1</span></div>
+  <div class="sw" style="background:#94a3b8"><span class="name">400</span><span class="hex">#94a3b8</span></div>
+  <div class="sw dark" style="background:#64748b"><span class="name">500</span><span class="hex">#64748b</span></div>
+  <div class="sw dark" style="background:#475569"><span class="name">600</span><span class="hex">#475569</span></div>
+  <div class="sw dark" style="background:#334155"><span class="name">700</span><span class="hex">#334155</span></div>
+  <div class="sw dark" style="background:#1e293b"><span class="name">800★</span><span class="hex">#1e293b</span></div>
+  <div class="sw dark" style="background:#0f172a"><span class="name">900</span><span class="hex">#0f172a</span></div>
+</div>
+<div class="usage">
+  <div class="u"><b>Page bg</b>slate-50</div>
+  <div class="u"><b>Gridlines</b>slate-100 / 300</div>
+  <div class="u"><b>Muted text</b>slate-400 / 500</div>
+  <div class="u"><b>Toolbars</b>slate-800</div>
+</div>
+</div></body></html>

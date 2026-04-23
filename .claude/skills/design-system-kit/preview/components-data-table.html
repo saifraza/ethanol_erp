@@ -1,0 +1,29 @@
+<!doctype html><html><head><meta charset="utf-8"><link rel="stylesheet" href="_card.css">
+<style>
+.label { font-size: 10px; font-weight: 700; letter-spacing: 0.1em; text-transform: uppercase; color: #64748b; margin-bottom: 10px; }
+table { width: 100%; border-collapse: collapse; border: 1px solid #cbd5e1; }
+thead { background: #1e293b; color: #fff; }
+thead th { text-align: left; padding: 6px 10px; font-size: 10px; font-weight: 600; letter-spacing: 0.1em; text-transform: uppercase; border-right: 1px solid #334155; }
+thead th:last-child { border-right: 0; }
+tbody td { padding: 6px 10px; font-size: 12px; color: #1e293b; border-right: 1px solid #f1f5f9; border-bottom: 1px solid #f1f5f9; }
+tbody td:last-child { border-right: 0; }
+tbody tr:nth-child(even) { background: rgba(248,250,252,0.7); }
+tbody tr.hover > td { background: #dbeafe !important; box-shadow: inset 3px 0 0 0 #2563eb; }
+.num { text-align: right; font-family: ui-monospace, Menlo, monospace; font-variant-numeric: tabular-nums; }
+tfoot { background: #1e293b; color: #fff; font-weight: 600; }
+tfoot td { padding: 6px 10px; font-size: 11px; border-right: 1px solid #334155; }
+.badge { font-size: 9px; font-weight: 700; letter-spacing: 0.05em; text-transform: uppercase; padding: 2px 6px; border: 1px solid; }
+</style></head><body><div class="card-root">
+<div class="label">Data table · Tier 2</div>
+<table>
+  <thead><tr><th>#</th><th>Item</th><th>Type</th><th class="num">Qty</th><th class="num">Value</th><th>Warehouse</th></tr></thead>
+  <tbody>
+    <tr><td>14210</td><td>Broken Rice (FCI)</td><td><span class="badge" style="border-color:#86efac;background:#d1fae5;color:#065f46">Receipt</span></td><td class="num">42,000</td><td class="num">₹9,86,400</td><td>Silo-A</td></tr>
+    <tr><td>14209</td><td>Sulphuric Acid 98%</td><td><span class="badge" style="border-color:#fca5a5;background:#fee2e2;color:#991b1b">Issue</span></td><td class="num">1,200</td><td class="num">₹38,400</td><td>Chem Store</td></tr>
+    <tr class="hover"><td>14208</td><td>Alpha Amylase (Enz)</td><td><span class="badge" style="border-color:#93c5fd;background:#dbeafe;color:#1e40af">Transfer</span></td><td class="num">80</td><td class="num">₹1,44,000</td><td>Lab Store</td></tr>
+    <tr><td>14207</td><td>DDGS Pellet — Grade A</td><td><span class="badge" style="border-color:#86efac;background:#d1fae5;color:#065f46">Receipt</span></td><td class="num">18,200</td><td class="num">₹3,27,600</td><td>DDGS Godown</td></tr>
+    <tr><td>14206</td><td>Urea 46-0-0</td><td><span class="badge" style="border-color:#fcd34d;background:#fef3c7;color:#92400e">Adjust</span></td><td class="num">-500</td><td class="num">–₹15,500</td><td>Main Store</td></tr>
+  </tbody>
+  <tfoot><tr><td colspan="3">Total (5 movements)</td><td class="num">61,180</td><td class="num">₹14,80,900</td><td></td></tr></tfoot>
+</table>
+</div></body></html>

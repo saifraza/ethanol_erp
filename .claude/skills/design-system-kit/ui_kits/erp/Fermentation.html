@@ -1,0 +1,154 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Fermentation — MSPIL Distillery ERP (Plant / Tier 1)</title>
+<meta name="viewport" content="width=1440">
+<style>
+  * { box-sizing: border-box; }
+  html, body { margin: 0; background: #f9fafb; height: 100%;
+    font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+    color: #111827; font-size: 14px; -webkit-font-smoothing: antialiased; }
+  .mono { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-variant-numeric: tabular-nums; }
+
+  .topbar { background: #111827; color: #fff; padding: 12px 20px; display: flex; align-items: center; gap: 14px; border-bottom: 3px solid #2563eb; }
+  .topbar img { width: 30px; }
+  .topbar .title { font-size: 15px; font-weight: 700; letter-spacing: 0.04em; }
+  .topbar .crumb { font-size: 11px; color: #9ca3af; letter-spacing: 0.08em; text-transform: uppercase; }
+  .topbar .sp { flex: 1; }
+  .topbar .shift { font-size: 11px; color: #d1d5db; display: flex; align-items: center; gap: 10px; }
+  .topbar .shift .dot { width: 8px; height: 8px; background: #22c55e; border-radius: 999px; }
+
+  .wrap { padding: 20px 24px; }
+  h2 { font-size: 18px; font-weight: 700; margin: 0 0 4px; color: #111827; }
+  .hint { font-size: 13px; color: #6b7280; margin-bottom: 18px; }
+
+  .grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 14px; }
+  .card { background: #fff; border: 1px solid #e5e7eb; border-radius: 10px; padding: 14px; box-shadow: 0 1px 2px rgba(0,0,0,0.04); position: relative; overflow: hidden; }
+  .card .head { display: flex; justify-content: space-between; align-items: flex-start; }
+  .card .name { font-size: 16px; font-weight: 700; color: #111827; }
+  .card .sub { font-size: 11px; color: #6b7280; margin-top: 2px; }
+  .chip { font-size: 10px; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase; color: #fff; padding: 3px 9px; border-radius: 999px; }
+  .meter { margin-top: 14px; height: 8px; border-radius: 999px; background: #f3f4f6; overflow: hidden; }
+  .meter > span { display: block; height: 100%; border-radius: 999px; }
+  .stats { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; margin-top: 12px; }
+  .stat { background: #f9fafb; border-radius: 6px; padding: 6px 8px; }
+  .stat .k { font-size: 9px; font-weight: 700; color: #9ca3af; letter-spacing: 0.1em; text-transform: uppercase; }
+  .stat .v { font-size: 14px; color: #111827; font-family: ui-monospace, Menlo, monospace; font-variant-numeric: tabular-nums; font-weight: 700; margin-top: 1px; }
+
+  .foot { margin-top: 14px; display: flex; gap: 8px; }
+  .btn { flex: 1; min-height: 44px; border-radius: 6px; border: 1px solid #cbd5e1; background: #fff; font-size: 13px; font-weight: 500; color: #374151; cursor: pointer; }
+  .btn.p { background: #2563eb; color: #fff; border-color: #2563eb; }
+  .btn.p:hover { background: #1d4ed8; }
+
+  .timeline { margin-top: 24px; background: #fff; border: 1px solid #e5e7eb; border-radius: 10px; padding: 16px 18px; }
+  .timeline h3 { font-size: 12px; margin: 0 0 14px; color: #6b7280; font-weight: 700; letter-spacing: 0.1em; text-transform: uppercase; }
+  .timeline .row { display: grid; grid-template-columns: 60px 1fr 80px 80px 80px; gap: 12px; padding: 8px 0; border-top: 1px solid #f3f4f6; align-items: center; font-size: 13px; }
+  .timeline .row.h { color: #9ca3af; font-size: 10px; font-weight: 700; letter-spacing: 0.1em; text-transform: uppercase; border-top: 0; padding-bottom: 4px; }
+  .timeline .row .t { font-family: ui-monospace, Menlo, monospace; color: #6b7280; }
+  .timeline .row .ev { color: #111827; }
+  .timeline .row .v { font-family: ui-monospace, Menlo, monospace; text-align: right; font-variant-numeric: tabular-nums; }
+  .dot { width: 8px; height: 8px; border-radius: 999px; display: inline-block; margin-right: 6px; vertical-align: middle; }
+</style>
+</head>
+<body>
+<div class="topbar">
+  <img src="../../assets/MSPIL_logo_transparent.png" alt="MSPIL">
+  <div>
+    <div class="title">Fermentation House</div>
+    <div class="crumb">Plant · Process · Fermenters F1–F4</div>
+  </div>
+  <div class="sp"></div>
+  <div class="shift"><span class="dot"></span>Shift B · Vikram &amp; Rahul · 14:00–22:00 IST</div>
+</div>
+<div class="wrap">
+  <h2>Active fermenters</h2>
+  <div class="hint">Tap a card to log a reading. Operators on mobile — Telegram entries post here within 3 s.</div>
+
+  <div class="grid">
+    <!-- F1 REACTION -->
+    <div class="card">
+      <div class="head">
+        <div>
+          <div class="name">F1 · Fermenter</div>
+          <div class="sub">Batch BF-2026-0418 · started 09:42</div>
+        </div>
+        <span class="chip" style="background:#22c55e">Reaction</span>
+      </div>
+      <div class="meter"><span style="width:64%;background:#22c55e"></span></div>
+      <div class="stats">
+        <div class="stat"><div class="k">Wash °B</div><div class="v">7.8</div></div>
+        <div class="stat"><div class="k">pH</div><div class="v">4.62</div></div>
+        <div class="stat"><div class="k">Temp °C</div><div class="v">32.1</div></div>
+      </div>
+      <div class="foot"><button class="btn">History</button><button class="btn p">Log reading</button></div>
+    </div>
+
+    <!-- F2 DOSING -->
+    <div class="card">
+      <div class="head">
+        <div>
+          <div class="name">F2 · Fermenter</div>
+          <div class="sub">Batch BF-2026-0419 · started 12:10</div>
+        </div>
+        <span class="chip" style="background:#f59e0b">Dosing</span>
+      </div>
+      <div class="meter"><span style="width:22%;background:#f59e0b"></span></div>
+      <div class="stats">
+        <div class="stat"><div class="k">Wash °B</div><div class="v">13.2</div></div>
+        <div class="stat"><div class="k">Enzyme L</div><div class="v">24.0</div></div>
+        <div class="stat"><div class="k">Temp °C</div><div class="v">34.7</div></div>
+      </div>
+      <div class="foot"><button class="btn">History</button><button class="btn p">Log dose</button></div>
+    </div>
+
+    <!-- F3 FILLING -->
+    <div class="card">
+      <div class="head">
+        <div>
+          <div class="name">F3 · Fermenter</div>
+          <div class="sub">Batch BF-2026-0420 · started 13:55</div>
+        </div>
+        <span class="chip" style="background:#6366f1">Filling</span>
+      </div>
+      <div class="meter"><span style="width:38%;background:#6366f1"></span></div>
+      <div class="stats">
+        <div class="stat"><div class="k">Level M³</div><div class="v">820</div></div>
+        <div class="stat"><div class="k">Target</div><div class="v">2,120</div></div>
+        <div class="stat"><div class="k">ETA</div><div class="v">17:30</div></div>
+      </div>
+      <div class="foot"><button class="btn">History</button><button class="btn p">Log level</button></div>
+    </div>
+
+    <!-- F4 CIP -->
+    <div class="card">
+      <div class="head">
+        <div>
+          <div class="name">F4 · Fermenter</div>
+          <div class="sub">Drained 11:20 · CIP step 3 / 5</div>
+        </div>
+        <span class="chip" style="background:#8b5cf6">CIP</span>
+      </div>
+      <div class="meter"><span style="width:60%;background:#8b5cf6"></span></div>
+      <div class="stats">
+        <div class="stat"><div class="k">NaOH %</div><div class="v">2.0</div></div>
+        <div class="stat"><div class="k">Temp °C</div><div class="v">78.4</div></div>
+        <div class="stat"><div class="k">ETA</div><div class="v">15:40</div></div>
+      </div>
+      <div class="foot"><button class="btn">History</button><button class="btn p">Log step</button></div>
+    </div>
+  </div>
+
+  <div class="timeline">
+    <h3>F1 · Recent readings (last 6 h)</h3>
+    <div class="row h"><span>Time</span><span>Event</span><span>Wash °B</span><span>pH</span><span>Temp °C</span></div>
+    <div class="row"><span class="t">14:30</span><span class="ev"><span class="dot" style="background:#22c55e"></span>Wash check · Rahul</span><span class="v">7.8</span><span class="v">4.62</span><span class="v">32.1</span></div>
+    <div class="row"><span class="t">13:30</span><span class="ev"><span class="dot" style="background:#22c55e"></span>Wash check · Rahul</span><span class="v">8.6</span><span class="v">4.71</span><span class="v">32.4</span></div>
+    <div class="row"><span class="t">12:30</span><span class="ev"><span class="dot" style="background:#22c55e"></span>Wash check · Vikram</span><span class="v">9.5</span><span class="v">4.78</span><span class="v">33.0</span></div>
+    <div class="row"><span class="t">11:30</span><span class="ev"><span class="dot" style="background:#f59e0b"></span>Second dose · Vikram</span><span class="v">10.4</span><span class="v">4.82</span><span class="v">33.2</span></div>
+    <div class="row"><span class="t">10:30</span><span class="ev"><span class="dot" style="background:#f59e0b"></span>Enzyme dose · Vikram</span><span class="v">12.1</span><span class="v">4.90</span><span class="v">34.5</span></div>
+    <div class="row"><span class="t">09:42</span><span class="ev"><span class="dot" style="background:#6366f1"></span>Fill complete · Vikram</span><span class="v">13.6</span><span class="v">5.10</span><span class="v">35.1</span></div>
+  </div>
+</div>
+</body>
+</html>

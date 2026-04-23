@@ -1,0 +1,27 @@
+<!doctype html><html><head><meta charset="utf-8"><link rel="stylesheet" href="_card.css">
+<style>
+.label { font-size: 10px; font-weight: 700; letter-spacing: 0.1em; text-transform: uppercase; color: #64748b; margin-bottom: 12px; }
+.row { display: flex; gap: 14px; flex-wrap: wrap; }
+.btn { font-size: 14px; font-weight: 500; padding: 10px 18px; min-height: 44px; border-radius: 6px; cursor: pointer; border: 0; }
+.p { background: #2563eb; color: #fff; }
+.p:hover, .p.hover { background: #1d4ed8; }
+.s { background: #fff; color: #374151; border: 1px solid #cbd5e1; }
+.s:hover, .s.hover { background: #f1f5f9; }
+.d { background: #dc2626; color: #fff; }
+.meta { margin-top: 16px; font-size: 10px; color: #64748b; line-height: 1.5; display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 10px; }
+.meta .tile { background: #f9fafb; border: 1px solid #e5e7eb; border-radius: 6px; padding: 8px 10px; }
+.meta .tile b { color: #111827; font-family: ui-monospace, Menlo, monospace; font-size: 10px; font-weight: 600; }
+</style></head><body><div class="card-root">
+<div class="label">Buttons · Tier 1 (Plant)</div>
+<div class="row">
+  <button class="btn p">Submit reading</button>
+  <button class="btn p hover">Submit reading · hover</button>
+  <button class="btn s">Cancel</button>
+  <button class="btn d">End batch</button>
+</div>
+<div class="meta">
+  <div class="tile">Min height · <b>44px</b></div>
+  <div class="tile">Text · <b>14px</b> · 500</div>
+  <div class="tile">Radius · <b>6px</b></div>
+</div>
+</div></body></html>

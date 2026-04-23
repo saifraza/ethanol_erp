@@ -43,6 +43,19 @@ Must pass before you're done.
 - Time display MUST be 12-hour AM/PM, never 24-hour
 - Empty states MUST use `text-xs text-slate-400 uppercase tracking-widest`
 
+## Mobile — must work at 375px
+
+`frontend/src/design-kit.css` has a global `@media (max-width: 767px)` layer that handles most of this. You MUST:
+
+1. **Wrap every table in `<div className="overflow-x-auto">`** — phones need sideways scroll
+2. **Use `md:` breakpoint** on grid columns: `grid-cols-1 md:grid-cols-4` not bare `grid-cols-4`
+3. **Never hard-set `style={{minWidth: '...'}}`** on toolbars — breaks the mobile wrap
+4. **Filter rows / tab rows** — wrap in `<div className="flex gap-2 flex-wrap">` so they wrap on phone instead of overflowing
+5. **Modals** — use `fixed inset-0` + `shadow-2xl` so the global CSS makes them full-screen on phone automatically
+6. **After building**, run `preview_resize preset: mobile` and screenshot — any truncation or un-tappable element is a fail
+
+Never add per-page media queries — always use the `md:` Tailwind prefix. Global CSS handles the rest.
+
 ## Type everything
 
 - NO `: any`

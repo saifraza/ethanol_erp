@@ -1,0 +1,278 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Inventory Dashboard — MSPIL Distillery ERP</title>
+<meta name="viewport" content="width=1440">
+<style>
+  :root {
+    --slate-50:#f8fafc;--slate-100:#f1f5f9;--slate-200:#e2e8f0;--slate-300:#cbd5e1;
+    --slate-400:#94a3b8;--slate-500:#64748b;--slate-700:#334155;--slate-800:#1e293b;--slate-900:#0f172a;
+    --gray-300:#d1d5db;--gray-400:#9ca3af;--gray-700:#374151;--gray-800:#1f2937;--gray-900:#111827;
+    --blue-50:#eff6ff;--blue-200:#bfdbfe;--blue-500:#3b82f6;--blue-600:#2563eb;--blue-700:#1d4ed8;
+    --emerald-500:#10b981;--emerald-600:#059669;--amber-500:#f59e0b;--red-500:#ef4444;--red-600:#dc2626;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; padding: 0; height: 100%; background: var(--slate-50);
+    font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+    color: var(--gray-900); font-size: 14px; -webkit-font-smoothing: antialiased; }
+  .mono { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-variant-numeric: tabular-nums; }
+  .caps { text-transform: uppercase; letter-spacing: 0.1em; }
+
+  /* ── Layout ─────────────────────────────────────────────────────────── */
+  .app { display: grid; grid-template-columns: 240px 1fr; height: 100vh; }
+
+  /* ── Sidebar ────────────────────────────────────────────────────────── */
+  .side { background: var(--gray-900); color: #fff; display: flex; flex-direction: column; overflow: hidden; }
+  .side .brand { padding: 14px 16px 10px; border-bottom: 1px solid var(--gray-800); display: flex; gap: 10px; align-items: center; }
+  .side .brand img { width: 34px; height: 34px; object-fit: contain; }
+  .side .brand .t1 { font-size: 13px; font-weight: 700; letter-spacing: 0.04em; }
+  .side .brand .t2 { font-size: 9px; color: var(--gray-400); letter-spacing: 0.08em; text-transform: uppercase; margin-top: 1px; }
+  .side .nav { flex: 1; overflow-y: auto; padding: 6px 0 10px; }
+  .side .group { font-size: 10px; color: var(--gray-400); font-weight: 600; padding: 10px 18px 4px; letter-spacing: 0.12em; text-transform: uppercase; display: flex; justify-content: space-between; align-items: center; cursor: default; }
+  .side .link { display: flex; align-items: center; gap: 10px; padding: 6px 18px; color: var(--gray-300); font-size: 12.5px; font-weight: 500; cursor: default; }
+  .side .link:hover { background: var(--gray-800); color: #fff; }
+  .side .link.active { background: var(--blue-600); color: #fff; margin: 0 8px; padding: 5px 10px; border-radius: 3px; }
+  .side .link svg { width: 15px; height: 15px; stroke-width: 1.6; flex-shrink: 0; }
+  .side .user { padding: 10px 14px; border-top: 1px solid var(--gray-800); display: flex; align-items: center; justify-content: space-between; }
+  .side .user .who { display: flex; gap: 9px; align-items: center; }
+  .side .user .avatar { width: 28px; height: 28px; border-radius: 999px; background: var(--blue-600); color: #fff; font-size: 11px; font-weight: 700; display: inline-flex; align-items: center; justify-content: center; }
+  .side .user .name { font-size: 12px; font-weight: 600; }
+  .side .user .role { font-size: 9.5px; color: var(--gray-400); letter-spacing: 0.08em; text-transform: uppercase; margin-top: 1px; }
+  .side .user .bell { position: relative; color: var(--gray-400); }
+  .side .user .bell .count { position: absolute; top: -4px; right: -4px; width: 13px; height: 13px; background: var(--red-600); color: #fff; border-radius: 999px; font-size: 8px; font-weight: 700; display: inline-flex; align-items: center; justify-content: center; }
+
+  /* ── Main ───────────────────────────────────────────────────────────── */
+  .main { overflow: auto; display: flex; flex-direction: column; }
+  .page { padding: 12px 24px 28px; display: flex; flex-direction: column; }
+
+  /* Toolbar */
+  .tb { background: var(--slate-800); color: #fff; padding: 9px 16px; margin: -12px -24px 0; display: flex; justify-content: space-between; align-items: center; }
+  .tb .l { display: flex; align-items: baseline; gap: 12px; }
+  .tb .l .title { font-size: 13px; font-weight: 700; letter-spacing: 0.05em; text-transform: uppercase; }
+  .tb .l .sub { font-size: 10px; color: var(--slate-400); }
+  .tb .r { display: flex; gap: 6px; align-items: center; }
+  .tb .r button { font-size: 11px; font-weight: 500; padding: 5px 11px; border: 0; cursor: pointer; display: inline-flex; align-items: center; gap: 5px; }
+  .tb .r .sec { background: #fff; color: var(--slate-700); border: 1px solid var(--slate-300); }
+  .tb .r .prm { background: var(--blue-600); color: #fff; }
+  .tb .r .prm:hover { background: var(--blue-700); }
+  .tb svg { width: 13px; height: 13px; stroke-width: 2; }
+
+  /* Filter bar */
+  .fb { background: var(--slate-100); border: 1px solid var(--slate-300); border-top: 0; padding: 7px 16px; margin: 0 -24px 0; display: flex; gap: 12px; align-items: center; flex-wrap: wrap; }
+  .fb label { font-size: 10px; color: var(--slate-500); font-weight: 700; letter-spacing: 0.1em; text-transform: uppercase; }
+  .fb select, .fb input { border: 1px solid var(--slate-300); padding: 4px 8px; font-size: 12px; background: #fff; outline: 0; }
+  .fb input[type=search] { flex: 1; min-width: 220px; }
+  .fb .spacer { flex: 1; }
+  .fb .chip { font-size: 10px; color: var(--slate-500); font-weight: 700; letter-spacing: 0.1em; text-transform: uppercase; display: inline-flex; align-items: center; gap: 5px; }
+
+  /* KPI strip */
+  .kpi-strip { display: grid; grid-template-columns: repeat(4, 1fr); border: 1px solid var(--slate-300); border-top: 0; background: #fff; margin: 0 -24px; }
+  .kpi { padding: 12px 16px; border-right: 1px solid var(--slate-200); border-left: 4px solid var(--c); display: flex; flex-direction: column; gap: 2px; }
+  .kpi:last-child { border-right: 0; }
+  .kpi .k { font-size: 10px; color: var(--slate-400); font-weight: 700; letter-spacing: 0.1em; text-transform: uppercase; }
+  .kpi .v { font-size: 22px; color: var(--slate-800); font-weight: 700; font-family: ui-monospace, Menlo, monospace; font-variant-numeric: tabular-nums; line-height: 1.1; }
+  .kpi .d { font-size: 10px; color: var(--slate-500); margin-top: 2px; display: flex; align-items: center; gap: 5px; }
+  .kpi .d .delta { font-family: ui-monospace, Menlo, monospace; font-weight: 600; }
+  .kpi .d .up { color: var(--emerald-600); }
+  .kpi .d .dn { color: var(--red-600); }
+
+  /* Section */
+  .grid { display: grid; grid-template-columns: 2fr 1fr; gap: 0; border: 1px solid var(--slate-300); border-top: 0; margin: 0 -24px; background: #fff; }
+
+  /* Section header */
+  .sh { background: var(--slate-100); border-bottom: 1px solid var(--slate-300); padding: 7px 14px; display: flex; justify-content: space-between; align-items: center; }
+  .sh .lbl { font-size: 10px; color: var(--slate-500); font-weight: 700; letter-spacing: 0.1em; text-transform: uppercase; }
+  .sh .act { font-size: 11px; color: var(--blue-600); font-weight: 500; cursor: pointer; }
+
+  /* Table */
+  .tbl { width: 100%; border-collapse: collapse; }
+  .tbl thead tr { background: var(--slate-800); color: #fff; }
+  .tbl thead th { text-align: left; padding: 6px 10px; font-size: 10px; font-weight: 600; letter-spacing: 0.1em; text-transform: uppercase; border-right: 1px solid var(--slate-700); white-space: nowrap; }
+  .tbl thead th:last-child { border-right: 0; }
+  .tbl tbody td { padding: 6px 10px; font-size: 12px; color: var(--slate-900); border-right: 1px solid var(--slate-100); border-bottom: 1px solid var(--slate-100); }
+  .tbl tbody td:last-child { border-right: 0; }
+  .tbl tbody tr:nth-child(even) { background: rgba(248,250,252,0.7); }
+  .tbl tbody tr:hover > td { background: var(--blue-200); box-shadow: inset 3px 0 0 0 var(--blue-600); }
+  .tbl tfoot tr { background: var(--slate-800); color: #fff; font-weight: 600; }
+  .tbl tfoot td { padding: 6px 10px; font-size: 11px; border-right: 1px solid var(--slate-700); }
+  .tbl tfoot td:last-child { border-right: 0; }
+  .tbl .num { text-align: right; font-family: ui-monospace, Menlo, monospace; font-variant-numeric: tabular-nums; }
+
+  /* Badge */
+  .badge { font-size: 9px; font-weight: 700; letter-spacing: 0.05em; text-transform: uppercase; padding: 2px 6px; border: 1px solid; white-space: nowrap; }
+  .b-receipt { border-color:#86efac; background:#d1fae5; color:#065f46; }
+  .b-issue   { border-color:#fca5a5; background:#fee2e2; color:#991b1b; }
+  .b-transfer{ border-color:#93c5fd; background:#dbeafe; color:#1e40af; }
+  .b-adjust  { border-color:#fcd34d; background:#fef3c7; color:#92400e; }
+
+  /* Alerts side panel */
+  .ap { border-left: 1px solid var(--slate-300); display: flex; flex-direction: column; }
+  .alert { padding: 9px 14px; border-left: 4px solid var(--c); border-bottom: 1px solid var(--slate-100); display: flex; justify-content: space-between; align-items: center; gap: 12px; }
+  .alert:hover { background: var(--blue-50); }
+  .alert .n { font-size: 12px; color: var(--slate-900); font-weight: 500; }
+  .alert .c { font-size: 10px; color: var(--slate-400); margin-top: 2px; font-family: ui-monospace, Menlo, monospace; }
+  .alert .v { font-size: 12px; color: var(--slate-800); font-weight: 700; font-family: ui-monospace, Menlo, monospace; font-variant-numeric: tabular-nums; text-align: right; white-space: nowrap; }
+  .alert .v small { display: block; font-size: 9px; color: var(--slate-400); font-weight: 400; letter-spacing: 0.1em; text-transform: uppercase; margin-top: 1px; }
+
+  /* Footer bar */
+  .fx { background: var(--slate-800); color: var(--slate-400); padding: 6px 16px; font-size: 10px; display: flex; justify-content: space-between; margin: 0 -24px 0; border: 1px solid var(--slate-700); border-top: 0; font-family: ui-monospace, Menlo, monospace; letter-spacing: 0.05em; }
+  .fx b { color: #fff; font-weight: 600; }
+  .fx .ok::before { content: ""; display: inline-block; width: 7px; height: 7px; background: var(--emerald-500); border-radius: 999px; margin-right: 6px; vertical-align: middle; }
+</style>
+</head>
+<body>
+<div class="app">
+
+  <!-- Sidebar -->
+  <aside class="side">
+    <div class="brand">
+      <img src="../../assets/MSPIL_logo_transparent.png" alt="MSPIL">
+      <div>
+        <div class="t1">Distillery ERP</div>
+        <div class="t2">MSPIL · Bachai</div>
+      </div>
+    </div>
+    <div class="nav">
+      <div class="group">Plant <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="6 9 12 15 18 9"/></svg></div>
+      <div class="link"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><rect x="3" y="3" width="7" height="9"/><rect x="14" y="3" width="7" height="5"/><rect x="14" y="12" width="7" height="9"/><rect x="3" y="16" width="7" height="5"/></svg>Overview</div>
+      <div class="link"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M2 22 16 8"/><path d="M3.5 12.5 5 11l1.5 1.5a3.5 3.5 0 0 1 0 5L5 19l-1.5-1.5a3.5 3.5 0 0 1 0-5Z"/><path d="M7.5 8.5 9 7l1.5 1.5a3.5 3.5 0 0 1 0 5L9 15l-1.5-1.5a3.5 3.5 0 0 1 0-5Z"/></svg>Grain Unloading</div>
+      <div class="link"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M4.5 3h15"/><path d="M6 3v16a2 2 0 0 0 2 2h8a2 2 0 0 0 2-2V3"/><path d="M6 14h12"/></svg>Fermentation</div>
+      <div class="link"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M8.5 14.5A2.5 2.5 0 0 0 11 12c0-1.4-.5-2-1-3-1-2.1-.2-4 2-6 .5 2.5 2 4.9 4 6.5 2 1.6 3 3.5 3 5.5a7 7 0 1 1-14 0c0-1.2.4-2.3 1-3a2.5 2.5 0 0 0 2.5 2.5Z"/></svg>Distillation</div>
+
+      <div class="group">Sales</div>
+      <div class="link"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><rect x="1" y="3" width="15" height="13"/><polygon points="16 8 20 8 23 11 23 16 16 16 16 8"/><circle cx="5.5" cy="18.5" r="2.5"/><circle cx="18.5" cy="18.5" r="2.5"/></svg>Ethanol Dispatch</div>
+      <div class="link"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M16 2v4M8 2v4M3 10h18M5 4h14a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2Z"/></svg>DDGS Orders</div>
+
+      <div class="group">Purchase</div>
+      <div class="link"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M6 2 3 6v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V6l-3-4Z"/><line x1="3" y1="6" x2="21" y2="6"/><path d="M16 10a4 4 0 0 1-8 0"/></svg>Purchase Orders</div>
+      <div class="link"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M20 7h-7l-2-2H4a2 2 0 0 0-2 2v10a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2V9a2 2 0 0 0-2-2Z"/></svg>GRN / Receipts</div>
+      <div class="link"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8Z"/><polyline points="14 2 14 8 20 8"/></svg>Vendor Master</div>
+
+      <div class="group">Inventory</div>
+      <div class="link active"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><rect x="3" y="3" width="7" height="9"/><rect x="14" y="3" width="7" height="5"/><rect x="14" y="12" width="7" height="9"/><rect x="3" y="16" width="7" height="5"/></svg>Dashboard</div>
+      <div class="link"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><line x1="16.5" y1="9.4" x2="7.5" y2="4.2"/><path d="M21 16V8a2 2 0 0 0-1-1.7l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.7l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16Z"/><polyline points="3.3 7 12 12 20.7 7"/><line x1="12" y1="22" x2="12" y2="12"/></svg>Items &amp; Stock</div>
+      <div class="link"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M16 16 19 8l3 8"/><path d="M2 16 5 8l3 8"/><path d="M7 21h10"/><path d="M12 3v18"/></svg>Stock Counts</div>
+
+      <div class="group">Accounts</div>
+      <div class="link"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M2 3h6a4 4 0 0 1 4 4v14a3 3 0 0 0-3-3H2Z"/><path d="M22 3h-6a4 4 0 0 0-4 4v14a3 3 0 0 1 3-3h7Z"/></svg>Cash &amp; Bank Book</div>
+      <div class="link"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><rect x="4" y="2" width="16" height="20" rx="1"/><line x1="8" y1="6" x2="16" y2="6"/><line x1="16" y1="14" x2="16" y2="18"/><path d="M8 14h.01M12 14h.01M8 18h.01M12 18h.01"/></svg>GST &amp; TDS</div>
+    </div>
+    <div class="user">
+      <div class="who">
+        <div class="avatar">SR</div>
+        <div>
+          <div class="name">Saif Raza</div>
+          <div class="role">Plant · Admin</div>
+        </div>
+      </div>
+      <div class="bell">
+        <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><path d="M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9"/><path d="M10.3 21a1.94 1.94 0 0 0 3.4 0"/></svg>
+        <span class="count">4</span>
+      </div>
+    </div>
+  </aside>
+
+  <!-- Main -->
+  <main class="main">
+    <div class="page">
+
+      <!-- Toolbar -->
+      <div class="tb">
+        <div class="l">
+          <span class="title">Inventory Dashboard</span>
+          <span class="sub">| all warehouses · FY 2025-26 · as on 24-Apr-2026 3:12 pm IST</span>
+        </div>
+        <div class="r">
+          <button class="sec"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M7 10l5 5 5-5M12 15V3"/></svg>Export</button>
+          <button class="sec"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><polyline points="6 9 6 2 18 2 18 9"/><path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"/><rect x="6" y="14" width="12" height="8"/></svg>Print</button>
+          <button class="sec"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M3 12a9 9 0 0 1 9-9 9.8 9.8 0 0 1 6.7 2.7L21 8"/><path d="M21 3v5h-5"/><path d="M21 12a9 9 0 0 1-9 9 9.8 9.8 0 0 1-6.7-2.7L3 16"/><path d="M8 16H3v5"/></svg>Refresh</button>
+          <button class="prm"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M12 5v14M5 12h14"/></svg>New Movement</button>
+        </div>
+      </div>
+
+      <!-- Filter bar -->
+      <div class="fb">
+        <span class="chip">Warehouse</span>
+        <select><option>All (6)</option><option>Silo-A · Grain</option><option>Chem Store</option><option>Lab Store</option></select>
+        <span class="chip">Category</span>
+        <select><option>All</option><option>Raw material</option><option>Chemical</option><option>Packaging</option></select>
+        <span class="chip">Period</span>
+        <input value="01-Apr-2026" style="width:100px"/>
+        <span style="color:var(--slate-400);font-size:11px">→</span>
+        <input value="24-Apr-2026" style="width:100px"/>
+        <div class="spacer"></div>
+        <input type="search" placeholder="Search item code, batch, PO, GRN..."/>
+      </div>
+
+      <!-- KPI strip -->
+      <div class="kpi-strip">
+        <div class="kpi" style="--c:#3b82f6"><div class="k">Total Items</div><div class="v">1,428</div><div class="d">across 6 warehouses</div></div>
+        <div class="kpi" style="--c:#059669"><div class="k">Total Value</div><div class="v">₹4,28,91,450</div><div class="d"><span class="delta up">▲ 3.4%</span>vs last month</div></div>
+        <div class="kpi" style="--c:#f59e0b"><div class="k">Low Stock Alerts</div><div class="v">12</div><div class="d"><span class="delta dn">4 critical</span>below reorder</div></div>
+        <div class="kpi" style="--c:#64748b"><div class="k">Pending Counts</div><div class="v">3</div><div class="d">draft stock counts</div></div>
+      </div>
+
+      <!-- Two-column body -->
+      <div class="grid">
+
+        <!-- Left: Recent Movements table -->
+        <div>
+          <div class="sh">
+            <span class="lbl">Recent Movements · last 24 h</span>
+            <span class="act">View all →</span>
+          </div>
+          <table class="tbl">
+            <thead><tr>
+              <th style="width:66px">#</th><th>Item</th><th>Type</th>
+              <th class="num">Qty</th><th>UoM</th><th class="num">Value</th>
+              <th>Warehouse</th><th>Ref</th><th>Time</th>
+            </tr></thead>
+            <tbody>
+              <tr><td class="mono">14212</td><td>Broken Rice (FCI)</td><td><span class="badge b-receipt">Receipt</span></td><td class="num">42,000</td><td>kg</td><td class="num">₹9,86,400</td><td>Silo-A</td><td class="mono">GRN-4821</td><td class="mono">14:58</td></tr>
+              <tr><td class="mono">14211</td><td>Sulphuric Acid 98%</td><td><span class="badge b-issue">Issue</span></td><td class="num">1,200</td><td>L</td><td class="num">₹38,400</td><td>Chem Store</td><td class="mono">ISS-2180</td><td class="mono">14:42</td></tr>
+              <tr><td class="mono">14210</td><td>Alpha Amylase (Enz)</td><td><span class="badge b-transfer">Transfer</span></td><td class="num">80</td><td>L</td><td class="num">₹1,44,000</td><td>Lab Store</td><td class="mono">TR-0912</td><td class="mono">14:30</td></tr>
+              <tr><td class="mono">14209</td><td>DDGS Pellet — Grade A</td><td><span class="badge b-receipt">Receipt</span></td><td class="num">18,200</td><td>kg</td><td class="num">₹3,27,600</td><td>DDGS Godown</td><td class="mono">PR-DDGS-118</td><td class="mono">13:45</td></tr>
+              <tr><td class="mono">14208</td><td>Urea 46-0-0</td><td><span class="badge b-adjust">Adjust</span></td><td class="num">-500</td><td>kg</td><td class="num">–₹15,500</td><td>Main Store</td><td class="mono">ADJ-0073</td><td class="mono">12:20</td></tr>
+              <tr><td class="mono">14207</td><td>Yeast — Ethanol Red</td><td><span class="badge b-issue">Issue</span></td><td class="num">240</td><td>kg</td><td class="num">₹98,400</td><td>Lab Store</td><td class="mono">ISS-2179</td><td class="mono">11:55</td></tr>
+              <tr><td class="mono">14206</td><td>Caustic Soda Lye 48%</td><td><span class="badge b-receipt">Receipt</span></td><td class="num">4,800</td><td>L</td><td class="num">₹2,16,000</td><td>Chem Store</td><td class="mono">GRN-4820</td><td class="mono">11:08</td></tr>
+              <tr><td class="mono">14205</td><td>Corn Grits</td><td><span class="badge b-receipt">Receipt</span></td><td class="num">26,500</td><td>kg</td><td class="num">₹6,09,500</td><td>Silo-B</td><td class="mono">GRN-4819</td><td class="mono">10:32</td></tr>
+            </tbody>
+            <tfoot><tr>
+              <td colspan="3">8 movements · Ton-equivalent qty</td>
+              <td class="num">91,320</td><td></td>
+              <td class="num">₹24,04,800</td>
+              <td colspan="3"></td>
+            </tr></tfoot>
+          </table>
+        </div>
+
+        <!-- Right: Low stock alerts -->
+        <div class="ap">
+          <div class="sh">
+            <span class="lbl">Low Stock · below reorder</span>
+            <span class="act">Raise PO</span>
+          </div>
+          <div class="alert" style="--c:#dc2626"><div><div class="n">Alpha Amylase (Enz)</div><div class="c">ITM-0042 · Lab Store</div></div><div class="v">8<small>of 50 L</small></div></div>
+          <div class="alert" style="--c:#dc2626"><div><div class="n">Yeast — Ethanol Red</div><div class="c">ITM-0031 · Lab Store</div></div><div class="v">120<small>of 400 kg</small></div></div>
+          <div class="alert" style="--c:#dc2626"><div><div class="n">Antifoam — Silicone</div><div class="c">ITM-0056 · Chem</div></div><div class="v">24<small>of 80 L</small></div></div>
+          <div class="alert" style="--c:#dc2626"><div><div class="n">pH Buffer 7.00</div><div class="c">ITM-0104 · Lab Store</div></div><div class="v">3<small>of 12 bt</small></div></div>
+          <div class="alert" style="--c:#f59e0b"><div><div class="n">Sulphuric Acid 98%</div><div class="c">ITM-0018 · Chem Store</div></div><div class="v">340<small>of 500 L</small></div></div>
+          <div class="alert" style="--c:#f59e0b"><div><div class="n">Caustic Soda Lye 48%</div><div class="c">ITM-0021 · Chem Store</div></div><div class="v">620<small>of 800 L</small></div></div>
+          <div class="alert" style="--c:#f59e0b"><div><div class="n">PP Bags — 50 kg DDGS</div><div class="c">ITM-0088 · Pkg</div></div><div class="v">1,100<small>of 1,500 nos</small></div></div>
+          <div class="alert" style="--c:#3b82f6;border-bottom:0"><div><div class="n">Urea 46-0-0</div><div class="c">ITM-0097 · Main Store</div></div><div class="v">1,200<small>of 800 kg</small></div></div>
+        </div>
+
+      </div>
+
+      <!-- Footer status bar -->
+      <div class="fx">
+        <span><span class="ok"></span>API <b>ONLINE</b> · DB <b>OK</b> · Weighbridge PC <b>OK</b></span>
+        <span>Last refresh <b>3:12:08 pm IST</b> · v2026.4.18-b3</span>
+      </div>
+
+    </div>
+  </main>
+</div>
+</body>
+</html>

@@ -1,0 +1,38 @@
+<!doctype html><html><head><meta charset="utf-8"><link rel="stylesheet" href="_card.css">
+<style>
+.label { font-size: 10px; font-weight: 700; letter-spacing: 0.1em; text-transform: uppercase; color: #64748b; margin-bottom: 10px; }
+.grid { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+.cell { background: #fff; border: 1px solid #e2e8f0; padding: 12px 14px; }
+.hk { font-size: 9px; color: #94a3b8; font-weight: 700; letter-spacing: 0.1em; text-transform: uppercase; font-family: ui-monospace, Menlo, monospace; margin-bottom: 8px; }
+
+/* alert / health banner */
+.banner { background: #f59e0b; color: #fff; padding: 8px 14px; font-size: 12px; font-weight: 500; display: flex; gap: 8px; align-items: center; }
+.banner .dot { width: 10px; height: 10px; border: 2px solid #fff; border-top-color: transparent; border-radius: 999px; animation: spin 1s linear infinite; }
+@keyframes spin { to { transform: rotate(360deg); } }
+
+/* alert row (left-border severity) */
+.alert { border-left: 4px solid var(--c); background: #fff; padding: 8px 12px; display: flex; justify-content: space-between; align-items: center; margin-top: 6px; border-bottom: 1px solid #e2e8f0; }
+.alert .t { font-size: 12px; font-weight: 500; color: #1e293b; }
+.alert .c { font-size: 10px; color: #94a3b8; font-family: ui-monospace, Menlo, monospace; }
+.alert .n { font-size: 12px; font-weight: 700; font-family: ui-monospace, Menlo, monospace; text-align: right; }
+</style></head><body><div class="card-root">
+<div class="label">Alerts &amp; banners</div>
+<div class="grid">
+  <div class="cell">
+    <div class="hk">Health banner (server down)</div>
+    <div class="banner"><span class="dot"></span>Server connection lost — reconnecting...</div>
+    <div class="hk" style="margin-top:14px">Notification · critical</div>
+    <div class="alert" style="--c:#dc2626"><div><div class="t">PO over-receipt on PO-2026-0391</div><div class="c">weighbridge · 2:45 pm</div></div></div>
+    <div class="hk" style="margin-top:14px">Notification · info</div>
+    <div class="alert" style="--c:#3b82f6"><div><div class="t">3 invoices queued for e-Invoice retry</div><div class="c">invoices · 2:12 pm</div></div></div>
+  </div>
+  <div class="cell">
+    <div class="hk">Low stock — critical</div>
+    <div class="alert" style="--c:#dc2626;background:rgba(254,226,226,0.3)"><div><div class="t">Alpha Amylase (Enz)</div><div class="c">ITM-0042</div></div><div class="n">8 / 50 L<div class="c" style="font-weight:400">Current / Reorder</div></div></div>
+    <div class="hk" style="margin-top:14px">Low stock — warning</div>
+    <div class="alert" style="--c:#f59e0b"><div><div class="t">Sulphuric Acid 98%</div><div class="c">ITM-0018</div></div><div class="n">340 / 500 L<div class="c" style="font-weight:400">Current / Reorder</div></div></div>
+    <div class="hk" style="margin-top:14px">Info row</div>
+    <div class="alert" style="--c:#3b82f6"><div><div class="t">Urea 46-0-0</div><div class="c">ITM-0097</div></div><div class="n">1,200 / 800 kg<div class="c" style="font-weight:400">Current / Reorder</div></div></div>
+  </div>
+</div>
+</div></body></html>

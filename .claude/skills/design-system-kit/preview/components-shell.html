@@ -1,0 +1,44 @@
+<!doctype html><html><head><meta charset="utf-8"><link rel="stylesheet" href="_card.css">
+<style>
+.label { font-size: 10px; font-weight: 700; letter-spacing: 0.1em; text-transform: uppercase; color: #64748b; margin-bottom: 10px; }
+.shell { display: grid; grid-template-columns: 200px 1fr; border: 1px solid #e2e8f0; }
+.side { background: #111827; color: #fff; padding: 12px 0; }
+.side h1 { font-size: 12px; font-weight: 700; letter-spacing: 0.05em; padding: 0 14px 2px; margin: 0; }
+.side .co { font-size: 9px; color: #9ca3af; padding: 0 14px 10px; border-bottom: 1px solid #374151; }
+.side .group { font-size: 10px; color: #9ca3af; padding: 10px 14px 6px; text-transform: uppercase; letter-spacing: 0.08em; font-weight: 600; }
+.side .nav { display: flex; align-items: center; gap: 8px; padding: 6px 14px; color: #d1d5db; font-size: 11px; }
+.side .nav.active { background: #2563eb; color: #fff; border-radius: 4px; margin: 0 6px; padding: 5px 8px; font-size: 11px; }
+.side .dot { width: 13px; height: 13px; border: 1.5px solid currentColor; border-radius: 2px; opacity: .9; }
+.main { background: #f8fafc; padding: 0; }
+.tb { background: #1e293b; color: #fff; padding: 8px 14px; font-size: 12px; font-weight: 700; letter-spacing: 0.05em; text-transform: uppercase; display: flex; justify-content: space-between; align-items: center; }
+.tb button { background: #2563eb; color: #fff; border: 0; font-size: 10px; font-weight: 500; padding: 4px 10px; letter-spacing: 0.05em; text-transform: none; }
+.kpi { display: grid; grid-template-columns: repeat(3, 1fr); background: #fff; border-bottom: 1px solid #cbd5e1; }
+.kpi .c { padding: 8px 12px; border-right: 1px solid #e2e8f0; border-left: 4px solid var(--c); }
+.kpi .k { font-size: 9px; color: #94a3b8; font-weight: 700; letter-spacing: 0.1em; text-transform: uppercase; }
+.kpi .v { font-size: 15px; color: #1e293b; font-family: ui-monospace, Menlo, monospace; font-weight: 700; }
+</style></head><body><div class="card-root">
+<div class="label">App shell · Sidebar + Page scaffold</div>
+<div class="shell">
+  <aside class="side">
+    <h1>DISTILLERY ERP</h1>
+    <div class="co">MSPIL</div>
+    <div class="group">PLANT</div>
+    <div class="nav active"><span class="dot"></span>Dashboard</div>
+    <div class="nav"><span class="dot"></span>Fermentation</div>
+    <div class="nav"><span class="dot"></span>Distillation</div>
+    <div class="group">PURCHASE</div>
+    <div class="nav"><span class="dot"></span>Purchase Orders</div>
+    <div class="nav"><span class="dot"></span>Vendor Master</div>
+    <div class="group">ACCOUNTS</div>
+    <div class="nav"><span class="dot"></span>Cash Book</div>
+  </aside>
+  <div class="main">
+    <div class="tb"><span>INVENTORY DASHBOARD</span><button>Refresh</button></div>
+    <div class="kpi">
+      <div class="c" style="--c:#3b82f6"><div class="k">Total items</div><div class="v">1,428</div></div>
+      <div class="c" style="--c:#059669"><div class="k">Total value</div><div class="v">₹4.28 Cr</div></div>
+      <div class="c" style="--c:#f59e0b"><div class="k">Low stock</div><div class="v">12</div></div>
+    </div>
+  </div>
+</div>
+</div></body></html>

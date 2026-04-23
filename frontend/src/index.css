@@ -1,4 +1,5 @@
 @import "tailwindcss";
+@import "./design-kit.css";
 
 body { background: #f9fafb; color: #111827; }
 

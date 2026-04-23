@@ -1,0 +1,125 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Purchase Orders — MSPIL Distillery ERP</title>
+<meta name="viewport" content="width=1440">
+<style>
+  :root { --slate-100:#f1f5f9;--slate-200:#e2e8f0;--slate-300:#cbd5e1;--slate-400:#94a3b8;--slate-500:#64748b;--slate-700:#334155;--slate-800:#1e293b;--blue-200:#bfdbfe;--blue-500:#3b82f6;--blue-600:#2563eb; }
+  *{box-sizing:border-box} html,body{margin:0;background:#f8fafc;font-family:ui-sans-serif,system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;color:#0f172a;font-size:14px;-webkit-font-smoothing:antialiased}
+  .mono{font-family:ui-monospace,Menlo,Consolas,monospace;font-variant-numeric:tabular-nums}
+  .wrap{padding:12px 24px 28px}
+  .tb{background:var(--slate-800);color:#fff;padding:9px 16px;margin:-12px -24px 0;display:flex;justify-content:space-between;align-items:center}
+  .tb .t{font-size:13px;font-weight:700;letter-spacing:.05em;text-transform:uppercase}
+  .tb .sub{font-size:10px;color:var(--slate-400);margin-left:10px}
+  .tb .r{display:flex;gap:6px}
+  .tb button{font-size:11px;font-weight:500;padding:5px 11px;border:0;cursor:pointer;display:inline-flex;align-items:center;gap:5px}
+  .tb .sec{background:#fff;color:var(--slate-700);border:1px solid var(--slate-300)}
+  .tb .prm{background:var(--blue-600);color:#fff}
+  .fb{background:var(--slate-100);border:1px solid var(--slate-300);border-top:0;padding:7px 16px;margin:0 -24px;display:flex;gap:10px;align-items:center;flex-wrap:wrap}
+  .fb .chip{font-size:10px;color:var(--slate-500);font-weight:700;letter-spacing:.1em;text-transform:uppercase}
+  .fb select,.fb input{border:1px solid var(--slate-300);padding:4px 8px;font-size:12px;background:#fff;outline:0}
+  .fb input[type=search]{flex:1;min-width:200px}
+  .kpi-strip{display:grid;grid-template-columns:repeat(5,1fr);border:1px solid var(--slate-300);border-top:0;background:#fff;margin:0 -24px}
+  .kpi{padding:10px 14px;border-right:1px solid var(--slate-200);border-left:4px solid var(--c)}
+  .kpi:last-child{border-right:0}
+  .kpi .k{font-size:10px;color:var(--slate-400);font-weight:700;letter-spacing:.1em;text-transform:uppercase}
+  .kpi .v{font-size:19px;color:var(--slate-800);font-weight:700;font-family:ui-monospace,Menlo,monospace;font-variant-numeric:tabular-nums;line-height:1.15;margin-top:2px}
+  .kpi .d{font-size:10px;color:var(--slate-500);margin-top:2px}
+  .tabs{border:1px solid var(--slate-300);border-top:0;background:#fff;margin:0 -24px;display:flex;align-items:center;padding:0 14px;border-bottom:0}
+  .tabs .tab{font-size:11px;font-weight:700;color:var(--slate-500);letter-spacing:.1em;text-transform:uppercase;padding:9px 14px;cursor:pointer;border-bottom:2px solid transparent}
+  .tabs .tab.active{color:var(--slate-800);border-bottom-color:var(--blue-600)}
+  .tabs .count{font-family:ui-monospace,Menlo,monospace;font-size:10px;color:var(--slate-400);margin-left:5px;letter-spacing:0}
+  .tabs .sp{flex:1}
+  .tabs .bulk{font-size:11px;color:var(--slate-500);display:flex;gap:14px;align-items:center}
+  .tabs .bulk a{color:var(--blue-600);text-decoration:none;font-weight:500}
+  table.tbl{width:calc(100% + 48px);margin:0 -24px;border-collapse:collapse;border:1px solid var(--slate-300);border-top:0}
+  .tbl thead tr{background:var(--slate-800);color:#fff}
+  .tbl thead th{text-align:left;padding:7px 10px;font-size:10px;font-weight:600;letter-spacing:.1em;text-transform:uppercase;border-right:1px solid var(--slate-700);white-space:nowrap}
+  .tbl thead th:last-child{border-right:0}
+  .tbl tbody td{padding:6px 10px;font-size:12px;border-right:1px solid var(--slate-100);border-bottom:1px solid var(--slate-100)}
+  .tbl tbody td:last-child{border-right:0}
+  .tbl tbody tr:nth-child(even){background:rgba(248,250,252,.7)}
+  .tbl tbody tr:hover > td{background:var(--blue-200);box-shadow:inset 3px 0 0 0 var(--blue-600)}
+  .tbl .num{text-align:right;font-family:ui-monospace,Menlo,monospace;font-variant-numeric:tabular-nums}
+  .tbl tfoot tr{background:var(--slate-800);color:#fff}
+  .tbl tfoot td{padding:7px 10px;font-size:11px;font-weight:600;border-right:1px solid var(--slate-700)}
+  .badge{font-size:9px;font-weight:700;letter-spacing:.05em;text-transform:uppercase;padding:2px 6px;border:1px solid;white-space:nowrap}
+  .b-open{border-color:#93c5fd;background:#dbeafe;color:#1e40af}
+  .b-part{border-color:#fcd34d;background:#fef3c7;color:#92400e}
+  .b-recv{border-color:#86efac;background:#d1fae5;color:#065f46}
+  .b-can{border-color:#fca5a5;background:#fee2e2;color:#991b1b}
+  .b-draft{border-color:#cbd5e1;background:#f1f5f9;color:#334155}
+  .prog{height:6px;background:#f1f5f9;border:1px solid #e2e8f0;width:80px;position:relative;margin-left:auto}
+  .prog > span{display:block;height:100%;background:#2563eb}
+  .pager{padding:8px 16px;margin:0 -24px;background:#fff;border:1px solid var(--slate-300);border-top:0;display:flex;justify-content:space-between;font-size:11px;color:var(--slate-500)}
+  .pager b{color:var(--slate-800);font-family:ui-monospace,Menlo,monospace;font-weight:600}
+  .pager button{font-size:11px;background:#fff;border:1px solid var(--slate-300);padding:3px 8px;margin-left:4px;color:var(--slate-700);cursor:pointer}
+  .pager button.active{background:var(--blue-600);color:#fff;border-color:var(--blue-600)}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="tb">
+    <div><span class="t">Purchase Orders</span><span class="sub">| open · all vendors · FY 2025-26</span></div>
+    <div class="r">
+      <button class="sec">Export CSV</button>
+      <button class="sec">Bulk approve</button>
+      <button class="prm">+ New PO</button>
+    </div>
+  </div>
+  <div class="fb">
+    <span class="chip">Vendor</span><select><option>All vendors</option><option>FCI Regional</option><option>Gujarat Chemicals</option></select>
+    <span class="chip">Status</span><select><option>Open / Partial</option><option>Received</option><option>Cancelled</option></select>
+    <span class="chip">Buyer</span><select><option>All buyers</option><option>Saif R.</option><option>Amit K.</option></select>
+    <span class="chip">From</span><input value="01-Apr-2026" style="width:100px"/>
+    <span class="chip">To</span><input value="24-Apr-2026" style="width:100px"/>
+    <input type="search" placeholder="Search PO no., vendor, item, HSN..."/>
+  </div>
+  <div class="kpi-strip">
+    <div class="kpi" style="--c:#3b82f6"><div class="k">Open POs</div><div class="v">84</div><div class="d">across 38 vendors</div></div>
+    <div class="kpi" style="--c:#f59e0b"><div class="k">Awaiting GRN</div><div class="v">26</div><div class="d">11 overdue &gt;7 d</div></div>
+    <div class="kpi" style="--c:#059669"><div class="k">FY committed</div><div class="v">₹18.42 Cr</div><div class="d">632 POs YTD</div></div>
+    <div class="kpi" style="--c:#64748b"><div class="k">Avg cycle</div><div class="v">4.8 d</div><div class="d">PO → GRN close</div></div>
+    <div class="kpi" style="--c:#dc2626"><div class="k">Price variance</div><div class="v">+2.1%</div><div class="d">vs last 90 d avg</div></div>
+  </div>
+  <div class="tabs">
+    <div class="tab active">All <span class="count">84</span></div>
+    <div class="tab">Draft <span class="count">6</span></div>
+    <div class="tab">Open <span class="count">52</span></div>
+    <div class="tab">Partial <span class="count">18</span></div>
+    <div class="tab">Received <span class="count">6</span></div>
+    <div class="tab">Cancelled <span class="count">2</span></div>
+    <div class="sp"></div>
+    <div class="bulk"><span>3 selected</span><a>Approve</a><a>Send to vendor</a><a>Close</a></div>
+  </div>
+  <table class="tbl">
+    <thead><tr>
+      <th style="width:28px"><input type="checkbox"/></th>
+      <th>PO No.</th><th>Date</th><th>Vendor</th><th>Buyer</th>
+      <th>Status</th><th class="num">Value</th><th class="num">GST</th>
+      <th>Receipt</th><th>Expected</th><th class="num">Aging</th>
+    </tr></thead>
+    <tbody>
+      <tr><td><input type="checkbox" checked/></td><td class="mono">PO-2026-0412</td><td class="mono">24-Apr-26</td><td>FCI Regional — Jabalpur</td><td>Saif R.</td><td><span class="badge b-open">Open</span></td><td class="num">₹9,86,400</td><td class="num">₹49,320</td><td><div class="prog"><span style="width:0%"></span></div></td><td class="mono">26-Apr</td><td class="num">0 d</td></tr>
+      <tr><td><input type="checkbox" checked/></td><td class="mono">PO-2026-0411</td><td class="mono">24-Apr-26</td><td>Gujarat Chemicals Pvt Ltd</td><td>Amit K.</td><td><span class="badge b-part">Partial</span></td><td class="num">₹2,16,000</td><td class="num">₹38,880</td><td><div class="prog"><span style="width:64%"></span></div></td><td class="mono">25-Apr</td><td class="num">0 d</td></tr>
+      <tr><td><input type="checkbox" checked/></td><td class="mono">PO-2026-0410</td><td class="mono">23-Apr-26</td><td>Enzyme Solutions LLP</td><td>Saif R.</td><td><span class="badge b-part">Partial</span></td><td class="num">₹1,44,000</td><td class="num">₹25,920</td><td><div class="prog"><span style="width:40%"></span></div></td><td class="mono">25-Apr</td><td class="num">1 d</td></tr>
+      <tr><td><input type="checkbox"/></td><td class="mono">PO-2026-0409</td><td class="mono">23-Apr-26</td><td>Ameya Yeast Biotech</td><td>Amit K.</td><td><span class="badge b-open">Open</span></td><td class="num">₹98,400</td><td class="num">₹17,712</td><td><div class="prog"><span style="width:0%"></span></div></td><td class="mono">28-Apr</td><td class="num">1 d</td></tr>
+      <tr><td><input type="checkbox"/></td><td class="mono">PO-2026-0408</td><td class="mono">22-Apr-26</td><td>Sahyadri Packaging</td><td>Priya M.</td><td><span class="badge b-recv">Received</span></td><td class="num">₹3,42,000</td><td class="num">₹61,560</td><td><div class="prog"><span style="width:100%;background:#059669"></span></div></td><td class="mono">23-Apr</td><td class="num">2 d</td></tr>
+      <tr><td><input type="checkbox"/></td><td class="mono">PO-2026-0407</td><td class="mono">22-Apr-26</td><td>Deepak Fertilisers</td><td>Amit K.</td><td><span class="badge b-draft">Draft</span></td><td class="num">₹15,500</td><td class="num">₹2,790</td><td><div class="prog"><span style="width:0%"></span></div></td><td class="mono">—</td><td class="num">2 d</td></tr>
+      <tr><td><input type="checkbox"/></td><td class="mono">PO-2026-0406</td><td class="mono">21-Apr-26</td><td>Krishna Corn Mills</td><td>Saif R.</td><td><span class="badge b-part">Partial</span></td><td class="num">₹6,09,500</td><td class="num">₹30,475</td><td><div class="prog"><span style="width:78%"></span></div></td><td class="mono">24-Apr</td><td class="num">3 d</td></tr>
+      <tr><td><input type="checkbox"/></td><td class="mono">PO-2026-0405</td><td class="mono">21-Apr-26</td><td>Kanchan Lab Supplies</td><td>Priya M.</td><td><span class="badge b-open">Open</span></td><td class="num">₹42,180</td><td class="num">₹7,592</td><td><div class="prog"><span style="width:0%"></span></div></td><td class="mono">27-Apr</td><td class="num">3 d</td></tr>
+      <tr><td><input type="checkbox"/></td><td class="mono">PO-2026-0404</td><td class="mono">20-Apr-26</td><td>BPCL Fuel Distribution</td><td>Amit K.</td><td><span class="badge b-recv">Received</span></td><td class="num">₹12,48,000</td><td class="num">₹1,81,440</td><td><div class="prog"><span style="width:100%;background:#059669"></span></div></td><td class="mono">21-Apr</td><td class="num">4 d</td></tr>
+      <tr><td><input type="checkbox"/></td><td class="mono">PO-2026-0403</td><td class="mono">19-Apr-26</td><td>Hindustan Insulation</td><td>Priya M.</td><td><span class="badge b-can">Cancelled</span></td><td class="num">₹62,400</td><td class="num">₹11,232</td><td><div class="prog"><span style="width:0%;background:#dc2626"></span></div></td><td class="mono">—</td><td class="num">5 d</td></tr>
+    </tbody>
+    <tfoot><tr><td colspan="6">10 POs on page · total of 84 matching</td><td class="num">₹38,64,380</td><td class="num">₹4,26,921</td><td colspan="3"></td></tr></tfoot>
+  </table>
+  <div class="pager">
+    <span>Showing <b>1–10</b> of <b>84</b></span>
+    <span>
+      <button>‹ Prev</button><button class="active">1</button><button>2</button><button>3</button><button>…</button><button>9</button><button>Next ›</button>
+    </span>
+  </div>
+</div>
+</body>
+</html>
