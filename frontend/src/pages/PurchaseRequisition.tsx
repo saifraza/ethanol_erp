@@ -10,7 +10,7 @@ const GOODS_CATEGORIES = ['SPARE_PART', 'RAW_MATERIAL', 'CONSUMABLE', 'TOOL', 'S
 const SERVICE_CATEGORIES = ['CONSULTANCY', 'PROFESSIONAL_SERVICE', 'IT_SERVICE', 'AMC_SERVICE', 'CONTRACT_LABOR', 'CIVIL_WORK', 'TRANSPORT_SERVICE', 'OTHER_SERVICE'];
 const GOODS_UNITS = ['nos', 'kg', 'ltr', 'mtr', 'set', 'pair', 'roll'];
 const SERVICE_UNITS = ['lump-sum', 'man-day', 'man-hour', 'month', 'visit', 'job'];
-const STATUS_TABS = ['ALL', 'DRAFT', 'SUBMITTED', 'APPROVED', 'PO_PENDING', 'ORDERED', 'RECEIVED', 'COMPLETED', 'REJECTED'];
+const STATUS_TABS = ['ALL', 'DRAFT', 'SUBMITTED', 'APPROVED', 'PO_PENDING', 'ORDERED', 'PARTIAL_RECEIVED', 'RECEIVED', 'COMPLETED', 'REJECTED'];
 
 const URG_COLORS: Record<string, string> = {
   ROUTINE: 'border-slate-400 bg-slate-50 text-slate-700',
@@ -26,7 +26,8 @@ const STATUS_COLORS: Record<string, string> = {
   REJECTED: 'border-red-600 bg-red-50 text-red-700',
   PO_PENDING: 'border-amber-500 bg-amber-50 text-amber-700',
   ORDERED: 'border-purple-500 bg-purple-50 text-purple-700',
-  RECEIVED: 'border-emerald-600 bg-emerald-50 text-emerald-700',
+  PARTIAL_RECEIVED: 'border-amber-500 bg-amber-50 text-amber-700',
+  RECEIVED: 'border-teal-600 bg-teal-50 text-teal-700',
   COMPLETED: 'border-emerald-600 bg-emerald-50 text-emerald-700',
 };
 
@@ -103,7 +104,7 @@ function pipelineSteps(pr: PR): Array<{ label: string; state: StepState; sub?: s
     { label: 'Approved', state: ['APPROVED', 'PO_PENDING', 'ORDERED', 'RECEIVED', 'COMPLETED'].includes(status) ? 'done' : status === 'SUBMITTED' ? 'current' : 'pending', sub: pr.approvedAt ? new Date(pr.approvedAt).toLocaleDateString('en-IN', { day: '2-digit', month: 'short' }) : '' },
     { label: 'Issued', state: pr.issuedQty > 0 ? 'done' : 'pending', sub: pr.issuedQty > 0 ? `${pr.issuedQty} ${pr.unit}` : '' },
     { label: 'PO', state: ['ORDERED', 'RECEIVED', 'COMPLETED'].includes(status) ? 'done' : status === 'PO_PENDING' ? 'current' : 'pending', sub: pr.purchaseQty > 0 ? `${pr.purchaseQty} ${pr.unit}` : '' },
-    { label: 'Received', state: ['RECEIVED', 'COMPLETED'].includes(status) ? 'done' : status === 'ORDERED' ? 'current' : 'pending' },
+    { label: 'Received', state: ['RECEIVED', 'COMPLETED'].includes(status) ? 'done' : ['ORDERED', 'PARTIAL_RECEIVED'].includes(status) ? 'current' : 'pending' },
     { label: 'Paid', state: status === 'COMPLETED' ? 'done' : 'pending' },
   ];
 }
@@ -144,6 +145,7 @@ export default function PurchaseRequisition() {
   // ── Detail-drawer state ──
   const [stockCheck, setStockCheck] = useState<StockCheckData | null>(null);
   const [issueQty, setIssueQty] = useState('');
+  const [issueToReqQty, setIssueToReqQty] = useState('');
   const [actionLoading, setActionLoading] = useState(false);
   const [itemHistory, setItemHistory] = useState<ItemHistory | null>(null);
   const [historyLoading, setHistoryLoading] = useState(false);
@@ -256,6 +258,17 @@ export default function PurchaseRequisition() {
       setStockCheck(null); load();
       if (autoPO) alert(autoPO.created ? `Draft PO #${autoPO.poNo} created` : `Queued — ${autoPO.reason || 'manual PO required'}`);
     } catch (e: unknown) { alert((e as { response?: { data?: { error?: string } } }).response?.data?.error || 'Failed'); }
+    setActionLoading(false);
+  };
+
+  const handleIssueToRequester = async (prId: string) => {
+    const qty = parseFloat(issueToReqQty);
+    if (!qty || qty <= 0) return;
+    setActionLoading(true);
+    try {
+      await api.put(`/purchase-requisition/${prId}/issue-to-requester`, { issueNowQty: qty });
+      setIssueToReqQty(''); load();
+    } catch (e: unknown) { alert((e as { response?: { data?: { error?: string } } }).response?.data?.error || 'Issue failed'); }
     setActionLoading(false);
   };
 
@@ -873,7 +886,40 @@ export default function PurchaseRequisition() {
                         {pr.status === 'REJECTED' && (
                           <button onClick={() => updateStatus(pr.id, 'DRAFT')} className="px-2 py-1 border border-slate-400 bg-white text-slate-700 text-[10px] font-medium hover:bg-slate-100">Resubmit as Draft</button>
                         )}
-                        {['RECEIVED', 'COMPLETED'].includes(pr.status) && (
+                        {(pr.status === 'RECEIVED' || pr.status === 'PARTIAL_RECEIVED') && (() => {
+                          const remaining = Math.max(0, Math.round((pr.quantity - pr.issuedQty) * 1000) / 1000);
+                          return (
+                            <div className="border border-teal-300 bg-teal-50/40 p-2 space-y-2">
+                              <div className="text-[10px] font-bold text-teal-700 uppercase tracking-widest">Material in Store — Issue to Requester</div>
+                              <div className="grid grid-cols-3 gap-2 text-[10px]">
+                                <div><span className="text-slate-400 uppercase block">Total</span><span className="font-mono tabular-nums font-bold text-slate-800">{pr.quantity} {pr.unit}</span></div>
+                                <div><span className="text-slate-400 uppercase block">Issued</span><span className="font-mono tabular-nums font-bold text-slate-800">{pr.issuedQty} {pr.unit}</span></div>
+                                <div><span className="text-slate-400 uppercase block">Remaining</span><span className={`font-mono tabular-nums font-bold ${remaining > 0 ? 'text-teal-700' : 'text-slate-500'}`}>{remaining} {pr.unit}</span></div>
+                              </div>
+                              {remaining > 0 ? (
+                                <div className="flex items-end gap-2">
+                                  <div>
+                                    <label className="text-[9px] font-bold text-slate-500 uppercase tracking-widest block">Issue now to {pr.requestedByPerson || pr.requestedBy}</label>
+                                    <input type="number" min={0} max={remaining} step={0.01}
+                                      value={issueToReqQty}
+                                      onChange={(e) => setIssueToReqQty(e.target.value)}
+                                      className="border border-slate-300 px-2 py-1 text-[11px] focus:outline-none focus:ring-1 focus:ring-slate-400 w-24 font-mono tabular-nums" />
+                                  </div>
+                                  <button onClick={() => handleIssueToRequester(pr.id)} disabled={actionLoading || !parseFloat(issueToReqQty)}
+                                    className="px-2 py-1 bg-teal-600 text-white text-[10px] font-medium hover:bg-teal-700 disabled:opacity-50">
+                                    Issue to Requester
+                                  </button>
+                                </div>
+                              ) : (
+                                <div className="text-[10px] text-slate-500">All issued. Waiting for completion.</div>
+                              )}
+                              {pr.issuedAt && (
+                                <div className="text-[9px] text-slate-500">Last issue: {fmtDate(pr.issuedAt)} {pr.issuedBy ? `by ${pr.issuedBy}` : ''}</div>
+                              )}
+                            </div>
+                          );
+                        })()}
+                        {pr.status === 'COMPLETED' && (
                           <div className="text-[11px] text-slate-600 space-y-0.5">
                             {pr.issuedBy && <div><span className="text-[9px] text-slate-400 uppercase">Issued by:</span> {pr.issuedBy}</div>}
                             {pr.issuedAt && <div><span className="text-[9px] text-slate-400 uppercase">Issued:</span> {fmtDate(pr.issuedAt)}</div>}

@@ -942,6 +942,123 @@ router.put('/:id/issue', asyncHandler(async (req: AuthRequest, res: Response) =>
     });
 }));
 
+// PUT /:id/issue-to-requester — after GRN arrives, store hands off the purchased qty to the original requester.
+// Only valid in RECEIVED / PARTIAL_RECEIVED state. Increments issuedQty additively, decrements stock,
+// and flips status → COMPLETED when everything has been delivered.
+router.put('/:id/issue-to-requester', asyncHandler(async (req: AuthRequest, res: Response) => {
+    const user = req.user!;
+    if (!['ADMIN', 'MANAGER'].includes(user.role)) {
+      return res.status(403).json({ error: 'Only ADMIN or MANAGER can issue from store' });
+    }
+
+    const pr = await prisma.purchaseRequisition.findUnique({ where: { id: req.params.id } });
+    if (!pr) return res.status(404).json({ error: 'Requisition not found' });
+    if (!['RECEIVED', 'PARTIAL_RECEIVED'].includes(pr.status)) {
+      return res.status(400).json({ error: `Can only issue-to-requester from RECEIVED / PARTIAL_RECEIVED (current: ${pr.status})` });
+    }
+
+    const rawQty = req.body.issueNowQty;
+    const issueNow = typeof rawQty === 'number' ? rawQty : parseFloat(rawQty);
+    const remaining = Math.round((pr.quantity - pr.issuedQty) * 1000) / 1000;
+    if (isNaN(issueNow) || issueNow <= 0 || issueNow > remaining) {
+      return res.status(400).json({ error: `Invalid qty: must be > 0 and ≤ ${remaining} ${pr.unit}` });
+    }
+
+    if (!pr.inventoryItemId) {
+      return res.status(400).json({ error: 'Indent has no linked inventory item — cannot decrement stock. Issue manually.' });
+    }
+
+    try {
+      await prisma.$transaction(async (tx) => {
+        const item = await tx.inventoryItem.findUnique({
+          where: { id: pr.inventoryItemId! },
+          select: { id: true, currentStock: true, avgCost: true, unit: true, name: true },
+        });
+        if (!item) throw new Error('Inventory item not found');
+        if (item.currentStock < issueNow) {
+          throw new Error(`Insufficient stock: available ${item.currentStock} ${item.unit}, requested ${issueNow} ${item.unit}`);
+        }
+
+        await tx.inventoryTransaction.create({
+          data: {
+            itemId: pr.inventoryItemId!,
+            type: 'OUT',
+            quantity: issueNow,
+            reference: `INDENT-${pr.reqNo}`,
+            department: pr.department || 'Production',
+            issuedTo: pr.requestedByPerson || pr.requestedBy,
+            remarks: `Indent #${pr.reqNo}: post-GRN issue to requester`,
+            userId: user.id,
+          },
+        });
+
+        const defaultWh = await tx.warehouse.findFirst({
+          where: { isActive: true },
+          orderBy: { createdAt: 'asc' },
+          select: { id: true },
+        });
+        if (defaultWh) {
+          await tx.stockMovement.create({
+            data: {
+              itemId: pr.inventoryItemId!,
+              movementType: 'STORE_ISSUE',
+              direction: 'OUT',
+              quantity: issueNow,
+              unit: item.unit,
+              costRate: item.avgCost,
+              totalValue: Math.round(issueNow * item.avgCost * 100) / 100,
+              warehouseId: defaultWh.id,
+              refType: 'INDENT',
+              refId: pr.id,
+              refNo: `INDENT-${pr.reqNo}`,
+              narration: `Post-GRN issue: ${pr.title} → ${pr.requestedByPerson || pr.requestedBy}`,
+              userId: user.id,
+            },
+          });
+
+          const sl = await tx.stockLevel.findFirst({
+            where: { itemId: pr.inventoryItemId!, warehouseId: defaultWh.id, binId: null, batchId: null },
+          });
+          if (sl) {
+            await tx.stockLevel.update({
+              where: { id: sl.id },
+              data: { quantity: { decrement: issueNow } },
+            });
+          }
+        }
+
+        await tx.inventoryItem.update({
+          where: { id: pr.inventoryItemId! },
+          data: {
+            currentStock: { decrement: issueNow },
+            totalValue: { decrement: Math.round(issueNow * item.avgCost * 100) / 100 },
+          },
+        });
+      });
+    } catch (txErr: unknown) {
+      const msg = txErr instanceof Error ? txErr.message : 'Stock issue failed';
+      if (msg.includes('Insufficient stock') || msg.includes('not found')) {
+        return res.status(400).json({ error: msg });
+      }
+      throw txErr;
+    }
+
+    const newIssuedQty = Math.round((pr.issuedQty + issueNow) * 1000) / 1000;
+    const newStatus = newIssuedQty >= pr.quantity ? 'COMPLETED' : pr.status; // stays RECEIVED/PARTIAL_RECEIVED until fully delivered
+
+    const updated = await prisma.purchaseRequisition.update({
+      where: { id: req.params.id },
+      data: {
+        issuedQty: newIssuedQty,
+        issuedBy: user.name || user.email,
+        issuedAt: new Date(),
+        status: newStatus,
+      },
+    });
+
+    res.json({ requisition: updated, issuedNow: issueNow, totalIssued: newIssuedQty, status: newStatus });
+}));
+
 // PUT /:id — update requisition
 router.put('/:id', asyncHandler(async (req: AuthRequest, res: Response) => {
     const b = req.body;

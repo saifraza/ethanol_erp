@@ -270,6 +270,7 @@ router.get('/', asyncHandler(async (req: AuthRequest, res: Response) => {
         lines: true,
         grns: { select: { id: true, status: true } },
         vendorInvoices: { select: { id: true, status: true, totalAmount: true, payments: { select: { amount: true, tdsDeducted: true } } } },
+        requisition: { select: { id: true, reqNo: true, title: true } },
       },
       orderBy: [{ poNo: 'desc' }],
       skip: (page - 1) * limit,

@@ -83,6 +83,8 @@ interface PurchaseOrder {
   quotationDate?: string | null;
   projectName?: string | null;
   projectPurchaseId?: string | null;
+  requisitionId?: string | null;
+  requisition?: { id: string; reqNo: number; title: string } | null;
 }
 
 interface APIResponse {
@@ -1339,6 +1341,16 @@ const PurchaseOrders: React.FC = () => {
                       <button onClick={() => setSelectedPOId(selectedPOId === po.id ? null : po.id)} className="font-bold text-blue-700 hover:underline">PO-{po.poNo}</button>
                       <span className={`ml-1.5 text-[8px] font-bold uppercase px-1 py-0.5 border ${ts.badge}`}>{ts.label}</span>
                       {po.dealType === 'OPEN' && <span className="ml-1 text-[8px] font-bold uppercase px-1 py-0.5 border border-green-300 bg-green-50 text-green-700">OPEN</span>}
+                      {po.requisition && (
+                        <a
+                          href={`/inventory/store-indents`}
+                          title={`From Indent #${po.requisition.reqNo}: ${po.requisition.title}`}
+                          onClick={(e) => e.stopPropagation()}
+                          className="ml-1 text-[8px] font-bold uppercase px-1 py-0.5 border border-teal-300 bg-teal-50 text-teal-700 hover:bg-teal-100"
+                        >
+                          IND#{po.requisition.reqNo}
+                        </a>
+                      )}
                     </td>
                     <td className="px-3 py-1.5 text-xs border-r border-slate-100">{po.vendor?.name || 'Unknown'}</td>
                     <td className="px-3 py-1.5 text-xs border-r border-slate-100">

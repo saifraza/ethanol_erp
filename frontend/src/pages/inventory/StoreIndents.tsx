@@ -32,6 +32,8 @@ interface Stats {
   APPROVED: number;
   ISSUED: number;
   PO_PENDING: number;
+  RECEIVED: number;
+  PARTIAL_RECEIVED: number;
 }
 
 interface StockCheck {
@@ -60,7 +62,7 @@ interface IssueResult {
   autoPO: AutoPOResult | null;
 }
 
-const STATUS_TABS = ['ALL', 'DRAFT', 'SUBMITTED', 'APPROVED', 'PO_PENDING', 'COMPLETED'] as const;
+const STATUS_TABS = ['ALL', 'DRAFT', 'SUBMITTED', 'APPROVED', 'PO_PENDING', 'PARTIAL_RECEIVED', 'RECEIVED', 'COMPLETED'] as const;
 
 const urgencyStyle: Record<string, string> = {
   ROUTINE: 'border-slate-400 text-slate-700 bg-slate-50',
@@ -76,13 +78,15 @@ const statusStyle: Record<string, string> = {
   REJECTED: 'border-red-500 text-red-700 bg-red-50',
   PO_PENDING: 'border-purple-500 text-purple-700 bg-purple-50',
   ORDERED: 'border-indigo-500 text-indigo-700 bg-indigo-50',
+  PARTIAL_RECEIVED: 'border-amber-500 text-amber-700 bg-amber-50',
   RECEIVED: 'border-teal-500 text-teal-700 bg-teal-50',
   COMPLETED: 'border-green-600 text-green-700 bg-green-50',
 };
 
 export default function StoreIndents() {
   const [data, setData] = useState<PR[]>([]);
-  const [stats, setStats] = useState<Stats>({ DRAFT: 0, SUBMITTED: 0, APPROVED: 0, ISSUED: 0, PO_PENDING: 0 });
+  const [stats, setStats] = useState<Stats>({ DRAFT: 0, SUBMITTED: 0, APPROVED: 0, ISSUED: 0, PO_PENDING: 0, RECEIVED: 0, PARTIAL_RECEIVED: 0 });
+  const [issueToReqQty, setIssueToReqQty] = useState<number>(0);
   const [loading, setLoading] = useState(true);
   const [activeTab, setActiveTab] = useState<string>('ALL');
   const [expandedId, setExpandedId] = useState<string | null>(null);
@@ -111,6 +115,8 @@ export default function StoreIndents() {
         APPROVED: bs.APPROVED || 0,
         ISSUED: bs.ISSUED || 0,
         PO_PENDING: bs.PO_PENDING || 0,
+        RECEIVED: bs.RECEIVED || 0,
+        PARTIAL_RECEIVED: bs.PARTIAL_RECEIVED || 0,
       });
     } catch (err) {
       console.error('Failed to fetch indents:', err);
@@ -139,14 +145,20 @@ export default function StoreIndents() {
     if (expandedId === id) {
       setExpandedId(null);
       setStockCheck(null);
+      setIssueToReqQty(0);
       return;
     }
     setExpandedId(id);
     setStockCheck(null);
+    setIssueToReqQty(0);
     if (['DRAFT', 'SUBMITTED', 'APPROVED'].includes(status)) {
       fetchStockCheck(id);
     }
-  }, [expandedId, fetchStockCheck]);
+    if (['RECEIVED', 'PARTIAL_RECEIVED'].includes(status)) {
+      const row = data.find(r => r.id === id);
+      if (row) setIssueToReqQty(Math.max(0, row.quantity - row.issuedQty));
+    }
+  }, [expandedId, fetchStockCheck, data]);
 
   const handleSubmit = async (id: string) => {
     setActionLoading(true);
@@ -246,6 +258,19 @@ export default function StoreIndents() {
     }
   };
 
+  const handleIssueToRequester = async (id: string) => {
+    if (issueToReqQty <= 0) return;
+    setActionLoading(true);
+    try {
+      await api.put(`/purchase-requisition/${id}/issue-to-requester`, { issueNowQty: issueToReqQty });
+      await fetchData();
+      setExpandedId(null);
+      setIssueToReqQty(0);
+    } finally {
+      setActionLoading(false);
+    }
+  };
+
   const fmtDate = (d: string) => new Date(d).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: '2-digit' });
 
   if (loading) return (
@@ -267,7 +292,7 @@ export default function StoreIndents() {
         </div>
 
         {/* KPI Strip */}
-        <div className="grid grid-cols-2 md:grid-cols-5 border-x border-b border-slate-300 -mx-3 md:-mx-6">
+        <div className="grid grid-cols-2 md:grid-cols-6 border-x border-b border-slate-300 -mx-3 md:-mx-6">
           <div className="bg-white px-4 py-3 border-r border-b md:border-b-0 border-slate-300 border-l-4 border-l-slate-400">
             <div className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Draft</div>
             <div className="text-xl font-bold text-slate-800 mt-1 font-mono tabular-nums">{stats.DRAFT}</div>
@@ -280,13 +305,17 @@ export default function StoreIndents() {
             <div className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Approved</div>
             <div className="text-xl font-bold text-slate-800 mt-1 font-mono tabular-nums">{stats.APPROVED}</div>
           </div>
-          <div className="bg-white px-4 py-3 border-r border-slate-300 border-l-4 border-l-green-500">
-            <div className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Issued</div>
-            <div className="text-xl font-bold text-slate-800 mt-1 font-mono tabular-nums">{stats.ISSUED}</div>
-          </div>
-          <div className="bg-white px-4 py-3 border-l-4 border-l-purple-500">
+          <div className="bg-white px-4 py-3 border-r border-b md:border-b-0 border-slate-300 border-l-4 border-l-purple-500">
             <div className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">PO Pending</div>
             <div className="text-xl font-bold text-slate-800 mt-1 font-mono tabular-nums">{stats.PO_PENDING}</div>
+          </div>
+          <div className="bg-white px-4 py-3 border-r border-slate-300 border-l-4 border-l-teal-500">
+            <div className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Ready to Issue</div>
+            <div className="text-xl font-bold text-slate-800 mt-1 font-mono tabular-nums">{stats.RECEIVED + stats.PARTIAL_RECEIVED}</div>
+          </div>
+          <div className="bg-white px-4 py-3 border-l-4 border-l-green-500">
+            <div className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Issued</div>
+            <div className="text-xl font-bold text-slate-800 mt-1 font-mono tabular-nums">{stats.ISSUED}</div>
           </div>
         </div>
 
@@ -520,8 +549,67 @@ export default function StoreIndents() {
                             </button>
                           )}
 
-                          {/* COMPLETED / RECEIVED — Read Only */}
-                          {(row.status === 'COMPLETED' || row.status === 'RECEIVED') && (
+                          {/* RECEIVED / PARTIAL_RECEIVED — material is in store, issue to requester */}
+                          {(row.status === 'RECEIVED' || row.status === 'PARTIAL_RECEIVED') && (() => {
+                            const remaining = Math.max(0, Math.round((row.quantity - row.issuedQty) * 1000) / 1000);
+                            return (
+                              <div className="border border-teal-300 bg-teal-50/40 p-3 space-y-2">
+                                <div className="flex items-center justify-between">
+                                  <div className="text-[10px] font-bold text-teal-700 uppercase tracking-widest">Material in Store — Issue to Requester</div>
+                                  <span className={`text-[9px] font-bold uppercase px-1.5 py-0.5 border ${statusStyle[row.status]}`}>{row.status.replace('_', ' ')}</span>
+                                </div>
+                                <div className="grid grid-cols-3 gap-4 text-xs">
+                                  <div>
+                                    <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest block">Total Qty</span>
+                                    <span className="font-mono tabular-nums text-sm font-bold text-slate-800">{row.quantity} {row.unit}</span>
+                                  </div>
+                                  <div>
+                                    <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest block">Already Issued</span>
+                                    <span className="font-mono tabular-nums text-sm font-bold text-slate-800">{row.issuedQty} {row.unit}</span>
+                                  </div>
+                                  <div>
+                                    <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest block">Remaining</span>
+                                    <span className={`font-mono tabular-nums text-sm font-bold ${remaining > 0 ? 'text-teal-700' : 'text-slate-500'}`}>{remaining} {row.unit}</span>
+                                  </div>
+                                </div>
+                                {remaining > 0 && (
+                                  <>
+                                    <div className="flex items-end gap-3">
+                                      <div>
+                                        <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-0.5 block">Issue Now to {row.requestedByPerson || row.requestedBy}</label>
+                                        <input
+                                          type="number"
+                                          min={0}
+                                          max={remaining}
+                                          value={issueToReqQty}
+                                          onChange={(e) => setIssueToReqQty(Math.max(0, Math.min(Number(e.target.value), remaining)))}
+                                          onClick={(e) => e.stopPropagation()}
+                                          className="border border-slate-300 px-2.5 py-1.5 text-xs focus:outline-none focus:ring-1 focus:ring-slate-400 w-28 font-mono tabular-nums"
+                                        />
+                                      </div>
+                                      <div className="text-xs text-slate-500 pb-1.5">
+                                        {issueToReqQty > 0 && <span className="text-teal-700 font-medium">{issueToReqQty} {row.unit} out of store</span>}
+                                      </div>
+                                    </div>
+                                    <div className="flex gap-2 pt-1">
+                                      <button onClick={(e) => { e.stopPropagation(); handleIssueToRequester(row.id); }} disabled={actionLoading || issueToReqQty <= 0}
+                                        className="px-3 py-1 bg-teal-600 text-white text-[11px] font-medium hover:bg-teal-700 disabled:opacity-50">
+                                        Issue to Requester
+                                      </button>
+                                    </div>
+                                  </>
+                                )}
+                                {row.issuedAt && (
+                                  <div className="text-[10px] text-slate-500">
+                                    Last issue: {fmtDate(row.issuedAt)} by {row.issuedBy || '--'}
+                                  </div>
+                                )}
+                              </div>
+                            );
+                          })()}
+
+                          {/* COMPLETED — Read Only */}
+                          {row.status === 'COMPLETED' && (
                             <div className="flex gap-6 text-xs text-slate-600">
                               {row.issuedQty > 0 && <div><span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Issued:</span> {row.issuedQty} {row.unit}</div>}
                               {row.issuedBy && <div><span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Issued By:</span> {row.issuedBy}</div>}
