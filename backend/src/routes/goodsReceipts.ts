@@ -6,6 +6,7 @@ import { ValidationError } from '../shared/errors';
 import { nextDocNo } from '../utils/docSequence';
 import { getCompanyForPdf } from '../utils/pdfCompanyHelper';
 import { onStockMovement } from '../services/autoJournal';
+import { notify } from '../services/notify';
 import multer from 'multer';
 import path from 'path';
 import fs from 'fs';
@@ -124,6 +125,90 @@ async function syncGrnToInventory(
         companyId: companyId || undefined,
       }).catch(() => {});
     });
+  }
+}
+
+// ─── Helper: after GRN confirms, close the loop back to the originating indent ───
+// If the PO was auto-created from a PurchaseRequisition, recompute how much of the
+// indent's purchase quantity has now arrived, flip PR.status → PARTIAL_RECEIVED / RECEIVED,
+// and notify the original requester. Never throws — notification failure shouldn't
+// roll back an already-committed GRN.
+async function syncRequisitionAfterGrnConfirm(grnId: string): Promise<void> {
+  try {
+    const grn = await prisma.goodsReceipt.findUnique({
+      where: { id: grnId },
+      select: { poId: true },
+    });
+    if (!grn?.poId) return;
+
+    const po = await prisma.purchaseOrder.findUnique({
+      where: { id: grn.poId },
+      select: { requisitionId: true },
+    });
+    if (!po?.requisitionId) return;
+
+    const pr = await prisma.purchaseRequisition.findUnique({
+      where: { id: po.requisitionId },
+      select: {
+        id: true, reqNo: true, title: true, itemName: true, unit: true,
+        purchaseQty: true, userId: true, inventoryItemId: true, status: true,
+      },
+    });
+    if (!pr || pr.purchaseQty <= 0) return;
+
+    // Sum accepted quantity across every confirmed GRN line belonging to any PO tied to this PR.
+    // Filter by inventoryItemId when the PR is linked to a specific item (narrows out unrelated lines
+    // on multi-item POs). If PR is a free-text indent (no inventoryItemId), trust the PO→PR link.
+    const linkedPos = await prisma.purchaseOrder.findMany({
+      where: { requisitionId: pr.id },
+      select: { id: true },
+    });
+    const poIds = linkedPos.map(p => p.id);
+    if (poIds.length === 0) return;
+
+    const agg = await prisma.gRNLine.aggregate({
+      _sum: { acceptedQty: true },
+      where: {
+        grn: { poId: { in: poIds }, status: 'CONFIRMED' },
+        ...(pr.inventoryItemId ? { inventoryItemId: pr.inventoryItemId } : {}),
+      },
+    });
+    const totalReceived = agg._sum.acceptedQty || 0;
+
+    let newStatus = pr.status;
+    if (totalReceived >= pr.purchaseQty) {
+      newStatus = 'RECEIVED';
+    } else if (totalReceived > 0) {
+      newStatus = 'PARTIAL_RECEIVED';
+    }
+
+    if (newStatus === pr.status) return; // no change
+
+    await prisma.purchaseRequisition.update({
+      where: { id: pr.id },
+      data: { status: newStatus },
+    });
+
+    const title = newStatus === 'RECEIVED'
+      ? `Indent #${pr.reqNo} — material received in store`
+      : `Indent #${pr.reqNo} — partial receipt in store`;
+    const message = newStatus === 'RECEIVED'
+      ? `${pr.itemName} (${pr.purchaseQty} ${pr.unit}) has fully arrived. Store can now issue to you.`
+      : `Partial receipt: ${totalReceived}/${pr.purchaseQty} ${pr.unit} of ${pr.itemName} has arrived in store.`;
+
+    await notify({
+      category: 'INFO',
+      severity: 'INFO',
+      title,
+      message,
+      link: `/inventory/store-indents`,
+      userId: pr.userId,
+      entityType: 'PurchaseRequisition',
+      entityId: pr.id,
+      dedupeKey: `pr-receipt:${pr.id}:${newStatus}`,
+    });
+  } catch (err) {
+    console.error('[GRN→PR sync] failed:', err);
   }
 }
 
@@ -880,6 +965,10 @@ router.put('/:id/status', asyncHandler(async (req: AuthRequest, res: Response) =
         await prisma.goodsReceipt.update({ where: { id: updated.id }, data: { status: 'DRAFT' } });
         return res.status(500).json({ error: `GRN confirmed but inventory sync failed. Reverted to DRAFT. Error: ${syncErr instanceof Error ? syncErr.message : 'Unknown'}` });
       }
+
+      // Close the loop back to the originating indent (if any). Fire-and-forget —
+      // never block GRN confirm on notification or PR status update.
+      syncRequisitionAfterGrnConfirm(updated.id).catch(() => {});
     }
 
     res.json(updated);
