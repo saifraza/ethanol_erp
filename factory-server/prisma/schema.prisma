@@ -109,6 +109,8 @@ model Weighment {
   // Camera snapshots (comma-separated relative paths)
   grossPhotos   String?  // e.g. "{id}/gross_cam1.jpg,{id}/gross_cam2.jpg"
   tarePhotos    String?
+  grossVideoPaths String? // video capture WIP (columns exist in DB from uncommitted work)
+  tareVideoPaths  String?
   // Company (multi-tenant: which company this truck belongs to)
   companyId     String?  // Cloud Company UUID — set at gate entry
   companyCode   String?  // "MSPIL", "SC-A" — for display

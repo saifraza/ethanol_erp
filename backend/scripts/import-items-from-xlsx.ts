@@ -44,15 +44,20 @@ async function main() {
     // Scan first 10 rows looking for a header
     for (let r = 1; r <= Math.min(10, ws.rowCount); r++) {
       const row = ws.getRow(r);
-      const values = (row.values as unknown[]).slice(1).map(v => String(v ?? '').trim().toLowerCase());
+      const rawValues = Array.isArray(row.values) ? row.values.slice(1) : [];
+      const values: string[] = rawValues.map(v => {
+        if (v == null) return '';
+        if (typeof v === 'object' && v !== null && 'text' in (v as object)) return String((v as { text?: string }).text ?? '').trim().toLowerCase();
+        return String(v).trim().toLowerCase();
+      });
       for (let c = 0; c < values.length; c++) {
-        if (NAME_HINTS.some(h => values[c] === h || values[c].includes(h))) {
-          // Require that another column looks like a code, or that this is the widest textual col
-          const hasCode = values.some((v, idx) => idx !== c && CODE_HINTS.some(h => v.includes(h)));
-          const textCols = values.filter(v => v.length > 0).length;
+        const cell = values[c] ?? '';
+        if (NAME_HINTS.some(h => cell === h || cell.includes(h))) {
+          const hasCode = values.some((v, idx) => idx !== c && CODE_HINTS.some(h => (v ?? '').includes(h)));
+          const textCols = values.filter(v => (v ?? '').length > 0).length;
           if (hasCode || textCols >= 2) {
             chosenSheet = ws;
-            nameColIdx = c + 1; // 1-indexed in exceljs row.values
+            nameColIdx = c + 1;
             headerRow = r;
             break;
           }

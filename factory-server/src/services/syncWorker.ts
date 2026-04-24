@@ -165,11 +165,29 @@ export async function pushToCloud(): Promise<{ synced: number; failed: number }>
         for (const w of filtered) {
           // Cloud payload sends id=localId, so processedWbIds contains localIds
           if (useLegacyBatchAck || processedIds.has(w.localId) || processedIds.has(w.id)) {
-            await prisma.weighment.update({
-              where: { id: w.id },
+            // CRITICAL: conditional update. Only mark synced if the row hasn't
+            // changed since we read it. If operator did a 2nd weighment during
+            // the HTTP round-trip (race: push starts on FIRST_DONE, tare fires,
+            // push finishes), updateMany matches 0 rows → cloudSynced stays
+            // false → next sync cycle re-pushes the now-COMPLETE state.
+            // Incident 2026-04-16: tickets 529, 531 stuck at FIRST_DONE in cloud
+            // because this was an unconditional update.
+            const res = await prisma.weighment.updateMany({
+              where: {
+                id: w.id,
+                status: w.status,
+                grossWeight: w.grossWeight,
+                tareWeight: w.tareWeight,
+              },
               data: { cloudSynced: true, cloudSyncedAt: new Date(), syncAttempts: w.syncAttempts + 1, cloudError: null },
             });
-            synced++;
+            if (res.count > 0) {
+              synced++;
+            } else {
+              // Row changed during push — leave cloudSynced alone so next cycle re-pushes fresh state
+              console.warn(`[SYNC] t=${w.ticketNo} ${w.vehicleNo} state changed during push — will retry next cycle`);
+              failed++;
+            }
           } else {
             await prisma.weighment.update({
               where: { id: w.id },
