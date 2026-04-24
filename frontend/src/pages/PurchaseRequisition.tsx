@@ -821,10 +821,12 @@ export default function PurchaseRequisition() {
                         {pr.rejectionReason && <div className="text-[11px] text-red-700 pt-1 border-t border-slate-100"><span className="text-[9px] text-slate-400 uppercase">Rejected:</span> {pr.rejectionReason}</div>}
                       </div>
 
-                      {/* ── MIDDLE: Store Actions ── */}
+                      {/* ── MIDDLE: Store Actions (goods) / Procurement Actions (service) ── */}
                       <div className="bg-white border border-slate-200 p-3 space-y-2">
                         <div className="flex items-center justify-between">
-                          <div className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">Store Actions</div>
+                          <div className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">
+                            {pr.inventoryItemId ? 'Store Actions' : 'Procurement Actions'}
+                          </div>
                           {['DRAFT', 'SUBMITTED', 'APPROVED'].includes(pr.status) && (
                             <button onClick={() => { setRejectingId(pr.id); setRejectReason(''); }} className="px-2 py-0.5 bg-white border border-red-300 text-red-600 text-[10px] font-medium hover:bg-red-50">Reject</button>
                           )}
@@ -862,10 +864,9 @@ export default function PurchaseRequisition() {
                             ) : pr.inventoryItemId ? (
                               <div className="text-[11px] text-slate-400">Checking stock…</div>
                             ) : (
-                              <div className="flex items-center justify-between">
-                                <div className="text-[11px] text-slate-500">Service / one-off — no stock to check</div>
+                              <div className="flex justify-end">
                                 <button onClick={() => handleFullPurchase(pr.id)} disabled={actionLoading} className="px-2 py-1 bg-purple-600 text-white text-[10px] font-medium hover:bg-purple-700 disabled:opacity-50">
-                                  Approve & Purchase
+                                  {pr.status !== 'APPROVED' ? 'Approve & Request Quote' : 'Send to Purchase'}
                                 </button>
                               </div>
                             )}
