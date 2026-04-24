@@ -33,7 +33,7 @@ function buildDigestAuth(method: string, uri: string, challenge: Record<string, 
 }
 
 /** Fetch JPEG snapshot from IP camera using digest auth */
-async function fetchSnapshot(ip: string): Promise<Buffer | null> {
+export async function fetchSnapshot(ip: string): Promise<Buffer | null> {
   const url = `http://${ip}${SNAPSHOT_PATH}`;
   try {
     // Step 1: Get 401 challenge

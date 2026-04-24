@@ -12,6 +12,7 @@ import { captureSnapshots } from '../services/cameraCapture';
 import { getMasterData } from '../services/masterDataCache';
 import { enforceWeighmentRules, getNumericRule, getRuleValue } from '../services/ruleEngine';
 import { registerPC, fetchLiveWeight, getLastScaleZeroAt } from '../services/pcMonitor';
+import { setActiveSession, clearActiveSession } from '../services/activeScaleSession';
 
 const router = Router();
 
@@ -694,6 +695,20 @@ router.post('/:id/gross', requireAuth, requireRole('GROSS_WB', 'ADMIN'), asyncHa
 
   const updated = await prisma.weighment.findUnique({ where: { id } });
 
+  // Tell training capture system which weighment is on the scale right now
+  if (updated) {
+    setActiveSession({
+      weighmentId: id,
+      vehicleNo: updated.vehicleNo,
+      ticketNo: updated.ticketNo,
+      direction: updated.direction,
+      phase: 'gross',
+      materialName: updated.materialName,
+      materialCategory: updated.materialCategory,
+    });
+    if (updated.status === 'COMPLETE') clearActiveSession();
+  }
+
   // Fire-and-forget: capture camera snapshots
   captureSnapshots(id, 'gross').then(paths => {
     if (paths.length > 0) {
@@ -788,6 +803,20 @@ router.post('/:id/tare', requireAuth, requireRole('TARE_WB', 'ADMIN'), asyncHand
   }
 
   const updated = await prisma.weighment.findUnique({ where: { id } });
+
+  // Tell training capture system which weighment is on the scale right now
+  if (updated) {
+    setActiveSession({
+      weighmentId: id,
+      vehicleNo: updated.vehicleNo,
+      ticketNo: updated.ticketNo,
+      direction: updated.direction,
+      phase: 'tare',
+      materialName: updated.materialName,
+      materialCategory: updated.materialCategory,
+    });
+    if (updated.status === 'COMPLETE') clearActiveSession();
+  }
 
   // Fire-and-forget: capture camera snapshots
   captureSnapshots(id, 'tare').then(paths => {

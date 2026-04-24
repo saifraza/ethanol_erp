@@ -16,6 +16,7 @@ import { startPCMonitor, getAllPCStatus } from './services/pcMonitor';
 import { getCameraStatus } from './services/cameraCapture';
 import { startSyncWorker, getSyncWorkerStatus } from './services/syncWorker';
 import { initMasterDataCache, getCacheStats } from './services/masterDataCache';
+import { startWeightTriggeredCapture } from './services/weightTriggeredCapture';
 
 const app = express();
 
@@ -246,6 +247,9 @@ app.listen(config.port, '0.0.0.0', () => {
 
   // Initialize in-memory master data cache (load from disk, then 5s cloud sync)
   initMasterDataCache().catch(err => console.error('[CACHE] Init failed:', err));
+
+  // Start weight-triggered video/photo capture for ML training corpus
+  startWeightTriggeredCapture();
 
   // Send factory server's own heartbeat to cloud
   sendHeartbeatToCloud();
