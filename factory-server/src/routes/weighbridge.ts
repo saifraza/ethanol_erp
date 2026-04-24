@@ -2,6 +2,7 @@ import { Router, Request, Response } from 'express';
 import { randomUUID } from 'crypto';
 import fs from 'fs';
 import path from 'path';
+import QRCode from 'qrcode';
 import prisma from '../prisma';
 import { getCloudPrisma } from '../cloudPrisma';
 import { asyncHandler, requireWbKey, requireWbKeyOrAuth, requireAuth, requireRole, AuthRequest } from '../middleware';
@@ -1053,10 +1054,17 @@ function row(label: string, value: string | number | null | undefined): string {
   return `<div class="row"><span class="label">${label}:</span><span class="value">${esc(value)}</span></div>`;
 }
 
-/** QR code img tag using external API */
-function qrImg(data: string): string {
-  const encoded = encodeURIComponent(data);
-  return `<div class="qr"><img src="https://api.qrserver.com/v1/create-qr-code/?size=120x120&data=${encoded}" alt="QR"></div>`;
+/** QR code img tag — generated INLINE as base64 PNG data URI. No network calls.
+ *  The previous external `api.qrserver.com` URL broke all gate passes during
+ *  factory internet outages (violates our "factory works offline" rule). */
+async function qrImg(data: string): Promise<string> {
+  try {
+    const dataUri = await QRCode.toDataURL(data, { width: 120, margin: 0, errorCorrectionLevel: 'M' });
+    return `<div class="qr"><img src="${dataUri}" alt="QR"></div>`;
+  } catch (err) {
+    console.error('[QR] generation failed:', err instanceof Error ? err.message : err);
+    return `<div class="qr" style="color:#900;font-size:9px;">QR FAILED — ticket ID: ${esc(data)}</div>`;
+  }
 }
 
 /** Format weight for display */
@@ -1089,7 +1097,7 @@ ${row('Shift', w.shift)}
 ${row('Gate Entry', fmtIST(w.gateEntryAt))}
 ${row('Operator', w.operatorName)}
 ${w.remarks ? row('Remarks', w.remarks) : ''}
-${qrImg(w.localId)}
+${await qrImg(w.localId)}
 `;
 
   res.setHeader('Content-Type', 'text/html; charset=utf-8');
@@ -1120,7 +1128,7 @@ ${row('PO No', w.poNumber)}
 <div class="big" style="font-size:20px;">${fmtKg(firstWeight)}</div>
 ${row('Weighed At', fmtIST(firstTime))}
 ${row('Source', w.weightSource)}
-${qrImg(w.localId)}
+${await qrImg(w.localId)}
 `;
 
   res.setHeader('Content-Type', 'text/html; charset=utf-8');
@@ -1187,7 +1195,7 @@ ${row('Gross Time', fmtIST(w.grossTime))}
 ${row('Tare Time', fmtIST(w.tareTime))}
 ${labSection}
 ${spotSection}
-${qrImg(w.localId)}
+${await qrImg(w.localId)}
 `;
 
   res.setHeader('Content-Type', 'text/html; charset=utf-8');

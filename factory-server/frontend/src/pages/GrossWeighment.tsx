@@ -720,8 +720,10 @@ export default function GrossWeighment() {
           </thead>
           <tbody>
             {pendingList.map((w, i) => (
-              <tr key={w.id} onClick={() => selectPending(w)}
-                className={`border-b border-slate-100 hover:bg-blue-50/60 cursor-pointer ${i % 2 ? 'bg-slate-50/70' : ''} ${scannedRecord?.id === w.id ? 'bg-blue-100' : ''}`}>
+              // Row is display-only — operator MUST scan QR to select. Bypass removed
+              // 2026-04-24 after operators were clicking rows to skip QR scan (audit gap).
+              <tr key={w.id}
+                className={`border-b border-slate-100 ${i % 2 ? 'bg-slate-50/70' : ''} ${scannedRecord?.id === w.id ? 'bg-blue-100' : ''}`}>
                 <td className="px-3 py-1.5 text-slate-500 font-mono border-r border-slate-100">{w.gateEntryNo || w.localId.substring(0, 8)}</td>
                 <td className="px-3 py-1.5 text-slate-800 font-mono font-bold border-r border-slate-100">{w.vehicleNo}</td>
                 <td className="px-3 py-1.5 border-r border-slate-100">
