@@ -998,7 +998,7 @@ export default function PurchaseRequisition() {
                           <tr className="bg-slate-50 border-b border-slate-200 text-slate-600">
                             <th className="text-left px-3 py-1.5 font-semibold text-[10px] uppercase tracking-widest">Vendor</th>
                             <th className="text-left px-3 py-1.5 font-semibold text-[10px] uppercase tracking-widest">Contact</th>
-                            <th className="text-left px-3 py-1.5 font-semibold text-[10px] uppercase tracking-widest">Requested</th>
+                            <th className="text-left px-3 py-1.5 font-semibold text-[10px] uppercase tracking-widest">Status</th>
                             <th className="text-right px-3 py-1.5 font-semibold text-[10px] uppercase tracking-widest">Rate (Rs)</th>
                             <th className="text-right px-3 py-1.5 font-semibold text-[10px] uppercase tracking-widest">Total (Rs)</th>
                             <th className="text-left px-3 py-1.5 font-semibold text-[10px] uppercase tracking-widest">Source</th>
@@ -1024,13 +1024,33 @@ export default function PurchaseRequisition() {
                                   {q.vendor.email || <span className="italic">no email</span>}
                                   {q.vendor.phone && <div>{q.vendor.phone}</div>}
                                 </td>
-                                <td className="px-3 py-1.5 text-slate-500 text-[10px]">
-                                  {q.quoteRequestedAt ? (
-                                    <>
-                                      <div>{fmtDate(q.quoteRequestedAt)}</div>
-                                      {q.quoteRequestedBy && <div className="text-[9px]">by {q.quoteRequestedBy}</div>}
-                                    </>
-                                  ) : <span className="italic">not requested</span>}
+                                <td className="px-3 py-1.5 text-[10px]">
+                                  {(() => {
+                                    const stage = q.isAwarded ? 'AWARDED'
+                                      : q.vendorRate != null ? 'RATE RECEIVED'
+                                      : q.quoteRequestedAt ? 'WAITING FOR RATE'
+                                      : 'PENDING RFQ';
+                                    const stageStyle: Record<string, string> = {
+                                      'PENDING RFQ': 'border-slate-400 bg-slate-50 text-slate-600',
+                                      'WAITING FOR RATE': 'border-amber-500 bg-amber-50 text-amber-700',
+                                      'RATE RECEIVED': 'border-blue-500 bg-blue-50 text-blue-700',
+                                      'AWARDED': 'border-green-600 bg-green-50 text-green-700',
+                                    };
+                                    return (
+                                      <div className="space-y-0.5">
+                                        <span className={`inline-block text-[9px] font-bold uppercase tracking-wide px-1.5 py-0.5 border ${stageStyle[stage]}`}>{stage}</span>
+                                        {q.quoteRequestedAt && (
+                                          <div className="text-slate-500">
+                                            <span className="text-slate-400">Sent </span>{fmtDate(q.quoteRequestedAt)}
+                                            {q.quoteRequestedBy && <span className="text-[9px] text-slate-400"> · {q.quoteRequestedBy}</span>}
+                                          </div>
+                                        )}
+                                        {q.quotedAt && q.vendorRate != null && (
+                                          <div className="text-slate-500"><span className="text-slate-400">Replied </span>{fmtDate(q.quotedAt)}</div>
+                                        )}
+                                      </div>
+                                    );
+                                  })()}
                                 </td>
                                 <td className="px-3 py-1.5 text-right">
                                   {q.vendorRate != null && !editing ? (
@@ -1041,7 +1061,6 @@ export default function PurchaseRequisition() {
                                       onChange={e => setQuoteInput(prev => ({ ...prev, [q.id]: { rate: e.target.value, remarks: prev[q.id]?.remarks || '' } }))}
                                       className="border border-slate-300 px-2 py-0.5 text-xs w-24 font-mono tabular-nums text-right" />
                                   )}
-                                  {q.quotedAt && <div className="text-[9px] text-slate-400">{fmtDate(q.quotedAt)}</div>}
                                 </td>
                                 <td className="px-3 py-1.5 text-right font-mono tabular-nums text-slate-800">
                                   {total > 0 ? total.toLocaleString('en-IN') : '—'}
