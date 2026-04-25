@@ -119,6 +119,8 @@ interface OutPayment {
   grnId?: string | null;
   invoiceFilePath?: string | null;
   invoiceAmount?: number | null;
+  invoiceNo?: number | null;
+  invoiceVendorInvNo?: string | null;
   tdsDeducted?: number;
   paymentStatus?: string;
   vendorEmail?: string | null;
@@ -564,31 +566,52 @@ export default function PaymentsOut() {
   }, [smartUploadEntries, vendors, matchExtractedToVendor]);
 
   // ── Save one entry → POST /vendor-invoices with lines[] ──
+  // Always saves, even when no GRN is picked yet. Cards with no GRN selection
+  // are saved with a single placeholder line (no grnId) and surface in the PO
+  // detail panel with a "Link GRN" button so accounts can reconcile later.
   const saveSmartEntry = useCallback(async (entry: SmartUploadEntry): Promise<{ ok: boolean; invoiceNo?: number; error?: string }> => {
     if (!entry.matchedVendor) return { ok: false, error: 'Vendor not matched' };
     const ext = entry.extracted || {};
-    const grns = (entry.unbilledGrns || []).filter(g => entry.selectedGrnIds?.includes(g.id));
-    if (grns.length === 0) return { ok: false, error: 'Pick at least one GRN' };
+    const pickedGrns = (entry.unbilledGrns || []).filter(g => entry.selectedGrnIds?.includes(g.id));
 
     // Derive default GST% from extraction, fall back to 18.
-    const taxable = Number(ext.taxable_amount) || grns.reduce((s, g) => s + g.totalAmount, 0);
+    const taxable = Number(ext.taxable_amount) || pickedGrns.reduce((s, g) => s + g.totalAmount, 0);
     const totalGst = Number(ext.total_gst) || 0;
     const gstPercent = taxable > 0 ? Math.round((totalGst / taxable) * 100) : 18;
     const supplyType = ext.supply_type === 'INTER_STATE' ? 'INTER_STATE' : 'INTRA_STATE';
 
-    // One line per selected GRN — qty + rate from the GRN, gst% from the bill.
-    const lines = grns.map(g => ({
-      grnId: g.id,
-      productName: g.lines?.[0]?.description || `GRN-${g.grnNo}`,
-      hsnCode: ext.items?.[0]?.hsn || null,
-      quantity: g.totalQty,
-      unit: g.lines?.[0]?.unit || 'KG',
-      rate: g.totalQty > 0 ? g.totalAmount / g.totalQty : 0,
-      gstPercent,
-    }));
+    let lines: Array<{ grnId: string | null; productName: string; hsnCode: string | null; quantity: number; unit: string; rate: number; gstPercent: number }>;
+    let poId: string | null;
 
-    // Use the first GRN's PO as the header poId — vendor PO is rolling per the team's flow.
-    const poId = grns[0].po?.id || grns[0].poId || null;
+    if (pickedGrns.length > 0) {
+      // Normal path — one line per selected GRN, qty/rate from the GRN.
+      lines = pickedGrns.map(g => ({
+        grnId: g.id,
+        productName: g.lines?.[0]?.description || `GRN-${g.grnNo}`,
+        hsnCode: ext.items?.[0]?.hsn || null,
+        quantity: g.totalQty,
+        unit: g.lines?.[0]?.unit || 'KG',
+        rate: g.totalQty > 0 ? g.totalAmount / g.totalQty : 0,
+        gstPercent,
+      }));
+      poId = pickedGrns[0].po?.id || pickedGrns[0].poId || null;
+    } else {
+      // No GRN selected — save a placeholder so accounts can find and link later.
+      // Infer poId from the vendor's open GRNs (rolling-PO pattern), else leave null.
+      poId = entry.unbilledGrns?.[0]?.po?.id || entry.unbilledGrns?.[0]?.poId || null;
+      const item0 = ext.items?.[0];
+      const qty = Number(item0?.qty) || 1;
+      const rate = Number(item0?.rate) || (qty > 0 ? taxable / qty : taxable) || 0;
+      lines = [{
+        grnId: null,
+        productName: item0?.description || `Bill ${ext.invoice_number || ''} (GRN to link)`,
+        hsnCode: item0?.hsn || null,
+        quantity: qty,
+        unit: item0?.unit || 'KG',
+        rate,
+        gstPercent,
+      }];
+    }
 
     try {
       const res = await api.post<{ invoiceNo: number }>('/vendor-invoices', {
@@ -613,8 +636,10 @@ export default function PaymentsOut() {
   }, []);
 
   // ── Save All → iterate sequentially so server transactions don't clash ──
+  // Saves every extracted entry that has a matched vendor — cards with no GRN
+  // ticked are saved as placeholders for later manual linking.
   const saveAllSmartEntries = useCallback(async () => {
-    const ready = smartUploadEntries.filter(e => e.status === 'extracted' && e.matchedVendor && (e.selectedGrnIds?.length || 0) > 0);
+    const ready = smartUploadEntries.filter(e => e.status === 'extracted' && e.matchedVendor);
     if (ready.length === 0) return;
     setSmartSavingAll(true);
     for (const entry of ready) {
@@ -1871,8 +1896,9 @@ export default function PaymentsOut() {
                                         </a>
                                         {(poDetail.vendorInvoices || []).filter((inv: any) => inv.filePath).map((inv: any) => (
                                           <a key={inv.id} href={`/uploads/${inv.filePath}`} target="_blank" rel="noopener noreferrer"
-                                            className="px-2 py-0.5 bg-blue-600 text-white text-[9px] font-bold uppercase hover:bg-blue-700 inline-flex items-center gap-1">
-                                            <FileText size={9} /> Invoice
+                                            className="px-2 py-0.5 bg-blue-600 text-white text-[9px] font-bold uppercase hover:bg-blue-700 inline-flex items-center gap-1"
+                                            title={`Booked as INV-${inv.invoiceNo}${inv.totalAmount ? ` · ${fmt(inv.totalAmount)}` : ''}`}>
+                                            <FileText size={9} /> {inv.vendorInvNo || `INV-${inv.invoiceNo}`}
                                           </a>
                                         ))}
                                       </div>
@@ -2121,8 +2147,9 @@ export default function PaymentsOut() {
                                   )}
                                   {p.invoiceFilePath && (
                                     <a href={`/uploads/${p.invoiceFilePath}`} target="_blank" rel="noopener noreferrer"
-                                      className="px-2 py-0.5 bg-blue-600 text-white text-[9px] font-bold uppercase hover:bg-blue-700 inline-flex items-center gap-1">
-                                      <FileText size={9} /> Invoice
+                                      className="px-2 py-0.5 bg-blue-600 text-white text-[9px] font-bold uppercase hover:bg-blue-700 inline-flex items-center gap-1"
+                                      title={p.invoiceNo ? `Booked as INV-${p.invoiceNo}${p.invoiceAmount ? ' · ' + fmt(p.invoiceAmount) : ''}` : 'Open vendor invoice PDF'}>
+                                      <FileText size={9} /> {p.invoiceVendorInvNo || (p.invoiceNo ? `INV-${p.invoiceNo}` : 'Invoice')}
                                     </a>
                                   )}
                                   {p.poId && (
@@ -3814,8 +3841,10 @@ export default function PaymentsOut() {
 
         {smartUploadOpen && (() => {
           const pendingCount = smartUploadEntries.filter(e => e.status === 'pending').length;
-          const readyCount = smartUploadEntries.filter(e => e.status === 'extracted' && e.matchedVendor && (e.selectedGrnIds?.length || 0) > 0).length;
-          const reviewCount = smartUploadEntries.filter(e => e.status === 'extracted' && (e.selectedGrnIds?.length || 0) === 0).length;
+          // Ready = extracted + has matched vendor (GRN tick is no longer required;
+          // unmatched cards save as placeholders and surface a "Link GRN" button on the PO).
+          const readyCount = smartUploadEntries.filter(e => e.status === 'extracted' && e.matchedVendor).length;
+          const reviewCount = smartUploadEntries.filter(e => e.status === 'extracted' && e.matchedVendor && (e.selectedGrnIds?.length || 0) === 0).length;
           // Locked vendor — preset (from per-PO open) takes priority, otherwise read off the first entry.
           const lockedVendor = smartPresetVendor || smartUploadEntries.find(e => e.matchedVendor)?.matchedVendor || null;
           return (

@@ -27,6 +27,8 @@ interface UnifiedPayment {
   grnId?: string | null;
   invoiceFilePath?: string | null;
   invoiceAmount?: number | null;
+  invoiceNo?: number | null;          // system invoice number (sequential)
+  invoiceVendorInvNo?: string | null; // AI-extracted vendor's own invoice number
   tdsDeducted?: number;
   // Payment Advice gating (vendor payments only — non-vendor rows leave these undefined)
   paymentStatus?: string;           // INITIATED | CONFIRMED | CANCELLED
@@ -95,6 +97,8 @@ router.get('/outgoing', asyncHandler(async (req: AuthRequest, res: Response) => 
         grnId: p.invoice?.grnId || null,
         invoiceFilePath: p.invoice?.filePath || null,
         invoiceAmount: p.invoice?.totalAmount || null,
+        invoiceNo: p.invoice?.invoiceNo ?? null,
+        invoiceVendorInvNo: p.invoice?.vendorInvNo || null,
         tdsDeducted: p.tdsDeducted || 0,
         // Payment Advice gating
         paymentStatus: p.paymentStatus,
