@@ -435,7 +435,9 @@ export default function PaymentsOut() {
     extracted?: SmartExtracted | null;
     matchedVendor?: Vendor | null;
     unbilledGrns?: SmartUnbilledGrn[];
-    selectedGrnIds?: string[];
+    selectedGrnIds?: string[];                 // user-confirmed picks (auto-ticked only on EXACT match)
+    suggestedGrnIds?: string[];                 // AI's proposal when match is approximate — user must click Apply
+    suggestedReason?: string;                   // human-readable why ("Sum ₹X vs bill ₹Y, diff ₹Z")
     duplicateOf?: SmartDuplicate;
     error?: string;
     savedInvoiceNo?: number;
@@ -587,14 +589,14 @@ export default function PaymentsOut() {
             api.get<{ grns: SmartUnbilledGrn[] }>(`/goods-receipts/unbilled?vendorId=${matchedVendor.id}`)
               .then(g => {
                 const grns = g.data.grns || [];
-                // Auto-tick strategy (in order):
-                // 1. Match each extracted line's vehicle_no / ticket_no to a GRN (most reliable).
-                // 2. If still empty, try subset-sum of GRN amounts ≈ bill taxable.
-                // 3. If still empty, fall back to single-GRN amount match.
+                // Two buckets:
+                //   selected  → auto-ticked (vehicle match, OR amount within 0.5%)
+                //   suggested → AI proposal user must explicitly Apply (within 0.5%–5%)
                 const taxable = Number(r.extracted?.taxable_amount) || 0;
-                let preselect: string[] = [];
+                let selected: string[] = [];
+                let suggested: string[] = [];
+                let suggestedReason: string | undefined;
 
-                // Step 1 — vehicle / ticket match per extracted line.
                 const norm = (s: string | null | undefined) => (s || '').toString().toUpperCase().replace(/[\s\-]+/g, '');
                 const items = r.extracted?.items || [];
                 const matchedByLine = new Set<string>();
@@ -611,21 +613,47 @@ export default function PaymentsOut() {
                     if (hit) { matchedByLine.add(hit.id); continue; }
                   }
                 }
-                if (matchedByLine.size > 0) preselect = Array.from(matchedByLine);
 
-                // Step 2 — subset-sum on amounts.
-                if (preselect.length === 0 && taxable > 0 && grns.length > 0) {
-                  const subset = findGrnSubsetMatchingTotal(grns, taxable, 0.05, 7);
-                  if (subset && subset.length > 0) preselect = subset;
+                if (matchedByLine.size > 0) {
+                  // Vehicle/ticket = identity match → auto-apply.
+                  selected = Array.from(matchedByLine);
+                } else if (taxable > 0 && grns.length > 0) {
+                  // Try near-exact subset-sum (within 0.5%) — auto-apply.
+                  const tight = findGrnSubsetMatchingTotal(grns, taxable, 0.005, 7);
+                  if (tight && tight.length > 0) {
+                    selected = tight;
+                  } else {
+                    // Try approximate subset-sum (within 5%) — suggest, don't apply.
+                    const loose = findGrnSubsetMatchingTotal(grns, taxable, 0.05, 7);
+                    if (loose && loose.length > 0) {
+                      const sum = loose.reduce((s, id) => s + (grns.find(gr => gr.id === id)?.totalAmount || 0), 0);
+                      const diff = sum - taxable;
+                      suggested = loose;
+                      suggestedReason = `${loose.length} GRN${loose.length > 1 ? 's' : ''} sum ₹${Math.round(sum).toLocaleString('en-IN')} vs bill ₹${Math.round(taxable).toLocaleString('en-IN')} (diff ${diff >= 0 ? '+' : ''}₹${Math.round(diff).toLocaleString('en-IN')})`;
+                    } else {
+                      // Single-GRN fallback: near-exact applies, approximate suggests.
+                      const tightSingle = grns.find(gr => Math.abs(gr.totalAmount - taxable) / Math.max(taxable, 1) < 0.005);
+                      if (tightSingle) {
+                        selected = [tightSingle.id];
+                      } else {
+                        const looseSingle = grns.find(gr => Math.abs(gr.totalAmount - taxable) / Math.max(taxable, 1) < 0.05);
+                        if (looseSingle) {
+                          suggested = [looseSingle.id];
+                          const diff = looseSingle.totalAmount - taxable;
+                          suggestedReason = `GRN-${looseSingle.grnNo} ₹${Math.round(looseSingle.totalAmount).toLocaleString('en-IN')} vs bill ₹${Math.round(taxable).toLocaleString('en-IN')} (diff ${diff >= 0 ? '+' : ''}₹${Math.round(diff).toLocaleString('en-IN')})`;
+                        }
+                      }
+                    }
+                  }
                 }
 
-                // Step 3 — single-GRN amount match (legacy fallback).
-                if (preselect.length === 0 && taxable > 0) {
-                  const single = grns.find(gr => Math.abs(gr.totalAmount - taxable) / Math.max(taxable, 1) < 0.05);
-                  if (single) preselect = [single.id];
-                }
-
-                setSmartUploadEntries(prev => prev.map(p => p.id === entry.id ? { ...p, unbilledGrns: grns, selectedGrnIds: preselect } : p));
+                setSmartUploadEntries(prev => prev.map(p => p.id === entry.id ? {
+                  ...p,
+                  unbilledGrns: grns,
+                  selectedGrnIds: selected,
+                  suggestedGrnIds: suggested.length > 0 ? suggested : undefined,
+                  suggestedReason,
+                } : p));
               })
               .catch(() => {
                 setSmartUploadEntries(prev => prev.map(p => p.id === entry.id ? { ...p, unbilledGrns: [] } : p));
@@ -4336,6 +4364,30 @@ export default function PaymentsOut() {
                                 <div className={`text-[10px] mt-1 ${Math.abs(selectedTotal - taxable) / Math.max(taxable, 1) < 0.05 ? 'text-emerald-700' : 'text-amber-700'}`}>
                                   Selected {'₹' + selectedTotal.toLocaleString('en-IN')} vs taxable {'₹' + taxable.toLocaleString('en-IN')}
                                   {Math.abs(selectedTotal - taxable) / Math.max(taxable, 1) < 0.05 ? ' ✓ matches' : ' — review'}
+                                </div>
+                              )}
+                              {/* AI suggestion (approximate match — needs explicit confirmation) */}
+                              {selected.size === 0 && entry.suggestedGrnIds && entry.suggestedGrnIds.length > 0 && (
+                                <div className="mt-2 border border-amber-300 bg-amber-50 px-2 py-1.5 flex items-start gap-2">
+                                  <Sparkles size={11} className="text-amber-600 mt-0.5" />
+                                  <div className="flex-1 min-w-0">
+                                    <div className="text-[10px] font-bold text-amber-800 uppercase tracking-widest">AI suggestion (not exact)</div>
+                                    <div className="text-[10px] text-amber-900 mt-0.5">{entry.suggestedReason || 'Approximate match'}</div>
+                                  </div>
+                                  <button
+                                    onClick={() => updateSmartEntry(entry.id, { selectedGrnIds: entry.suggestedGrnIds, suggestedGrnIds: undefined, suggestedReason: undefined })}
+                                    disabled={entry.status !== 'extracted'}
+                                    className="px-2 py-0.5 bg-amber-600 text-white text-[10px] font-bold uppercase hover:bg-amber-700 disabled:opacity-50"
+                                  >
+                                    Apply
+                                  </button>
+                                  <button
+                                    onClick={() => updateSmartEntry(entry.id, { suggestedGrnIds: undefined, suggestedReason: undefined })}
+                                    disabled={entry.status !== 'extracted'}
+                                    className="px-2 py-0.5 bg-white border border-slate-300 text-slate-600 text-[10px] font-bold uppercase hover:bg-slate-50 disabled:opacity-50"
+                                  >
+                                    Dismiss
+                                  </button>
                                 </div>
                               )}
                             </div>
