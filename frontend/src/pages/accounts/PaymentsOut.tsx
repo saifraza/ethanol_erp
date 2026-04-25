@@ -146,7 +146,7 @@ interface VendorLedger {
   currentBalance: number;
 }
 
-interface Vendor { id: string; name: string; }
+interface Vendor { id: string; name: string; gstin?: string | null; pan?: string | null; }
 
 interface Outstanding {
   vendor: Vendor;
@@ -347,53 +347,248 @@ export default function PaymentsOut() {
   const [scanUploading, setScanUploading] = useState(false);
   const [scanResult, setScanResult] = useState<{ extracted: Record<string, unknown> | null; warnings: string[] } | null>(null);
 
-  // Universal AI Doc Uploader — Smart classify + auto-route any document
+  // ── Bulk Smart Upload — drop N vendor invoices, AI extracts each, match GRN(s), save all ──
   const [smartUploadOpen, setSmartUploadOpen] = useState(false);
-  const [smartUploadFile, setSmartUploadFile] = useState<File | null>(null);
-  const [smartUploadBusy, setSmartUploadBusy] = useState(false);
-  const [smartUploadResult, setSmartUploadResult] = useState<{
-    filePath: string;
-    docType: string;
-    confidence: number;
-    reason: string;
-    supported: boolean;
-    message?: string;
-    extracted?: any;
-    matchedVendor?: { id: string; name: string; gstin: string | null; pan: string | null } | null;
-    matchedInvoices?: Array<{ id: string; invoiceNo: number; vendorInvNo: string | null; invoiceDate: string; balanceAmount: number; netPayable: number; status: string; po?: { id: string; poNo: number } | null }>;
-    suggestedAction?: 'PAY_EXISTING' | 'CREATE_NEW' | 'CONFIRM_VENDOR' | 'NO_VENDOR';
-    fileName?: string;
-    fileSize?: number;
+  type SmartUnbilledGrn = {
+    id: string;
+    grnNo: number;
+    grnDate: string;
+    ticketNo: number | null;
+    vehicleNo: string | null;
+    totalQty: number;
+    totalAmount: number;
+    status: string;
+    poId: string;
+    po: { id: string; poNo: number; poType: string | null } | null;
+    lines: Array<{ id: string; description: string; receivedQty: number; rate: number; unit: string }>;
+  };
+  type SmartExtracted = {
+    invoice_number?: string | null;
+    invoice_date?: string | null;
+    vendor_name?: string | null;
+    gstin?: string | null;
+    items?: Array<{ description?: string; hsn?: string; qty?: number; unit?: string; rate?: number; amount?: number }>;
+    taxable_amount?: number | null;
+    cgst?: number | null;
+    sgst?: number | null;
+    igst?: number | null;
+    total_gst?: number | null;
+    freight?: number | null;
+    total_amount?: number | null;
+    supply_type?: 'INTRA_STATE' | 'INTER_STATE' | null;
+  };
+  type SmartUploadEntry = {
+    id: string;
+    file: File;
+    status: 'pending' | 'extracting' | 'extracted' | 'saving' | 'saved' | 'error';
+    filePath?: string;
+    extracted?: SmartExtracted | null;
+    matchedVendor?: Vendor | null;
+    unbilledGrns?: SmartUnbilledGrn[];
+    selectedGrnIds?: string[];
     error?: string;
-  } | null>(null);
+    savedInvoiceNo?: number;
+  };
+  const [smartUploadEntries, setSmartUploadEntries] = useState<SmartUploadEntry[]>([]);
+  const [smartUploadBusy, setSmartUploadBusy] = useState(false);
+  const [smartSavingAll, setSmartSavingAll] = useState(false);
 
-  const runSmartUpload = useCallback(async () => {
-    if (!smartUploadFile) return;
+  // ── Vendor matching helper (gstin > pan > fuzzy name) ──
+  const matchExtractedToVendor = useCallback((ext: SmartExtracted | null | undefined, vendorList: Vendor[]): Vendor | null => {
+    if (!ext) return null;
+    const gstin = (ext.gstin || '').trim().toUpperCase();
+    if (gstin.length === 15) {
+      const byGstin = vendorList.find(v => (v.gstin || '').trim().toUpperCase() === gstin);
+      if (byGstin) return byGstin;
+      // GSTIN 3-12 chars are PAN
+      const pan = gstin.slice(2, 12);
+      const byPan = vendorList.find(v => (v.pan || '').trim().toUpperCase() === pan);
+      if (byPan) return byPan;
+    }
+    const name = (ext.vendor_name || '').trim().toLowerCase();
+    if (name.length >= 4) {
+      // Substring match either way
+      const exact = vendorList.find(v => v.name.trim().toLowerCase() === name);
+      if (exact) return exact;
+      const partial = vendorList.find(v => {
+        const vn = v.name.trim().toLowerCase();
+        return vn.includes(name) || name.includes(vn);
+      });
+      if (partial) return partial;
+    }
+    return null;
+  }, []);
+
+  // ── File picker → append entries (no auto-extract; user clicks Analyze) ──
+  const onSmartFilesPicked = (files: FileList | null) => {
+    if (!files || files.length === 0) return;
+    const next: SmartUploadEntry[] = Array.from(files).map(f => ({
+      id: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+      file: f,
+      status: 'pending',
+    }));
+    setSmartUploadEntries(prev => [...prev, ...next]);
+  };
+
+  // ── Bulk extract → vendor match → fetch unbilled GRNs per entry ──
+  const runSmartBulk = useCallback(async () => {
+    const pending = smartUploadEntries.filter(e => e.status === 'pending');
+    if (pending.length === 0) return;
     setSmartUploadBusy(true);
-    setSmartUploadResult(null);
+    setSmartUploadEntries(prev => prev.map(e => e.status === 'pending' ? { ...e, status: 'extracting' } : e));
+
     try {
       const fd = new FormData();
-      fd.append('file', smartUploadFile);
-      const res = await api.post('/document-classifier/classify', fd, {
-        headers: { 'Content-Type': 'multipart/form-data' },
-        timeout: 90000,
+      for (const e of pending) fd.append('files', e.file);
+      const res = await api.post<{ count: number; results: Array<{ filePath: string; originalName: string; extracted: SmartExtracted | null; error?: string }> }>(
+        '/vendor-invoices/upload-extract-bulk', fd,
+        { headers: { 'Content-Type': 'multipart/form-data' }, timeout: 180000 },
+      );
+      const results = res.data.results || [];
+
+      // Ensure vendor list is loaded for matching.
+      let vendorList = vendors;
+      if (vendorList.length === 0) {
+        try {
+          const vRes = await api.get<{ vendors: Vendor[] }>('/vendors');
+          vendorList = vRes.data.vendors || [];
+          setVendors(vendorList);
+        } catch { /* matchedVendor will stay null */ }
+      }
+
+      // Pair results with the pending entries (results are returned in upload order).
+      const grnFetches: Array<Promise<void>> = [];
+      const updated = new Map<string, SmartUploadEntry>();
+      pending.forEach((entry, i) => {
+        const r = results[i];
+        if (!r) {
+          updated.set(entry.id, { ...entry, status: 'error', error: 'No response from server' });
+          return;
+        }
+        const matchedVendor = matchExtractedToVendor(r.extracted, vendorList);
+        const next: SmartUploadEntry = {
+          ...entry,
+          status: r.error ? 'error' : 'extracted',
+          filePath: r.filePath,
+          extracted: r.extracted,
+          matchedVendor,
+          error: r.error,
+        };
+        updated.set(entry.id, next);
+
+        // Fire GRN fetch in parallel (will be merged when it resolves).
+        if (matchedVendor) {
+          grnFetches.push(
+            api.get<{ grns: SmartUnbilledGrn[] }>(`/goods-receipts/unbilled?vendorId=${matchedVendor.id}`)
+              .then(g => {
+                const grns = g.data.grns || [];
+                // Auto-select GRNs whose total amount is closest to extracted taxable_amount.
+                const taxable = Number(r.extracted?.taxable_amount) || 0;
+                let preselect: string[] = [];
+                if (taxable > 0 && grns.length > 0) {
+                  // Single GRN match: amount within 5% tolerance.
+                  const single = grns.find(gr => Math.abs(gr.totalAmount - taxable) / Math.max(taxable, 1) < 0.05);
+                  if (single) preselect = [single.id];
+                }
+                setSmartUploadEntries(prev => prev.map(p => p.id === entry.id ? { ...p, unbilledGrns: grns, selectedGrnIds: preselect } : p));
+              })
+              .catch(() => {
+                setSmartUploadEntries(prev => prev.map(p => p.id === entry.id ? { ...p, unbilledGrns: [] } : p));
+              }),
+          );
+        }
       });
-      setSmartUploadResult(res.data);
-    } catch (err: any) {
-      setSmartUploadResult({
-        filePath: '', docType: 'OTHER', confidence: 0, reason: 'Upload failed',
-        supported: false, error: err.response?.data?.error || err.message || 'Upload failed',
-      });
+      // Apply extraction updates immediately; GRN fetches resolve in background.
+      setSmartUploadEntries(prev => prev.map(p => updated.get(p.id) || p));
+      await Promise.all(grnFetches);
+    } catch (err: unknown) {
+      const msg = (err as { response?: { data?: { error?: string } }; message?: string })?.response?.data?.error
+        || (err as { message?: string })?.message
+        || 'Bulk upload failed';
+      setSmartUploadEntries(prev => prev.map(e => e.status === 'extracting' ? { ...e, status: 'error', error: msg } : e));
     } finally {
       setSmartUploadBusy(false);
     }
-  }, [smartUploadFile]);
+  }, [smartUploadEntries, vendors, matchExtractedToVendor]);
+
+  // ── Save one entry → POST /vendor-invoices with lines[] ──
+  const saveSmartEntry = useCallback(async (entry: SmartUploadEntry): Promise<{ ok: boolean; invoiceNo?: number; error?: string }> => {
+    if (!entry.matchedVendor) return { ok: false, error: 'Vendor not matched' };
+    const ext = entry.extracted || {};
+    const grns = (entry.unbilledGrns || []).filter(g => entry.selectedGrnIds?.includes(g.id));
+    if (grns.length === 0) return { ok: false, error: 'Pick at least one GRN' };
+
+    // Derive default GST% from extraction, fall back to 18.
+    const taxable = Number(ext.taxable_amount) || grns.reduce((s, g) => s + g.totalAmount, 0);
+    const totalGst = Number(ext.total_gst) || 0;
+    const gstPercent = taxable > 0 ? Math.round((totalGst / taxable) * 100) : 18;
+    const supplyType = ext.supply_type === 'INTER_STATE' ? 'INTER_STATE' : 'INTRA_STATE';
+
+    // One line per selected GRN — qty + rate from the GRN, gst% from the bill.
+    const lines = grns.map(g => ({
+      grnId: g.id,
+      productName: g.lines?.[0]?.description || `GRN-${g.grnNo}`,
+      hsnCode: ext.items?.[0]?.hsn || null,
+      quantity: g.totalQty,
+      unit: g.lines?.[0]?.unit || 'KG',
+      rate: g.totalQty > 0 ? g.totalAmount / g.totalQty : 0,
+      gstPercent,
+    }));
+
+    // Use the first GRN's PO as the header poId — vendor PO is rolling per the team's flow.
+    const poId = grns[0].po?.id || grns[0].poId || null;
+
+    try {
+      const res = await api.post<{ invoiceNo: number }>('/vendor-invoices', {
+        vendorId: entry.matchedVendor.id,
+        poId,
+        vendorInvNo: ext.invoice_number || '',
+        vendorInvDate: ext.invoice_date || todayStr(),
+        invoiceDate: ext.invoice_date || todayStr(),
+        supplyType,
+        gstPercent,
+        filePath: entry.filePath || null,
+        status: 'APPROVED',
+        lines,
+      });
+      return { ok: true, invoiceNo: res.data.invoiceNo };
+    } catch (err: unknown) {
+      const msg = (err as { response?: { data?: { error?: string } }; message?: string })?.response?.data?.error
+        || (err as { message?: string })?.message
+        || 'Save failed';
+      return { ok: false, error: msg };
+    }
+  }, []);
+
+  // ── Save All → iterate sequentially so server transactions don't clash ──
+  const saveAllSmartEntries = useCallback(async () => {
+    const ready = smartUploadEntries.filter(e => e.status === 'extracted' && e.matchedVendor && (e.selectedGrnIds?.length || 0) > 0);
+    if (ready.length === 0) return;
+    setSmartSavingAll(true);
+    for (const entry of ready) {
+      setSmartUploadEntries(prev => prev.map(p => p.id === entry.id ? { ...p, status: 'saving' } : p));
+      const r = await saveSmartEntry(entry);
+      setSmartUploadEntries(prev => prev.map(p => p.id === entry.id
+        ? (r.ok ? { ...p, status: 'saved', savedInvoiceNo: r.invoiceNo } : { ...p, status: 'error', error: r.error })
+        : p));
+    }
+    setSmartSavingAll(false);
+    // Notify the page to re-fetch pending; listener is wired alongside fetchPending below.
+    window.dispatchEvent(new Event('payments-out:refresh'));
+  }, [smartUploadEntries, saveSmartEntry]);
 
   const closeSmartUpload = () => {
+    if (smartUploadBusy || smartSavingAll) return;
     setSmartUploadOpen(false);
-    setSmartUploadFile(null);
-    setSmartUploadResult(null);
-    setSmartUploadBusy(false);
+    setSmartUploadEntries([]);
+  };
+
+  const updateSmartEntry = (id: string, patch: Partial<SmartUploadEntry>) => {
+    setSmartUploadEntries(prev => prev.map(e => e.id === id ? { ...e, ...patch } : e));
+  };
+
+  const removeSmartEntry = (id: string) => {
+    setSmartUploadEntries(prev => prev.filter(e => e.id !== id));
   };
 
   // Pay allocations — per-target amount the team explicitly wants to send.
@@ -438,6 +633,14 @@ export default function PaymentsOut() {
       setPendingLoading(false);
     }
   }, []);
+
+  // Bulk Smart Upload triggers a refresh via window event to dodge a TDZ
+  // (the save callback is declared above this fetcher).
+  useEffect(() => {
+    const handler = () => { fetchPending(); };
+    window.addEventListener('payments-out:refresh', handler);
+    return () => window.removeEventListener('payments-out:refresh', handler);
+  }, [fetchPending]);
 
   const fetchCompleted = useCallback(async () => {
     try {
@@ -1996,8 +2199,10 @@ export default function PaymentsOut() {
             <div className="bg-white shadow-2xl w-full max-w-3xl mx-4">
               <div className="bg-slate-800 text-white px-4 py-2.5 flex items-center justify-between">
                 <div className="flex items-center gap-2">
-                  <FileText size={14} />
-                  <span className="text-xs font-bold uppercase tracking-widest">Upload Vendor Invoice</span>
+                  {extracted ? <Sparkles size={14} className="text-amber-300" /> : <FileText size={14} />}
+                  <span className="text-xs font-bold uppercase tracking-widest">
+                    {extracted ? 'AI Smart Upload — review & confirm' : 'Upload Vendor Invoice'}
+                  </span>
                 </div>
                 <button onClick={() => setInvoiceModal(null)} className="text-slate-400 hover:text-white"><X size={16} /></button>
               </div>
@@ -2110,11 +2315,15 @@ export default function PaymentsOut() {
                   </div>
                   <div className="flex gap-2 pt-3 border-t border-slate-200">
                     <button type="submit" disabled={submitting}
-                      className="px-4 py-1.5 bg-blue-600 text-white text-[11px] font-medium hover:bg-blue-700 disabled:opacity-50">
-                      {submitting ? 'SAVING...' : 'SAVE INVOICE'}
+                      className={`px-4 py-1.5 text-white text-[11px] font-bold uppercase tracking-widest disabled:opacity-50 flex items-center gap-1.5 ${extracted ? 'bg-emerald-600 hover:bg-emerald-700' : 'bg-blue-600 hover:bg-blue-700'}`}>
+                      {extracted && !submitting && <Sparkles size={11} />}
+                      {submitting ? 'Saving...' : extracted ? 'Confirm & Save' : 'Save Invoice'}
                     </button>
                     <button type="button" onClick={() => setInvoiceModal(null)}
                       className="px-4 py-1.5 bg-white border border-slate-300 text-slate-600 text-[11px] font-medium hover:bg-slate-50">CANCEL</button>
+                    {extracted && (
+                      <span className="self-center text-[10px] text-slate-500 italic">Fields auto-filled from the bill — review and confirm.</span>
+                    )}
                   </div>
                 </form>
               </div>
@@ -3347,194 +3556,274 @@ export default function PaymentsOut() {
         )}
 
         {/* ═══════════════════════════════════════ */}
-        {/* SMART UPLOAD MODAL — Universal Doc Classifier */}
+        {/* SMART BILL UPLOAD — Vendor-scoped, multi-file, AI extract + GRN match + Save All */}
         {/* ═══════════════════════════════════════ */}
-        {smartUploadOpen && (
-          <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4" onClick={closeSmartUpload}>
-            <div className="bg-white max-w-2xl w-full max-h-[90vh] overflow-auto" onClick={e => e.stopPropagation()}>
-              {/* Modal Toolbar */}
-              <div className="bg-purple-700 text-white px-4 py-2.5 flex items-center justify-between">
-                <div className="flex items-center gap-2">
-                  <Sparkles size={14} />
-                  <h2 className="text-sm font-bold uppercase tracking-wide">Smart Document Upload</h2>
-                  <span className="text-[10px] text-purple-200">|</span>
-                  <span className="text-[10px] text-purple-200">AI auto-classifies & routes</span>
+        {smartUploadOpen && (() => {
+          const pendingCount = smartUploadEntries.filter(e => e.status === 'pending').length;
+          const readyCount = smartUploadEntries.filter(e => e.status === 'extracted' && e.matchedVendor && (e.selectedGrnIds?.length || 0) > 0).length;
+          // Pre-set vendor: when user picks one, every entry locks to that vendor.
+          // The current matchedVendor is read off the first entry — same vendor for all in this batch.
+          const lockedVendor = smartUploadEntries.find(e => e.matchedVendor)?.matchedVendor || null;
+          return (
+            <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4" onClick={closeSmartUpload}>
+              <div className="bg-white max-w-4xl w-full max-h-[92vh] flex flex-col" onClick={e => e.stopPropagation()}>
+                {/* Toolbar */}
+                <div className="bg-purple-700 text-white px-4 py-2.5 flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <Sparkles size={14} />
+                    <h2 className="text-sm font-bold uppercase tracking-wide">Smart Bill Upload</h2>
+                    <span className="text-[10px] text-purple-200">|</span>
+                    <span className="text-[10px] text-purple-200">Pick the vendor &middot; drop bills &middot; AI extracts &middot; pick GRNs &middot; save all</span>
+                  </div>
+                  <button onClick={closeSmartUpload} className="text-purple-200 hover:text-white" disabled={smartUploadBusy || smartSavingAll}><X size={16} /></button>
                 </div>
-                <button onClick={closeSmartUpload} className="text-purple-200 hover:text-white"><X size={16} /></button>
-              </div>
 
-              {/* Content */}
-              <div className="p-4">
-                {/* Step 1 — File picker */}
-                {!smartUploadResult && (
-                  <>
-                    <div className="text-[11px] text-slate-600 mb-3">
-                      Drop any document — vendor invoice, contractor bill, GRN, PO, bank receipt — and Gemini will classify it and auto-route to the right place.
-                      <br />
-                      <span className="text-purple-700 font-bold">Currently auto-processing: Vendor Invoices.</span> Other types will be classified but routed manually.
-                    </div>
-
-                    <label className="block border-2 border-dashed border-slate-400 bg-slate-50 hover:bg-slate-100 cursor-pointer px-4 py-8 text-center mb-3">
-                      <Upload size={28} className="mx-auto text-slate-400 mb-2" />
-                      <div className="text-xs font-bold text-slate-700 uppercase tracking-widest">{smartUploadFile ? smartUploadFile.name : 'Click to choose a file'}</div>
-                      <div className="text-[10px] text-slate-500 mt-1">PDF, JPG, PNG · max 15 MB</div>
-                      <input type="file" accept="application/pdf,image/*" onChange={e => setSmartUploadFile(e.target.files?.[0] || null)} className="hidden" />
-                    </label>
-
-                    {smartUploadFile && (
-                      <div className="text-[11px] text-slate-600 mb-3 bg-slate-50 border border-slate-200 px-3 py-2">
-                        <strong>{smartUploadFile.name}</strong>
-                        <span className="text-slate-400 ml-2">{(smartUploadFile.size / 1024).toFixed(1)} KB</span>
-                      </div>
+                {/* Vendor + file picker bar */}
+                <div className="px-4 py-3 border-b border-slate-200 bg-slate-50 flex flex-wrap items-center gap-3">
+                  {/* Vendor selector */}
+                  <div className="flex items-center gap-2">
+                    <span className="text-[10px] font-bold text-slate-600 uppercase tracking-widest">Vendor</span>
+                    <select
+                      value={lockedVendor?.id || ''}
+                      onChange={async e => {
+                        const id = e.target.value;
+                        if (!id) {
+                          setSmartUploadEntries(prev => prev.map(p => ({ ...p, matchedVendor: null, unbilledGrns: undefined, selectedGrnIds: undefined })));
+                          return;
+                        }
+                        let list = vendors;
+                        if (list.length === 0) {
+                          try { const res = await api.get<{ vendors: Vendor[] }>('/vendors'); list = res.data.vendors || []; setVendors(list); } catch { /* ignore */ }
+                        }
+                        const v = list.find(x => x.id === id) || null;
+                        // Force-match every existing entry to this vendor + fetch its open GRNs once.
+                        let grns: SmartUnbilledGrn[] = [];
+                        if (v) {
+                          try {
+                            const r = await api.get<{ grns: SmartUnbilledGrn[] }>(`/goods-receipts/unbilled?vendorId=${v.id}`);
+                            grns = r.data.grns || [];
+                          } catch { /* ignore */ }
+                        }
+                        setSmartUploadEntries(prev => prev.map(p => ({ ...p, matchedVendor: v, unbilledGrns: grns, selectedGrnIds: p.selectedGrnIds || [] })));
+                      }}
+                      disabled={smartUploadBusy || smartSavingAll}
+                      className="border border-slate-300 px-2 py-1.5 text-xs bg-white min-w-[260px]"
+                    >
+                      <option value="">— Select vendor —</option>
+                      {vendors.map(v => <option key={v.id} value={v.id}>{v.name}</option>)}
+                    </select>
+                    {vendors.length === 0 && (
+                      <button
+                        type="button"
+                        onClick={async () => { try { const res = await api.get<{ vendors: Vendor[] }>('/vendors'); setVendors(res.data.vendors || []); } catch { /* ignore */ } }}
+                        className="text-[10px] text-blue-600 underline"
+                      >Load vendors</button>
                     )}
+                  </div>
 
-                    <div className="flex gap-2 justify-end">
-                      <button onClick={closeSmartUpload} className="px-3 py-1.5 border border-slate-300 text-slate-600 text-[11px] font-bold uppercase tracking-widest hover:bg-slate-50">Cancel</button>
-                      <button onClick={runSmartUpload} disabled={!smartUploadFile || smartUploadBusy} className="flex items-center gap-1.5 px-4 py-1.5 bg-purple-600 text-white text-[11px] font-bold uppercase tracking-widest hover:bg-purple-700 disabled:opacity-50">
-                        {smartUploadBusy ? 'Analysing...' : <><Sparkles size={11} /> Classify with AI</>}
-                      </button>
+                  {/* File picker */}
+                  <label className={`inline-flex items-center gap-2 px-3 py-1.5 border text-[11px] font-bold uppercase tracking-widest ${lockedVendor ? 'bg-white border-slate-300 hover:bg-slate-100 cursor-pointer text-slate-700' : 'bg-slate-100 border-slate-200 text-slate-400 cursor-not-allowed'}`}>
+                    <Upload size={12} /> Add Bills
+                    <input
+                      type="file"
+                      multiple
+                      accept="application/pdf,image/*"
+                      onChange={e => { onSmartFilesPicked(e.target.files); e.currentTarget.value = ''; }}
+                      className="hidden"
+                      disabled={!lockedVendor || smartUploadBusy || smartSavingAll}
+                    />
+                  </label>
+                  <div className="text-[10px] text-slate-500">PDF / JPG / PNG &middot; up to 20 files &middot; max 10 MB each</div>
+                  <div className="flex-1" />
+                  {smartUploadEntries.length > 0 && (
+                    <div className="text-[10px] text-slate-600 font-bold uppercase tracking-widest">
+                      {smartUploadEntries.length} file{smartUploadEntries.length === 1 ? '' : 's'} &middot; {readyCount} ready
                     </div>
-                  </>
-                )}
+                  )}
+                </div>
 
-                {/* Step 2 — Result */}
-                {smartUploadResult && (
-                  <>
-                    {/* Classification banner */}
-                    <div className={`border-l-4 px-3 py-2 mb-3 ${
-                      smartUploadResult.error ? 'border-l-red-500 bg-red-50' :
-                      smartUploadResult.supported ? 'border-l-emerald-500 bg-emerald-50' :
-                      'border-l-amber-500 bg-amber-50'
-                    }`}>
-                      <div className="flex items-center justify-between">
-                        <div>
-                          <div className="text-[10px] font-bold uppercase tracking-widest text-slate-500">Document Type</div>
-                          <div className="text-base font-bold text-slate-800">{smartUploadResult.docType.replace(/_/g, ' ')}</div>
-                        </div>
-                        <div className="text-right">
-                          <div className="text-[10px] font-bold uppercase tracking-widest text-slate-500">Confidence</div>
-                          <div className={`text-base font-bold font-mono ${smartUploadResult.confidence >= 80 ? 'text-emerald-700' : smartUploadResult.confidence >= 50 ? 'text-amber-700' : 'text-red-700'}`}>{smartUploadResult.confidence}%</div>
-                        </div>
-                      </div>
-                      <div className="text-[11px] text-slate-700 mt-1">{smartUploadResult.reason}</div>
-                      {smartUploadResult.error && <div className="text-[11px] text-red-700 mt-1 font-bold">Error: {smartUploadResult.error}</div>}
+                {/* Body */}
+                <div className="flex-1 overflow-auto p-4 space-y-3 bg-slate-100">
+                  {!lockedVendor && (
+                    <div className="border-2 border-dashed border-slate-300 bg-white px-4 py-12 text-center">
+                      <FileText size={32} className="mx-auto text-slate-300 mb-3" />
+                      <div className="text-xs text-slate-500">Pick a <strong>vendor</strong> first &mdash; the GRN search is scoped to that vendor.</div>
+                      <div className="text-[10px] text-slate-400 mt-2">Then click <strong>Add Bills</strong> to upload one or more invoices.</div>
                     </div>
+                  )}
 
-                    {/* Unsupported message */}
-                    {!smartUploadResult.supported && smartUploadResult.message && (
-                      <div className="border border-amber-300 bg-amber-50 px-3 py-2 text-[11px] text-amber-900 mb-3">
-                        {smartUploadResult.message}
-                      </div>
-                    )}
+                  {lockedVendor && smartUploadEntries.length === 0 && (
+                    <div className="border-2 border-dashed border-slate-300 bg-white px-4 py-12 text-center">
+                      <Upload size={32} className="mx-auto text-slate-300 mb-3" />
+                      <div className="text-xs text-slate-500">Click <strong>Add Bills</strong> above to choose one or more invoice files for <strong>{lockedVendor.name}</strong>.</div>
+                    </div>
+                  )}
 
-                    {/* Vendor Invoice — Extracted Fields + Vendor Match */}
-                    {smartUploadResult.supported && smartUploadResult.extracted && (
-                      <>
-                        {/* Extracted fields */}
-                        <div className="border border-slate-300 mb-3 overflow-hidden">
-                          <div className="bg-slate-200 border-b border-slate-300 px-3 py-1.5">
-                            <span className="text-[10px] font-bold text-slate-600 uppercase tracking-widest">Extracted Fields</span>
-                          </div>
-                          <table className="w-full text-xs">
-                            <tbody>
-                              {[
-                                { label: 'Vendor', value: smartUploadResult.extracted.vendor_name },
-                                { label: 'GSTIN', value: smartUploadResult.extracted.vendor_gstin },
-                                { label: 'PAN', value: smartUploadResult.extracted.vendor_pan },
-                                { label: 'Invoice #', value: smartUploadResult.extracted.invoice_number },
-                                { label: 'Invoice Date', value: smartUploadResult.extracted.invoice_date },
-                                { label: 'PO Reference', value: smartUploadResult.extracted.po_reference },
-                                { label: 'Taxable', value: smartUploadResult.extracted.taxable_amount ? '\u20B9' + Number(smartUploadResult.extracted.taxable_amount).toLocaleString('en-IN') : null },
-                                { label: 'Total GST', value: smartUploadResult.extracted.total_gst ? '\u20B9' + Number(smartUploadResult.extracted.total_gst).toLocaleString('en-IN') : null },
-                                { label: 'Total Amount', value: smartUploadResult.extracted.total_amount ? '\u20B9' + Number(smartUploadResult.extracted.total_amount).toLocaleString('en-IN') : null },
-                                { label: 'Supply Type', value: smartUploadResult.extracted.supply_type },
-                              ].map(r => (
-                                <tr key={r.label} className="border-b border-slate-100 even:bg-slate-50/70">
-                                  <td className="px-3 py-1 text-slate-500 border-r border-slate-100 w-32 font-bold uppercase text-[10px] tracking-widest">{r.label}</td>
-                                  <td className="px-3 py-1 font-mono text-slate-800">{r.value || <span className="text-slate-400">--</span>}</td>
-                                </tr>
-                              ))}
-                            </tbody>
-                          </table>
-                        </div>
+                  {smartUploadEntries.map(entry => {
+                    const ext = entry.extracted || {};
+                    const grns = entry.unbilledGrns || [];
+                    const selected = new Set(entry.selectedGrnIds || []);
+                    const selectedTotal = grns.filter(g => selected.has(g.id)).reduce((s, g) => s + g.totalAmount, 0);
+                    const taxable = Number(ext.taxable_amount) || 0;
+                    const grandTotal = Number(ext.total_amount) || 0;
 
-                        {/* Vendor match */}
-                        <div className="border border-slate-300 mb-3 overflow-hidden">
-                          <div className="bg-slate-200 border-b border-slate-300 px-3 py-1.5">
-                            <span className="text-[10px] font-bold text-slate-600 uppercase tracking-widest">Vendor Match</span>
-                          </div>
-                          {smartUploadResult.matchedVendor ? (
-                            <div className="px-3 py-2">
-                              <div className="text-sm font-bold text-emerald-700">✓ {smartUploadResult.matchedVendor.name}</div>
-                              <div className="text-[10px] text-slate-500 font-mono mt-0.5">
-                                {smartUploadResult.matchedVendor.gstin && <span>GSTIN: {smartUploadResult.matchedVendor.gstin}</span>}
-                                {smartUploadResult.matchedVendor.pan && <span className="ml-3">PAN: {smartUploadResult.matchedVendor.pan}</span>}
-                              </div>
-                            </div>
-                          ) : (
-                            <div className="px-3 py-2 text-[11px] text-amber-700">
-                              ⚠ No matching vendor in master. Create the vendor first at <a href="/admin/vendors" className="text-blue-600 underline">/admin/vendors</a>.
-                            </div>
+                    return (
+                      <div key={entry.id} className="bg-white border border-slate-300 overflow-hidden">
+                        {/* Card header */}
+                        <div className="px-3 py-2 border-b border-slate-200 flex items-center gap-2 bg-slate-50">
+                          <FileText size={12} className="text-slate-500" />
+                          <div className="text-xs font-bold text-slate-700 truncate flex-1" title={entry.file.name}>{entry.file.name}</div>
+                          <div className="text-[10px] text-slate-400">{(entry.file.size / 1024).toFixed(1)} KB</div>
+                          <span className={
+                            'text-[9px] font-bold uppercase px-1.5 py-0.5 border ' +
+                            (entry.status === 'pending' ? 'border-slate-300 bg-slate-100 text-slate-600' :
+                             entry.status === 'extracting' ? 'border-blue-300 bg-blue-50 text-blue-700 animate-pulse' :
+                             entry.status === 'extracted' ? 'border-emerald-400 bg-emerald-50 text-emerald-700' :
+                             entry.status === 'saving' ? 'border-amber-400 bg-amber-50 text-amber-700 animate-pulse' :
+                             entry.status === 'saved' ? 'border-emerald-500 bg-emerald-100 text-emerald-800' :
+                             'border-red-400 bg-red-50 text-red-700')
+                          }>
+                            {entry.status === 'saved' && entry.savedInvoiceNo ? `Saved · INV-${entry.savedInvoiceNo}` : entry.status}
+                          </span>
+                          {!smartUploadBusy && !smartSavingAll && entry.status !== 'saved' && (
+                            <button onClick={() => removeSmartEntry(entry.id)} className="text-slate-400 hover:text-red-600" title="Remove">
+                              <X size={12} />
+                            </button>
                           )}
                         </div>
 
-                        {/* Matched invoices */}
-                        {smartUploadResult.matchedInvoices && smartUploadResult.matchedInvoices.length > 0 && (
-                          <div className="border border-slate-300 mb-3 overflow-hidden">
-                            <div className="bg-slate-200 border-b border-slate-300 px-3 py-1.5">
-                              <span className="text-[10px] font-bold text-slate-600 uppercase tracking-widest">Matched Invoice(s) in System</span>
-                            </div>
-                            <table className="w-full text-xs">
-                              <thead><tr className="bg-slate-700 text-white">
-                                {['INV #', 'Vendor Inv #', 'Date', 'Net Payable', 'Balance', 'Status'].map(h => (
-                                  <th key={h} className="px-2 py-1 font-semibold text-[10px] uppercase tracking-widest border-r border-slate-600 text-left last:border-r-0 last:text-right">{h}</th>
-                                ))}
-                              </tr></thead>
-                              <tbody>
-                                {smartUploadResult.matchedInvoices.map(inv => (
-                                  <tr key={inv.id} className="border-b border-slate-100 even:bg-slate-50/70">
-                                    <td className="px-2 py-1 font-mono text-[10px] border-r border-slate-100">INV-{inv.invoiceNo}</td>
-                                    <td className="px-2 py-1 font-mono text-[10px] border-r border-slate-100">{inv.vendorInvNo || '--'}</td>
-                                    <td className="px-2 py-1 border-r border-slate-100">{new Date(inv.invoiceDate).toLocaleDateString('en-IN', { day: '2-digit', month: 'short' })}</td>
-                                    <td className="px-2 py-1 text-right font-mono tabular-nums border-r border-slate-100">{'\u20B9' + inv.netPayable.toLocaleString('en-IN')}</td>
-                                    <td className="px-2 py-1 text-right font-mono tabular-nums font-bold border-r border-slate-100">{'\u20B9' + inv.balanceAmount.toLocaleString('en-IN')}</td>
-                                    <td className="px-2 py-1"><span className={`text-[9px] font-bold uppercase px-1 py-0.5 border ${inv.status === 'PAID' ? 'border-emerald-400 bg-emerald-50 text-emerald-700' : inv.balanceAmount > 0 ? 'border-amber-400 bg-amber-50 text-amber-700' : 'border-slate-300'}`}>{inv.status}</span></td>
-                                  </tr>
-                                ))}
-                              </tbody>
-                            </table>
+                        {/* Card body */}
+                        {entry.status === 'error' && (
+                          <div className="px-3 py-2 text-[11px] text-red-700 bg-red-50">{entry.error || 'Something went wrong'}</div>
+                        )}
+
+                        {entry.status === 'extracting' && (
+                          <div className="px-3 py-3 text-[11px] text-blue-700">
+                            <Sparkles size={11} className="inline mr-1" /> AI is reading the bill...
                           </div>
                         )}
 
-                        {/* Suggested action */}
-                        <div className={`border-l-4 px-3 py-2 mb-3 ${
-                          smartUploadResult.suggestedAction === 'PAY_EXISTING' ? 'border-l-emerald-500 bg-emerald-50' :
-                          smartUploadResult.suggestedAction === 'CREATE_NEW' ? 'border-l-blue-500 bg-blue-50' :
-                          smartUploadResult.suggestedAction === 'CONFIRM_VENDOR' ? 'border-l-amber-500 bg-amber-50' :
-                          'border-l-red-500 bg-red-50'
-                        }`}>
-                          <div className="text-[10px] font-bold uppercase tracking-widest text-slate-500 mb-1">Suggested Action</div>
-                          <div className="text-xs text-slate-700">
-                            {smartUploadResult.suggestedAction === 'PAY_EXISTING' && '✓ This invoice already exists with an outstanding balance. Open the Pending tab to record the payment.'}
-                            {smartUploadResult.suggestedAction === 'CREATE_NEW' && 'New invoice for an existing vendor. Use the manual "Add Invoice" flow on the Pending tab to enter the values.'}
-                            {smartUploadResult.suggestedAction === 'CONFIRM_VENDOR' && 'Multiple invoices matched — please open the right one manually.'}
-                            {smartUploadResult.suggestedAction === 'NO_VENDOR' && '⚠ Vendor not in master — create the vendor first, then re-upload.'}
-                          </div>
-                        </div>
-                      </>
-                    )}
+                        {(entry.status === 'extracted' || entry.status === 'saving' || entry.status === 'saved') && (
+                          <div className="grid grid-cols-1 md:grid-cols-2 divide-x divide-slate-200 text-xs">
+                            {/* Extracted summary */}
+                            <div className="p-3 space-y-1">
+                              <div className="text-[9px] font-bold text-slate-400 uppercase tracking-widest mb-1">Extracted from bill</div>
+                              <div className="text-[10px] text-slate-600">
+                                <span className="text-slate-400">Inv: </span>
+                                <span className="font-mono font-bold">{ext.invoice_number || '--'}</span>
+                                <span className="text-slate-400 ml-2">Date: </span>
+                                <span className="font-mono">{ext.invoice_date || '--'}</span>
+                              </div>
+                              <div className="text-[10px] text-slate-700 pt-1">
+                                <span className="text-slate-400">Taxable: </span>
+                                <span className="font-mono font-bold">{taxable ? '₹' + taxable.toLocaleString('en-IN') : '--'}</span>
+                                <span className="text-slate-400 ml-2">GST: </span>
+                                <span className="font-mono">{ext.total_gst ? '₹' + Number(ext.total_gst).toLocaleString('en-IN') : '--'}</span>
+                              </div>
+                              <div className="text-[11px] text-slate-800 font-bold pt-0.5">
+                                Total: <span className="font-mono">{grandTotal ? '₹' + grandTotal.toLocaleString('en-IN') : '--'}</span>
+                                {ext.supply_type && <span className="ml-2 text-[9px] text-slate-500">({ext.supply_type})</span>}
+                              </div>
+                            </div>
 
-                    {/* Actions */}
-                    <div className="flex gap-2 justify-end">
-                      <button onClick={() => { setSmartUploadFile(null); setSmartUploadResult(null); }} className="px-3 py-1.5 border border-slate-300 text-slate-600 text-[11px] font-bold uppercase tracking-widest hover:bg-slate-50">Upload Another</button>
-                      <button onClick={closeSmartUpload} className="px-4 py-1.5 bg-slate-800 text-white text-[11px] font-bold uppercase tracking-widest hover:bg-slate-900">Done</button>
-                    </div>
-                  </>
-                )}
+                            {/* GRN picker */}
+                            <div className="p-3">
+                              <div className="text-[9px] font-bold text-slate-400 uppercase tracking-widest mb-1 flex items-center justify-between">
+                                <span>Open GRNs of {entry.matchedVendor?.name || 'vendor'}</span>
+                                {grns.length > 0 && (
+                                  <span className="text-slate-500 font-mono normal-case">
+                                    {selected.size}/{grns.length} &middot; ₹{selectedTotal.toLocaleString('en-IN')}
+                                  </span>
+                                )}
+                              </div>
+                              {grns.length === 0 ? (
+                                <div className="text-[10px] text-amber-700">No unbilled GRNs &mdash; either none received or all already invoiced.</div>
+                              ) : (
+                                <div className="max-h-36 overflow-auto border border-slate-200">
+                                  {grns.map(g => {
+                                    const isSelected = selected.has(g.id);
+                                    const disabled = entry.status !== 'extracted';
+                                    return (
+                                      <label key={g.id} className={`flex items-start gap-2 px-2 py-1.5 border-b border-slate-100 last:border-b-0 cursor-pointer hover:bg-slate-50 ${isSelected ? 'bg-emerald-50' : ''}`}>
+                                        <input
+                                          type="checkbox"
+                                          className="mt-0.5"
+                                          checked={isSelected}
+                                          disabled={disabled}
+                                          onChange={() => {
+                                            const next = new Set(selected);
+                                            if (next.has(g.id)) next.delete(g.id); else next.add(g.id);
+                                            updateSmartEntry(entry.id, { selectedGrnIds: Array.from(next) });
+                                          }}
+                                        />
+                                        <div className="flex-1 min-w-0">
+                                          <div className="text-[11px] font-bold text-slate-700">
+                                            GRN #{g.grnNo}
+                                            {g.po && <span className="text-slate-400 font-normal ml-1.5">&middot; PO {g.po.poNo}</span>}
+                                            <span className="text-slate-400 font-normal ml-1.5">&middot; {new Date(g.grnDate).toLocaleDateString('en-IN', { day: '2-digit', month: 'short' })}</span>
+                                          </div>
+                                          <div className="text-[10px] text-slate-500 truncate" title={g.lines?.[0]?.description}>
+                                            {g.ticketNo ? `T-${String(g.ticketNo).padStart(4, '0')} · ` : ''}
+                                            {g.vehicleNo || ''}
+                                            {g.lines?.[0]?.description ? ` · ${g.lines[0].description}` : ''}
+                                          </div>
+                                        </div>
+                                        <div className="text-right flex-shrink-0">
+                                          <div className="text-[10px] font-mono font-bold text-slate-700">{g.totalQty.toLocaleString('en-IN')} {g.lines?.[0]?.unit || 'KG'}</div>
+                                          <div className="text-[10px] font-mono text-slate-600">{'₹' + g.totalAmount.toLocaleString('en-IN')}</div>
+                                        </div>
+                                      </label>
+                                    );
+                                  })}
+                                </div>
+                              )}
+                              {grns.length > 0 && taxable > 0 && selected.size > 0 && (
+                                <div className={`text-[10px] mt-1 ${Math.abs(selectedTotal - taxable) / Math.max(taxable, 1) < 0.05 ? 'text-emerald-700' : 'text-amber-700'}`}>
+                                  Selected {'₹' + selectedTotal.toLocaleString('en-IN')} vs taxable {'₹' + taxable.toLocaleString('en-IN')}
+                                  {Math.abs(selectedTotal - taxable) / Math.max(taxable, 1) < 0.05 ? ' ✓ matches' : ' — review'}
+                                </div>
+                              )}
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+
+                {/* Footer */}
+                <div className="px-4 py-3 border-t border-slate-300 bg-white flex items-center gap-2">
+                  <div className="text-[10px] text-slate-500">
+                    {!lockedVendor ? 'Pick a vendor to start.' :
+                     smartUploadEntries.length === 0 ? 'Add at least one bill.' :
+                     readyCount > 0 ? `${readyCount} bill${readyCount === 1 ? '' : 's'} ready to save.` :
+                     pendingCount > 0 ? `${pendingCount} pending — click Analyze All.` :
+                     'Pick at least one GRN per bill.'}
+                  </div>
+                  <div className="flex-1" />
+                  <button onClick={closeSmartUpload} disabled={smartUploadBusy || smartSavingAll} className="px-3 py-1.5 border border-slate-300 text-slate-600 text-[11px] font-bold uppercase tracking-widest hover:bg-slate-50 disabled:opacity-50">
+                    Close
+                  </button>
+                  <button
+                    onClick={runSmartBulk}
+                    disabled={pendingCount === 0 || smartUploadBusy || smartSavingAll}
+                    className="flex items-center gap-1.5 px-3 py-1.5 bg-purple-600 text-white text-[11px] font-bold uppercase tracking-widest hover:bg-purple-700 disabled:opacity-50"
+                  >
+                    {smartUploadBusy ? 'Analysing...' : <><Sparkles size={11} /> Analyze All ({pendingCount})</>}
+                  </button>
+                  <button
+                    onClick={saveAllSmartEntries}
+                    disabled={readyCount === 0 || smartSavingAll || smartUploadBusy}
+                    className="flex items-center gap-1.5 px-4 py-1.5 bg-emerald-600 text-white text-[11px] font-bold uppercase tracking-widest hover:bg-emerald-700 disabled:opacity-50"
+                  >
+                    {smartSavingAll ? 'Saving...' : `Save All (${readyCount})`}
+                  </button>
+                </div>
               </div>
             </div>
-          </div>
-        )}
+          );
+        })()}
+
       </div>
     </div>
   );
