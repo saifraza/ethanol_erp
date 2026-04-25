@@ -1826,6 +1826,16 @@ export default function PaymentsOut() {
                                       <Sparkles size={10} /> AI
                                     </button>
                                   )}
+                                  {/* Reconcile — full-page vendor ledger of GRNs ↔ invoices ↔ payments */}
+                                  <a
+                                    href={`/accounts/payments-out/reconcile/${item.vendorId}`}
+                                    target="_blank"
+                                    rel="noopener noreferrer"
+                                    className="px-2 py-0.5 bg-slate-700 text-white text-[9px] font-bold uppercase hover:bg-slate-800 flex items-center gap-1"
+                                    title="Open vendor ledger in new tab — every GRN paired with its invoice"
+                                  >
+                                    <FileText size={10} /> LEDGER
+                                  </a>
                                   {/* PAY button — show when invoiced OR for fuel deals with GRNs (direct payment) */}
                                   {item.invoices.length > 0 && item.balance > 0 && (
                                     <>

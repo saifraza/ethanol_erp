@@ -386,6 +386,101 @@ router.get('/', asyncHandler(async (req: AuthRequest, res: Response) => {
 }));
 
 // ═══════════════════════════════════════════════
+// GET /reconcile-by-vendor/:vendorId — vendor-wide reconciliation ledger.
+// Returns the vendor + every PO + every GRN (with its linked invoice if any)
+// + every invoice (with its lines + linked GRNs) + payment summary, in one
+// shot so the Reconcile page renders without N+1 round-trips.
+// ═══════════════════════════════════════════════
+router.get('/reconcile-by-vendor/:vendorId', asyncHandler(async (req: AuthRequest, res: Response) => {
+  const vendorId = req.params.vendorId;
+  if (!vendorId) return res.status(400).json({ error: 'vendorId is required' });
+
+  const vendor = await prisma.vendor.findUnique({
+    where: { id: vendorId },
+    select: { id: true, name: true, gstin: true, pan: true, phone: true, email: true, bankName: true, bankAccount: true, bankIfsc: true },
+  });
+  if (!vendor) return res.status(404).json({ error: 'Vendor not found' });
+  if (!canAccessCompany(req, null)) return res.status(403).json({ error: 'Forbidden' });
+
+  const cFilter = getCompanyFilter(req);
+
+  const [pos, grns, invoices, payments] = await Promise.all([
+    prisma.purchaseOrder.findMany({
+      where: { vendorId, ...cFilter },
+      select: {
+        id: true, poNo: true, poDate: true, poType: true, status: true,
+        subtotal: true, totalGst: true, grandTotal: true, paymentTerms: true,
+      },
+      orderBy: { poDate: 'desc' },
+      take: 100,
+    }),
+    prisma.goodsReceipt.findMany({
+      where: { vendorId, archived: false, status: { in: ['CONFIRMED', 'PARTIAL'] }, ...cFilter },
+      select: {
+        id: true, grnNo: true, grnDate: true, ticketNo: true, vehicleNo: true,
+        status: true, qualityStatus: true, totalQty: true, totalAmount: true,
+        poId: true,
+        po: { select: { id: true, poNo: true } },
+        lines: { select: { description: true, receivedQty: true, rate: true, unit: true }, take: 5 },
+        // Direct & line-level links to vendor invoices.
+        vendorInvoices: { select: { id: true, invoiceNo: true, vendorInvNo: true }, take: 1 },
+        vendorInvoiceLines: { select: { invoiceId: true, invoice: { select: { id: true, invoiceNo: true, vendorInvNo: true } } }, take: 1 },
+      },
+      orderBy: { grnDate: 'desc' },
+      take: 1000,
+    }),
+    prisma.vendorInvoice.findMany({
+      where: { vendorId, status: { notIn: ['CANCELLED'] }, ...cFilter },
+      select: {
+        id: true, invoiceNo: true, vendorInvNo: true, vendorInvDate: true, invoiceDate: true,
+        totalAmount: true, paidAmount: true, balanceAmount: true, netPayable: true,
+        status: true, matchStatus: true, filePath: true, grnId: true, poId: true,
+        po: { select: { id: true, poNo: true } },
+        lines: {
+          orderBy: { lineNo: 'asc' },
+          select: {
+            id: true, productName: true, quantity: true, rate: true, totalAmount: true,
+            grnId: true,
+            grn: { select: { id: true, grnNo: true, ticketNo: true, vehicleNo: true, totalQty: true, totalAmount: true } },
+          },
+        },
+      },
+      orderBy: { invoiceDate: 'desc' },
+      take: 1000,
+    }),
+    prisma.vendorPayment.findMany({
+      where: { vendorId, ...cFilter },
+      select: { id: true, paymentDate: true, amount: true, mode: true, reference: true, paymentStatus: true, invoiceId: true },
+      orderBy: { paymentDate: 'desc' },
+      take: 200,
+    }),
+  ]);
+
+  // Compute summary
+  const totalReceived = grns.reduce((s, g) => s + (g.totalAmount || 0), 0);
+  const totalInvoiced = invoices.reduce((s, i) => s + (i.totalAmount || 0), 0);
+  const totalPaid = payments.filter(p => p.paymentStatus === 'CONFIRMED').reduce((s, p) => s + p.amount, 0);
+  const totalBalance = invoices.reduce((s, i) => s + (i.balanceAmount || 0), 0);
+
+  res.json({
+    vendor,
+    pos,
+    grns,
+    invoices,
+    payments,
+    summary: {
+      grnCount: grns.length,
+      invoiceCount: invoices.length,
+      paymentCount: payments.length,
+      totalReceived,
+      totalInvoiced,
+      totalPaid,
+      totalBalance,
+    },
+  });
+}));
+
+// ═══════════════════════════════════════════════
 // GET /unmatched — vendor invoices with NO GRN linkage at all
 // (header grnId is null AND no VendorInvoiceLine has a grnId).
 // These need accounts to manually pick a GRN (one PDF can cover many GRNs,

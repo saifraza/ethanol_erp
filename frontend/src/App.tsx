@@ -131,6 +131,7 @@ const BankPayments = React.lazy(() => import('./pages/accounts/BankPayments'));
 const BankLoans = React.lazy(() => import('./pages/accounts/BankLoans'));
 const PostDatedCheques = React.lazy(() => import('./pages/accounts/PostDatedCheques'));
 const PaymentsOut = React.lazy(() => import('./pages/accounts/PaymentsOut'));
+const ReconcileVendor = React.lazy(() => import('./pages/accounts/ReconcileVendor'));
 const PaymentsIn = React.lazy(() => import('./pages/accounts/PaymentsIn'));
 const CashBook = React.lazy(() => import('./pages/accounts/CashBook'));
 const BankBook = React.lazy(() => import('./pages/accounts/BankBook'));
@@ -295,6 +296,7 @@ export default function App() {
         <Route path="accounts/bank-loans" element={<BankLoans />} />
         <Route path="accounts/pdc" element={<PostDatedCheques />} />
         <Route path="accounts/payments-out" element={<PaymentsOut />} />
+        <Route path="accounts/payments-out/reconcile/:vendorId" element={<ReconcileVendor />} />
         <Route path="accounts/payments-in" element={<PaymentsIn />} />
         <Route path="accounts/cash-book" element={<CashBook />} />
         <Route path="accounts/bank-book" element={<BankBook />} />
