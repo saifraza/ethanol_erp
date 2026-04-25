@@ -740,6 +740,99 @@ export default function ReconcileVendor() {
         })()}
       </div>
 
+      {/* ────────────── Documents — every PDF on file for this vendor ────────────── */}
+      {(() => {
+        const invDocs = data.invoices.filter(i => i.filePath);
+        const poDocs = data.pos;
+        const grnsWithLinkedInv = new Set(Array.from(grnToInvoice.keys()));
+        if (invDocs.length === 0 && poDocs.length === 0 && data.grns.length === 0) return null;
+        return (
+          <div className="mb-3 border border-slate-300">
+            <div className="bg-slate-700 text-white px-4 py-2 flex items-center gap-2 text-[11px] font-bold uppercase tracking-widest">
+              <FileText size={12} />
+              Documents
+              <span className="text-slate-300 normal-case font-normal text-[10px]">
+                · {invDocs.length} bill{invDocs.length === 1 ? '' : 's'} · {poDocs.length} PO{poDocs.length === 1 ? '' : 's'} · {data.grns.length} GRN{data.grns.length === 1 ? '' : 's'}
+              </span>
+            </div>
+            <div className="grid grid-cols-1 md:grid-cols-3 divide-x divide-slate-200 bg-white">
+              {/* Invoice PDFs */}
+              <div className="p-3">
+                <div className="text-[9px] font-bold text-slate-400 uppercase tracking-widest mb-1.5">Vendor Invoices ({invDocs.length})</div>
+                {invDocs.length === 0 ? (
+                  <div className="text-[10px] text-slate-400">No invoice PDFs uploaded yet.</div>
+                ) : (
+                  <div className="flex flex-wrap gap-1 max-h-32 overflow-auto">
+                    {invDocs.map(inv => {
+                      const linked = (invoiceToGrns.get(inv.id) || []).length > 0;
+                      return (
+                        <a
+                          key={inv.id}
+                          href={`/uploads/${inv.filePath}`}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          title={`${fmt(inv.totalAmount)} · ${fmtDate(inv.vendorInvDate || inv.invoiceDate)}${linked ? ' · linked' : ' · awaiting GRN'}`}
+                          className={`inline-flex items-center gap-1 text-[10px] font-mono px-1.5 py-0.5 border ${linked ? 'border-emerald-300 bg-emerald-50 text-emerald-700 hover:bg-emerald-100' : 'border-amber-400 bg-amber-50 text-amber-700 hover:bg-amber-100'}`}
+                        >
+                          <FileText size={9} /> {inv.vendorInvNo || `INV-${inv.invoiceNo}`}
+                        </a>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
+              {/* PO PDFs */}
+              <div className="p-3">
+                <div className="text-[9px] font-bold text-slate-400 uppercase tracking-widest mb-1.5">POs ({poDocs.length})</div>
+                {poDocs.length === 0 ? (
+                  <div className="text-[10px] text-slate-400">No POs.</div>
+                ) : (
+                  <div className="flex flex-wrap gap-1 max-h-32 overflow-auto">
+                    {poDocs.map(p => {
+                      const isClosed = p.status === 'CLOSED' || p.status === 'CANCELLED';
+                      return (
+                        <a
+                          key={p.id}
+                          href={`/api/purchase-orders/${p.id}/pdf?token=${localStorage.getItem('token')}`}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          title={`${p.status} · ${fmtDate(p.poDate)} · ${fmt(p.grandTotal || 0)}`}
+                          className={`inline-flex items-center gap-1 text-[10px] font-mono px-1.5 py-0.5 border ${isClosed ? 'border-slate-300 bg-slate-50 text-slate-600 hover:bg-slate-100' : 'border-blue-300 bg-blue-50 text-blue-700 hover:bg-blue-100'}`}
+                        >
+                          <FileText size={9} /> PO-{p.poNo}
+                          {isClosed && <span className="text-slate-400">·closed</span>}
+                        </a>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
+              {/* GRN PDFs */}
+              <div className="p-3">
+                <div className="text-[9px] font-bold text-slate-400 uppercase tracking-widest mb-1.5">GRNs ({data.grns.length})</div>
+                <div className="flex flex-wrap gap-1 max-h-32 overflow-auto">
+                  {data.grns.map(g => {
+                    const linked = grnsWithLinkedInv.has(g.id);
+                    return (
+                      <a
+                        key={g.id}
+                        href={`/api/goods-receipts/${g.id}/pdf?token=${localStorage.getItem('token')}`}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        title={`${fmt(g.totalAmount)} · ${fmtDate(g.grnDate)}${linked ? ' · invoiced' : ' · awaiting bill'}`}
+                        className={`inline-flex items-center gap-1 text-[10px] font-mono px-1.5 py-0.5 border ${linked ? 'border-emerald-300 bg-emerald-50 text-emerald-700 hover:bg-emerald-100' : 'border-amber-400 bg-amber-50 text-amber-700 hover:bg-amber-100'}`}
+                      >
+                        <FileText size={9} /> GRN-{g.grnNo}
+                      </a>
+                    );
+                  })}
+                </div>
+              </div>
+            </div>
+          </div>
+        );
+      })()}
+
       {/* View toggle */}
       <div className="flex items-center gap-0 mb-3 border border-slate-300">
         {([
@@ -805,11 +898,24 @@ export default function ReconcileVendor() {
                     <td className="px-3 py-1.5 border-r border-slate-100 text-right font-mono tabular-nums font-bold">{fmt(g.totalAmount)}</td>
                     <td className="px-3 py-1.5 border-r border-slate-100 font-mono text-blue-700">{g.po ? `PO-${g.po.poNo}` : '--'}</td>
                     <td className="px-3 py-1.5">
-                      {matched ? (
-                        <span className="inline-flex items-center gap-1 text-[10px] px-1.5 py-0.5 border border-emerald-300 bg-emerald-50 text-emerald-700 font-bold">
-                          ✓ {inv.vendorInvNo || `INV-${inv.invoiceNo}`}
-                        </span>
-                      ) : (
+                      {matched ? (() => {
+                        const invFull = data.invoices.find(x => x.id === inv.invoiceId);
+                        const filePath = invFull?.filePath || null;
+                        const label = `✓ ${inv.vendorInvNo || `INV-${inv.invoiceNo}`}`;
+                        return filePath ? (
+                          <a
+                            href={`/uploads/${filePath}`}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            title="Open invoice PDF"
+                            className="inline-flex items-center gap-1 text-[10px] px-1.5 py-0.5 border border-emerald-300 bg-emerald-50 text-emerald-700 hover:bg-emerald-100 font-bold"
+                          >
+                            <FileText size={9} /> {label}
+                          </a>
+                        ) : (
+                          <span title="Invoice has no PDF on file" className="inline-flex items-center gap-1 text-[10px] px-1.5 py-0.5 border border-emerald-300 bg-emerald-50 text-emerald-700 font-bold">{label}</span>
+                        );
+                      })() : (
                         <span className="inline-flex items-center gap-1 text-[10px] px-1.5 py-0.5 border border-amber-400 bg-amber-50 text-amber-700 font-bold">
                           ⚠ awaiting bill
                         </span>
@@ -909,6 +1015,16 @@ export default function ReconcileVendor() {
                           >
                             <Sparkles size={10} /> Link GRN
                           </button>
+                        )}
+                        {/* Pay — deep link back to PaymentsOut Pay modal pre-loaded with this invoice */}
+                        {inv.balanceAmount > 0 && !unmatched && (
+                          <a
+                            href={`/accounts/payments-out?openPay=${inv.id}`}
+                            className="px-2 py-0.5 bg-green-600 text-white text-[9px] font-bold uppercase hover:bg-green-700 inline-flex items-center gap-1"
+                            title={`Record payment · balance ${fmt(inv.balanceAmount)}`}
+                          >
+                            Pay {fmt(inv.balanceAmount)}
+                          </a>
                         )}
                       </div>
                     </td>

@@ -1015,6 +1015,24 @@ export default function PaymentsOut() {
 
   useEffect(() => { fetchPending(); }, [fetchPending]);
 
+  // Deep link from the vendor Ledger page: ?openPay=:invoiceId opens the Pay
+  // modal for the matching pending row once data has loaded.
+  useEffect(() => {
+    if (pendingItems.length === 0) return;
+    const params = new URLSearchParams(window.location.search);
+    const wantInvoice = params.get('openPay');
+    if (!wantInvoice) return;
+    const item = pendingItems.find(p => p.invoices.some(inv => inv.id === wantInvoice));
+    if (item) {
+      openPayModal(item);
+      // Clear the param so a refresh doesn't keep re-opening.
+      const url = new URL(window.location.href);
+      url.searchParams.delete('openPay');
+      window.history.replaceState({}, '', url.toString());
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [pendingItems]);
+
   useEffect(() => {
     if (!selectedPOId) { setPODetail(null); return; }
     setDetailLoading(true);
@@ -1813,55 +1831,19 @@ export default function PaymentsOut() {
                                 {item.daysOverdue !== null ? (item.daysOverdue > 0 ? `+${item.daysOverdue}` : String(item.daysOverdue)) : '--'}
                               </td>
                               <td className="px-2 py-1.5 text-center">
-                                <div className="flex items-center justify-center gap-1">
-                                  {/* INV — single-bill upload, only when nothing's invoiced yet */}
-                                  {item.invoiceStatus === 'NO_INVOICE' && item.grnCount > 0 && (
-                                    <button onClick={() => openInvoiceModal(item)} className="px-2 py-0.5 bg-blue-600 text-white text-[9px] font-bold uppercase hover:bg-blue-700 flex items-center gap-1" title="Upload single invoice for this GRN">
-                                      <Upload size={10} /> INV
-                                    </button>
-                                  )}
-                                  {/* LEDGER — full-page vendor reconciliation. Has its own bulk upload
-                                      with AI matching scoped only to this vendor's unmatched GRNs (faster
-                                      and more accurate than the global Smart Upload modal). */}
-                                  {item.grnCount > 0 && (
-                                    <a
-                                      href={`/accounts/payments-out/reconcile/${item.vendorId}`}
-                                      target="_blank"
-                                      rel="noopener noreferrer"
-                                      className="px-2 py-0.5 bg-purple-700 text-white text-[9px] font-bold uppercase hover:bg-purple-800 flex items-center gap-1"
-                                      title="Open vendor ledger in new tab — view + upload bills with AI scoped to this vendor's GRNs"
-                                    >
-                                      <Sparkles size={10} /> LEDGER + AI
-                                    </a>
-                                  )}
-                                  {/* PAY button — show when invoiced OR for fuel deals with GRNs (direct payment) */}
-                                  {item.invoices.length > 0 && item.balance > 0 && (
-                                    <>
-                                      <button onClick={() => handleBankFile(item)} className="px-2 py-0.5 bg-indigo-600 text-white text-[9px] font-bold uppercase hover:bg-indigo-700 flex items-center gap-1" title="Generate Bank File">
-                                        <FileText size={10} /> CSV
-                                      </button>
-                                      <button onClick={() => openPayModal(item)} className="px-2 py-0.5 bg-green-600 text-white text-[9px] font-bold uppercase hover:bg-green-700 flex items-center gap-1" title="Record Payment">
-                                        <CreditCard size={10} /> PAY
-                                      </button>
-                                    </>
-                                  )}
-                                  {/* Direct PAY against PO — running account (after GRN) OR advance (before delivery) */}
-                                  {(() => {
-                                    const isAdvance = /ADVANCE|PREPAY/i.test(item.paymentTerms || '');
-                                    const canRunningPay = item.grnCount > 0 && item.invoices.length === 0 && item.balance >= 1;
-                                    const canAdvancePay = item.grnCount === 0 && item.invoices.length === 0 && isAdvance;
-                                    if (canRunningPay || canAdvancePay) {
-                                      return (
-                                        <button onClick={() => { setPoPayItem(item); setPoPayAmount(canAdvancePay ? String(item.poAmount || '') : ''); setPoPayMode('NEFT'); setPoPayRef(''); setPoPayRemarks(canAdvancePay ? 'Advance payment' : ''); setPoPayIncludeGst(null); setBankPendingPayment(null); setPayAllocations({ current: '' }); setPoPayTdsCalc(null); setPoPayTdsApply(false); fetchPOPayments(item.poId); }}
-                                          className="px-2 py-0.5 bg-green-600 text-white text-[9px] font-bold uppercase hover:bg-green-700 flex items-center gap-1" title={canAdvancePay ? 'Pay in advance' : 'Pay against PO'}>
-                                          <CreditCard size={10} /> {canAdvancePay ? 'ADV PAY' : 'PAY'}
-                                        </button>
-                                      );
-                                    }
-                                    if (item.grnCount === 0) return <span className="text-[9px] text-slate-400 uppercase">No GRN</span>;
-                                    return null;
-                                  })()}
-                                </div>
+                                {/* Single primary action — open the full vendor ledger in a new tab.
+                                    Upload (single + bulk + AI), GRN linking, payments, and document
+                                    review all happen there. Multi-vendor bank-file CSV stays on the
+                                    Outstanding tab where checkboxes select across vendors. */}
+                                <a
+                                  href={`/accounts/payments-out/reconcile/${item.vendorId}`}
+                                  target="_blank"
+                                  rel="noopener noreferrer"
+                                  className="inline-flex items-center gap-1.5 px-3 py-1 bg-purple-700 text-white text-[10px] font-bold uppercase tracking-widest hover:bg-purple-800"
+                                  title="Open vendor ledger — upload bills, link GRNs, record payment, view documents"
+                                >
+                                  <Sparkles size={11} /> Open Ledger
+                                </a>
                               </td>
                             </tr>
                             {/* Pipeline expansion row */}
