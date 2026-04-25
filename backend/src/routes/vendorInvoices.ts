@@ -318,6 +318,38 @@ router.post('/upload-extract-bulk', upload.array('files', 50), asyncHandler(asyn
   });
 }));
 
+// ═══════════════════════════════════════════════
+// POST /backfill-hashes — one-shot: compute SHA-256 for invoices that have
+// a filePath but no fileHash yet. Idempotent — already-hashed rows are
+// skipped. Admin-only. Hit once after the dedupe deploy lands.
+// ═══════════════════════════════════════════════
+router.post('/backfill-hashes', authorize('ADMIN', 'SUPER_ADMIN') as any, asyncHandler(async (req: AuthRequest, res: Response) => {
+  const targets = await prisma.vendorInvoice.findMany({
+    where: { filePath: { not: null }, fileHash: null },
+    select: { id: true, filePath: true },
+    take: 1000,
+  });
+
+  const uploadsRoot = path.join(__dirname, '../../uploads');
+  const result = { scanned: targets.length, updated: 0, missing: 0, failed: 0 };
+
+  for (const inv of targets) {
+    if (!inv.filePath) continue;
+    const abs = path.join(uploadsRoot, inv.filePath);
+    if (!fs.existsSync(abs)) { result.missing++; continue; }
+    try {
+      const buf = fs.readFileSync(abs);
+      const hash = crypto.createHash('sha256').update(buf).digest('hex');
+      await prisma.vendorInvoice.update({ where: { id: inv.id }, data: { fileHash: hash } });
+      result.updated++;
+    } catch {
+      result.failed++;
+    }
+  }
+
+  res.json(result);
+}));
+
 // GET / — list with filters (vendorId, status)
 router.get('/', asyncHandler(async (req: AuthRequest, res: Response) => {
     const vendorId = req.query.vendorId as string | undefined;
