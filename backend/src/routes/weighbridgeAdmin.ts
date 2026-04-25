@@ -79,10 +79,11 @@ router.get(
         { supplierName: { contains: search, mode: 'insensitive' } },
         { customerName: { contains: search, mode: 'insensitive' } },
       ];
+      // Accept "T-89", "T-0089", "t89", "89" — strip optional T-/T prefix and any leading zeros.
       const digitsOnly = search.trim().replace(/^[Tt]-?/, '');
-      const ticketNo = parseInt(digitsOnly, 10);
-      if (!isNaN(ticketNo) && String(ticketNo) === digitsOnly) {
-        searchOr.push({ ticketNo });
+      if (/^\d+$/.test(digitsOnly)) {
+        const ticketNo = parseInt(digitsOnly, 10);
+        if (ticketNo > 0) searchOr.push({ ticketNo });
       }
       // Combine with date filter if present — both must match
       if (where.OR) {

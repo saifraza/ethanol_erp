@@ -11,7 +11,8 @@
  *   materialType  ETHANOL|DDGS|RAW_MATERIAL|FUEL|OTHER|ALL  (default ALL)
  *   direction     INBOUND|OUTBOUND|ALL  (default ALL)
  *   status        PENDING|PARTIAL|COMPLETE|ALL  (default ALL)
- *   search        substring match on vehicleNo or supplierName/shipToName
+ *   search        substring on vehicleNo / supplierName / shipToName, plus
+ *                 numeric/"T-NNN"/"T-0NNN" match on ticketNo
  *   onlyCompleted boolean — only COMPLETE records, filter on secondWeightAt
  *   limit         default 100, max 1000
  *   offset        default 0
@@ -93,6 +94,7 @@ router.get('/', asyncHandler(async (req: Request, res: Response) => {
       vehicleNo?: { contains: string; mode: 'insensitive' };
       supplierName?: { contains: string; mode: 'insensitive' };
       shipToName?: { contains: string; mode: 'insensitive' };
+      ticketNo?: number;
     }>;
   };
 
@@ -148,14 +150,21 @@ router.get('/', asyncHandler(async (req: Request, res: Response) => {
     }
   }
 
-  // search filter
+  // search filter — substring match on vehicle/supplier/shipTo, plus numeric
+  // ticketNo match. Accepts "T-89", "T-0089", "t89", "89".
   if (search && search.trim()) {
     const term = search.trim();
-    where.OR = [
+    const or: NonNullable<WhereClause['OR']> = [
       { vehicleNo:    { contains: term, mode: 'insensitive' } },
       { supplierName: { contains: term, mode: 'insensitive' } },
       { shipToName:   { contains: term, mode: 'insensitive' } },
     ];
+    const digitsOnly = term.replace(/^[Tt]-?/, '');
+    if (/^\d+$/.test(digitsOnly)) {
+      const ticketNo = parseInt(digitsOnly, 10);
+      if (ticketNo > 0) or.push({ ticketNo });
+    }
+    where.OR = or;
   }
 
   // xlsx has higher row cap (10000), JSON uses take/skip pagination
