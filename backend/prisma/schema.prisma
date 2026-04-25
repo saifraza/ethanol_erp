@@ -2753,6 +2753,8 @@ model VendorInvoice {
   matchRemarks      String?
   // Document refs
   filePath          String? // uploaded invoice file (relative to uploads/)
+  fileHash          String? // SHA-256 of the uploaded bill — used to skip AI extraction on re-uploads
+  originalFileName  String? // the user's original filename (e.g. "may-bills-3.pdf") — for human-readable dedup messages
   remarks           String?
   userId            String
   createdAt         DateTime       @default(now())
@@ -2771,6 +2773,7 @@ model VendorInvoice {
   @@index([invoiceDate])
   @@index([division])
   @@index([companyId])
+  @@index([fileHash])
 }
 
 // ── Vendor Invoice Line ──

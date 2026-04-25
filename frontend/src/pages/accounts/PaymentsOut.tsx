@@ -379,15 +379,18 @@ export default function PaymentsOut() {
     total_amount?: number | null;
     supply_type?: 'INTRA_STATE' | 'INTER_STATE' | null;
   };
+  type SmartDuplicate = { invoiceId: string; invoiceNo: number; vendorInvNo: string | null; totalAmount: number; vendorName: string | null; isMatched: boolean };
   type SmartUploadEntry = {
     id: string;
     file: File;
     status: 'pending' | 'extracting' | 'extracted' | 'saving' | 'saved' | 'error';
     filePath?: string;
+    fileHash?: string;
     extracted?: SmartExtracted | null;
     matchedVendor?: Vendor | null;
     unbilledGrns?: SmartUnbilledGrn[];
     selectedGrnIds?: string[];
+    duplicateOf?: SmartDuplicate;
     error?: string;
     savedInvoiceNo?: number;
   };
@@ -486,7 +489,7 @@ export default function PaymentsOut() {
       // each request a manageable size and lets the UI flip cards to "extracted"
       // progressively instead of waiting for the whole batch.
       const CHUNK = 15;
-      type BulkResp = { count: number; results: Array<{ filePath: string; originalName: string; extracted: SmartExtracted | null; error?: string }> };
+      type BulkResp = { count: number; results: Array<{ filePath: string; originalName: string; fileHash: string; extracted: SmartExtracted | null; duplicateOf?: SmartDuplicate; error?: string }> };
       const allResults: BulkResp['results'] = [];
       for (let i = 0; i < pending.length; i += CHUNK) {
         const slice = pending.slice(i, i + CHUNK);
@@ -524,8 +527,10 @@ export default function PaymentsOut() {
           ...entry,
           status: r.error ? 'error' : 'extracted',
           filePath: r.filePath,
+          fileHash: r.fileHash,
           extracted: r.extracted,
           matchedVendor,
+          duplicateOf: r.duplicateOf,
           error: r.error,
         };
         updated.set(entry.id, next);
@@ -566,13 +571,34 @@ export default function PaymentsOut() {
   }, [smartUploadEntries, vendors, matchExtractedToVendor]);
 
   // ── Save one entry → POST /vendor-invoices with lines[] ──
-  // Always saves, even when no GRN is picked yet. Cards with no GRN selection
-  // are saved with a single placeholder line (no grnId) and surface in the PO
-  // detail panel with a "Link GRN" button so accounts can reconcile later.
+  // Three paths:
+  // 1. Duplicate of an UNMATCHED existing invoice → POST /link-grns to that
+  //    invoice, no new row created.
+  // 2. Duplicate of a MATCHED existing invoice → already filtered out by
+  //    saveAllSmartEntries (skip on Save All).
+  // 3. New bill → normal POST /vendor-invoices with lines (or placeholder line
+  //    when no GRN is ticked, for later manual linking).
   const saveSmartEntry = useCallback(async (entry: SmartUploadEntry): Promise<{ ok: boolean; invoiceNo?: number; error?: string }> => {
     if (!entry.matchedVendor) return { ok: false, error: 'Vendor not matched' };
     const ext = entry.extracted || {};
     const pickedGrns = (entry.unbilledGrns || []).filter(g => entry.selectedGrnIds?.includes(g.id));
+
+    // Path 1 — duplicate of unmatched existing: link GRNs to the existing invoice.
+    if (entry.duplicateOf && !entry.duplicateOf.isMatched) {
+      const grnIds = pickedGrns.map(g => g.id);
+      if (grnIds.length === 0) {
+        return { ok: false, error: 'Pick at least one GRN to finish linking the existing invoice' };
+      }
+      try {
+        await api.post(`/vendor-invoices/${entry.duplicateOf.invoiceId}/link-grns`, { grnIds });
+        return { ok: true, invoiceNo: entry.duplicateOf.invoiceNo };
+      } catch (err: unknown) {
+        const msg = (err as { response?: { data?: { error?: string } }; message?: string })?.response?.data?.error
+          || (err as { message?: string })?.message
+          || 'Link failed';
+        return { ok: false, error: msg };
+      }
+    }
 
     // Derive default GST% from extraction, fall back to 18.
     const taxable = Number(ext.taxable_amount) || pickedGrns.reduce((s, g) => s + g.totalAmount, 0);
@@ -623,6 +649,8 @@ export default function PaymentsOut() {
         supplyType,
         gstPercent,
         filePath: entry.filePath || null,
+        fileHash: entry.fileHash || null,
+        originalFileName: entry.file.name,
         status: 'APPROVED',
         lines,
       });
@@ -639,7 +667,12 @@ export default function PaymentsOut() {
   // Saves every extracted entry that has a matched vendor — cards with no GRN
   // ticked are saved as placeholders for later manual linking.
   const saveAllSmartEntries = useCallback(async () => {
-    const ready = smartUploadEntries.filter(e => e.status === 'extracted' && e.matchedVendor);
+    // Skip already-matched duplicates (no-op). Save:
+    //  - new bills (no duplicateOf)
+    //  - duplicates of UNMATCHED existing invoices (those route to /link-grns).
+    const ready = smartUploadEntries.filter(e =>
+      e.status === 'extracted' && e.matchedVendor && (!e.duplicateOf || !e.duplicateOf.isMatched)
+    );
     if (ready.length === 0) return;
     setSmartSavingAll(true);
     for (const entry of ready) {
@@ -3841,10 +3874,16 @@ export default function PaymentsOut() {
 
         {smartUploadOpen && (() => {
           const pendingCount = smartUploadEntries.filter(e => e.status === 'pending').length;
-          // Ready = extracted + has matched vendor (GRN tick is no longer required;
-          // unmatched cards save as placeholders and surface a "Link GRN" button on the PO).
-          const readyCount = smartUploadEntries.filter(e => e.status === 'extracted' && e.matchedVendor).length;
-          const reviewCount = smartUploadEntries.filter(e => e.status === 'extracted' && e.matchedVendor && (e.selectedGrnIds?.length || 0) === 0).length;
+          // Ready = extracted + matched vendor + (NOT a duplicate, OR is a duplicate-but-unmatched
+          // — those still save by linking GRNs to the existing invoice).
+          const readyCount = smartUploadEntries.filter(e =>
+            e.status === 'extracted' && e.matchedVendor && (!e.duplicateOf || !e.duplicateOf.isMatched)
+          ).length;
+          const reviewCount = smartUploadEntries.filter(e =>
+            e.status === 'extracted' && e.matchedVendor && !e.duplicateOf && (e.selectedGrnIds?.length || 0) === 0
+          ).length;
+          const dupMatchedCount = smartUploadEntries.filter(e => e.duplicateOf && e.duplicateOf.isMatched).length;
+          const dupUnmatchedCount = smartUploadEntries.filter(e => e.duplicateOf && !e.duplicateOf.isMatched).length;
           // Locked vendor — preset (from per-PO open) takes priority, otherwise read off the first entry.
           const lockedVendor = smartPresetVendor || smartUploadEntries.find(e => e.matchedVendor)?.matchedVendor || null;
           return (
@@ -3926,6 +3965,8 @@ export default function PaymentsOut() {
                     <div className="text-[10px] text-slate-600 font-bold uppercase tracking-widest">
                       {smartUploadEntries.length} file{smartUploadEntries.length === 1 ? '' : 's'} &middot; {readyCount} ready
                       {reviewCount > 0 && <span className="text-amber-700 ml-1">&middot; {reviewCount} need review</span>}
+                      {dupMatchedCount > 0 && <span className="text-violet-700 ml-1">&middot; {dupMatchedCount} already matched</span>}
+                      {dupUnmatchedCount > 0 && <span className="text-fuchsia-700 ml-1">&middot; {dupUnmatchedCount} re-uploaded (link GRN now)</span>}
                     </div>
                   )}
                 </div>
@@ -3956,7 +3997,12 @@ export default function PaymentsOut() {
                     const grandTotal = Number(ext.total_amount) || 0;
 
                     return (
-                      <div key={entry.id} className={`bg-white border overflow-hidden ${entry.status === 'extracted' && (entry.selectedGrnIds?.length || 0) === 0 ? 'border-amber-400 ring-1 ring-amber-200' : 'border-slate-300'}`}>
+                      <div key={entry.id} className={`bg-white border overflow-hidden ${
+                        entry.duplicateOf?.isMatched ? 'border-violet-400 ring-1 ring-violet-200' :
+                        entry.duplicateOf ? 'border-fuchsia-400 ring-1 ring-fuchsia-200' :
+                        entry.status === 'extracted' && (entry.selectedGrnIds?.length || 0) === 0 ? 'border-amber-400 ring-1 ring-amber-200' :
+                        'border-slate-300'
+                      }`}>
                         {/* Card header */}
                         <div className="px-3 py-2 border-b border-slate-200 flex items-center gap-2 bg-slate-50">
                           <FileText size={12} className="text-slate-500" />
@@ -3964,14 +4010,19 @@ export default function PaymentsOut() {
                           <div className="text-[10px] text-slate-400">{(entry.file.size / 1024).toFixed(1)} KB</div>
                           <span className={
                             'text-[9px] font-bold uppercase px-1.5 py-0.5 border ' +
-                            (entry.status === 'pending' ? 'border-slate-300 bg-slate-100 text-slate-600' :
+                            (entry.duplicateOf?.isMatched ? 'border-violet-400 bg-violet-50 text-violet-700' :
+                             entry.duplicateOf ? 'border-fuchsia-400 bg-fuchsia-50 text-fuchsia-700' :
+                             entry.status === 'pending' ? 'border-slate-300 bg-slate-100 text-slate-600' :
                              entry.status === 'extracting' ? 'border-blue-300 bg-blue-50 text-blue-700 animate-pulse' :
                              entry.status === 'extracted' ? 'border-emerald-400 bg-emerald-50 text-emerald-700' :
                              entry.status === 'saving' ? 'border-amber-400 bg-amber-50 text-amber-700 animate-pulse' :
                              entry.status === 'saved' ? 'border-emerald-500 bg-emerald-100 text-emerald-800' :
                              'border-red-400 bg-red-50 text-red-700')
                           }>
-                            {entry.status === 'saved' && entry.savedInvoiceNo ? `Saved · INV-${entry.savedInvoiceNo}` : entry.status}
+                            {entry.duplicateOf?.isMatched ? `Already matched · INV-${entry.duplicateOf.invoiceNo}`
+                              : entry.duplicateOf ? `In system, no GRN · INV-${entry.duplicateOf.invoiceNo} (link now)`
+                              : entry.status === 'saved' && entry.savedInvoiceNo ? `Saved · INV-${entry.savedInvoiceNo}`
+                              : entry.status}
                           </span>
                           {!smartUploadBusy && !smartSavingAll && entry.status !== 'saved' && (
                             <button onClick={() => removeSmartEntry(entry.id)} className="text-slate-400 hover:text-red-600" title="Remove">

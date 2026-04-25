@@ -1,4 +1,5 @@
 import { Router, Request, Response } from 'express';
+import crypto from 'crypto';
 import prisma from '../config/prisma';
 import { authenticate, authorize, AuthRequest, getCompanyFilter, getActiveCompanyId, canAccessCompany } from '../middleware/auth';
 import { asyncHandler, validate } from '../shared/middleware';
@@ -57,6 +58,8 @@ const createVendorInvoiceSchema = z.object({
   tdsPercent: z.coerce.number().optional().default(0),
   status: z.string().optional().default('PENDING'),
   filePath: z.string().optional().nullable(),
+  fileHash: z.string().optional().nullable(),
+  originalFileName: z.string().optional().nullable(),
   remarks: z.string().optional().nullable(),
   // NEW: optional multi-line payload. When present, header qty/rate/etc are derived from these.
   lines: z.array(vendorInvoiceLineSchema).optional(),
@@ -190,7 +193,7 @@ router.post('/upload-extract', upload.single('file'), asyncHandler(async (req: R
 // Accepts multipart "files" field (1..20). Returns one result per file.
 // Fails individually — one bad file doesn't break the batch.
 // ═══════════════════════════════════════════════
-router.post('/upload-extract-bulk', upload.array('files', 50), asyncHandler(async (req: Request, res: Response) => {
+router.post('/upload-extract-bulk', upload.array('files', 50), asyncHandler(async (req: AuthRequest, res: Response) => {
   const files = (req.files as Express.Multer.File[] | undefined) ?? [];
   if (files.length === 0) {
     res.status(400).json({ error: 'No files uploaded' });
@@ -198,25 +201,100 @@ router.post('/upload-extract-bulk', upload.array('files', 50), asyncHandler(asyn
   }
 
   const GEMINI_KEY = process.env.GEMINI_API_KEY;
+  const companyFilter = getCompanyFilter(req);
 
   // Run extractions in parallel; cap to ~5 in flight at a time so we don't slam Gemini.
+  // BEFORE calling Gemini we hash the file (SHA-256) and look for an existing
+  // VendorInvoice with the same hash. If found, reuse that invoice's data and
+  // skip the AI call (saves Gemini API cost on re-uploads).
   const CONCURRENCY = 5;
-  const results: Array<{ filePath: string; originalName: string; extracted: ExtractedInvoice; error?: string }> = [];
+  // `isMatched` = the existing invoice already has at least one GRN linked
+  // (header grnId or any VendorInvoiceLine.grnId). When it's matched, we skip
+  // AI extraction entirely. When it's unmatched, we still run AI so accounts
+  // can pick a GRN now — and the frontend routes the save to /link-grns on
+  // the existing invoice instead of creating a duplicate row.
+  type DupInfo = { invoiceId: string; invoiceNo: number; vendorInvNo: string | null; totalAmount: number; vendorName: string | null; isMatched: boolean };
+  type BulkResult = {
+    filePath: string;
+    originalName: string;
+    fileHash: string;
+    extracted: ExtractedInvoice;
+    error?: string;
+    duplicateOf?: DupInfo;
+  };
+  const results: BulkResult[] = [];
+
   for (let i = 0; i < files.length; i += CONCURRENCY) {
     const batch = files.slice(i, i + CONCURRENCY);
     const settled = await Promise.all(
-      batch.map(async (file) => {
+      batch.map(async (file): Promise<BulkResult> => {
         const filePath = `vendor-invoices/${file.filename}`;
-        if (!GEMINI_KEY) {
-          return { filePath, originalName: file.originalname, extracted: null, error: 'AI extraction not configured (no GEMINI_API_KEY)' };
-        }
+        const base: Pick<BulkResult, 'filePath' | 'originalName' | 'fileHash'> = {
+          filePath,
+          originalName: file.originalname,
+          fileHash: '',
+        };
         try {
           const buffer = fs.readFileSync(file.path);
+          const fileHash = crypto.createHash('sha256').update(buffer).digest('hex');
+          base.fileHash = fileHash;
+
+          // Dedup: same hash + same company → look up the existing invoice.
+          // If the existing one is already matched (has GRN linked), skip AI.
+          // If it's unmatched, still run AI so the user can pick a GRN now.
+          const existing = await prisma.vendorInvoice.findFirst({
+            where: { fileHash, ...companyFilter },
+            select: {
+              id: true, invoiceNo: true, vendorInvNo: true, vendorInvDate: true,
+              totalAmount: true, subtotal: true, totalGst: true, supplyType: true,
+              gstPercent: true, grnId: true,
+              vendor: { select: { name: true } },
+              lines: { select: { grnId: true }, take: 1, where: { grnId: { not: null } } },
+            },
+          });
+          if (existing) {
+            const isMatched = !!existing.grnId || existing.lines.length > 0;
+            const dupInfo: DupInfo = {
+              invoiceId: existing.id,
+              invoiceNo: existing.invoiceNo,
+              vendorInvNo: existing.vendorInvNo,
+              totalAmount: existing.totalAmount,
+              vendorName: existing.vendor?.name || null,
+              isMatched,
+            };
+            if (isMatched) {
+              // Already matched — return cached fields, no AI call.
+              return {
+                ...base,
+                extracted: {
+                  invoice_number: existing.vendorInvNo || `INV-${existing.invoiceNo}`,
+                  invoice_date: existing.vendorInvDate ? existing.vendorInvDate.toISOString().slice(0, 10) : null,
+                  vendor_name: existing.vendor?.name || null,
+                  taxable_amount: existing.subtotal,
+                  total_gst: existing.totalGst,
+                  total_amount: existing.totalAmount,
+                  supply_type: existing.supplyType === 'INTER_STATE' ? 'INTER_STATE' : 'INTRA_STATE',
+                },
+                duplicateOf: dupInfo,
+              };
+            }
+            // Unmatched duplicate — run AI so user can review + pick a GRN.
+            // Frontend routes the save to /link-grns on the existing id.
+            if (!GEMINI_KEY) {
+              return { ...base, extracted: null, error: 'AI extraction not configured (no GEMINI_API_KEY)', duplicateOf: dupInfo };
+            }
+            const { extracted, error } = await extractInvoiceFromBuffer(buffer, file.mimetype, GEMINI_KEY);
+            return { ...base, extracted, duplicateOf: dupInfo, ...(error ? { error } : {}) };
+          }
+
+          if (!GEMINI_KEY) {
+            return { ...base, extracted: null, error: 'AI extraction not configured (no GEMINI_API_KEY)' };
+          }
           const { extracted, error } = await extractInvoiceFromBuffer(buffer, file.mimetype, GEMINI_KEY);
-          return { filePath, originalName: file.originalname, extracted, ...(error ? { error } : {}) };
+          return { ...base, extracted, ...(error ? { error } : {}) };
         } catch (err: unknown) {
           const msg = err instanceof Error ? err.message : 'Read/extract failed';
-          return { filePath, originalName: file.originalname, extracted: null, error: msg };
+          return { ...base, extracted: null, error: msg };
         }
       }),
     );
@@ -483,6 +561,8 @@ router.post('/', validate(createVendorInvoiceSchema), asyncHandler(async (req: A
           matchStatus,
           status: b.status || 'PENDING',
           filePath: b.filePath || null,
+          fileHash: b.fileHash || null,
+          originalFileName: b.originalFileName || null,
           remarks: b.remarks || null,
           userId: req.user!.id,
           companyId,
