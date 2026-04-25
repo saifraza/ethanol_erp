@@ -1,6 +1,6 @@
 import { Router, Request, Response } from 'express';
 import prisma from '../config/prisma';
-import { authenticate, authorize, AuthRequest, getCompanyFilter, getActiveCompanyId } from '../middleware/auth';
+import { authenticate, authorize, AuthRequest, getCompanyFilter, getActiveCompanyId, canAccessCompany } from '../middleware/auth';
 import { asyncHandler, validate } from '../shared/middleware';
 import { z } from 'zod';
 import PDFDocument from 'pdfkit';
@@ -527,6 +527,84 @@ router.post('/', validate(createVendorInvoiceSchema), asyncHandler(async (req: A
 
     if (invoice.poId) recomputeGrnPaidStateForPO(invoice.poId).catch(() => {});
     res.status(201).json(invoice);
+}));
+
+// ═══════════════════════════════════════════════
+// POST /:id/link-grns — manually attach one or more GRNs to an invoice.
+// Idempotent: GRNs already linked are skipped, new ones are added as lines.
+// Body: { grnIds: string[] }
+// Used by the "Link GRN" button on PO detail when the AI couldn't auto-match
+// or the user wants to add a missed GRN to an already-saved bill.
+// ═══════════════════════════════════════════════
+const linkGrnsSchema = z.object({ grnIds: z.array(z.string().min(1)).min(1) });
+router.post('/:id/link-grns', validate(linkGrnsSchema), asyncHandler(async (req: AuthRequest, res: Response) => {
+  const invoice = await prisma.vendorInvoice.findUnique({
+    where: { id: req.params.id },
+    include: { lines: true },
+  });
+  if (!invoice) return res.status(404).json({ error: 'Invoice not found' });
+  if (!canAccessCompany(req, invoice.companyId)) return res.status(403).json({ error: 'Forbidden' });
+
+  const { grnIds } = req.body as { grnIds: string[] };
+
+  // Skip GRNs already linked (header or any existing line).
+  const existingLineGrnIds = new Set(invoice.lines.map(l => l.grnId).filter((x): x is string => !!x));
+  if (invoice.grnId) existingLineGrnIds.add(invoice.grnId);
+  const newGrnIds = grnIds.filter(g => !existingLineGrnIds.has(g));
+  if (newGrnIds.length === 0) {
+    return res.json({ added: 0, message: 'All GRNs are already linked' });
+  }
+
+  // Fetch the new GRNs to derive qty/rate per line.
+  const grns = await prisma.goodsReceipt.findMany({
+    where: { id: { in: newGrnIds }, vendorId: invoice.vendorId },
+    select: { id: true, grnNo: true, totalQty: true, totalAmount: true, lines: { select: { description: true, unit: true }, take: 1 } },
+  });
+  if (grns.length !== newGrnIds.length) {
+    return res.status(400).json({ error: 'One or more GRNs were not found or do not belong to this vendor' });
+  }
+
+  // Determine starting lineNo (max existing + 1).
+  const startLineNo = (invoice.lines.reduce((m, l) => Math.max(m, l.lineNo), 0) || 0) + 1;
+
+  await prisma.$transaction(async (tx) => {
+    for (let i = 0; i < grns.length; i++) {
+      const g = grns[i];
+      const qty = g.totalQty || 0;
+      const rate = qty > 0 ? (g.totalAmount || 0) / qty : 0;
+      const taxable = qty * rate;
+      const gst = invoice.gstPercent || 0;
+      let cg = 0, sg = 0, ig = 0;
+      if (invoice.supplyType === 'INTRA_STATE') { cg = taxable * gst / 2 / 100; sg = taxable * gst / 2 / 100; }
+      else { ig = taxable * gst / 100; }
+      await tx.vendorInvoiceLine.create({
+        data: {
+          invoiceId: invoice.id,
+          grnId: g.id,
+          lineNo: startLineNo + i,
+          productName: g.lines[0]?.description || `GRN-${g.grnNo}`,
+          quantity: qty,
+          unit: g.lines[0]?.unit || 'KG',
+          rate,
+          taxableAmount: taxable,
+          gstPercent: gst,
+          cgstAmount: cg,
+          sgstAmount: sg,
+          igstAmount: ig,
+          totalAmount: taxable + cg + sg + ig,
+        },
+      });
+    }
+    // Promote first new GRN to header grnId if header is still empty.
+    if (!invoice.grnId && grns[0]) {
+      await tx.vendorInvoice.update({ where: { id: invoice.id }, data: { grnId: grns[0].id } });
+    }
+  });
+
+  // Recompute the GRN paid-state on the PO since invoice→GRN linkage changed.
+  if (invoice.poId) recomputeGrnPaidStateForPO(invoice.poId).catch(() => {});
+
+  res.json({ added: grns.length });
 }));
 
 // PUT /:id — edit vendor invoice (only PENDING status)

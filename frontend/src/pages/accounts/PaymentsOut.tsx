@@ -645,6 +645,64 @@ export default function PaymentsOut() {
     setSmartUploadEntries(prev => prev.filter(e => e.id !== id));
   };
 
+  // ── Manually link GRNs to an already-saved vendor invoice ──
+  // Used when the bulk AI couldn't auto-match a GRN, or accounts wants to
+  // attach an additional GRN to a bill after it was booked.
+  type LinkGrnTarget = {
+    invoiceId: string;
+    invoiceNo: number | null;
+    vendorInvNo: string | null;
+    vendorId: string;
+    vendorName: string;
+    poId: string | null;
+    grnsAvailable: SmartUnbilledGrn[];
+    selected: Set<string>;
+    saving: boolean;
+    error?: string;
+  };
+  const [linkGrnTarget, setLinkGrnTarget] = useState<LinkGrnTarget | null>(null);
+
+  const openLinkGrnModal = useCallback(async (invoice: { id: string; invoiceNo: number; vendorInvNo: string | null; vendorId: string; poId?: string | null }, vendorName: string) => {
+    setLinkGrnTarget({
+      invoiceId: invoice.id,
+      invoiceNo: invoice.invoiceNo,
+      vendorInvNo: invoice.vendorInvNo,
+      vendorId: invoice.vendorId,
+      vendorName,
+      poId: invoice.poId || null,
+      grnsAvailable: [],
+      selected: new Set(),
+      saving: false,
+    });
+    try {
+      const r = await api.get<{ grns: SmartUnbilledGrn[] }>(`/goods-receipts/unbilled?vendorId=${invoice.vendorId}`);
+      setLinkGrnTarget(prev => prev && prev.invoiceId === invoice.id ? { ...prev, grnsAvailable: r.data.grns || [] } : prev);
+    } catch {
+      setLinkGrnTarget(prev => prev && prev.invoiceId === invoice.id ? { ...prev, grnsAvailable: [], error: 'Failed to load GRNs' } : prev);
+    }
+  }, []);
+
+  const submitLinkGrns = useCallback(async () => {
+    if (!linkGrnTarget) return;
+    if (linkGrnTarget.selected.size === 0) { setLinkGrnTarget(prev => prev ? { ...prev, error: 'Pick at least one GRN' } : prev); return; }
+    setLinkGrnTarget(prev => prev ? { ...prev, saving: true, error: undefined } : prev);
+    try {
+      await api.post(`/vendor-invoices/${linkGrnTarget.invoiceId}/link-grns`, {
+        grnIds: Array.from(linkGrnTarget.selected),
+      });
+      setLinkGrnTarget(null);
+      // Refresh the PO detail panel so the new GRN chips appear immediately.
+      if (selectedPOId) {
+        try { const ref = await api.get(`/purchase-orders/${selectedPOId}`); setPODetail(ref.data); } catch { /* noop */ }
+      }
+    } catch (err: unknown) {
+      const msg = (err as { response?: { data?: { error?: string } }; message?: string })?.response?.data?.error
+        || (err as { message?: string })?.message
+        || 'Save failed';
+      setLinkGrnTarget(prev => prev ? { ...prev, saving: false, error: msg } : prev);
+    }
+  }, [linkGrnTarget, selectedPOId]);
+
   // Pay allocations — per-target amount the team explicitly wants to send.
   // Key: 'current' | <poId> | 'advance'.
   // Ticking a tile adds the key with a smart default amount; unticking removes it.
@@ -1663,14 +1721,32 @@ export default function PaymentsOut() {
                                                 const headerGrn = (poDetail.grns || []).find((g: any) => g.id === inv.grnId);
                                                 if (headerGrn) linkedGrns.push({ id: headerGrn.id, grnNo: headerGrn.grnNo, grnDate: headerGrn.grnDate, totalAmount: headerGrn.totalAmount });
                                               }
+                                              const matchStatus: string = inv.matchStatus || (linkedGrns.length === 0 ? 'UNMATCHED' : 'UNMATCHED');
+                                              const isMatched = matchStatus === 'MATCHED' && linkedGrns.length > 0;
+                                              const isMismatch = matchStatus === 'MISMATCH';
                                               return (
-                                              <div key={inv.id} className="bg-white border border-slate-200 px-2 py-1.5">
+                                              <div key={inv.id} className={`bg-white border ${linkedGrns.length === 0 ? 'border-amber-300' : isMismatch ? 'border-rose-300' : 'border-slate-200'} px-2 py-1.5`}>
                                                 <div className="flex items-center justify-between">
                                                   <span className="font-mono font-medium">{inv.vendorInvNo || `INV-${inv.invoiceNo}`}</span>
                                                   <div className="flex items-center gap-1">
                                                     <span className="font-mono tabular-nums">{fmt(inv.totalAmount)}</span>
                                                     <span className={`text-[8px] font-bold uppercase px-1 py-0.5 border ${inv.status === 'PAID' ? 'border-green-300 text-green-700' : inv.status === 'PARTIAL_PAID' ? 'border-amber-300 text-amber-700' : 'border-blue-300 text-blue-700'}`}>{inv.status}</span>
                                                   </div>
+                                                </div>
+                                                {/* Match badge */}
+                                                <div className="flex items-center gap-1 mt-1">
+                                                  <span className={`text-[8px] font-bold uppercase px-1 py-0.5 border ${isMatched ? 'border-emerald-400 bg-emerald-50 text-emerald-700' : isMismatch ? 'border-rose-400 bg-rose-50 text-rose-700' : 'border-amber-400 bg-amber-50 text-amber-700'}`}>
+                                                    {isMatched ? '✓ Matched' : isMismatch ? '⚠ Qty mismatch' : linkedGrns.length === 0 ? '⚠ No GRN linked' : 'Unmatched'}
+                                                  </span>
+                                                  {(linkedGrns.length === 0 || isMismatch) && (
+                                                    <button
+                                                      onClick={() => openLinkGrnModal({ id: inv.id, invoiceNo: inv.invoiceNo, vendorInvNo: inv.vendorInvNo, vendorId: poDetail.vendorId, poId: inv.poId || poDetail.id }, poDetail.vendor?.name || 'Vendor')}
+                                                      className="text-[9px] font-bold uppercase tracking-widest px-1.5 py-0.5 bg-amber-600 text-white hover:bg-amber-700"
+                                                      title="Manually link GRN(s) to this invoice"
+                                                    >
+                                                      Link GRN
+                                                    </button>
+                                                  )}
                                                 </div>
                                                 {/* Linked GRNs — clickable, opens GRN PDF */}
                                                 {linkedGrns.length > 0 && (
@@ -3652,9 +3728,94 @@ export default function PaymentsOut() {
         {/* ═══════════════════════════════════════ */}
         {/* SMART BILL UPLOAD — Vendor-scoped, multi-file, AI extract + GRN match + Save All */}
         {/* ═══════════════════════════════════════ */}
+        {/* ═══════════════════════════════════════ */}
+        {/* LINK GRN MODAL — manually attach GRN(s) to an existing invoice */}
+        {/* ═══════════════════════════════════════ */}
+        {linkGrnTarget && (
+          <div className="fixed inset-0 bg-black/50 z-[60] flex items-center justify-center p-4" onClick={() => !linkGrnTarget.saving && setLinkGrnTarget(null)}>
+            <div className="bg-white max-w-2xl w-full max-h-[85vh] flex flex-col" onClick={e => e.stopPropagation()}>
+              <div className="bg-amber-600 text-white px-4 py-2.5 flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <FileText size={14} />
+                  <h2 className="text-sm font-bold uppercase tracking-wide">Link GRN(s) to Invoice</h2>
+                </div>
+                <button onClick={() => setLinkGrnTarget(null)} disabled={linkGrnTarget.saving} className="text-amber-200 hover:text-white"><X size={16} /></button>
+              </div>
+              <div className="px-4 py-2 border-b border-slate-200 bg-slate-50 text-[11px] text-slate-600">
+                <strong>{linkGrnTarget.vendorInvNo || `INV-${linkGrnTarget.invoiceNo}`}</strong> &middot; {linkGrnTarget.vendorName}
+              </div>
+              <div className="flex-1 overflow-auto p-4">
+                {linkGrnTarget.error && <div className="text-[11px] text-red-700 bg-red-50 border border-red-200 px-3 py-1.5 mb-2">{linkGrnTarget.error}</div>}
+                {linkGrnTarget.grnsAvailable.length === 0 ? (
+                  <div className="text-[11px] text-amber-700 border border-amber-300 bg-amber-50 px-3 py-2">
+                    No unbilled GRNs left for this vendor. (Either none received, or all already linked to other invoices.)
+                  </div>
+                ) : (
+                  <div className="border border-slate-200">
+                    {linkGrnTarget.grnsAvailable.map(g => {
+                      const isSel = linkGrnTarget.selected.has(g.id);
+                      return (
+                        <label key={g.id} className={`flex items-start gap-2 px-2 py-2 border-b border-slate-100 last:border-b-0 cursor-pointer hover:bg-slate-50 ${isSel ? 'bg-emerald-50' : ''}`}>
+                          <input
+                            type="checkbox"
+                            className="mt-0.5"
+                            checked={isSel}
+                            onChange={() => {
+                              setLinkGrnTarget(prev => {
+                                if (!prev) return prev;
+                                const next = new Set(prev.selected);
+                                if (next.has(g.id)) next.delete(g.id); else next.add(g.id);
+                                return { ...prev, selected: next };
+                              });
+                            }}
+                            disabled={linkGrnTarget.saving}
+                          />
+                          <div className="flex-1 min-w-0">
+                            <div className="text-xs font-bold text-slate-700">
+                              GRN #{g.grnNo}
+                              {g.po && <span className="text-slate-400 font-normal ml-1.5">&middot; PO {g.po.poNo}</span>}
+                              <span className="text-slate-400 font-normal ml-1.5">&middot; {new Date(g.grnDate).toLocaleDateString('en-IN', { day: '2-digit', month: 'short' })}</span>
+                            </div>
+                            <div className="text-[11px] text-slate-500 truncate">
+                              {g.ticketNo ? `T-${String(g.ticketNo).padStart(4, '0')} · ` : ''}
+                              {g.vehicleNo || ''}
+                              {g.lines?.[0]?.description ? ` · ${g.lines[0].description}` : ''}
+                            </div>
+                          </div>
+                          <div className="text-right">
+                            <div className="text-[11px] font-mono font-bold text-slate-700">{g.totalQty.toLocaleString('en-IN')} {g.lines?.[0]?.unit || 'KG'}</div>
+                            <div className="text-[11px] font-mono text-slate-600">{fmt(g.totalAmount)}</div>
+                          </div>
+                        </label>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
+              <div className="px-4 py-3 border-t border-slate-300 bg-white flex items-center gap-2">
+                <div className="text-[10px] text-slate-500">
+                  {linkGrnTarget.selected.size === 0 ? 'Pick at least one GRN to link.' : `${linkGrnTarget.selected.size} GRN${linkGrnTarget.selected.size === 1 ? '' : 's'} selected.`}
+                </div>
+                <div className="flex-1" />
+                <button onClick={() => setLinkGrnTarget(null)} disabled={linkGrnTarget.saving} className="px-3 py-1.5 border border-slate-300 text-slate-600 text-[11px] font-bold uppercase tracking-widest hover:bg-slate-50 disabled:opacity-50">
+                  Cancel
+                </button>
+                <button
+                  onClick={submitLinkGrns}
+                  disabled={linkGrnTarget.selected.size === 0 || linkGrnTarget.saving}
+                  className="px-4 py-1.5 bg-emerald-600 text-white text-[11px] font-bold uppercase tracking-widest hover:bg-emerald-700 disabled:opacity-50"
+                >
+                  {linkGrnTarget.saving ? 'Linking...' : `Link ${linkGrnTarget.selected.size > 0 ? `(${linkGrnTarget.selected.size})` : ''}`}
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+
         {smartUploadOpen && (() => {
           const pendingCount = smartUploadEntries.filter(e => e.status === 'pending').length;
           const readyCount = smartUploadEntries.filter(e => e.status === 'extracted' && e.matchedVendor && (e.selectedGrnIds?.length || 0) > 0).length;
+          const reviewCount = smartUploadEntries.filter(e => e.status === 'extracted' && (e.selectedGrnIds?.length || 0) === 0).length;
           // Locked vendor — preset (from per-PO open) takes priority, otherwise read off the first entry.
           const lockedVendor = smartPresetVendor || smartUploadEntries.find(e => e.matchedVendor)?.matchedVendor || null;
           return (
@@ -3735,6 +3896,7 @@ export default function PaymentsOut() {
                   {smartUploadEntries.length > 0 && (
                     <div className="text-[10px] text-slate-600 font-bold uppercase tracking-widest">
                       {smartUploadEntries.length} file{smartUploadEntries.length === 1 ? '' : 's'} &middot; {readyCount} ready
+                      {reviewCount > 0 && <span className="text-amber-700 ml-1">&middot; {reviewCount} need review</span>}
                     </div>
                   )}
                 </div>
@@ -3765,7 +3927,7 @@ export default function PaymentsOut() {
                     const grandTotal = Number(ext.total_amount) || 0;
 
                     return (
-                      <div key={entry.id} className="bg-white border border-slate-300 overflow-hidden">
+                      <div key={entry.id} className={`bg-white border overflow-hidden ${entry.status === 'extracted' && (entry.selectedGrnIds?.length || 0) === 0 ? 'border-amber-400 ring-1 ring-amber-200' : 'border-slate-300'}`}>
                         {/* Card header */}
                         <div className="px-3 py-2 border-b border-slate-200 flex items-center gap-2 bg-slate-50">
                           <FileText size={12} className="text-slate-500" />
