@@ -2643,9 +2643,10 @@ model GoodsReceipt {
   createdAt        DateTime      @default(now())
   updatedAt        DateTime      @updatedAt
 
-  lines          GRNLine[]
-  vendorInvoices VendorInvoice[]
-  grainTrucks    GrainTruck[]
+  lines              GRNLine[]
+  vendorInvoices     VendorInvoice[]
+  vendorInvoiceLines VendorInvoiceLine[]
+  grainTrucks        GrainTruck[]
 
   division  String?  @default("ETHANOL") // SUGAR | POWER | ETHANOL | COMMON
   companyId String? // FK → Company (null = MSPIL default)
@@ -2758,6 +2759,7 @@ model VendorInvoice {
   updatedAt         DateTime       @updatedAt
 
   payments VendorPayment[]
+  lines    VendorInvoiceLine[]
 
   division  String?  @default("ETHANOL") // SUGAR | POWER | ETHANOL | COMMON
   companyId String? // FK → Company (null = MSPIL default)
@@ -2769,6 +2771,37 @@ model VendorInvoice {
   @@index([invoiceDate])
   @@index([division])
   @@index([companyId])
+}
+
+// ── Vendor Invoice Line ──
+// One row per line item on a vendor's bill.
+// A bill can cover multiple GRNs / multiple HSN codes / mix of goods + freight + service charges.
+// `grnId` is optional — non-GRN charges (freight, loading) leave it null.
+// Header-level VendorInvoice.grnId still mirrors the FIRST line's grnId for back-compat
+// with 3-way match + ITC code that reads single grn today.
+model VendorInvoiceLine {
+  id              String         @id @default(uuid())
+  invoiceId       String
+  invoice         VendorInvoice  @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
+  grnId           String?
+  grn             GoodsReceipt?  @relation(fields: [grnId], references: [id])
+  lineNo          Int            @default(1)
+  productName     String
+  hsnCode         String?
+  quantity        Float          @default(0)
+  unit            String         @default("KG")
+  rate            Float          @default(0)
+  taxableAmount   Float          @default(0) // qty × rate, before GST
+  gstPercent      Float          @default(0)
+  cgstAmount      Float          @default(0)
+  sgstAmount      Float          @default(0)
+  igstAmount      Float          @default(0)
+  totalAmount     Float          @default(0) // taxable + GST
+  remarks         String?
+  createdAt       DateTime       @default(now())
+
+  @@index([invoiceId])
+  @@index([grnId])
 }
 
 // ── Vendor Payment ──

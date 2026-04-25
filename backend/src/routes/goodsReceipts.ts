@@ -245,6 +245,52 @@ router.get('/', asyncHandler(async (req: AuthRequest, res: Response) => {
     res.json({ grns });
 }));
 
+// GET /unbilled?vendorId=… — GRNs received from a vendor that no VendorInvoice covers yet.
+// Used by the bulk Smart Upload modal so accounts can map a freshly-uploaded bill to one
+// or more open GRNs in a single click.
+router.get('/unbilled', asyncHandler(async (req: AuthRequest, res: Response) => {
+  const vendorId = (req.query.vendorId as string | undefined)?.trim();
+  if (!vendorId) {
+    return res.status(400).json({ error: 'vendorId is required' });
+  }
+
+  const where: Record<string, unknown> = {
+    vendorId,
+    archived: false,
+    status: { in: ['CONFIRMED', 'PARTIAL'] },
+    ...getCompanyFilter(req),
+    AND: [
+      { vendorInvoices: { none: {} } },
+      { vendorInvoiceLines: { none: {} } },
+    ],
+  };
+
+  const grns = await prisma.goodsReceipt.findMany({
+    where,
+    select: {
+      id: true,
+      grnNo: true,
+      grnDate: true,
+      ticketNo: true,
+      vehicleNo: true,
+      status: true,
+      qualityStatus: true,
+      totalQty: true,
+      totalAmount: true,
+      poId: true,
+      po: { select: { id: true, poNo: true, poType: true } },
+      lines: {
+        select: { id: true, description: true, receivedQty: true, rate: true, unit: true },
+        take: 20,
+      },
+    },
+    orderBy: { grnDate: 'desc' },
+    take: 100,
+  });
+
+  res.json({ grns });
+}));
+
 // GET /pending-pos — list POs with pending quantities (extended with source classification)
 router.get('/pending-pos', asyncHandler(async (req: AuthRequest, res: Response) => {
     const pos = await prisma.purchaseOrder.findMany({

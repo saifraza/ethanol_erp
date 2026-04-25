@@ -20,6 +20,20 @@ import { calculateTds } from '../services/tdsCalculator';
 import { onVendorInvoiceBooked } from '../services/autoJournal';
 
 // ── Zod schemas ──
+// Per-line shape used by the bulk Smart Upload flow. When `lines` is provided,
+// header-level qty/rate/productName/grnId are derived from the lines (header-level
+// fields are kept for back-compat with 3-way match + ITC code that reads them).
+const vendorInvoiceLineSchema = z.object({
+  grnId: z.string().optional().nullable(),
+  productName: z.string().min(1),
+  hsnCode: z.string().optional().nullable(),
+  quantity: z.coerce.number().default(0),
+  unit: z.string().optional().default('KG'),
+  rate: z.coerce.number().default(0),
+  gstPercent: z.coerce.number().default(0),
+  remarks: z.string().optional().nullable(),
+});
+
 const createVendorInvoiceSchema = z.object({
   vendorId: z.string().min(1),
   poId: z.string().optional().nullable(),
@@ -44,6 +58,8 @@ const createVendorInvoiceSchema = z.object({
   status: z.string().optional().default('PENDING'),
   filePath: z.string().optional().nullable(),
   remarks: z.string().optional().nullable(),
+  // NEW: optional multi-line payload. When present, header qty/rate/etc are derived from these.
+  lines: z.array(vendorInvoiceLineSchema).optional(),
 });
 
 const updateVendorInvoiceSchema = z.object({
@@ -82,27 +98,8 @@ const storage = multer.diskStorage({
 });
 const upload = multer({ storage, limits: { fileSize: 10 * 1024 * 1024 } });
 
-// ═══════════════════════════════════════════════
-// POST /upload-extract — Upload invoice file + AI extraction
-// ═══════════════════════════════════════════════
-router.post('/upload-extract', upload.single('file'), asyncHandler(async (req: Request, res: Response) => {
-  if (!req.file) { res.status(400).json({ error: 'No file uploaded' }); return; }
-
-  const filePath = `vendor-invoices/${req.file.filename}`;
-  const fileBuffer = fs.readFileSync(req.file.path);
-  const mimeType = req.file.mimetype;
-
-  // For PDFs, we send as application/pdf to Gemini (it supports PDF natively)
-  // For images, send as image/*
-  const GEMINI_KEY = process.env.GEMINI_API_KEY;
-  if (!GEMINI_KEY) {
-    res.json({ filePath, extracted: null, error: 'AI extraction not configured (no GEMINI_API_KEY)' });
-    return;
-  }
-
-  try {
-    const base64 = fileBuffer.toString('base64');
-    const prompt = `Extract these fields from this vendor/supplier invoice document. Return ONLY valid JSON with these keys:
+// ── Gemini extraction helper (shared by single + bulk routes) ──
+const EXTRACT_PROMPT = `Extract these fields from this vendor/supplier invoice document. Return ONLY valid JSON with these keys:
 {
   "invoice_number": "string - the vendor's invoice/bill number",
   "invoice_date": "string - date in YYYY-MM-DD format",
@@ -120,43 +117,127 @@ router.post('/upload-extract', upload.single('file'), asyncHandler(async (req: R
 }
 If a field is not found, use null for strings and 0 for numbers. Return ONLY the JSON, no markdown.`;
 
+type ExtractedInvoice = Record<string, unknown> | { raw: string } | null;
+
+async function extractInvoiceFromBuffer(
+  buffer: Buffer,
+  mimeType: string,
+  geminiKey: string,
+): Promise<{ extracted: ExtractedInvoice; error?: string }> {
+  try {
+    const base64 = buffer.toString('base64');
     const geminiRes = await axios.post(
-      `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${GEMINI_KEY}`,
+      `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${geminiKey}`,
       {
         contents: [{
           parts: [
-            { text: prompt },
+            { text: EXTRACT_PROMPT },
             { inline_data: { mime_type: mimeType.startsWith('image/') ? mimeType : 'application/pdf', data: base64 } },
           ],
         }],
       },
-      { timeout: 45000 }
+      { timeout: 45000 },
     );
-
     const rawText = geminiRes.data?.candidates?.[0]?.content?.parts?.[0]?.text || '';
-    // Parse JSON from response (strip markdown fences if present)
     const jsonStr = rawText.replace(/```json\n?/g, '').replace(/```\n?/g, '').trim();
-    let extracted = null;
-    try { extracted = JSON.parse(jsonStr); } catch { extracted = { raw: rawText }; }
+    try {
+      return { extracted: JSON.parse(jsonStr) };
+    } catch {
+      return { extracted: { raw: rawText } };
+    }
+  } catch (err: unknown) {
+    const msg =
+      (err as { response?: { data?: { error?: { message?: string } } } })?.response?.data?.error?.message ||
+      'AI extraction failed';
+    return { extracted: null, error: msg };
+  }
+}
 
-    res.json({ filePath, extracted });
+// ═══════════════════════════════════════════════
+// POST /upload-extract — Upload invoice file + AI extraction
+// ═══════════════════════════════════════════════
+router.post('/upload-extract', upload.single('file'), asyncHandler(async (req: Request, res: Response) => {
+  if (!req.file) { res.status(400).json({ error: 'No file uploaded' }); return; }
 
+  const filePath = `vendor-invoices/${req.file.filename}`;
+  const fileBuffer = fs.readFileSync(req.file.path);
+  const mimeType = req.file.mimetype;
 
-    // Fire-and-forget: generate vault note
-    setImmediate(() => {
+  const GEMINI_KEY = process.env.GEMINI_API_KEY;
+  if (!GEMINI_KEY) {
+    res.json({ filePath, extracted: null, error: 'AI extraction not configured (no GEMINI_API_KEY)' });
+    return;
+  }
+
+  const { extracted, error } = await extractInvoiceFromBuffer(fileBuffer, mimeType, GEMINI_KEY);
+  res.json({ filePath, extracted, ...(error ? { error } : {}) });
+
+  // Fire-and-forget: generate vault note
+  setImmediate(() => {
+    generateVaultNote({
+      sourceType: 'VendorInvoice',
+      sourceId: filePath,
+      filePath,
+      title: req.file?.originalname || 'Vendor Invoice',
+      category: 'OTHER',
+      mimeType: req.file?.mimetype,
+    }).catch(err => console.error('[VendorInvoice] Vault note failed:', err));
+  });
+}));
+
+// ═══════════════════════════════════════════════
+// POST /upload-extract-bulk — Upload N invoice files at once + AI extraction in parallel
+// Accepts multipart "files" field (1..20). Returns one result per file.
+// Fails individually — one bad file doesn't break the batch.
+// ═══════════════════════════════════════════════
+router.post('/upload-extract-bulk', upload.array('files', 20), asyncHandler(async (req: Request, res: Response) => {
+  const files = (req.files as Express.Multer.File[] | undefined) ?? [];
+  if (files.length === 0) {
+    res.status(400).json({ error: 'No files uploaded' });
+    return;
+  }
+
+  const GEMINI_KEY = process.env.GEMINI_API_KEY;
+
+  // Run extractions in parallel; cap to ~5 in flight at a time so we don't slam Gemini.
+  const CONCURRENCY = 5;
+  const results: Array<{ filePath: string; originalName: string; extracted: ExtractedInvoice; error?: string }> = [];
+  for (let i = 0; i < files.length; i += CONCURRENCY) {
+    const batch = files.slice(i, i + CONCURRENCY);
+    const settled = await Promise.all(
+      batch.map(async (file) => {
+        const filePath = `vendor-invoices/${file.filename}`;
+        if (!GEMINI_KEY) {
+          return { filePath, originalName: file.originalname, extracted: null, error: 'AI extraction not configured (no GEMINI_API_KEY)' };
+        }
+        try {
+          const buffer = fs.readFileSync(file.path);
+          const { extracted, error } = await extractInvoiceFromBuffer(buffer, file.mimetype, GEMINI_KEY);
+          return { filePath, originalName: file.originalname, extracted, ...(error ? { error } : {}) };
+        } catch (err: unknown) {
+          const msg = err instanceof Error ? err.message : 'Read/extract failed';
+          return { filePath, originalName: file.originalname, extracted: null, error: msg };
+        }
+      }),
+    );
+    results.push(...settled);
+  }
+
+  res.json({ count: results.length, results });
+
+  // Fire-and-forget vault notes per uploaded file.
+  setImmediate(() => {
+    for (const file of files) {
       generateVaultNote({
         sourceType: 'VendorInvoice',
-        sourceId: filePath,
-        filePath,
-        title: req.file?.originalname || 'Vendor Invoice',
+        sourceId: `vendor-invoices/${file.filename}`,
+        filePath: `vendor-invoices/${file.filename}`,
+        title: file.originalname || 'Vendor Invoice',
         category: 'OTHER',
-        mimeType: req.file?.mimetype,
+        mimeType: file.mimetype,
       }).catch(err => console.error('[VendorInvoice] Vault note failed:', err));
-    });
-  } catch (err: unknown) {
-    const msg = (err as { response?: { data?: { error?: { message?: string } } } })?.response?.data?.error?.message || 'AI extraction failed';
-    res.json({ filePath, extracted: null, error: msg });
-  }
+    }
+  });
 }));
 
 // GET / — list with filters (vendorId, status)
@@ -256,15 +337,48 @@ router.get('/:id', asyncHandler(async (req: AuthRequest, res: Response) => {
 router.post('/', validate(createVendorInvoiceSchema), asyncHandler(async (req: AuthRequest, res: Response) => {
     const b = req.body;
 
-    const quantity = parseFloat(b.quantity) || 0;
-    const rate = parseFloat(b.rate) || 0;
-    const gstPercent = parseFloat(b.gstPercent) || 0;
+    // Multi-line path: when `lines` is provided, derive header qty/rate/productName from them.
+    // First line's grnId becomes the header `grnId` for back-compat with 3-way match + ITC.
+    type LineInput = z.infer<typeof vendorInvoiceLineSchema>;
+    const linesIn: LineInput[] = Array.isArray(b.lines) ? b.lines : [];
+    const useLines = linesIn.length > 0;
+
+    let quantity: number;
+    let rate: number;
+    let gstPercent: number;
+    let subtotal: number;
+    let resolvedGrnId: string | null = b.grnId || null;
+    let resolvedProductName: string = b.productName || '';
+    let resolvedUnit: string = b.unit || 'kg';
+
+    if (useLines) {
+      // Compute totals from line items.
+      subtotal = linesIn.reduce((s, l) => s + (l.quantity * l.rate), 0);
+      quantity = linesIn.reduce((s, l) => s + l.quantity, 0);
+      // Header rate is a weighted average; lets ITC reports keep working.
+      rate = quantity > 0 ? subtotal / quantity : 0;
+      // Header GST% — if all lines share one rate, mirror it; otherwise pick the dominant (highest taxable).
+      const rates = new Set(linesIn.map(l => l.gstPercent));
+      gstPercent = rates.size === 1
+        ? linesIn[0].gstPercent
+        : linesIn.reduce((best, l) => (l.quantity * l.rate) > (best.quantity * best.rate) ? l : best, linesIn[0]).gstPercent;
+      // First line's GRN becomes the header GRN — back-compat anchor.
+      resolvedGrnId = linesIn.find(l => l.grnId)?.grnId ?? null;
+      resolvedProductName = linesIn.length === 1
+        ? linesIn[0].productName
+        : `${linesIn[0].productName} +${linesIn.length - 1} more`;
+      resolvedUnit = linesIn[0].unit || 'KG';
+    } else {
+      quantity = parseFloat(b.quantity) || 0;
+      rate = parseFloat(b.rate) || 0;
+      gstPercent = parseFloat(b.gstPercent) || 0;
+      subtotal = quantity * rate;
+    }
+
     const freightCharge = parseFloat(b.freightCharge) || 0;
     const loadingCharge = parseFloat(b.loadingCharge) || 0;
     const otherCharges = parseFloat(b.otherCharges) || 0;
     const roundOff = parseFloat(b.roundOff) || 0;
-
-    const subtotal = quantity * rate;
 
     let cgstAmount = 0, sgstAmount = 0, igstAmount = 0;
     if (b.supplyType === 'INTRA_STATE') {
@@ -297,22 +411,24 @@ router.post('/', validate(createVendorInvoiceSchema), asyncHandler(async (req: A
     const balanceAmount = netPayable;
 
     // 3-way match — compare invoice qty against GRN accepted qty (not PO ordered qty,
-    // because open/truck fuel deals use qty=999999 as placeholder)
+    // because open/truck fuel deals use qty=999999 as placeholder).
+    // For multi-line invoices we sum across all referenced GRNs.
     let matchStatus = 'UNMATCHED';
-    if (b.poId && b.grnId) {
-      const grn = await prisma.goodsReceipt.findUnique({
-        where: { id: b.grnId },
+    const grnIdsForMatch = useLines
+      ? Array.from(new Set(linesIn.map(l => l.grnId).filter((g): g is string => !!g)))
+      : (b.poId && b.grnId ? [b.grnId as string] : []);
+    if (b.poId && grnIdsForMatch.length > 0) {
+      const grns = await prisma.goodsReceipt.findMany({
+        where: { id: { in: grnIdsForMatch } },
         include: { lines: true },
       });
-
-      if (grn) {
-        // Step 9 fix: require confirmed GRN for matching
-        if (grn.status !== 'CONFIRMED') {
-          matchStatus = 'MISMATCH'; // GRN not yet confirmed
+      if (grns.length === grnIdsForMatch.length) {
+        const allConfirmed = grns.every(g => g.status === 'CONFIRMED');
+        if (!allConfirmed) {
+          matchStatus = 'MISMATCH';
         } else {
-          const grnQty = grn.lines.reduce((sum, line) => sum + line.acceptedQty, 0);
-          // Match invoice qty against GRN qty (10% tolerance for rounding)
-          if (Math.abs(grnQty - quantity) / Math.max(grnQty, 0.01) < 0.1) {
+          const totalGrnQty = grns.reduce((s, g) => s + g.lines.reduce((ls, l) => ls + l.acceptedQty, 0), 0);
+          if (Math.abs(totalGrnQty - quantity) / Math.max(totalGrnQty, 0.01) < 0.1) {
             matchStatus = 'MATCHED';
           } else {
             matchStatus = 'MISMATCH';
@@ -324,52 +440,89 @@ router.post('/', validate(createVendorInvoiceSchema), asyncHandler(async (req: A
     const companyId = getActiveCompanyId(req);
     const invoiceNo = await nextDocNo('VendorInvoice', 'invoiceNo', companyId);
 
-    const invoice = await prisma.vendorInvoice.create({
-      data: {
-        invoiceNo,
-        vendorId: b.vendorId,
-        poId: b.poId || null,
-        grnId: b.grnId || null,
-        vendorInvNo: b.vendorInvNo || '',
-        vendorInvDate: b.vendorInvDate ? new Date(b.vendorInvDate) : new Date(),
-        invoiceDate: b.invoiceDate ? new Date(b.invoiceDate) : new Date(),
-        dueDate: b.dueDate ? new Date(b.dueDate) : null,
-        productName: b.productName || '',
-        quantity,
-        unit: b.unit || 'kg',
-        rate,
-        supplyType: b.supplyType || 'INTRA_STATE',
-        gstPercent,
-        isRCM: b.isRCM || false,
-        cgstAmount,
-        sgstAmount,
-        igstAmount,
-        totalGst,
-        rcmCgst,
-        rcmSgst,
-        rcmIgst,
-        itcEligible: b.isRCM === false,
-        subtotal,
-        freightCharge,
-        loadingCharge,
-        otherCharges,
-        roundOff,
-        totalAmount,
-        tdsSection: tds.sectionCode || b.tdsSection || null,
-        tdsPercent,
-        tdsAmount,
-        tdsReasonSnapshot: { reason: tds.reason, baseRate: tds.baseRate, sectionLabel: tds.sectionLabel },
-        tdsComputedAt: new Date(),
-        netPayable,
-        paidAmount: 0,
-        balanceAmount,
-        matchStatus,
-        status: b.status || 'PENDING',
-        filePath: b.filePath || null,
-        remarks: b.remarks || null,
-        userId: req.user!.id,
-        companyId,
-      },
+    const invoice = await prisma.$transaction(async (tx) => {
+      const created = await tx.vendorInvoice.create({
+        data: {
+          invoiceNo,
+          vendorId: b.vendorId,
+          poId: b.poId || null,
+          grnId: resolvedGrnId,
+          vendorInvNo: b.vendorInvNo || '',
+          vendorInvDate: b.vendorInvDate ? new Date(b.vendorInvDate) : new Date(),
+          invoiceDate: b.invoiceDate ? new Date(b.invoiceDate) : new Date(),
+          dueDate: b.dueDate ? new Date(b.dueDate) : null,
+          productName: resolvedProductName,
+          quantity,
+          unit: resolvedUnit,
+          rate,
+          supplyType: b.supplyType || 'INTRA_STATE',
+          gstPercent,
+          isRCM: b.isRCM || false,
+          cgstAmount,
+          sgstAmount,
+          igstAmount,
+          totalGst,
+          rcmCgst,
+          rcmSgst,
+          rcmIgst,
+          itcEligible: b.isRCM === false,
+          subtotal,
+          freightCharge,
+          loadingCharge,
+          otherCharges,
+          roundOff,
+          totalAmount,
+          tdsSection: tds.sectionCode || b.tdsSection || null,
+          tdsPercent,
+          tdsAmount,
+          tdsReasonSnapshot: { reason: tds.reason, baseRate: tds.baseRate, sectionLabel: tds.sectionLabel },
+          tdsComputedAt: new Date(),
+          netPayable,
+          paidAmount: 0,
+          balanceAmount,
+          matchStatus,
+          status: b.status || 'PENDING',
+          filePath: b.filePath || null,
+          remarks: b.remarks || null,
+          userId: req.user!.id,
+          companyId,
+        },
+      });
+
+      if (useLines) {
+        for (let i = 0; i < linesIn.length; i++) {
+          const l = linesIn[i];
+          const lineSubtotal = l.quantity * l.rate;
+          let lineCgst = 0, lineSgst = 0, lineIgst = 0;
+          if ((b.supplyType || 'INTRA_STATE') === 'INTRA_STATE') {
+            lineCgst = lineSubtotal * (l.gstPercent / 2 / 100);
+            lineSgst = lineSubtotal * (l.gstPercent / 2 / 100);
+          } else {
+            lineIgst = lineSubtotal * (l.gstPercent / 100);
+          }
+          await tx.vendorInvoiceLine.create({
+            data: {
+              invoiceId: created.id,
+              grnId: l.grnId || null,
+              lineNo: i + 1,
+              productName: l.productName,
+              hsnCode: l.hsnCode || null,
+              quantity: l.quantity,
+              unit: l.unit || 'KG',
+              rate: l.rate,
+              taxableAmount: lineSubtotal,
+              gstPercent: l.gstPercent,
+              cgstAmount: lineCgst,
+              sgstAmount: lineSgst,
+              igstAmount: lineIgst,
+              totalAmount: lineSubtotal + lineCgst + lineSgst + lineIgst,
+              remarks: l.remarks || null,
+            },
+          });
+        }
+      }
+
+      return created;
     });
 
     if (invoice.poId) recomputeGrnPaidStateForPO(invoice.poId).catch(() => {});
