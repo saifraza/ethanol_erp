@@ -392,6 +392,19 @@ export default function PaymentsOut() {
   const [smartUploadEntries, setSmartUploadEntries] = useState<SmartUploadEntry[]>([]);
   const [smartUploadBusy, setSmartUploadBusy] = useState(false);
   const [smartSavingAll, setSmartSavingAll] = useState(false);
+  // Preset vendor — set when the user picks from the dropdown OR when the modal
+  // is opened from a per-PO row (vendor is already known there).
+  const [smartPresetVendor, setSmartPresetVendor] = useState<Vendor | null>(null);
+  const [smartPresetGrns, setSmartPresetGrns] = useState<SmartUnbilledGrn[]>([]);
+
+  // Auto-load vendors on first modal open so the dropdown is populated immediately.
+  useEffect(() => {
+    if (smartUploadOpen && vendors.length === 0) {
+      api.get<{ vendors: Vendor[] }>('/vendors')
+        .then(res => setVendors(res.data.vendors || []))
+        .catch(() => { /* ignore — user can click "Load vendors" */ });
+    }
+  }, [smartUploadOpen, vendors.length]);
 
   // ── Vendor matching helper (gstin > pan > fuzzy name) ──
   const matchExtractedToVendor = useCallback((ext: SmartExtracted | null | undefined, vendorList: Vendor[]): Vendor | null => {
@@ -420,15 +433,44 @@ export default function PaymentsOut() {
   }, []);
 
   // ── File picker → append entries (no auto-extract; user clicks Analyze) ──
+  // New entries inherit the preset vendor + its open GRNs so the user doesn't
+  // re-pick the vendor for each batch.
   const onSmartFilesPicked = (files: FileList | null) => {
     if (!files || files.length === 0) return;
     const next: SmartUploadEntry[] = Array.from(files).map(f => ({
       id: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
       file: f,
       status: 'pending',
+      matchedVendor: smartPresetVendor,
+      unbilledGrns: smartPresetVendor ? smartPresetGrns : undefined,
+      selectedGrnIds: smartPresetVendor ? [] : undefined,
     }));
     setSmartUploadEntries(prev => [...prev, ...next]);
   };
+
+  // ── Open Smart Upload modal pre-scoped to a specific vendor ──
+  // Used by the per-PO inline button on the Pending tab so accounts can drop
+  // the bill straight onto the row without re-picking the vendor.
+  const openSmartUploadForVendor = useCallback(async (vendorId: string, vendorName: string) => {
+    let list = vendors;
+    if (list.length === 0) {
+      try {
+        const r = await api.get<{ vendors: Vendor[] }>('/vendors');
+        list = r.data.vendors || [];
+        setVendors(list);
+      } catch { /* fall through */ }
+    }
+    const v = list.find(x => x.id === vendorId) || { id: vendorId, name: vendorName, gstin: null, pan: null };
+    setSmartPresetVendor(v);
+    try {
+      const r = await api.get<{ grns: SmartUnbilledGrn[] }>(`/goods-receipts/unbilled?vendorId=${vendorId}`);
+      setSmartPresetGrns(r.data.grns || []);
+    } catch {
+      setSmartPresetGrns([]);
+    }
+    setSmartUploadEntries([]);
+    setSmartUploadOpen(true);
+  }, [vendors]);
 
   // ── Bulk extract → vendor match → fetch unbilled GRNs per entry ──
   const runSmartBulk = useCallback(async () => {
@@ -581,6 +623,8 @@ export default function PaymentsOut() {
     if (smartUploadBusy || smartSavingAll) return;
     setSmartUploadOpen(false);
     setSmartUploadEntries([]);
+    setSmartPresetVendor(null);
+    setSmartPresetGrns([]);
   };
 
   const updateSmartEntry = (id: string, patch: Partial<SmartUploadEntry>) => {
@@ -1499,9 +1543,14 @@ export default function PaymentsOut() {
                                 <div className="flex items-center justify-center gap-1">
                                   {/* INV button — show when GRN exists and no invoice yet */}
                                   {item.invoiceStatus === 'NO_INVOICE' && item.grnCount > 0 && (
-                                    <button onClick={() => openInvoiceModal(item)} className="px-2 py-0.5 bg-blue-600 text-white text-[9px] font-bold uppercase hover:bg-blue-700 flex items-center gap-1" title="Upload Invoice">
-                                      <Upload size={10} /> INV
-                                    </button>
+                                    <>
+                                      <button onClick={() => openInvoiceModal(item)} className="px-2 py-0.5 bg-blue-600 text-white text-[9px] font-bold uppercase hover:bg-blue-700 flex items-center gap-1" title="Upload single invoice for this GRN">
+                                        <Upload size={10} /> INV
+                                      </button>
+                                      <button onClick={() => openSmartUploadForVendor(item.vendorId, item.vendorName)} className="px-2 py-0.5 bg-purple-600 text-white text-[9px] font-bold uppercase hover:bg-purple-700 flex items-center gap-1" title="Smart bulk upload — drop multiple bills, AI extracts and matches GRNs">
+                                        <Sparkles size={10} /> AI
+                                      </button>
+                                    </>
                                   )}
                                   {/* PAY button — show when invoiced OR for fuel deals with GRNs (direct payment) */}
                                   {item.invoices.length > 0 && item.balance > 0 && (
@@ -3561,9 +3610,8 @@ export default function PaymentsOut() {
         {smartUploadOpen && (() => {
           const pendingCount = smartUploadEntries.filter(e => e.status === 'pending').length;
           const readyCount = smartUploadEntries.filter(e => e.status === 'extracted' && e.matchedVendor && (e.selectedGrnIds?.length || 0) > 0).length;
-          // Pre-set vendor: when user picks one, every entry locks to that vendor.
-          // The current matchedVendor is read off the first entry — same vendor for all in this batch.
-          const lockedVendor = smartUploadEntries.find(e => e.matchedVendor)?.matchedVendor || null;
+          // Locked vendor — preset (from per-PO open) takes priority, otherwise read off the first entry.
+          const lockedVendor = smartPresetVendor || smartUploadEntries.find(e => e.matchedVendor)?.matchedVendor || null;
           return (
             <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4" onClick={closeSmartUpload}>
               <div className="bg-white max-w-4xl w-full max-h-[92vh] flex flex-col" onClick={e => e.stopPropagation()}>
@@ -3588,6 +3636,8 @@ export default function PaymentsOut() {
                       onChange={async e => {
                         const id = e.target.value;
                         if (!id) {
+                          setSmartPresetVendor(null);
+                          setSmartPresetGrns([]);
                           setSmartUploadEntries(prev => prev.map(p => ({ ...p, matchedVendor: null, unbilledGrns: undefined, selectedGrnIds: undefined })));
                           return;
                         }
@@ -3596,7 +3646,6 @@ export default function PaymentsOut() {
                           try { const res = await api.get<{ vendors: Vendor[] }>('/vendors'); list = res.data.vendors || []; setVendors(list); } catch { /* ignore */ }
                         }
                         const v = list.find(x => x.id === id) || null;
-                        // Force-match every existing entry to this vendor + fetch its open GRNs once.
                         let grns: SmartUnbilledGrn[] = [];
                         if (v) {
                           try {
@@ -3604,6 +3653,9 @@ export default function PaymentsOut() {
                             grns = r.data.grns || [];
                           } catch { /* ignore */ }
                         }
+                        // Persist preset so future "Add Bills" inherit it without re-fetching.
+                        setSmartPresetVendor(v);
+                        setSmartPresetGrns(grns);
                         setSmartUploadEntries(prev => prev.map(p => ({ ...p, matchedVendor: v, unbilledGrns: grns, selectedGrnIds: p.selectedGrnIds || [] })));
                       }}
                       disabled={smartUploadBusy || smartSavingAll}
