@@ -54,6 +54,9 @@ export function CompanyProvider({ children }: { children: React.ReactNode }) {
         if (own.id) {
           setCompanies([own]);
           setActiveCompanyState(own);
+          // Persist so the api interceptor sends X-Company-Id; otherwise backend
+          // falls through to "no filter" for MSPIL users and leaks sister-company data.
+          localStorage.setItem('activeCompanyId', own.id);
         }
         setLoading(false);
         return;
@@ -71,7 +74,12 @@ export function CompanyProvider({ children }: { children: React.ReactNode }) {
       const savedId = localStorage.getItem('activeCompanyId');
       const saved = sorted.find(c => c.id === savedId);
       const defaultCo = saved || sorted.find(c => c.isDefault) || sorted[0];
-      if (defaultCo) setActiveCompanyState(defaultCo);
+      if (defaultCo) {
+        setActiveCompanyState(defaultCo);
+        // Persist so the api interceptor sends X-Company-Id from now on; without
+        // this, the backend falls through to "no filter" for MSPIL users.
+        localStorage.setItem('activeCompanyId', defaultCo.id);
+      }
     } catch {
       // If can't fetch companies, just use user's company from JWT
     } finally {

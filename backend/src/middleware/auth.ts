@@ -45,9 +45,13 @@ export function getCompanyFilter(req: AuthRequest): Record<string, unknown> {
   }
 
   // Fallback: JWT-based filtering
-  // ALL MSPIL users (admin or operator) see all data — don't break running system
+  // MSPIL users (no companyId on JWT, or companyCode=MSPIL) see MSPIL data only —
+  // includes legacy NULL rows by design. Previously this returned `{}` (no filter)
+  // which leaked sister-company POs/invoices when the X-Company-Id header was
+  // missing. The frontend now always persists activeCompanyId on first load,
+  // so this tightening is safe.
   const isMspil = !req.user?.companyId || req.user.companyCode === 'MSPIL';
-  if (isMspil) return {};
+  if (isMspil) return { OR: [{ companyId: MSPIL_COMPANY_ID }, { companyId: null }] };
   return { companyId: req.user!.companyId! };
 }
 
