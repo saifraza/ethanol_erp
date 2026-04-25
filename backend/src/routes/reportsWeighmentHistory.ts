@@ -340,7 +340,8 @@ function applyFilters(rows: UnifiedWeighmentRow[], params: QueryParams): Unified
     result = result.filter((r) => r.status === 'COMPLETE');
     // When onlyCompleted, use secondWeightAt for the date filter (already applied at DB layer,
     // but apply again here as an in-memory guard for rows that slipped through via createdAt fallback)
-    if (params.from || params.to) {
+    // Search bypasses the date range — keep this aligned with the route handler.
+    if ((params.from || params.to) && !params.search?.trim()) {
       const IST_OFFSET_MS = 5.5 * 60 * 60 * 1000;
       const fromMs = params.from ? new Date(params.from).getTime() - IST_OFFSET_MS : -Infinity;
       const toEndIST = params.to ? new Date(params.to) : null;
@@ -454,8 +455,15 @@ router.get(
     }
     const params = parsed.data;
 
-    const { fromDate, toDate } = parseDateRange(params.from, params.to);
+    const { fromDate: rawFromDate, toDate: rawToDate } = parseDateRange(params.from, params.to);
     const xlsxMode = params.format === 'xlsx';
+
+    // When the user searches, span all history — date range only applies to
+    // unfiltered browsing. This lets ticket / vehicle / party lookups find
+    // rows outside the currently-selected date window.
+    const hasSearch = !!params.search?.trim();
+    const fromDate = hasSearch ? undefined : rawFromDate;
+    const toDate = hasSearch ? undefined : rawToDate;
 
     // ── Mirror-first branch ─────────────────────────────────
     // Decide whether to use the mirror table or the legacy union.

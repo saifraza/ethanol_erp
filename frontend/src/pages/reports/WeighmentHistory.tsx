@@ -303,24 +303,39 @@ export default function WeighmentHistory() {
 
         {/* ── Filter Bar ── */}
         <div className="bg-slate-100 border-x border-b border-slate-300 px-4 py-2 -mx-3 md:-mx-6 flex flex-wrap items-end gap-3">
-          <div>
-            <div className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-0.5">From</div>
-            <input
-              type="date"
-              value={pendingFilters.from}
-              onChange={e => setPendingFilters(f => ({ ...f, from: e.target.value }))}
-              className="border border-slate-300 px-2.5 py-1.5 text-xs focus:outline-none focus:ring-1 focus:ring-slate-400 bg-white"
-            />
-          </div>
-          <div>
-            <div className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-0.5">To</div>
-            <input
-              type="date"
-              value={pendingFilters.to}
-              onChange={e => setPendingFilters(f => ({ ...f, to: e.target.value }))}
-              className="border border-slate-300 px-2.5 py-1.5 text-xs focus:outline-none focus:ring-1 focus:ring-slate-400 bg-white"
-            />
-          </div>
+          {(() => {
+            const searchActive = !!pendingFilters.search.trim();
+            const dateLabel = searchActive
+              ? 'text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-0.5 line-through'
+              : 'text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-0.5';
+            const dateInput = searchActive
+              ? 'border border-slate-200 px-2.5 py-1.5 text-xs focus:outline-none focus:ring-1 focus:ring-slate-400 bg-slate-100 text-slate-400 cursor-not-allowed'
+              : 'border border-slate-300 px-2.5 py-1.5 text-xs focus:outline-none focus:ring-1 focus:ring-slate-400 bg-white';
+            return (
+              <>
+                <div title={searchActive ? 'Date range ignored while searching' : ''}>
+                  <div className={dateLabel}>From</div>
+                  <input
+                    type="date"
+                    value={pendingFilters.from}
+                    onChange={e => setPendingFilters(f => ({ ...f, from: e.target.value }))}
+                    disabled={searchActive}
+                    className={dateInput}
+                  />
+                </div>
+                <div title={searchActive ? 'Date range ignored while searching' : ''}>
+                  <div className={dateLabel}>To</div>
+                  <input
+                    type="date"
+                    value={pendingFilters.to}
+                    onChange={e => setPendingFilters(f => ({ ...f, to: e.target.value }))}
+                    disabled={searchActive}
+                    className={dateInput}
+                  />
+                </div>
+              </>
+            );
+          })()}
           <div>
             <div className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-0.5">Material</div>
             <select
@@ -368,7 +383,7 @@ export default function WeighmentHistory() {
               type="text"
               value={pendingFilters.search}
               onChange={e => handleSearchChange(e.target.value)}
-              placeholder="Vehicle no. or party name..."
+              placeholder="Ticket no., vehicle, or party..."
               className="w-full border border-slate-300 px-2.5 py-1.5 text-xs focus:outline-none focus:ring-1 focus:ring-slate-400 bg-white"
             />
           </div>
