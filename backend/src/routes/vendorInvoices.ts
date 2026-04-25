@@ -190,7 +190,7 @@ router.post('/upload-extract', upload.single('file'), asyncHandler(async (req: R
 // Accepts multipart "files" field (1..20). Returns one result per file.
 // Fails individually — one bad file doesn't break the batch.
 // ═══════════════════════════════════════════════
-router.post('/upload-extract-bulk', upload.array('files', 20), asyncHandler(async (req: Request, res: Response) => {
+router.post('/upload-extract-bulk', upload.array('files', 50), asyncHandler(async (req: Request, res: Response) => {
   const files = (req.files as Express.Multer.File[] | undefined) ?? [];
   if (files.length === 0) {
     res.status(400).json({ error: 'No files uploaded' });

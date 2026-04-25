@@ -480,13 +480,23 @@ export default function PaymentsOut() {
     setSmartUploadEntries(prev => prev.map(e => e.status === 'pending' ? { ...e, status: 'extracting' } : e));
 
     try {
-      const fd = new FormData();
-      for (const e of pending) fd.append('files', e.file);
-      const res = await api.post<{ count: number; results: Array<{ filePath: string; originalName: string; extracted: SmartExtracted | null; error?: string }> }>(
-        '/vendor-invoices/upload-extract-bulk', fd,
-        { headers: { 'Content-Type': 'multipart/form-data' }, timeout: 180000 },
-      );
-      const results = res.data.results || [];
+      // Chunk uploads — server caps at 50 files per request; chunking also keeps
+      // each request a manageable size and lets the UI flip cards to "extracted"
+      // progressively instead of waiting for the whole batch.
+      const CHUNK = 15;
+      type BulkResp = { count: number; results: Array<{ filePath: string; originalName: string; extracted: SmartExtracted | null; error?: string }> };
+      const allResults: BulkResp['results'] = [];
+      for (let i = 0; i < pending.length; i += CHUNK) {
+        const slice = pending.slice(i, i + CHUNK);
+        const fd = new FormData();
+        for (const e of slice) fd.append('files', e.file);
+        const res = await api.post<BulkResp>(
+          '/vendor-invoices/upload-extract-bulk', fd,
+          { headers: { 'Content-Type': 'multipart/form-data' }, timeout: 240000 },
+        );
+        allResults.push(...(res.data.results || []));
+      }
+      const results = allResults;
 
       // Ensure vendor list is loaded for matching.
       let vendorList = vendors;
@@ -1541,16 +1551,17 @@ export default function PaymentsOut() {
                               </td>
                               <td className="px-2 py-1.5 text-center">
                                 <div className="flex items-center justify-center gap-1">
-                                  {/* INV button — show when GRN exists and no invoice yet */}
+                                  {/* INV — single-bill upload, only when nothing's invoiced yet */}
                                   {item.invoiceStatus === 'NO_INVOICE' && item.grnCount > 0 && (
-                                    <>
-                                      <button onClick={() => openInvoiceModal(item)} className="px-2 py-0.5 bg-blue-600 text-white text-[9px] font-bold uppercase hover:bg-blue-700 flex items-center gap-1" title="Upload single invoice for this GRN">
-                                        <Upload size={10} /> INV
-                                      </button>
-                                      <button onClick={() => openSmartUploadForVendor(item.vendorId, item.vendorName)} className="px-2 py-0.5 bg-purple-600 text-white text-[9px] font-bold uppercase hover:bg-purple-700 flex items-center gap-1" title="Smart bulk upload — drop multiple bills, AI extracts and matches GRNs">
-                                        <Sparkles size={10} /> AI
-                                      </button>
-                                    </>
+                                    <button onClick={() => openInvoiceModal(item)} className="px-2 py-0.5 bg-blue-600 text-white text-[9px] font-bold uppercase hover:bg-blue-700 flex items-center gap-1" title="Upload single invoice for this GRN">
+                                      <Upload size={10} /> INV
+                                    </button>
+                                  )}
+                                  {/* AI — bulk Smart Upload always available while PO has GRNs (rolling PO can take multiple bills over time) */}
+                                  {item.grnCount > 0 && (
+                                    <button onClick={() => openSmartUploadForVendor(item.vendorId, item.vendorName)} className="px-2 py-0.5 bg-purple-600 text-white text-[9px] font-bold uppercase hover:bg-purple-700 flex items-center gap-1" title="Smart bulk upload — drop multiple bills, AI extracts and matches GRNs">
+                                      <Sparkles size={10} /> AI
+                                    </button>
                                   )}
                                   {/* PAY button — show when invoiced OR for fuel deals with GRNs (direct payment) */}
                                   {item.invoices.length > 0 && item.balance > 0 && (
@@ -1637,7 +1648,22 @@ export default function PaymentsOut() {
                                         <div>
                                           <div className="font-bold text-slate-500 uppercase tracking-widest mb-1">Invoices ({(poDetail.vendorInvoices || []).length})</div>
                                           <div className="max-h-40 overflow-y-auto space-y-1">
-                                            {(poDetail.vendorInvoices || []).map((inv: any) => (
+                                            {(poDetail.vendorInvoices || []).map((inv: any) => {
+                                              // Build the list of GRNs this invoice covers — prefer line-level
+                                              // links (multi-GRN bills), fall back to inv.grnId (legacy single-link).
+                                              const linkedGrns: Array<{ id: string; grnNo: number; grnDate?: string; totalAmount?: number; lineRef?: string }> = [];
+                                              const seen = new Set<string>();
+                                              for (const ln of (inv.lines || [])) {
+                                                if (ln.grn && !seen.has(ln.grn.id)) {
+                                                  linkedGrns.push({ id: ln.grn.id, grnNo: ln.grn.grnNo, grnDate: ln.grn.grnDate, totalAmount: ln.grn.totalAmount, lineRef: ln.productName });
+                                                  seen.add(ln.grn.id);
+                                                }
+                                              }
+                                              if (linkedGrns.length === 0 && inv.grnId) {
+                                                const headerGrn = (poDetail.grns || []).find((g: any) => g.id === inv.grnId);
+                                                if (headerGrn) linkedGrns.push({ id: headerGrn.id, grnNo: headerGrn.grnNo, grnDate: headerGrn.grnDate, totalAmount: headerGrn.totalAmount });
+                                              }
+                                              return (
                                               <div key={inv.id} className="bg-white border border-slate-200 px-2 py-1.5">
                                                 <div className="flex items-center justify-between">
                                                   <span className="font-mono font-medium">{inv.vendorInvNo || `INV-${inv.invoiceNo}`}</span>
@@ -1646,6 +1672,24 @@ export default function PaymentsOut() {
                                                     <span className={`text-[8px] font-bold uppercase px-1 py-0.5 border ${inv.status === 'PAID' ? 'border-green-300 text-green-700' : inv.status === 'PARTIAL_PAID' ? 'border-amber-300 text-amber-700' : 'border-blue-300 text-blue-700'}`}>{inv.status}</span>
                                                   </div>
                                                 </div>
+                                                {/* Linked GRNs — clickable, opens GRN PDF */}
+                                                {linkedGrns.length > 0 && (
+                                                  <div className="mt-1 flex items-start gap-1 flex-wrap">
+                                                    <span className="text-[8px] font-bold text-slate-400 uppercase tracking-widest mt-0.5">Covers:</span>
+                                                    {linkedGrns.map(g => (
+                                                      <a
+                                                        key={g.id}
+                                                        href={`/api/goods-receipts/${g.id}/pdf?token=${localStorage.getItem('token')}`}
+                                                        target="_blank"
+                                                        rel="noopener noreferrer"
+                                                        title={`GRN-${g.grnNo}${g.totalAmount ? ` · ${fmt(g.totalAmount)}` : ''}${g.lineRef ? ` · ${g.lineRef}` : ''}`}
+                                                        className="inline-flex items-center gap-0.5 text-[9px] font-mono px-1 py-0.5 border border-emerald-300 bg-emerald-50 text-emerald-700 hover:bg-emerald-100"
+                                                      >
+                                                        <FileText size={9} /> GRN-{g.grnNo}
+                                                      </a>
+                                                    ))}
+                                                  </div>
+                                                )}
                                                 {inv.filePath && (
                                                   <a href={`/uploads/${inv.filePath}`} target="_blank" rel="noopener noreferrer"
                                                     className="inline-flex items-center gap-1 mt-1 text-[9px] text-blue-600 hover:text-blue-800 hover:underline">
@@ -1653,7 +1697,8 @@ export default function PaymentsOut() {
                                                   </a>
                                                 )}
                                               </div>
-                                            ))}
+                                              );
+                                            })}
                                             {(!poDetail.vendorInvoices || poDetail.vendorInvoices.length === 0) && <div className="text-slate-400">No invoices</div>}
                                           </div>
                                         </div>

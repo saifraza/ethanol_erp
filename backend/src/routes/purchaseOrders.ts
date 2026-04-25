@@ -329,6 +329,14 @@ router.get('/:id', asyncHandler(async (req: AuthRequest, res: Response) => {
         vendorInvoices: {
           include: {
             payments: { orderBy: { paymentDate: 'desc' } },
+            // Multi-line bills: surface each line's GRN so the UI can show
+            // "INV-N covers GRN-X, GRN-Y" without an extra round-trip.
+            lines: {
+              orderBy: { lineNo: 'asc' },
+              include: {
+                grn: { select: { id: true, grnNo: true, grnDate: true, totalQty: true, totalAmount: true } },
+              },
+            },
           },
           orderBy: { invoiceDate: 'desc' },
         },
