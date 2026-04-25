@@ -102,13 +102,26 @@ const storage = multer.diskStorage({
 const upload = multer({ storage, limits: { fileSize: 10 * 1024 * 1024 } });
 
 // ── Gemini extraction helper (shared by single + bulk routes) ──
-const EXTRACT_PROMPT = `Extract these fields from this vendor/supplier invoice document. Return ONLY valid JSON with these keys:
+const EXTRACT_PROMPT = `Extract these fields from this vendor/supplier invoice document. The invoice may
+list MULTIPLE truck deliveries — capture every line. Return ONLY valid JSON with these keys:
 {
-  "invoice_number": "string - the vendor's invoice/bill number",
+  "invoice_number": "string - the vendor's invoice/bill number (or comma-separated list if the PDF bundles several invoice numbers)",
   "invoice_date": "string - date in YYYY-MM-DD format",
   "vendor_name": "string - supplier/vendor name",
   "gstin": "string - vendor GSTIN if visible",
-  "items": [{"description": "string", "hsn": "string", "qty": number, "unit": "string", "rate": number, "amount": number}],
+  "items": [
+    {
+      "description": "string - material name like 'Rice Husk', 'Bagasse'",
+      "hsn": "string",
+      "qty": number,
+      "unit": "string - MT, KG, etc.",
+      "rate": number,
+      "amount": number,
+      "vehicle_no": "string - truck registration like 'MP38AC3015' if visible on this line, else null",
+      "ticket_no": "string - weighbridge ticket / RST / DC number for this delivery if visible, else null",
+      "delivery_date": "string - per-line delivery date in YYYY-MM-DD if different from invoice date, else null"
+    }
+  ],
   "taxable_amount": number,
   "cgst": number,
   "sgst": number,
@@ -627,9 +640,9 @@ router.post('/', validate(createVendorInvoiceSchema), asyncHandler(async (req: A
           poId: b.poId || null,
           grnId: resolvedGrnId,
           vendorInvNo: b.vendorInvNo || '',
-          vendorInvDate: b.vendorInvDate ? new Date(b.vendorInvDate) : new Date(),
-          invoiceDate: b.invoiceDate ? new Date(b.invoiceDate) : new Date(),
-          dueDate: b.dueDate ? new Date(b.dueDate) : null,
+          vendorInvDate: ((): Date => { const d = b.vendorInvDate ? new Date(b.vendorInvDate) : null; return d && !isNaN(d.getTime()) ? d : new Date(); })(),
+          invoiceDate:  ((): Date => { const d = b.invoiceDate ? new Date(b.invoiceDate) : null; return d && !isNaN(d.getTime()) ? d : new Date(); })(),
+          dueDate:      ((): Date | null => { const d = b.dueDate ? new Date(b.dueDate) : null; return d && !isNaN(d.getTime()) ? d : null; })(),
           productName: resolvedProductName,
           quantity,
           unit: resolvedUnit,

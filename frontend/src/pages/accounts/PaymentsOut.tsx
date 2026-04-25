@@ -8,6 +8,42 @@ const AI_ROLES = ['ADMIN', 'SUPER_ADMIN', 'OWNER', 'ACCOUNTS_MANAGER', 'FINANCE'
 // Pulls the clean UTR/bank-ref out of a free-text payment reference.
 // Example input : "RTGSO-JAY BAJRANG BHUSA BHA UBINR22026041601296969"
 // Returns       : { utr: "UBINR22026041601296969", prefix: "RTGSO-JAY BAJRANG BHUSA BHA" }
+/**
+ * Find a subset of GRNs whose totalAmount sums to within tolerance of the target.
+ * Used to auto-tick GRNs on a bundled invoice (e.g. one bill covering 5 trucks).
+ *
+ * Strategy: depth-limited backtracking, GRNs sorted by amount desc.
+ * Caps depth at 7 (max trucks per bill we've seen) and total nodes at 200K so
+ * worst-case is ~50ms even on a slow phone. Returns the FIRST subset found.
+ */
+function findGrnSubsetMatchingTotal<T extends { id: string; totalAmount: number }>(
+  grns: T[],
+  target: number,
+  tolerance = 0.05,
+  maxDepth = 7,
+): string[] | null {
+  if (target <= 0 || grns.length === 0) return null;
+  const tol = Math.max(target * tolerance, 1);
+  const sorted = [...grns].sort((a, b) => b.totalAmount - a.totalAmount);
+  let visited = 0;
+  const NODE_CAP = 200000;
+
+  function search(start: number, remaining: number, picked: string[]): string[] | null {
+    if (++visited > NODE_CAP) return null;
+    if (Math.abs(remaining) <= tol && picked.length > 0) return picked;
+    if (picked.length >= maxDepth) return null;
+    if (remaining < -tol) return null;
+    for (let i = start; i < sorted.length; i++) {
+      const next = sorted[i];
+      if (next.totalAmount > remaining + tol) continue; // skip — can't fit
+      const got = search(i + 1, remaining - next.totalAmount, [...picked, next.id]);
+      if (got) return got;
+    }
+    return null;
+  }
+  return search(0, target, []);
+}
+
 function parseUtr(ref: string | null | undefined): { utr: string; prefix: string } {
   if (!ref) return { utr: '', prefix: '' };
   const trimmed = ref.trim();
@@ -369,7 +405,17 @@ export default function PaymentsOut() {
     invoice_date?: string | null;
     vendor_name?: string | null;
     gstin?: string | null;
-    items?: Array<{ description?: string; hsn?: string; qty?: number; unit?: string; rate?: number; amount?: number }>;
+    items?: Array<{
+      description?: string;
+      hsn?: string;
+      qty?: number;
+      unit?: string;
+      rate?: number;
+      amount?: number;
+      vehicle_no?: string | null;
+      ticket_no?: string | null;
+      delivery_date?: string | null;
+    }>;
     taxable_amount?: number | null;
     cgst?: number | null;
     sgst?: number | null;
@@ -541,14 +587,44 @@ export default function PaymentsOut() {
             api.get<{ grns: SmartUnbilledGrn[] }>(`/goods-receipts/unbilled?vendorId=${matchedVendor.id}`)
               .then(g => {
                 const grns = g.data.grns || [];
-                // Auto-select GRNs whose total amount is closest to extracted taxable_amount.
+                // Auto-tick strategy (in order):
+                // 1. Match each extracted line's vehicle_no / ticket_no to a GRN (most reliable).
+                // 2. If still empty, try subset-sum of GRN amounts ≈ bill taxable.
+                // 3. If still empty, fall back to single-GRN amount match.
                 const taxable = Number(r.extracted?.taxable_amount) || 0;
                 let preselect: string[] = [];
-                if (taxable > 0 && grns.length > 0) {
-                  // Single GRN match: amount within 5% tolerance.
+
+                // Step 1 — vehicle / ticket match per extracted line.
+                const norm = (s: string | null | undefined) => (s || '').toString().toUpperCase().replace(/[\s\-]+/g, '');
+                const items = r.extracted?.items || [];
+                const matchedByLine = new Set<string>();
+                for (const it of items) {
+                  const vNeedle = norm(it.vehicle_no);
+                  const tNeedle = norm(it.ticket_no);
+                  if (vNeedle.length >= 5) {
+                    const hit = grns.find(gr => norm(gr.vehicleNo) === vNeedle && !matchedByLine.has(gr.id));
+                    if (hit) { matchedByLine.add(hit.id); continue; }
+                  }
+                  if (tNeedle.length >= 2) {
+                    const ticketDigits = tNeedle.replace(/\D+/g, '');
+                    const hit = grns.find(gr => gr.ticketNo != null && String(gr.ticketNo) === ticketDigits && !matchedByLine.has(gr.id));
+                    if (hit) { matchedByLine.add(hit.id); continue; }
+                  }
+                }
+                if (matchedByLine.size > 0) preselect = Array.from(matchedByLine);
+
+                // Step 2 — subset-sum on amounts.
+                if (preselect.length === 0 && taxable > 0 && grns.length > 0) {
+                  const subset = findGrnSubsetMatchingTotal(grns, taxable, 0.05, 7);
+                  if (subset && subset.length > 0) preselect = subset;
+                }
+
+                // Step 3 — single-GRN amount match (legacy fallback).
+                if (preselect.length === 0 && taxable > 0) {
                   const single = grns.find(gr => Math.abs(gr.totalAmount - taxable) / Math.max(taxable, 1) < 0.05);
                   if (single) preselect = [single.id];
                 }
+
                 setSmartUploadEntries(prev => prev.map(p => p.id === entry.id ? { ...p, unbilledGrns: grns, selectedGrnIds: preselect } : p));
               })
               .catch(() => {
