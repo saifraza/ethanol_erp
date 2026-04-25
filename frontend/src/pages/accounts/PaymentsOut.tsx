@@ -182,7 +182,7 @@ const COMP_TYPES = [
   { key: 'CASH', label: 'CASH' },
 ];
 
-type TabKey = 'pending' | 'completed' | 'ledger' | 'outstanding';
+type TabKey = 'pending' | 'completed' | 'ledger' | 'outstanding' | 'unmatched';
 
 // ═══════════════════════════════════════════════
 // Component
@@ -749,14 +749,16 @@ export default function PaymentsOut() {
         grnIds: Array.from(linkGrnTarget.selected),
       });
       setLinkGrnTarget(null);
-      // Refresh the PO detail panel so the new GRN chips appear immediately.
+      // Refresh PO detail panel + unmatched list so the row drops off.
       if (selectedPOId) {
         try { const ref = await api.get(`/purchase-orders/${selectedPOId}`); setPODetail(ref.data); } catch { /* noop */ }
       }
+      // Notify the unmatched-list listener (declared next to fetchUnmatched below) to refetch.
+      window.dispatchEvent(new Event('payments-out:unmatched-refresh'));
     } catch (err: unknown) {
-      const msg = (err as { response?: { data?: { error?: string } }; message?: string })?.response?.data?.error
-        || (err as { message?: string })?.message
-        || 'Save failed';
+      const resp = (err as { response?: { data?: { error?: string; conflicts?: string[] } } })?.response?.data;
+      const conflicts = resp?.conflicts && resp.conflicts.length > 0 ? `\n${resp.conflicts.join('\n')}` : '';
+      const msg = (resp?.error || (err as { message?: string })?.message || 'Save failed') + conflicts;
       setLinkGrnTarget(prev => prev ? { ...prev, saving: false, error: msg } : prev);
     }
   }, [linkGrnTarget, selectedPOId]);
@@ -867,6 +869,42 @@ export default function PaymentsOut() {
     }
   }, []);
 
+  // Unmatched invoices = vendor bills with NO GRN linkage at all (header or any line).
+  type UnmatchedInvoice = {
+    id: string;
+    invoiceNo: number;
+    vendorInvNo: string | null;
+    vendorInvDate: string | null;
+    invoiceDate: string;
+    totalAmount: number;
+    balanceAmount: number;
+    status: string;
+    filePath: string | null;
+    poId: string | null;
+    vendor: { id: string; name: string } | null;
+    po: { id: string; poNo: number } | null;
+  };
+  const [unmatched, setUnmatched] = useState<UnmatchedInvoice[]>([]);
+  const [unmatchedLoading, setUnmatchedLoading] = useState(false);
+  const fetchUnmatched = useCallback(async () => {
+    try {
+      setUnmatchedLoading(true);
+      const res = await api.get<{ invoices: UnmatchedInvoice[] }>('/vendor-invoices/unmatched');
+      setUnmatched(res.data.invoices || []);
+    } catch (err) {
+      console.error('Failed to fetch unmatched:', err);
+    } finally {
+      setUnmatchedLoading(false);
+    }
+  }, []);
+
+  // Listen for refresh requests from the Link-GRN modal (declared above this fetcher).
+  useEffect(() => {
+    const handler = () => { fetchUnmatched(); };
+    window.addEventListener('payments-out:unmatched-refresh', handler);
+    return () => window.removeEventListener('payments-out:unmatched-refresh', handler);
+  }, [fetchUnmatched]);
+
   // ═══════════════════════════════════════════════
   // Effects
   // ═══════════════════════════════════════════════
@@ -886,7 +924,8 @@ export default function PaymentsOut() {
     if (activeTab === 'completed') fetchCompleted();
     if (activeTab === 'ledger' && vendors.length === 0) fetchVendors();
     if (activeTab === 'outstanding') fetchOutstanding();
-  }, [activeTab, fetchCompleted, fetchVendors, fetchOutstanding, vendors.length]);
+    if (activeTab === 'unmatched') fetchUnmatched();
+  }, [activeTab, fetchCompleted, fetchVendors, fetchOutstanding, fetchUnmatched, vendors.length]);
 
   useEffect(() => {
     if (selectedVendor && activeTab === 'ledger') fetchLedger(selectedVendor);
@@ -1439,6 +1478,7 @@ export default function PaymentsOut() {
         <div className="bg-slate-100 border-x border-b border-slate-300 px-4 py-0 -mx-3 md:-mx-6 flex gap-0">
           {([
             { key: 'pending' as const, label: 'Pending' },
+            { key: 'unmatched' as const, label: 'Unmatched' },
             { key: 'completed' as const, label: 'Completed' },
             { key: 'ledger' as const, label: 'Vendor Ledger' },
             { key: 'outstanding' as const, label: 'Outstanding' },
@@ -1448,6 +1488,9 @@ export default function PaymentsOut() {
               {tab.label}
               {tab.key === 'pending' && pendingItems.length > 0 && (
                 <span className="ml-1.5 text-[9px] px-1.5 py-0.5 bg-red-600 text-white font-bold">{pendingItems.length}</span>
+              )}
+              {tab.key === 'unmatched' && unmatched.length > 0 && (
+                <span className="ml-1.5 text-[9px] px-1.5 py-0.5 bg-amber-600 text-white font-bold">{unmatched.length}</span>
               )}
             </button>
           ))}
@@ -1978,6 +2021,87 @@ export default function PaymentsOut() {
                 </div>
                   ); })()}
               </>
+            )}
+          </div>
+        )}
+
+        {/* ═══════════════════════════════════════ */}
+        {/* UNMATCHED TAB — bills with no GRN linked yet */}
+        {/* ═══════════════════════════════════════ */}
+        {activeTab === 'unmatched' && (
+          <div className="border-x border-b border-slate-300 -mx-3 md:-mx-6 bg-white">
+            <div className="bg-amber-50 border-b border-amber-200 px-4 py-2 text-[11px] text-amber-800">
+              <strong>Unmatched invoices</strong> — bills booked in the system but not yet linked to any GRN.
+              Click <strong>Link GRN</strong> to pick the GRN(s) this bill covers. Rule: one GRN can only be invoiced once; one invoice can cover many GRNs.
+            </div>
+            {unmatchedLoading ? (
+              <div className="p-8 text-center text-xs text-slate-400 uppercase tracking-widest">Loading...</div>
+            ) : unmatched.length === 0 ? (
+              <div className="p-12 text-center">
+                <FileText size={32} className="mx-auto text-slate-300 mb-3" />
+                <div className="text-xs text-slate-500">No unmatched invoices &mdash; every booked bill has at least one GRN linked.</div>
+              </div>
+            ) : (
+              <div className="overflow-x-auto">
+                <table className="w-full text-xs">
+                  <thead>
+                    <tr className="bg-slate-800 text-white">
+                      <th className="text-left px-3 py-2 font-semibold text-[10px] uppercase tracking-widest border-r border-slate-700">Invoice</th>
+                      <th className="text-left px-3 py-2 font-semibold text-[10px] uppercase tracking-widest border-r border-slate-700">Vendor</th>
+                      <th className="text-left px-3 py-2 font-semibold text-[10px] uppercase tracking-widest border-r border-slate-700">PO</th>
+                      <th className="text-left px-3 py-2 font-semibold text-[10px] uppercase tracking-widest border-r border-slate-700">Date</th>
+                      <th className="text-right px-3 py-2 font-semibold text-[10px] uppercase tracking-widest border-r border-slate-700">Amount</th>
+                      <th className="text-right px-3 py-2 font-semibold text-[10px] uppercase tracking-widest border-r border-slate-700">Balance</th>
+                      <th className="text-left px-3 py-2 font-semibold text-[10px] uppercase tracking-widest border-r border-slate-700">Status</th>
+                      <th className="text-center px-3 py-2 font-semibold text-[10px] uppercase tracking-widest">Actions</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {unmatched.map((inv, i) => (
+                      <tr key={inv.id} className={`border-b border-slate-100 hover:bg-amber-50/40 ${i % 2 ? 'bg-slate-50/70' : ''}`}>
+                        <td className="px-3 py-1.5 border-r border-slate-100 font-mono">
+                          <div className="font-bold text-slate-800">{inv.vendorInvNo || `INV-${inv.invoiceNo}`}</div>
+                          <div className="text-[9px] text-slate-400">INV-{inv.invoiceNo}</div>
+                        </td>
+                        <td className="px-3 py-1.5 border-r border-slate-100 font-medium text-slate-800 max-w-[200px] truncate" title={inv.vendor?.name}>{inv.vendor?.name || '--'}</td>
+                        <td className="px-3 py-1.5 border-r border-slate-100 font-mono text-blue-700">{inv.po ? `PO-${inv.po.poNo}` : <span className="text-slate-400">--</span>}</td>
+                        <td className="px-3 py-1.5 border-r border-slate-100 whitespace-nowrap text-slate-600">{inv.vendorInvDate ? fmtDate(inv.vendorInvDate) : fmtDate(inv.invoiceDate)}</td>
+                        <td className="px-3 py-1.5 border-r border-slate-100 text-right font-mono tabular-nums">{fmt(inv.totalAmount)}</td>
+                        <td className="px-3 py-1.5 border-r border-slate-100 text-right font-mono tabular-nums font-bold text-red-600">{fmt(inv.balanceAmount)}</td>
+                        <td className="px-3 py-1.5 border-r border-slate-100">
+                          <span className="text-[9px] font-bold uppercase px-1.5 py-0.5 border border-amber-400 bg-amber-50 text-amber-700">{inv.status}</span>
+                        </td>
+                        <td className="px-3 py-1.5 text-center">
+                          <div className="flex items-center justify-center gap-1">
+                            {inv.filePath && (
+                              <a href={`/uploads/${inv.filePath}`} target="_blank" rel="noopener noreferrer"
+                                 className="px-2 py-0.5 bg-blue-600 text-white text-[9px] font-bold uppercase hover:bg-blue-700 inline-flex items-center gap-1" title="Open invoice PDF">
+                                <FileText size={10} /> PDF
+                              </a>
+                            )}
+                            <button
+                              onClick={() => openLinkGrnModal({ id: inv.id, invoiceNo: inv.invoiceNo, vendorInvNo: inv.vendorInvNo, vendorId: inv.vendor?.id || '', poId: inv.poId }, inv.vendor?.name || 'Vendor')}
+                              disabled={!inv.vendor}
+                              className="px-2 py-0.5 bg-amber-600 text-white text-[9px] font-bold uppercase hover:bg-amber-700 disabled:opacity-50 inline-flex items-center gap-1"
+                              title="Link GRN(s) to this invoice"
+                            >
+                              <Sparkles size={10} /> Link GRN
+                            </button>
+                          </div>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                  <tfoot>
+                    <tr className="bg-slate-800 text-white font-semibold">
+                      <td className="px-3 py-2 text-[10px] uppercase tracking-widest" colSpan={4}>Total ({unmatched.length} invoices)</td>
+                      <td className="px-3 py-2 text-right font-mono tabular-nums">{fmt(unmatched.reduce((s, i) => s + (i.totalAmount || 0), 0))}</td>
+                      <td className="px-3 py-2 text-right font-mono tabular-nums">{fmt(unmatched.reduce((s, i) => s + (i.balanceAmount || 0), 0))}</td>
+                      <td colSpan={2}></td>
+                    </tr>
+                  </tfoot>
+                </table>
+              </div>
             )}
           </div>
         )}

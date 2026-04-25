@@ -372,6 +372,41 @@ router.get('/', asyncHandler(async (req: AuthRequest, res: Response) => {
     res.json({ invoices });
 }));
 
+// ═══════════════════════════════════════════════
+// GET /unmatched — vendor invoices with NO GRN linkage at all
+// (header grnId is null AND no VendorInvoiceLine has a grnId).
+// These need accounts to manually pick a GRN (one PDF can cover many GRNs,
+// but each GRN can only be invoiced once — see the 1-GRN→1-invoice check
+// in POST / and POST /:id/link-grns).
+// ═══════════════════════════════════════════════
+router.get('/unmatched', asyncHandler(async (req: AuthRequest, res: Response) => {
+  const invoices = await prisma.vendorInvoice.findMany({
+    where: {
+      ...getCompanyFilter(req),
+      status: { notIn: ['CANCELLED'] },
+      grnId: null,
+      lines: { none: { grnId: { not: null } } },
+    },
+    select: {
+      id: true,
+      invoiceNo: true,
+      vendorInvNo: true,
+      vendorInvDate: true,
+      invoiceDate: true,
+      totalAmount: true,
+      balanceAmount: true,
+      status: true,
+      filePath: true,
+      poId: true,
+      vendor: { select: { id: true, name: true } },
+      po: { select: { id: true, poNo: true } },
+    },
+    orderBy: { invoiceDate: 'desc' },
+    take: 500,
+  });
+  res.json({ invoices });
+}));
+
 // GET /outstanding — outstanding vendor invoices grouped by vendor
 router.get('/outstanding', asyncHandler(async (req: AuthRequest, res: Response) => {
     const invoices = await prisma.vendorInvoice.findMany({
@@ -527,6 +562,40 @@ router.post('/', validate(createVendorInvoiceSchema), asyncHandler(async (req: A
     const grnIdsForMatch = useLines
       ? Array.from(new Set(linesIn.map(l => l.grnId).filter((g): g is string => !!g)))
       : (b.poId && b.grnId ? [b.grnId as string] : []);
+
+    // Enforce 1-GRN→1-invoice: a GRN linked here can't already be on another
+    // active VendorInvoice (header grnId or any line). Reject before creating.
+    if (grnIdsForMatch.length > 0) {
+      const conflicts = await prisma.vendorInvoice.findMany({
+        where: {
+          status: { notIn: ['CANCELLED'] },
+          OR: [
+            { grnId: { in: grnIdsForMatch } },
+            { lines: { some: { grnId: { in: grnIdsForMatch } } } },
+          ],
+        },
+        select: { id: true, invoiceNo: true, vendorInvNo: true, grnId: true, lines: { select: { grnId: true } } },
+      });
+      if (conflicts.length > 0) {
+        const grnRows = await prisma.goodsReceipt.findMany({
+          where: { id: { in: grnIdsForMatch } },
+          select: { id: true, grnNo: true },
+        });
+        const grnNumByGid: Record<string, number> = {};
+        for (const g of grnRows) grnNumByGid[g.id] = g.grnNo;
+        const taken: Record<string, string> = {};
+        for (const c of conflicts) {
+          const ids = new Set<string>([c.grnId, ...c.lines.map(l => l.grnId)].filter((g): g is string => !!g));
+          for (const gid of ids) if (grnIdsForMatch.includes(gid)) taken[gid] = `INV-${c.invoiceNo}${c.vendorInvNo ? ` (${c.vendorInvNo})` : ''}`;
+        }
+        const lines = Object.entries(taken).map(([gid, inv]) => `GRN-${grnNumByGid[gid] ?? ''} → ${inv}`);
+        return res.status(409).json({
+          error: 'One or more GRNs are already linked to another invoice — a GRN can only be invoiced once.',
+          conflicts: lines,
+        });
+      }
+    }
+
     if (b.poId && grnIdsForMatch.length > 0) {
       const grns = await prisma.goodsReceipt.findMany({
         where: { id: { in: grnIdsForMatch } },
@@ -674,6 +743,34 @@ router.post('/:id/link-grns', validate(linkGrnsSchema), asyncHandler(async (req:
   });
   if (grns.length !== newGrnIds.length) {
     return res.status(400).json({ error: 'One or more GRNs were not found or do not belong to this vendor' });
+  }
+
+  // Enforce 1-GRN→1-invoice: if any of the picked GRNs is already linked to
+  // ANOTHER invoice (either as header grnId or line grnId), reject the link.
+  const conflicts = await prisma.vendorInvoice.findMany({
+    where: {
+      id: { not: invoice.id },
+      status: { notIn: ['CANCELLED'] },
+      OR: [
+        { grnId: { in: newGrnIds } },
+        { lines: { some: { grnId: { in: newGrnIds } } } },
+      ],
+    },
+    select: { id: true, invoiceNo: true, vendorInvNo: true, grnId: true, lines: { select: { grnId: true } } },
+  });
+  if (conflicts.length > 0) {
+    const taken: Record<string, string> = {};
+    for (const c of conflicts) {
+      const ids = new Set<string>([c.grnId, ...c.lines.map(l => l.grnId)].filter((g): g is string => !!g));
+      for (const gid of ids) if (newGrnIds.includes(gid)) taken[gid] = `INV-${c.invoiceNo}${c.vendorInvNo ? ` (${c.vendorInvNo})` : ''}`;
+    }
+    const grnNumByGid: Record<string, number> = {};
+    for (const g of grns) grnNumByGid[g.id] = g.grnNo;
+    const lines = Object.entries(taken).map(([gid, inv]) => `GRN-${grnNumByGid[gid] ?? ''} → ${inv}`);
+    return res.status(409).json({
+      error: 'One or more GRNs are already linked to another invoice — a GRN can only be invoiced once.',
+      conflicts: lines,
+    });
   }
 
   // Determine starting lineNo (max existing + 1).
