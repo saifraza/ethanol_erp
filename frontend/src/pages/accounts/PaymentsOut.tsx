@@ -1719,20 +1719,36 @@ export default function PaymentsOut() {
                                     <div className="p-4 space-y-3">
                                       {/* Pipeline Steps */}
                                       <div className="flex items-center justify-center gap-0">
-                                        {([
-                                          { label: 'Ordered', done: true, value: fmt(poDetail.pipeline.ordered.amount), sub: `${poDetail.pipeline.ordered.qty} qty`, mismatch: false },
-                                          { label: 'Received', done: poDetail.pipeline.received.grnCount > 0, value: fmt(poDetail.pipeline.received.amount || 0), sub: `${poDetail.pipeline.received.grnCount} GRN${poDetail.pipeline.received.grnCount !== 1 ? 's' : ''} | ${poDetail.pipeline.received.qty} qty`, mismatch: false },
-                                          { label: 'Invoiced', done: poDetail.pipeline.invoiced.count > 0, value: fmt(poDetail.pipeline.invoiced.amount), sub: `${poDetail.pipeline.invoiced.count} invoice${poDetail.pipeline.invoiced.count !== 1 ? 's' : ''}`, mismatch: poDetail.pipeline.invoiced.amount > 0 && poDetail.pipeline.ordered.amount > 0 && Math.abs(poDetail.pipeline.invoiced.amount - poDetail.pipeline.ordered.amount) > 10 },
-                                          { label: 'Paid', done: poDetail.pipeline.paid.amount > 0, value: fmt(poDetail.pipeline.paid.amount), sub: poDetail.pipeline.paid.pendingCash > 0 ? `+ ${fmt(poDetail.pipeline.paid.pendingCash)} pending cash` : poDetail.pipeline.paid.amount === 0 ? 'Unpaid' : poDetail.pipeline.paid.balance > 0 ? `Bal: ${fmt(poDetail.pipeline.paid.balance)}` : 'Settled', mismatch: false },
-                                        ]).map((step, si) => (
+                                        {(() => {
+                                          // Compare invoiced ↔ received (not vs ordered, which is meaningless
+                                          // for rolling fuel POs where ordered qty is a placeholder).
+                                          // partial: invoiced < received - 1% → more bills expected (info)
+                                          // mismatch: invoiced > received + 1% → over-billed (real anomaly)
+                                          const invAmt = poDetail.pipeline.invoiced.amount || 0;
+                                          const recvAmt = poDetail.pipeline.received.amount || 0;
+                                          const tol = Math.max(recvAmt * 0.01, 10);
+                                          const invPartial = recvAmt > 0 && invAmt > 0 && invAmt < recvAmt - tol;
+                                          const invMismatch = recvAmt > 0 && invAmt > recvAmt + tol;
+                                          const unbilled = Math.max(0, recvAmt - invAmt);
+                                          const fmtQty = (q: number) => q.toLocaleString('en-IN', { maximumFractionDigits: 2 });
+                                          const invSub = invPartial
+                                            ? `${poDetail.pipeline.invoiced.count} of ${poDetail.pipeline.received.grnCount} GRNs · ${fmt(unbilled)} awaiting bill`
+                                            : `${poDetail.pipeline.invoiced.count} invoice${poDetail.pipeline.invoiced.count !== 1 ? 's' : ''}`;
+                                          return [
+                                          { label: 'Ordered', done: true, value: fmt(poDetail.pipeline.ordered.amount), sub: `${fmtQty(poDetail.pipeline.ordered.qty)} qty`, mismatch: false, partial: false },
+                                          { label: 'Received', done: poDetail.pipeline.received.grnCount > 0, value: fmt(recvAmt), sub: `${poDetail.pipeline.received.grnCount} GRN${poDetail.pipeline.received.grnCount !== 1 ? 's' : ''} | ${fmtQty(poDetail.pipeline.received.qty)} qty`, mismatch: false, partial: false },
+                                          { label: 'Invoiced', done: poDetail.pipeline.invoiced.count > 0, value: fmt(invAmt), sub: invSub, mismatch: invMismatch, partial: invPartial },
+                                          { label: 'Paid', done: poDetail.pipeline.paid.amount > 0, value: fmt(poDetail.pipeline.paid.amount), sub: poDetail.pipeline.paid.pendingCash > 0 ? `+ ${fmt(poDetail.pipeline.paid.pendingCash)} pending cash` : poDetail.pipeline.paid.amount === 0 ? 'Unpaid' : poDetail.pipeline.paid.balance > 0 ? `Bal: ${fmt(poDetail.pipeline.paid.balance)}` : 'Settled', mismatch: false, partial: false },
+                                          ];
+                                        })().map((step, si) => (
                                           <React.Fragment key={step.label}>
-                                            {si > 0 && <div className={`h-0.5 w-8 ${step.mismatch ? 'bg-red-400' : step.done ? 'bg-green-400' : 'bg-slate-300'}`} />}
-                                            <div className={`border px-4 py-2 text-center min-w-[120px] ${step.mismatch ? 'border-red-300 bg-red-50' : step.done ? 'border-green-300 bg-green-50' : 'border-slate-200 bg-white'}`}>
-                                              <div className={`text-[9px] font-bold uppercase tracking-widest ${step.mismatch ? 'text-red-700' : step.done ? 'text-green-700' : 'text-slate-400'}`}>
-                                                {step.label}{step.mismatch ? ' MISMATCH' : ''}
+                                            {si > 0 && <div className={`h-0.5 w-8 ${step.mismatch ? 'bg-red-400' : step.partial ? 'bg-amber-400' : step.done ? 'bg-green-400' : 'bg-slate-300'}`} />}
+                                            <div className={`border px-4 py-2 text-center min-w-[120px] ${step.mismatch ? 'border-red-300 bg-red-50' : step.partial ? 'border-amber-300 bg-amber-50' : step.done ? 'border-green-300 bg-green-50' : 'border-slate-200 bg-white'}`}>
+                                              <div className={`text-[9px] font-bold uppercase tracking-widest ${step.mismatch ? 'text-red-700' : step.partial ? 'text-amber-700' : step.done ? 'text-green-700' : 'text-slate-400'}`}>
+                                                {step.label}{step.mismatch ? ' OVER-BILLED' : step.partial ? ' PARTIAL' : ''}
                                               </div>
-                                              <div className={`text-sm font-bold font-mono tabular-nums mt-0.5 ${step.mismatch ? 'text-red-800' : step.done ? 'text-green-800' : 'text-slate-300'}`}>{step.value}</div>
-                                              <div className={`text-[9px] ${step.mismatch ? 'text-red-600' : step.done ? 'text-green-600' : 'text-slate-300'}`}>{step.sub}</div>
+                                              <div className={`text-sm font-bold font-mono tabular-nums mt-0.5 ${step.mismatch ? 'text-red-800' : step.partial ? 'text-amber-800' : step.done ? 'text-green-800' : 'text-slate-300'}`}>{step.value}</div>
+                                              <div className={`text-[9px] ${step.mismatch ? 'text-red-600' : step.partial ? 'text-amber-700' : step.done ? 'text-green-600' : 'text-slate-300'}`}>{step.sub}</div>
                                             </div>
                                           </React.Fragment>
                                         ))}
