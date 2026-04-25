@@ -1820,22 +1820,20 @@ export default function PaymentsOut() {
                                       <Upload size={10} /> INV
                                     </button>
                                   )}
-                                  {/* AI — bulk Smart Upload always available while PO has GRNs (rolling PO can take multiple bills over time) */}
+                                  {/* LEDGER — full-page vendor reconciliation. Has its own bulk upload
+                                      with AI matching scoped only to this vendor's unmatched GRNs (faster
+                                      and more accurate than the global Smart Upload modal). */}
                                   {item.grnCount > 0 && (
-                                    <button onClick={() => openSmartUploadForVendor(item.vendorId, item.vendorName)} className="px-2 py-0.5 bg-purple-600 text-white text-[9px] font-bold uppercase hover:bg-purple-700 flex items-center gap-1" title="Smart bulk upload — drop multiple bills, AI extracts and matches GRNs">
-                                      <Sparkles size={10} /> AI
-                                    </button>
+                                    <a
+                                      href={`/accounts/payments-out/reconcile/${item.vendorId}`}
+                                      target="_blank"
+                                      rel="noopener noreferrer"
+                                      className="px-2 py-0.5 bg-purple-700 text-white text-[9px] font-bold uppercase hover:bg-purple-800 flex items-center gap-1"
+                                      title="Open vendor ledger in new tab — view + upload bills with AI scoped to this vendor's GRNs"
+                                    >
+                                      <Sparkles size={10} /> LEDGER + AI
+                                    </a>
                                   )}
-                                  {/* Reconcile — full-page vendor ledger of GRNs ↔ invoices ↔ payments */}
-                                  <a
-                                    href={`/accounts/payments-out/reconcile/${item.vendorId}`}
-                                    target="_blank"
-                                    rel="noopener noreferrer"
-                                    className="px-2 py-0.5 bg-slate-700 text-white text-[9px] font-bold uppercase hover:bg-slate-800 flex items-center gap-1"
-                                    title="Open vendor ledger in new tab — every GRN paired with its invoice"
-                                  >
-                                    <FileText size={10} /> LEDGER
-                                  </a>
                                   {/* PAY button — show when invoiced OR for fuel deals with GRNs (direct payment) */}
                                   {item.invoices.length > 0 && item.balance > 0 && (
                                     <>
