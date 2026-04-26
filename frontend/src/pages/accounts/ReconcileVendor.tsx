@@ -143,6 +143,24 @@ export default function ReconcileVendor() {
   const [error, setError] = useState<string | null>(null);
   const [view, setView] = useState<ViewMode>('grns');
   const [linkTarget, setLinkTarget] = useState<{ invoiceId: string; invoiceLabel: string; selected: Set<string>; saving: boolean; error?: string } | null>(null);
+  const [docsOpen, setDocsOpen] = useState(false);
+
+  // Per-GRN direct upload — bypass AI, attach a bill PDF straight to one known GRN.
+  // Used by the inline "Upload Bill" button on each unmatched GRN row.
+  const [directUpload, setDirectUpload] = useState<{
+    grnId: string;
+    grnNo: number;
+    poId: string | null;
+    grnAmount: number;
+    grnQty: number;
+    file: File | null;
+    vendorInvNo: string;
+    vendorInvDate: string;
+    totalAmount: string;
+    gstPercent: string;
+    saving: boolean;
+    error?: string;
+  } | null>(null);
 
   // Cross-references — declared early so the upload callbacks below can use them.
   const grnToInvoice = useMemo(() => {
@@ -407,6 +425,86 @@ export default function ReconcileVendor() {
 
   const removeEntry = (id: string) => setEntries(prev => prev.filter(e => e.id !== id));
   const updateEntry = (id: string, patch: Partial<UploadEntry>) => setEntries(prev => prev.map(e => e.id === id ? { ...e, ...patch } : e));
+
+  // Per-GRN direct upload — opens a small inline modal with the GRN context
+  // pre-filled. No AI; user just attaches the PDF, types the vendor's invoice
+  // number, and saves.
+  const openDirectUpload = (g: GrnRow) => {
+    const grnAmount = g.totalAmount || 0;
+    setDirectUpload({
+      grnId: g.id,
+      grnNo: g.grnNo,
+      poId: g.po?.id || g.poId || null,
+      grnAmount,
+      grnQty: g.totalQty || 0,
+      file: null,
+      vendorInvNo: '',
+      vendorInvDate: todayStr(),
+      totalAmount: grnAmount ? String(Math.round(grnAmount)) : '',
+      gstPercent: '0',
+      saving: false,
+    });
+  };
+
+  const submitDirectUpload = async () => {
+    if (!directUpload || !data) return;
+    if (!directUpload.file) {
+      setDirectUpload(prev => prev ? { ...prev, error: 'Pick a PDF / image first' } : prev);
+      return;
+    }
+    if (!directUpload.vendorInvNo.trim()) {
+      setDirectUpload(prev => prev ? { ...prev, error: 'Vendor invoice number is required' } : prev);
+      return;
+    }
+    setDirectUpload(prev => prev ? { ...prev, saving: true, error: undefined } : prev);
+    try {
+      // Upload the file first to get filePath + fileHash via the existing extract
+      // route, but skip Gemini by ignoring its `extracted` field.
+      const fd = new FormData();
+      fd.append('file', directUpload.file);
+      const up = await api.post<{ filePath: string }>('/vendor-invoices/upload-extract', fd, {
+        headers: { 'Content-Type': 'multipart/form-data' }, timeout: 60000,
+      });
+      const filePath = up.data.filePath || null;
+
+      // Compute totals from the GRN — accounts can override via the form fields.
+      const totalAmount = parseFloat(directUpload.totalAmount) || directUpload.grnAmount;
+      const gstPercent = parseFloat(directUpload.gstPercent) || 0;
+      const taxable = totalAmount / (1 + gstPercent / 100);
+      const rate = directUpload.grnQty > 0 ? taxable / directUpload.grnQty : 0;
+
+      await api.post('/vendor-invoices', {
+        vendorId: data.vendor.id,
+        poId: directUpload.poId,
+        vendorInvNo: directUpload.vendorInvNo.trim(),
+        vendorInvDate: directUpload.vendorInvDate,
+        invoiceDate: directUpload.vendorInvDate,
+        supplyType: 'INTRA_STATE',
+        gstPercent,
+        filePath,
+        originalFileName: directUpload.file.name,
+        status: 'APPROVED',
+        lines: [{
+          grnId: directUpload.grnId,
+          productName: data.grns.find(g => g.id === directUpload.grnId)?.lines?.[0]?.description || `GRN-${directUpload.grnNo}`,
+          quantity: directUpload.grnQty,
+          unit: data.grns.find(g => g.id === directUpload.grnId)?.lines?.[0]?.unit || 'KG',
+          rate,
+          gstPercent,
+        }],
+      });
+      setDirectUpload(null);
+      // Reload page so the row flips from "awaiting bill" to a green chip.
+      if (vendorId) {
+        try { const r = await api.get<ReconcileResponse>(`/vendor-invoices/reconcile-by-vendor/${vendorId}`); setData(r.data); } catch { /* ignore */ }
+      }
+    } catch (err: unknown) {
+      const resp = (err as { response?: { data?: { error?: string; message?: string; conflicts?: string[] } } })?.response?.data;
+      const conflicts = resp?.conflicts && resp.conflicts.length > 0 ? `\n${resp.conflicts.join('\n')}` : '';
+      const msg = (resp?.message || resp?.error || (err as { message?: string })?.message || 'Save failed') + conflicts;
+      setDirectUpload(prev => prev ? { ...prev, saving: false, error: msg } : prev);
+    }
+  };
 
   useEffect(() => {
     if (!vendorId) return;
@@ -740,7 +838,7 @@ export default function ReconcileVendor() {
         })()}
       </div>
 
-      {/* ────────────── Documents — every PDF on file for this vendor ────────────── */}
+      {/* ────────────── Documents — collapsed by default; expand only when scanning a vendor's full file dump ────────────── */}
       {(() => {
         const invDocs = data.invoices.filter(i => i.filePath);
         const poDocs = data.pos;
@@ -748,13 +846,20 @@ export default function ReconcileVendor() {
         if (invDocs.length === 0 && poDocs.length === 0 && data.grns.length === 0) return null;
         return (
           <div className="mb-3 border border-slate-300">
-            <div className="bg-slate-700 text-white px-4 py-2 flex items-center gap-2 text-[11px] font-bold uppercase tracking-widest">
-              <FileText size={12} />
-              Documents
-              <span className="text-slate-300 normal-case font-normal text-[10px]">
-                · {invDocs.length} bill{invDocs.length === 1 ? '' : 's'} · {poDocs.length} PO{poDocs.length === 1 ? '' : 's'} · {data.grns.length} GRN{data.grns.length === 1 ? '' : 's'}
+            <button
+              onClick={() => setDocsOpen(o => !o)}
+              className="w-full bg-slate-700 text-white px-4 py-2 flex items-center justify-between text-[11px] font-bold uppercase tracking-widest"
+            >
+              <span className="flex items-center gap-2">
+                <FileText size={12} />
+                Documents
+                <span className="text-slate-300 normal-case font-normal text-[10px]">
+                  · {invDocs.length} bill{invDocs.length === 1 ? '' : 's'} · {poDocs.length} PO{poDocs.length === 1 ? '' : 's'} · {data.grns.length} GRN{data.grns.length === 1 ? '' : 's'}
+                </span>
               </span>
-            </div>
+              <span className="text-[10px] text-slate-300">{docsOpen ? 'Hide ▲' : 'Show ▼'}</span>
+            </button>
+            {docsOpen && (
             <div className="grid grid-cols-1 md:grid-cols-3 divide-x divide-slate-200 bg-white">
               {/* Invoice PDFs */}
               <div className="p-3">
@@ -829,6 +934,7 @@ export default function ReconcileVendor() {
                 </div>
               </div>
             </div>
+            )}
           </div>
         );
       })()}
@@ -916,9 +1022,13 @@ export default function ReconcileVendor() {
                           <span title="Invoice has no PDF on file" className="inline-flex items-center gap-1 text-[10px] px-1.5 py-0.5 border border-emerald-300 bg-emerald-50 text-emerald-700 font-bold">{label}</span>
                         );
                       })() : (
-                        <span className="inline-flex items-center gap-1 text-[10px] px-1.5 py-0.5 border border-amber-400 bg-amber-50 text-amber-700 font-bold">
-                          ⚠ awaiting bill
-                        </span>
+                        <button
+                          onClick={() => openDirectUpload(g)}
+                          className="inline-flex items-center gap-1 text-[10px] px-1.5 py-0.5 border border-amber-400 bg-amber-50 text-amber-700 font-bold hover:bg-amber-100"
+                          title="Attach a vendor invoice PDF for this GRN — no AI, just upload"
+                        >
+                          <Upload size={9} /> Upload Bill
+                        </button>
                       )}
                     </td>
                   </tr>
@@ -1046,6 +1156,101 @@ export default function ReconcileVendor() {
               </tfoot>
             )}
           </table>
+        </div>
+      )}
+
+      {/* ────────────── Direct upload modal — single file, GRN already known, no AI ────────────── */}
+      {directUpload && (
+        <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4" onClick={() => !directUpload.saving && setDirectUpload(null)}>
+          <div className="bg-white max-w-xl w-full" onClick={e => e.stopPropagation()}>
+            <div className="bg-amber-600 text-white px-4 py-2.5 flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <Upload size={14} />
+                <h2 className="text-sm font-bold uppercase tracking-wide">Upload Bill for GRN-{directUpload.grnNo}</h2>
+              </div>
+              <button onClick={() => !directUpload.saving && setDirectUpload(null)} disabled={directUpload.saving} className="text-amber-200 hover:text-white">×</button>
+            </div>
+            <div className="px-4 py-2 border-b border-slate-200 bg-slate-50 text-[11px] text-slate-600">
+              GRN amount <span className="font-mono font-bold">{fmt(directUpload.grnAmount)}</span> · qty <span className="font-mono">{fmtNum(directUpload.grnQty)}</span>
+            </div>
+            <div className="p-4 space-y-3">
+              {directUpload.error && <div className="text-[11px] text-red-700 bg-red-50 border border-red-200 px-3 py-1.5 whitespace-pre-line">{directUpload.error}</div>}
+              <label className="block">
+                <div className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-0.5">Bill PDF / Image *</div>
+                <div className="border border-dashed border-slate-300 px-3 py-3 text-center cursor-pointer hover:bg-slate-50">
+                  <Upload size={20} className="mx-auto text-slate-400 mb-1" />
+                  <div className="text-xs text-slate-700 font-bold">{directUpload.file ? directUpload.file.name : 'Click to choose file'}</div>
+                  <div className="text-[10px] text-slate-400">PDF, JPG, PNG · max 10 MB</div>
+                  <input
+                    type="file"
+                    accept="application/pdf,image/*"
+                    onChange={e => setDirectUpload(prev => prev ? { ...prev, file: e.target.files?.[0] || null, error: undefined } : prev)}
+                    className="hidden"
+                    disabled={directUpload.saving}
+                  />
+                </div>
+              </label>
+              <div className="grid grid-cols-2 gap-3">
+                <label className="block">
+                  <div className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-0.5">Vendor Invoice # *</div>
+                  <input
+                    type="text"
+                    value={directUpload.vendorInvNo}
+                    onChange={e => setDirectUpload(prev => prev ? { ...prev, vendorInvNo: e.target.value } : prev)}
+                    disabled={directUpload.saving}
+                    placeholder="e.g. 144"
+                    className="border border-slate-300 px-2.5 py-1.5 text-xs w-full"
+                  />
+                </label>
+                <label className="block">
+                  <div className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-0.5">Invoice Date *</div>
+                  <input
+                    type="date"
+                    value={directUpload.vendorInvDate}
+                    onChange={e => setDirectUpload(prev => prev ? { ...prev, vendorInvDate: e.target.value } : prev)}
+                    disabled={directUpload.saving}
+                    className="border border-slate-300 px-2.5 py-1.5 text-xs w-full"
+                  />
+                </label>
+              </div>
+              <div className="grid grid-cols-2 gap-3">
+                <label className="block">
+                  <div className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-0.5">Total Amount</div>
+                  <input
+                    type="number"
+                    step="0.01"
+                    value={directUpload.totalAmount}
+                    onChange={e => setDirectUpload(prev => prev ? { ...prev, totalAmount: e.target.value } : prev)}
+                    disabled={directUpload.saving}
+                    className="border border-slate-300 px-2.5 py-1.5 text-xs w-full font-mono"
+                  />
+                  <div className="text-[10px] text-slate-400 mt-0.5">Defaults to GRN amount; override if vendor's bill differs.</div>
+                </label>
+                <label className="block">
+                  <div className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-0.5">GST %</div>
+                  <input
+                    type="number"
+                    step="0.01"
+                    value={directUpload.gstPercent}
+                    onChange={e => setDirectUpload(prev => prev ? { ...prev, gstPercent: e.target.value } : prev)}
+                    disabled={directUpload.saving}
+                    className="border border-slate-300 px-2.5 py-1.5 text-xs w-full font-mono"
+                  />
+                </label>
+              </div>
+            </div>
+            <div className="px-4 py-3 border-t border-slate-300 bg-white flex items-center gap-2">
+              <div className="flex-1" />
+              <button onClick={() => !directUpload.saving && setDirectUpload(null)} disabled={directUpload.saving} className="px-3 py-1.5 border border-slate-300 text-slate-600 text-[11px] font-bold uppercase tracking-widest hover:bg-slate-50 disabled:opacity-50">Cancel</button>
+              <button
+                onClick={submitDirectUpload}
+                disabled={directUpload.saving || !directUpload.file || !directUpload.vendorInvNo.trim()}
+                className="px-4 py-1.5 bg-emerald-600 text-white text-[11px] font-bold uppercase tracking-widest hover:bg-emerald-700 disabled:opacity-50"
+              >
+                {directUpload.saving ? 'Saving...' : 'Save & Link to GRN'}
+              </button>
+            </div>
+          </div>
         </div>
       )}
 
