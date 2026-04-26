@@ -411,13 +411,15 @@ router.post('/:id/vendors/:vrId/award', asyncHandler(async (req: AuthRequest, re
           lineGstMap = new Map(rates.filter(r => r.gstPercent != null).map(r => [r.requisitionLineId, r.gstPercent as number]));
         } catch { /* per-line table missing — fall back to header rate for every line */ }
 
+        // Build PO lines from indent lines. Free-text items without an
+        // inventoryItemId are still allowed — POLine.inventoryItemId is
+        // nullable, the line just keeps its description + rate.
         const poLines = pr.lines
-          .filter(l => l.inventoryItemId)
           .map(l => {
             const rate = lineRateMap.get(l.id) ?? row.vendorRate ?? 0;
             const gst = lineGstMap.get(l.id) ?? l.inventoryItem?.gstPercent ?? 18;
             return rate > 0 ? {
-              inventoryItemId: l.inventoryItemId!,
+              inventoryItemId: l.inventoryItemId,
               description: l.itemName,
               hsnCode: l.inventoryItem?.hsnCode || undefined,
               quantity: l.quantity,
@@ -429,7 +431,7 @@ router.post('/:id/vendors/:vrId/award', asyncHandler(async (req: AuthRequest, re
           .filter((x): x is NonNullable<typeof x> => x !== null);
 
         if (poLines.length === 0) {
-          autoPO = { created: false, reason: 'No PO-eligible lines (each line needs an inventory item + rate)' };
+          autoPO = { created: false, reason: 'No PO-eligible lines — every line needs a rate. Enter rates first.' };
         } else {
           const vendor = await prisma.vendor.findUnique({
             where: { id: row.vendorId },
