@@ -565,9 +565,13 @@ export default function PurchaseRequisition() {
       const { autoPO } = res.data;
       load();
       if (autoPO?.created && autoPO.poNo) {
-        alert(`Awarded.\nDraft PO #${autoPO.poNo} created (₹${(autoPO.grandTotal || 0).toLocaleString('en-IN')}).\n\nReview it on this page — then click Confirm PO to proceed, or Cancel & Re-quote to revert.`);
+        alert(`Awarded.\nDraft PO #${autoPO.poNo} created (₹${(autoPO.grandTotal || 0).toLocaleString('en-IN')}).\n\nGoing to Store Receipts → Purchase Orders to review. Confirm to proceed, or Cancel & Re-quote to revert.`);
+        window.location.href = `/store/receipts?tab=pos`;
+        return;
       } else if (autoPO?.poId && autoPO?.poNo) {
-        alert(`Awarded. PO #${autoPO.poNo} already exists for this indent.`);
+        alert(`Awarded. PO #${autoPO.poNo} already exists for this indent. Going to Store Receipts.`);
+        window.location.href = `/store/receipts?tab=pos`;
+        return;
       } else {
         alert(`Awarded, but DRAFT PO was not auto-created: ${autoPO?.reason || 'unknown reason'}. Create a PO manually from Procurement Actions.`);
       }

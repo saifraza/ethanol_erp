@@ -26,9 +26,9 @@ export default function StoreModule() {
   const initialTab: Tab = useMemo(() => {
     const t = new URLSearchParams(location.search).get('tab');
     if (t === 'pos' || t === 'grns') return t;
-    // Default: if landing on /inventory/store-deals show POs, else GRNs
-    return location.pathname.includes('store-deals') ? 'pos' : 'grns';
-  }, [location.search, location.pathname]);
+    // Default to Purchase Orders — that's the post-award workflow entry point.
+    return 'pos';
+  }, [location.search]);
 
   const [tab, setTab] = useState<Tab>(initialTab);
 

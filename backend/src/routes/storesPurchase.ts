@@ -131,6 +131,76 @@ router.get('/deals', authenticate, asyncHandler(async (req: AuthRequest, res: Re
   res.json(result);
 }));
 
+// GET /deals/awaiting-confirmation — DRAFT POs auto-created from indent
+// awards. These need user Confirm or Cancel before joining the running deals.
+router.get('/deals/awaiting-confirmation', authenticate, asyncHandler(async (req: AuthRequest, res: Response) => {
+  const deals = await prisma.purchaseOrder.findMany({
+    where: {
+      ...getCompanyFilter(req),
+      status: 'DRAFT',
+      requisitionId: { not: null },
+    },
+    take: 100,
+    orderBy: { createdAt: 'desc' },
+    select: {
+      id: true, poNo: true, poDate: true, grandTotal: true, createdAt: true,
+      vendor: { select: { id: true, name: true, phone: true } },
+      requisition: {
+        select: {
+          id: true, reqNo: true, title: true, itemName: true, department: true, justification: true,
+          quotes: {
+            where: { isAwarded: true },
+            select: { id: true, vendorId: true },
+          },
+        },
+      },
+      lines: {
+        select: { id: true, description: true, quantity: true, unit: true, rate: true, gstPercent: true },
+      },
+    },
+  });
+
+  const round2 = (n: number) => Math.round(n * 100) / 100;
+  const result = deals.map(po => {
+    const awardedVrId = po.requisition?.quotes[0]?.id ?? null;
+    let totalBase = 0, totalGst = 0;
+    for (const l of po.lines) {
+      const base = (l.quantity || 0) * (l.rate || 0);
+      totalBase += base;
+      totalGst += base * (l.gstPercent || 0) / 100;
+    }
+    return {
+      id: po.id,
+      poNo: po.poNo,
+      poDate: po.poDate,
+      createdAt: po.createdAt,
+      vendor: po.vendor,
+      grandTotal: po.grandTotal,
+      base: round2(totalBase),
+      gst: round2(totalGst),
+      lineCount: po.lines.length,
+      lines: po.lines.map(l => ({
+        id: l.id,
+        description: l.description,
+        quantity: l.quantity,
+        unit: l.unit,
+        rate: l.rate,
+        gstPercent: l.gstPercent || 0,
+      })),
+      indent: po.requisition ? {
+        id: po.requisition.id,
+        reqNo: po.requisition.reqNo,
+        title: po.requisition.title || po.requisition.itemName,
+        department: po.requisition.department,
+        justification: po.requisition.justification,
+        awardedVrId,
+      } : null,
+    };
+  });
+
+  res.json(result);
+}));
+
 // GET /summary — top-line counts for the toolbar KPI strip
 router.get('/summary', authenticate, asyncHandler(async (req: AuthRequest, res: Response) => {
   const deals = await prisma.purchaseOrder.findMany({
