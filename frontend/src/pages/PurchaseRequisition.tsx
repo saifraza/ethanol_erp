@@ -1290,6 +1290,12 @@ export default function PurchaseRequisition() {
                                           <AlertCircle size={12} className="mt-0.5 shrink-0" /> {lineRatesError[q.id]}
                                         </div>
                                       )}
+                                      {q.quoteRemarks && (
+                                        <div className="bg-blue-50 border-b border-blue-200 px-3 py-2">
+                                          <div className="text-[9px] font-bold text-blue-700 uppercase tracking-widest mb-1">Vendor Terms (from email)</div>
+                                          <div className="text-[12px] text-slate-800 whitespace-pre-wrap">{q.quoteRemarks}</div>
+                                        </div>
+                                      )}
                                       {lineRatesLoading[q.id] && inputs.length === 0 ? (
                                         <div className="px-3 py-6 text-center text-[11px] text-slate-400">Loading items…</div>
                                       ) : (
@@ -1302,7 +1308,7 @@ export default function PurchaseRequisition() {
                                               <th className="text-right px-3 py-1.5 w-32">Rate (₹/{inputs[0]?.unit || 'unit'}) *</th>
                                               <th className="text-right px-3 py-1.5 w-20">GST %</th>
                                               <th className="text-right px-3 py-1.5 w-32">Line Total (₹)</th>
-                                              <th className="text-left px-3 py-1.5 w-40">Remarks</th>
+                                              <th className="text-left px-3 py-1.5 w-56">Remarks (per item)</th>
                                               <th className="text-center px-3 py-1.5 w-16">Source</th>
                                             </tr>
                                           </thead>
