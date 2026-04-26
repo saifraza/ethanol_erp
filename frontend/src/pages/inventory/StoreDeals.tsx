@@ -129,14 +129,43 @@ export default function StoreDeals() {
       alert('Cannot find the awarded vendor row for this PO. Cancel and re-award from the indent.');
       return;
     }
-    if (!confirm(`Confirm PO #${po.poNo} for ${po.vendor.name}? It will be approved and a draft GRN will be created. Track goods arrival in the GRN tab.`)) return;
+    if (!confirm(`Confirm PO #${po.poNo} for ${po.vendor.name}? It will be approved and a draft GRN will be created.`)) return;
     setDraftActionLoading(po.id);
     try {
-      const res = await api.post<{ poNo: number; grn: { grnNo: number } | null }>(
+      const res = await api.post<{ poNo: number; poId: string; grn: { grnNo: number } | null }>(
         `/purchase-requisition/${po.indent.id}/vendors/${po.indent.awardedVrId}/confirm-po`
       );
       const { poNo, grn } = res.data;
-      alert(`PO #${poNo} approved. Draft GRN-${grn?.grnNo} created — switch to the GRN tab to receive goods.`);
+      // Now ask if they want to view the PDF / send it to the vendor on the same RFQ thread
+      const action = window.prompt(
+        `PO #${poNo} approved. Draft GRN-${grn?.grnNo} created.\n\n` +
+        `Type:\n` +
+        `  send  — email the PO PDF to ${po.vendor.name} on the same RFQ thread\n` +
+        `  pdf   — open the PO PDF in a new tab\n` +
+        `  grn   — go to the GRN tab to track goods arrival\n` +
+        `  (blank — close)\n`,
+        'send'
+      );
+      if (action === 'send' || action === 's') {
+        try {
+          const send = await api.post<{ ok: boolean; sentTo: string; threadedOnRfq: boolean }>(`/purchase-orders/${po.id}/send-email`, {});
+          alert(`PO emailed to ${send.data.sentTo}.${send.data.threadedOnRfq ? ' Replied on the original RFQ thread — vendor sees one continuous conversation.' : ''}`);
+        } catch (sendErr: unknown) {
+          alert((sendErr as { response?: { data?: { error?: string } } }).response?.data?.error || 'Email send failed — open PO and retry from there');
+        }
+      } else if (action === 'pdf' || action === 'p') {
+        try {
+          const pdfRes = await api.get(`/purchase-orders/${po.id}/pdf`, { responseType: 'blob' });
+          const url = URL.createObjectURL(new Blob([pdfRes.data as BlobPart], { type: 'application/pdf' }));
+          window.open(url, '_blank');
+          setTimeout(() => URL.revokeObjectURL(url), 60000);
+        } catch (pdfErr: unknown) {
+          alert((pdfErr as { response?: { data?: { error?: string } } }).response?.data?.error || 'Failed to load PDF');
+        }
+      } else if (action === 'grn' || action === 'g') {
+        window.location.href = `/store/receipts?tab=grns`;
+        return;
+      }
       fetchData();
     } catch (e: unknown) {
       alert((e as { response?: { data?: { error?: string } } }).response?.data?.error || 'Failed to confirm PO');

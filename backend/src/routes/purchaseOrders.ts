@@ -77,6 +77,7 @@ import { generatePOPdf } from '../utils/pdfGenerator';
 // RAG indexing removed — only compliance docs go to RAG
 import { renderDocumentPdf } from '../services/documentRenderer';
 import { sendEmail } from '../services/messaging';
+import { sendThreadEmail, latestThreadFor } from '../services/emailService';
 import { nextDocNo } from '../utils/docSequence';
 import { getCompanyForPdf } from '../utils/pdfCompanyHelper';
 import { writeAudit, auditDiff } from '../utils/auditLog';
@@ -867,7 +868,9 @@ router.get('/:id/pdf', asyncHandler(async (req: AuthRequest, res: Response) => {
     res.send(pdfBuffer);
 }));
 
-// POST /:id/send-email — Send PO PDF to vendor via email
+// POST /:id/send-email — Send PO PDF to vendor, threaded on the original RFQ
+// thread when the PO came from an indent award (so vendor sees one continuous
+// Gmail conversation: RFQ → vendor reply → PO).
 router.post('/:id/send-email', asyncHandler(async (req: AuthRequest, res: Response) => {
     const po = await prisma.purchaseOrder.findUnique({
       where: { id: req.params.id },
@@ -896,16 +899,50 @@ router.post('/:id/send-email', asyncHandler(async (req: AuthRequest, res: Respon
       otherCharges: po.otherCharges, roundOff: po.roundOff, grandTotal: po.grandTotal,
     });
 
-    const subject = req.body.subject || `${poLabel} — Purchase Order from MSPIL`;
-    const body = req.body.body || `Dear ${po.vendor.name},\n\nPlease find attached Purchase Order ${poLabel} dated ${new Date(po.poDate).toLocaleDateString('en-IN')}.\n\nTotal Amount: Rs.${po.grandTotal.toLocaleString('en-IN', { minimumFractionDigits: 2 })}\nDelivery Date: ${new Date(po.deliveryDate || po.poDate).toLocaleDateString('en-IN')}\nPayment Terms: ${po.paymentTerms || 'As agreed'}\n\nKindly acknowledge receipt and confirm delivery schedule.\n\nRegards,\nMahakaushal Sugar & Power Industries Ltd.\nVillage Bachai, Dist. Narsinghpur (M.P.)`;
+    // Find the original RFQ thread for this vendor + indent so we can reply on it.
+    // The award sets PR.vendorId, and the RFQ thread's entityId is the
+    // PurchaseRequisitionVendor.id of the awarded vendor.
+    let inReplyTo: string | undefined;
+    let referencesList: string[] | undefined;
+    let subjectPrefix = '';
+    if (po.requisitionId) {
+      const awardedVr = await prisma.purchaseRequisitionVendor.findFirst({
+        where: { requisitionId: po.requisitionId, vendorId: po.vendorId, isAwarded: true },
+        select: { id: true },
+      });
+      if (awardedVr) {
+        const rfqThread = await latestThreadFor('INDENT_QUOTE', awardedVr.id);
+        if (rfqThread?.messageId) {
+          inReplyTo = rfqThread.messageId;
+          // Build References: prior RFQ messageId + every reply messageId on that thread
+          const replyIds = (rfqThread.replies || []).map(r => r.providerMessageId).filter(Boolean);
+          referencesList = [rfqThread.messageId, ...replyIds];
+          // Use "Re: " + RFQ subject prefix so Gmail keeps it in the same conversation
+          subjectPrefix = rfqThread.subject.replace(/^(Re:\s*)+/i, '').split(' — ')[0]; // e.g. "RFQ-8-cmoe9y"
+        }
+      }
+    }
 
-    const result = await sendEmail({
-      to: toEmail, subject, text: body,
+    const subject = req.body.subject
+      || (subjectPrefix ? `Re: ${subjectPrefix} — ${poLabel} Purchase Order` : `${poLabel} — Purchase Order from MSPIL`);
+    const body = req.body.body || `Dear ${po.vendor.name},\n\nThank you for your quotation. Please find attached Purchase Order ${poLabel} dated ${new Date(po.poDate).toLocaleDateString('en-IN')}.\n\nTotal Amount: Rs.${po.grandTotal.toLocaleString('en-IN', { minimumFractionDigits: 2 })}\nDelivery Date: ${new Date(po.deliveryDate || po.poDate).toLocaleDateString('en-IN')}\nPayment Terms: ${po.paymentTerms || 'As agreed'}\n\nKindly acknowledge receipt and confirm delivery schedule.\n\nRegards,\nMahakaushal Sugar & Power Industries Ltd.\nVillage Bachai, Dist. Narsinghpur (M.P.)`;
+
+    const result = await sendThreadEmail({
+      entityType: 'PURCHASE_ORDER',
+      entityId: po.id,
+      vendorId: po.vendorId,
+      subject,
+      to: toEmail,
+      bodyText: body,
       attachments: [{ filename: `${poLabel}.pdf`, content: pdfBuffer, contentType: 'application/pdf' }],
+      sentBy: req.user!.name || req.user!.email,
+      companyId: po.companyId,
+      inReplyTo,
+      references: referencesList,
     });
 
     if (result.success) {
-      res.json({ ok: true, messageId: result.messageId, sentTo: toEmail });
+      res.json({ ok: true, messageId: result.messageId, sentTo: toEmail, threadDbId: result.thread.id, threadedOnRfq: !!inReplyTo });
     } else {
       res.status(500).json({ error: result.error || 'Email send failed' });
     }

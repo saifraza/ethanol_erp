@@ -29,6 +29,11 @@ export interface EmailOptions {
   text: string;
   html?: string;
   attachments?: { filename: string; path?: string; content?: Buffer; contentType?: string }[];
+  // RFC 5322 threading — set these to keep the message in the same Gmail
+  // conversation. inReplyTo = the previous message's Message-ID (clean,
+  // without the surrounding angle brackets — they're added automatically).
+  inReplyTo?: string;
+  references?: string[];
 }
 
 export async function sendEmail(opts: EmailOptions): Promise<{ success: boolean; error?: string; messageId?: string }> {
@@ -45,6 +50,10 @@ export async function sendEmail(opts: EmailOptions): Promise<{ success: boolean;
       text: opts.text,
       html: opts.html,
       attachments: opts.attachments,
+      ...(opts.inReplyTo ? { inReplyTo: `<${opts.inReplyTo.replace(/^<|>$/g, '')}>` } : {}),
+      ...(opts.references && opts.references.length > 0
+        ? { references: opts.references.map(r => `<${r.replace(/^<|>$/g, '')}>`).join(' ') }
+        : {}),
     });
     console.log(`[Email] Sent to ${opts.to}: ${info.messageId}`);
     return { success: true, messageId: info.messageId };

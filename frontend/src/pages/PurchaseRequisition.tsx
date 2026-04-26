@@ -1072,14 +1072,27 @@ export default function PurchaseRequisition() {
                               const isPaid = ['PAID'].includes(po.status);
                               const isReceivable = ['APPROVED', 'SENT', 'PARTIAL_RECEIVED'].includes(po.status);
                               const isReceived = ['RECEIVED', 'PARTIAL_RECEIVED'].includes(po.status);
+                              // Friendly status caption
+                              const statusCaption: Record<string, { label: string; tone: string }> = {
+                                DRAFT: { label: 'Waiting for confirmation', tone: 'border-amber-400 bg-amber-50 text-amber-800' },
+                                APPROVED: { label: 'Approved — Send to vendor / Receive goods', tone: 'border-blue-400 bg-blue-50 text-blue-800' },
+                                SENT: { label: 'Sent to vendor — Awaiting goods', tone: 'border-blue-400 bg-blue-50 text-blue-800' },
+                                PARTIAL_RECEIVED: { label: 'Partial goods received', tone: 'border-amber-400 bg-amber-50 text-amber-800' },
+                                RECEIVED: { label: 'Goods received — Awaiting invoice', tone: 'border-green-400 bg-green-50 text-green-800' },
+                                CLOSED: { label: 'Closed', tone: 'border-slate-400 bg-slate-50 text-slate-700' },
+                                CANCELLED: { label: 'Cancelled', tone: 'border-red-400 bg-red-50 text-red-700' },
+                                PAID: { label: 'Paid', tone: 'border-green-400 bg-green-50 text-green-800' },
+                              };
+                              const cap = statusCaption[po.status] ?? { label: po.status, tone: 'border-slate-400 bg-slate-50 text-slate-700' };
                               return (
-                                <div key={po.id} className="flex items-center justify-between bg-blue-50 border border-blue-200 px-2.5 py-1.5">
-                                  <div className="flex items-center gap-2">
+                                <div key={po.id} className="bg-blue-50 border border-blue-200 px-2.5 py-1.5 space-y-1">
+                                  <div className="flex items-center gap-2 flex-wrap">
                                     <span className="text-[11px] font-bold text-blue-800">PO #{po.poNo}</span>
                                     <span className="text-[9px] font-bold uppercase tracking-wide px-1.5 py-0.5 border border-blue-400 bg-white text-blue-700">{po.status}</span>
-                                    <span className="text-[10px] text-slate-600 font-mono">₹{po.grandTotal.toLocaleString('en-IN')}</span>
+                                    <span className={`text-[10px] font-medium px-1.5 py-0.5 border ${cap.tone}`}>{cap.label}</span>
+                                    <span className="text-[10px] text-slate-600 font-mono ml-auto">₹{po.grandTotal.toLocaleString('en-IN')}</span>
                                   </div>
-                                  <div className="flex items-center gap-1">
+                                  <div className="flex items-center gap-1 flex-wrap">
                                     <a href={`/procurement/purchase-orders?expand=${po.id}`}
                                       className="px-2 py-0.5 bg-blue-600 text-white text-[10px] font-medium hover:bg-blue-700">Open PO</a>
                                     {po.status === 'DRAFT' && pr.quotes.find(q => q.isAwarded) && (

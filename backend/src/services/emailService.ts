@@ -28,6 +28,11 @@ export interface SendThreadArgs {
   sentBy: string;               // user name/email who triggered
   fromName?: string;
   companyId?: string | null;
+  // RFC 5322 threading — pass an existing Message-ID to keep this email in
+  // the same Gmail conversation as the prior thread. Caller is responsible
+  // for finding that Message-ID (e.g. via latestThreadFor on the RFQ).
+  inReplyTo?: string;
+  references?: string[];
 }
 
 export async function sendThreadEmail(args: SendThreadArgs) {
@@ -40,6 +45,8 @@ export async function sendThreadEmail(args: SendThreadArgs) {
     attachments: args.attachments?.map(a => ({
       filename: a.filename, content: a.content, contentType: a.contentType,
     })),
+    inReplyTo: args.inReplyTo,
+    references: args.references,
   });
 
   if (!result.success) {
