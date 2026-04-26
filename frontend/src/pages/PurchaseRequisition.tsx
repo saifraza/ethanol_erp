@@ -70,7 +70,7 @@ interface Quote {
   quoteSource: string | null;
   quoteRemarks: string | null;
   isAwarded: boolean;
-  lineQuotes?: LineQuote[];
+  pricedLineCount?: number;
   createdAt: string;
 }
 
@@ -559,7 +559,10 @@ export default function PurchaseRequisition() {
   };
 
   // ── Filter list ──
+  // When an indent is expanded, focus on it alone — hide all other indents to
+  // remove the visual noise of unrelated rows below the open detail.
   const filtered = reqs.filter(pr => {
+    if (expanded && pr.id !== expanded) return false;
     if (!search.trim()) return true;
     const q = search.toLowerCase();
     return pr.itemName.toLowerCase().includes(q) || pr.title.toLowerCase().includes(q) || String(pr.reqNo).includes(q) || (pr.department || '').toLowerCase().includes(q) || (pr.vendor?.name || '').toLowerCase().includes(q);
@@ -601,7 +604,7 @@ export default function PurchaseRequisition() {
 
       {/* ── Search + Tabs ── */}
       <div className="bg-slate-100 border-x border-b border-slate-300 -mx-3 md:-mx-6 flex items-center justify-between px-4">
-        <div className="flex gap-0">
+        <div className="flex gap-0 items-center">
           <button onClick={() => setTab('list')}
             className={`px-4 py-2 text-[11px] font-bold uppercase tracking-widest border-b-2 transition ${tab === 'list' ? 'border-blue-600 text-blue-700 bg-white' : 'border-transparent text-slate-500 hover:text-slate-700'}`}>
             All Indents ({reqs.length})
@@ -610,6 +613,15 @@ export default function PurchaseRequisition() {
             className={`px-4 py-2 text-[11px] font-bold uppercase tracking-widest border-b-2 transition ${tab === 'new' ? 'border-blue-600 text-blue-700 bg-white' : 'border-transparent text-slate-500 hover:text-slate-700'}`}>
             + New Indent
           </button>
+          {tab === 'list' && expanded && (() => {
+            const focused = reqs.find(r => r.id === expanded);
+            return (
+              <button onClick={() => { setExpanded(null); setLineRatesPanelFor(null); }}
+                className="ml-3 px-2 py-1 bg-blue-600 text-white text-[10px] font-medium hover:bg-blue-700 flex items-center gap-1">
+                ← Back to All Indents{focused ? ` (focused: #${focused.reqNo})` : ''}
+              </button>
+            );
+          })()}
         </div>
         {tab === 'list' && (
           <input type="text" value={search} onChange={e => setSearch(e.target.value)} placeholder="Search item, req#, vendor, dept..."
@@ -1129,7 +1141,7 @@ export default function PurchaseRequisition() {
                           {pr.quotes.map(q => {
                             const total = q.vendorRate ? q.vendorRate * pr.quantity : 0;
                             const lineCount = pr.lines.length;
-                            const pricedCount = (q.lineQuotes || []).filter(lq => lq.unitRate != null && lq.unitRate > 0).length;
+                            const pricedCount = q.pricedLineCount ?? 0;
                             const panelOpen = lineRatesPanelFor === q.id;
                             const inputs = lineRateInputs[q.id] || [];
                             const stage = q.isAwarded ? 'AWARDED'

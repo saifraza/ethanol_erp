@@ -26,10 +26,7 @@ router.get('/', asyncHandler(async (req: AuthRequest, res: Response) => {
       include: {
         vendor: { select: { id: true, name: true, email: true, phone: true } },
         quotes: {
-          include: {
-            vendor: { select: { id: true, name: true, email: true, phone: true } },
-            lineQuotes: { select: { id: true, requisitionLineId: true, unitRate: true, gstPercent: true, hsnCode: true, remarks: true, source: true } },
-          },
+          include: { vendor: { select: { id: true, name: true, email: true, phone: true } } },
           orderBy: { createdAt: 'asc' },
         },
         lines: {
@@ -38,7 +35,29 @@ router.get('/', asyncHandler(async (req: AuthRequest, res: Response) => {
         },
       },
     });
-    res.json({ requisitions: reqs });
+
+    // Attach priced-line counts per vendor quote. Wrapped in try/catch so the
+    // page still loads on a fresh deploy where the PurchaseRequisitionVendorLine
+    // table may not yet exist (Railway prisma db push is unreliable for new tables).
+    const allVrIds = reqs.flatMap(r => r.quotes.map(q => q.id));
+    let countByVrId = new Map<string, number>();
+    if (allVrIds.length > 0) {
+      try {
+        const counts = await prisma.purchaseRequisitionVendorLine.groupBy({
+          by: ['vendorQuoteId'],
+          where: { vendorQuoteId: { in: allVrIds }, unitRate: { gt: 0 } },
+          _count: { _all: true },
+        });
+        countByVrId = new Map(counts.map(c => [c.vendorQuoteId, c._count._all]));
+      } catch (err) {
+        console.warn('[purchaseRequisition] line-quote count failed (table may be missing):', (err as Error).message);
+      }
+    }
+    const enriched = reqs.map(r => ({
+      ...r,
+      quotes: r.quotes.map(q => ({ ...q, pricedLineCount: countByVrId.get(q.id) || 0 })),
+    }));
+    res.json({ requisitions: enriched });
 }));
 
 // POST /:id/vendors — add a vendor row to the indent (quote candidate)
@@ -85,15 +104,23 @@ async function recomputeHeaderRate(vrId: string): Promise<void> {
     where: { id: vrId },
     include: {
       requisition: { include: { lines: { select: { id: true, quantity: true } } } },
-      lineQuotes: { select: { requisitionLineId: true, unitRate: true } },
     },
   });
   if (!vr) return;
+  let lineQuotes: Array<{ requisitionLineId: string; unitRate: number | null }> = [];
+  try {
+    lineQuotes = await prisma.purchaseRequisitionVendorLine.findMany({
+      where: { vendorQuoteId: vrId },
+      select: { requisitionLineId: true, unitRate: true },
+    });
+  } catch {
+    return; // table missing — leave header rate unchanged
+  }
   const qtyByLine = new Map(vr.requisition.lines.map(l => [l.id, l.quantity]));
   let weightedSum = 0;
   let totalQty = 0;
   let lineCount = 0;
-  for (const lq of vr.lineQuotes) {
+  for (const lq of lineQuotes) {
     if (lq.unitRate == null || lq.unitRate <= 0) continue;
     const qty = qtyByLine.get(lq.requisitionLineId) || 0;
     if (qty <= 0) continue;
@@ -109,12 +136,38 @@ async function recomputeHeaderRate(vrId: string): Promise<void> {
     data: {
       vendorRate: headerRate,
       quotedAt: lineCount > 0 ? new Date() : null,
-      // Mark partial quotes so UI can show "X of Y items priced"
       quoteSource: lineCount === 0
         ? null
         : allLinesPriced ? (vr.quoteSource || 'MANUAL') : 'EMAIL_PARTIAL',
     },
   });
+}
+
+// Fallback for when PurchaseRequisitionVendorLine doesn't exist yet — still save
+// at least the first line's rate to the header so the user gets something.
+async function applyExtractedQuoteHeader(vrId: string, prId: string, extracted: { lineRates: Array<{ unitRate?: number }>; extractedTotal?: number; overallRateNote?: string; paymentTerms?: string; deliveryDays?: number; freightTerms?: string }, totalQty: number): Promise<number | null> {
+  const firstLine = extracted.lineRates.find(l => typeof l.unitRate === 'number' && l.unitRate > 0);
+  const rate = firstLine?.unitRate
+    ?? (extracted.extractedTotal && totalQty > 0
+        ? Math.round((extracted.extractedTotal / totalQty) * 100) / 100
+        : null);
+  if (!rate) return null;
+  const updatedRow = await prisma.purchaseRequisitionVendor.update({
+    where: { id: vrId },
+    data: {
+      vendorRate: rate,
+      quotedAt: new Date(),
+      quoteSource: 'EMAIL_AUTO',
+      quoteRemarks: [
+        extracted.overallRateNote,
+        extracted.paymentTerms ? `Payment: ${extracted.paymentTerms}` : null,
+        extracted.deliveryDays ? `Delivery: ${extracted.deliveryDays} days` : null,
+        extracted.freightTerms ? `Freight: ${extracted.freightTerms}` : null,
+      ].filter(Boolean).join(' · ') || null,
+    },
+  });
+  await upsertVendorItemsForQuote(prId, updatedRow.vendorId, rate);
+  return rate;
 }
 
 // PUT /:id/vendors/:vrId — update quote rate / remarks / email meta
@@ -159,12 +212,27 @@ router.get('/:id/vendors/:vrId/line-rates', asyncHandler(async (req: AuthRequest
             },
           },
         },
-        lineQuotes: true,
       },
     });
     if (!vr || vr.requisitionId !== req.params.id) return res.status(404).json({ error: 'Not found' });
 
-    const byLine = new Map(vr.lineQuotes.map(lq => [lq.requisitionLineId, lq]));
+    // Fetch line quotes separately so we can fail-soft if the new table isn't
+    // yet deployed (Railway prisma db push has been unreliable for new tables).
+    let lineQuotes: Array<{ requisitionLineId: string; unitRate: number | null; gstPercent: number | null; hsnCode: string | null; remarks: string | null; source: string | null }> = [];
+    try {
+      lineQuotes = await prisma.purchaseRequisitionVendorLine.findMany({
+        where: { vendorQuoteId: req.params.vrId },
+        select: { requisitionLineId: true, unitRate: true, gstPercent: true, hsnCode: true, remarks: true, source: true },
+      });
+    } catch (err) {
+      return res.status(503).json({
+        error: 'Item-wise rate storage not yet available on this server. Run the migration SQL or contact admin.',
+        code: 'TABLE_MISSING',
+        detail: (err as Error).message,
+      });
+    }
+
+    const byLine = new Map(lineQuotes.map(lq => [lq.requisitionLineId, lq]));
     const lines = vr.requisition.lines.map(l => {
       const lq = byLine.get(l.id);
       return {
@@ -203,24 +271,31 @@ router.put('/:id/vendors/:vrId/line-rates', asyncHandler(async (req: AuthRequest
     const validLineIds = new Set(vr.requisition.lines.map(l => l.id));
     const source = body.source === 'EMAIL_AUTO' ? 'EMAIL_AUTO' : 'MANUAL';
 
-    for (const l of body.lines) {
-      if (!validLineIds.has(l.lineId)) continue;
-      const rate = l.unitRate == null || l.unitRate === '' ? null : Number(l.unitRate);
-      if (rate != null && (isNaN(rate) || rate < 0)) return res.status(400).json({ error: `Invalid rate on line ${l.lineId}` });
-      const gst = l.gstPercent == null || l.gstPercent === '' ? null : Number(l.gstPercent);
-      if (gst != null && (isNaN(gst) || gst < 0)) return res.status(400).json({ error: `Invalid GST on line ${l.lineId}` });
+    try {
+      for (const l of body.lines) {
+        if (!validLineIds.has(l.lineId)) continue;
+        const rate = l.unitRate == null || l.unitRate === '' ? null : Number(l.unitRate);
+        if (rate != null && (isNaN(rate) || rate < 0)) return res.status(400).json({ error: `Invalid rate on line ${l.lineId}` });
+        const gst = l.gstPercent == null || l.gstPercent === '' ? null : Number(l.gstPercent);
+        if (gst != null && (isNaN(gst) || gst < 0)) return res.status(400).json({ error: `Invalid GST on line ${l.lineId}` });
 
-      if (rate == null && gst == null && !l.hsnCode && !l.remarks) {
-        // Empty line — delete any existing row so the user's "clear field" is honored
-        await prisma.purchaseRequisitionVendorLine.deleteMany({
-          where: { vendorQuoteId: req.params.vrId, requisitionLineId: l.lineId },
+        if (rate == null && gst == null && !l.hsnCode && !l.remarks) {
+          await prisma.purchaseRequisitionVendorLine.deleteMany({
+            where: { vendorQuoteId: req.params.vrId, requisitionLineId: l.lineId },
+          });
+          continue;
+        }
+        await prisma.purchaseRequisitionVendorLine.upsert({
+          where: { vendorQuoteId_requisitionLineId: { vendorQuoteId: req.params.vrId, requisitionLineId: l.lineId } },
+          update: { unitRate: rate, gstPercent: gst, hsnCode: l.hsnCode || null, remarks: l.remarks || null, source },
+          create: { vendorQuoteId: req.params.vrId, requisitionLineId: l.lineId, unitRate: rate, gstPercent: gst, hsnCode: l.hsnCode || null, remarks: l.remarks || null, source },
         });
-        continue;
       }
-      await prisma.purchaseRequisitionVendorLine.upsert({
-        where: { vendorQuoteId_requisitionLineId: { vendorQuoteId: req.params.vrId, requisitionLineId: l.lineId } },
-        update: { unitRate: rate, gstPercent: gst, hsnCode: l.hsnCode || null, remarks: l.remarks || null, source },
-        create: { vendorQuoteId: req.params.vrId, requisitionLineId: l.lineId, unitRate: rate, gstPercent: gst, hsnCode: l.hsnCode || null, remarks: l.remarks || null, source },
+    } catch (err) {
+      return res.status(503).json({
+        error: 'Item-wise rate storage not yet available on this server. Ask admin to run the migration SQL.',
+        code: 'TABLE_MISSING',
+        detail: (err as Error).message,
       });
     }
 
@@ -498,24 +573,30 @@ router.post('/:id/vendors/:vrId/extract-quote', asyncHandler(async (req: AuthReq
     // Always-on remarks summary stays in the header field.
     let savedLineCount = 0;
     let savedHeaderRate: number | null = null;
+    let lineTableMissing = false;
     if (req.body.autoApply && extracted.confidence !== 'LOW' && indentLines.length > 0) {
-      // Match each extracted line to an indent line: prefer lineNo, else fuzzy on itemName
       const byLineNo = new Map(indentLines.map(l => [l.lineNo, l]));
       const byNameLC = new Map(indentLines.map(l => [l.itemName.toLowerCase().trim(), l]));
-      for (const lr of extracted.lineRates) {
-        if (!lr.unitRate || lr.unitRate <= 0) continue;
-        let target = lr.lineNo ? byLineNo.get(lr.lineNo) : undefined;
-        if (!target && lr.itemName) target = byNameLC.get(lr.itemName.toLowerCase().trim());
-        if (!target) continue;
-        await prisma.purchaseRequisitionVendorLine.upsert({
-          where: { vendorQuoteId_requisitionLineId: { vendorQuoteId: req.params.vrId, requisitionLineId: target.id } },
-          update: { unitRate: lr.unitRate, gstPercent: lr.gstPercent ?? null, hsnCode: lr.hsnCode || null, remarks: lr.remarks || null, source: 'EMAIL_AUTO' },
-          create: { vendorQuoteId: req.params.vrId, requisitionLineId: target.id, unitRate: lr.unitRate, gstPercent: lr.gstPercent ?? null, hsnCode: lr.hsnCode || null, remarks: lr.remarks || null, source: 'EMAIL_AUTO' },
-        });
-        savedLineCount++;
+      try {
+        for (const lr of extracted.lineRates) {
+          if (!lr.unitRate || lr.unitRate <= 0) continue;
+          let target = lr.lineNo ? byLineNo.get(lr.lineNo) : undefined;
+          if (!target && lr.itemName) target = byNameLC.get(lr.itemName.toLowerCase().trim());
+          if (!target) continue;
+          await prisma.purchaseRequisitionVendorLine.upsert({
+            where: { vendorQuoteId_requisitionLineId: { vendorQuoteId: req.params.vrId, requisitionLineId: target.id } },
+            update: { unitRate: lr.unitRate, gstPercent: lr.gstPercent ?? null, hsnCode: lr.hsnCode || null, remarks: lr.remarks || null, source: 'EMAIL_AUTO' },
+            create: { vendorQuoteId: req.params.vrId, requisitionLineId: target.id, unitRate: lr.unitRate, gstPercent: lr.gstPercent ?? null, hsnCode: lr.hsnCode || null, remarks: lr.remarks || null, source: 'EMAIL_AUTO' },
+          });
+          savedLineCount++;
+        }
+      } catch (err) {
+        // Per-line table missing — fall through to header-only path below
+        console.warn('[purchaseRequisition] line-quote write failed, falling back to header rate:', (err as Error).message);
+        lineTableMissing = true;
+        savedLineCount = 0;
       }
 
-      // Update header remarks (terms / payment / delivery)
       await prisma.purchaseRequisitionVendor.update({
         where: { id: req.params.vrId },
         data: {
@@ -535,6 +616,10 @@ router.post('/:id/vendors/:vrId/extract-quote', asyncHandler(async (req: AuthReq
         if (savedHeaderRate && savedHeaderRate > 0) {
           await upsertVendorItemsForQuote(req.params.id, after!.vendorId, savedHeaderRate);
         }
+      } else if (lineTableMissing) {
+        // Fallback: save the first usable rate to the header field so the user
+        // at least gets a number while the migration is pending.
+        savedHeaderRate = await applyExtractedQuoteHeader(req.params.vrId, req.params.id, extracted, vr.requisition.quantity);
       }
     }
 
