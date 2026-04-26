@@ -1661,17 +1661,41 @@ model PurchaseRequisitionVendor {
   quoteEmailSubject   String?
   quoteEmailThreadId  String?             // gmail thread id (match replies)
   quoteEmailMessageId String?
-  vendorRate          Float?              // quoted rate from vendor (manual or AI)
+  vendorRate          Float?              // header-level rate (sum of line totals / total qty) — kept for back-compat
   quotedAt            DateTime?
-  quoteSource         String?             // MANUAL | EMAIL_AUTO | PHONE | WHATSAPP
+  quoteSource         String?             // MANUAL | EMAIL_AUTO | EMAIL_PARTIAL | PHONE | WHATSAPP
   quoteRemarks        String?
   isAwarded           Boolean             @default(false)
+  lineQuotes          PurchaseRequisitionVendorLine[]
   createdAt           DateTime            @default(now())
   updatedAt           DateTime            @updatedAt
 
   @@unique([requisitionId, vendorId])
   @@index([requisitionId])
   @@index([vendorId])
+}
+
+// ── Per-line rate from a vendor ──
+// One row per (vendor × indent line). Created lazily — only when a rate is
+// entered (manually or by AI). PurchaseRequisitionVendor.vendorRate is kept in
+// sync as the weighted average so existing reports/awarding logic still work.
+model PurchaseRequisitionVendorLine {
+  id                String                    @id @default(cuid())
+  vendorQuoteId     String
+  vendorQuote       PurchaseRequisitionVendor @relation(fields: [vendorQuoteId], references: [id], onDelete: Cascade)
+  requisitionLineId String
+  requisitionLine   PurchaseRequisitionLine   @relation(fields: [requisitionLineId], references: [id], onDelete: Cascade)
+  unitRate          Float?
+  gstPercent        Float?
+  hsnCode           String?
+  remarks           String?
+  source            String?                   // MANUAL | EMAIL_AUTO
+  createdAt         DateTime                  @default(now())
+  updatedAt         DateTime                  @updatedAt
+
+  @@unique([vendorQuoteId, requisitionLineId])
+  @@index([vendorQuoteId])
+  @@index([requisitionLineId])
 }
 
 // ═══════════════════════════════════════════════
@@ -1776,6 +1800,7 @@ model PurchaseRequisitionLine {
   unit            String              @default("nos")
   estimatedCost   Float               @default(0) // per unit
   remarks         String?
+  vendorQuotes    PurchaseRequisitionVendorLine[]
   createdAt       DateTime            @default(now())
   updatedAt       DateTime            @updatedAt
 

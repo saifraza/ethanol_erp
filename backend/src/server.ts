@@ -127,5 +127,8 @@ const server = app.listen(PORT, HOST, async () => {
 
   // Fermenter fill event detector — runs every 5 min; works OPC-first, falls back to lab
   import('./services/fermentation/fillLive').then(m => m.startFillLive()).catch(() => {});
+
+  // RFQ vendor reply poller — every 5 min; pulls IMAP for open INDENT_QUOTE threads
+  import('./services/rfqReplyPoller').then(m => m.startRfqReplyPoller()).catch(() => {});
 });
 

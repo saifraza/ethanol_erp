@@ -20,6 +20,7 @@ export type NotifyCategory =
   | 'FACTORY'
   | 'SYSTEM'
   | 'WEIGHMENT'
+  | 'RFQ_REPLY'
   | 'INFO';
 
 export type NotifySeverity = 'INFO' | 'WARNING' | 'CRITICAL';

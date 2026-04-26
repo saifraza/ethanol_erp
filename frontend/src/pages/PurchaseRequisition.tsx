@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import api from '../services/api';
-import { Plus, Check, X, Trash2, Mail, Award, RefreshCw, FileText, Send, Inbox, Sparkles, Paperclip } from 'lucide-react';
+import { Plus, Check, X, Trash2, Mail, Award, RefreshCw, FileText, Send, Inbox, Sparkles, Paperclip, ChevronDown, ChevronRight, AlertCircle } from 'lucide-react';
 import EmailThreadDrawer, { EmailThreadQuery } from '../components/EmailThreadDrawer';
 
 // ── Enums ──
@@ -47,6 +47,16 @@ interface IndentLine {
   inventoryItem?: { id: string; name: string; code: string; unit: string; currentStock: number } | null;
 }
 
+interface LineQuote {
+  id: string;
+  requisitionLineId: string;
+  unitRate: number | null;
+  gstPercent: number | null;
+  hsnCode: string | null;
+  remarks: string | null;
+  source: string | null;
+}
+
 interface Quote {
   id: string;
   vendorId: string;
@@ -60,7 +70,24 @@ interface Quote {
   quoteSource: string | null;
   quoteRemarks: string | null;
   isAwarded: boolean;
+  lineQuotes?: LineQuote[];
   createdAt: string;
+}
+
+// Item-wise rate-entry panel state — per indent line, per vendor
+interface LineRateInput {
+  lineId: string;
+  lineNo: number;
+  itemName: string;
+  itemCode?: string | null;
+  quantity: number;
+  unit: string;
+  estimatedCost: number;
+  unitRate: string;   // string while editing
+  gstPercent: string;
+  hsnCode: string;
+  remarks: string;
+  source: string | null;
 }
 
 interface PR {
@@ -156,8 +183,112 @@ export default function PurchaseRequisition() {
   const [vendorPickFor, setVendorPickFor] = useState<string | null>(null);
   const [vendorQuery, setVendorQuery] = useState('');
 
-  // ── Per-row inputs for quote rate / remarks ──
-  const [quoteInput, setQuoteInput] = useState<Record<string, { rate: string; remarks: string }>>({});
+  // ── Item-wise rate panel ──
+  // Which vendor row's rate panel is expanded (one at a time, nested inside the indent expansion)
+  const [lineRatesPanelFor, setLineRatesPanelFor] = useState<string | null>(null);
+  // Per-vendor rate inputs (indexed by vrId)
+  const [lineRateInputs, setLineRateInputs] = useState<Record<string, LineRateInput[]>>({});
+  const [lineRatesLoading, setLineRatesLoading] = useState<Record<string, boolean>>({});
+  const [lineRatesSaving, setLineRatesSaving] = useState<Record<string, boolean>>({});
+  const [lineRatesExtracting, setLineRatesExtracting] = useState<Record<string, boolean>>({});
+  const [lineRatesError, setLineRatesError] = useState<Record<string, string | null>>({});
+
+  const loadLineRates = useCallback(async (prId: string, vrId: string) => {
+    setLineRatesLoading(prev => ({ ...prev, [vrId]: true }));
+    setLineRatesError(prev => ({ ...prev, [vrId]: null }));
+    try {
+      const res = await api.get<{ lines: Array<{
+        lineId: string; lineNo: number; itemName: string; itemCode: string | null;
+        quantity: number; unit: string; estimatedCost: number;
+        unitRate: number | null; gstPercent: number | null; hsnCode: string | null; remarks: string | null; source: string | null;
+      }> }>(`/purchase-requisition/${prId}/vendors/${vrId}/line-rates`);
+      setLineRateInputs(prev => ({
+        ...prev,
+        [vrId]: res.data.lines.map(l => ({
+          lineId: l.lineId, lineNo: l.lineNo, itemName: l.itemName, itemCode: l.itemCode,
+          quantity: l.quantity, unit: l.unit, estimatedCost: l.estimatedCost,
+          unitRate: l.unitRate != null ? String(l.unitRate) : '',
+          gstPercent: l.gstPercent != null ? String(l.gstPercent) : '',
+          hsnCode: l.hsnCode || '', remarks: l.remarks || '', source: l.source,
+        })),
+      }));
+    } catch (e: unknown) {
+      setLineRatesError(prev => ({ ...prev, [vrId]: (e as { response?: { data?: { error?: string } } }).response?.data?.error || 'Failed to load rates' }));
+    }
+    setLineRatesLoading(prev => ({ ...prev, [vrId]: false }));
+  }, []);
+
+  const updateLineInput = (vrId: string, lineId: string, field: keyof LineRateInput, value: string) => {
+    setLineRateInputs(prev => ({
+      ...prev,
+      [vrId]: (prev[vrId] || []).map(l => l.lineId === lineId ? { ...l, [field]: value } : l),
+    }));
+  };
+
+  const saveLineRates = async (prId: string, vrId: string) => {
+    const inputs = lineRateInputs[vrId] || [];
+    setLineRatesSaving(prev => ({ ...prev, [vrId]: true }));
+    setLineRatesError(prev => ({ ...prev, [vrId]: null }));
+    try {
+      await api.put(`/purchase-requisition/${prId}/vendors/${vrId}/line-rates`, {
+        lines: inputs.map(l => ({
+          lineId: l.lineId,
+          unitRate: l.unitRate.trim() === '' ? null : parseFloat(l.unitRate),
+          gstPercent: l.gstPercent.trim() === '' ? null : parseFloat(l.gstPercent),
+          hsnCode: l.hsnCode || null,
+          remarks: l.remarks || null,
+        })),
+        source: 'MANUAL',
+      });
+      await loadLineRates(prId, vrId);
+      load();
+    } catch (e: unknown) {
+      setLineRatesError(prev => ({ ...prev, [vrId]: (e as { response?: { data?: { error?: string } } }).response?.data?.error || 'Save failed' }));
+    }
+    setLineRatesSaving(prev => ({ ...prev, [vrId]: false }));
+  };
+
+  const extractAIToLines = async (prId: string, vrId: string) => {
+    setLineRatesExtracting(prev => ({ ...prev, [vrId]: true }));
+    setLineRatesError(prev => ({ ...prev, [vrId]: null }));
+    try {
+      const res = await api.post<{ savedLineCount: number; totalLines: number; extracted: { confidence: string } }>(
+        `/purchase-requisition/${prId}/vendors/${vrId}/extract-quote`,
+        { autoApply: true },
+      );
+      await loadLineRates(prId, vrId);
+      load();
+      const { savedLineCount, totalLines, extracted } = res.data;
+      if (savedLineCount === 0) {
+        setLineRatesError(prev => ({
+          ...prev,
+          [vrId]: extracted.confidence === 'LOW'
+            ? 'AI could not read the rates confidently — please enter them manually below.'
+            : 'AI did not find any rates in the reply / PDF — please enter them manually below.',
+        }));
+      } else if (savedLineCount < totalLines) {
+        setLineRatesError(prev => ({
+          ...prev,
+          [vrId]: `AI filled ${savedLineCount} of ${totalLines} items — review and complete the missing ones manually below.`,
+        }));
+      }
+    } catch (e: unknown) {
+      setLineRatesError(prev => ({
+        ...prev,
+        [vrId]: (e as { response?: { data?: { error?: string } } }).response?.data?.error || 'AI extraction failed — please enter rates manually below.',
+      }));
+    }
+    setLineRatesExtracting(prev => ({ ...prev, [vrId]: false }));
+  };
+
+  const toggleLineRatesPanel = (prId: string, vrId: string) => {
+    if (lineRatesPanelFor === vrId) {
+      setLineRatesPanelFor(null);
+    } else {
+      setLineRatesPanelFor(vrId);
+      if (!lineRateInputs[vrId]) loadLineRates(prId, vrId);
+    }
+  };
 
   const load = useCallback(async () => {
     try {
@@ -413,20 +544,6 @@ export default function PurchaseRequisition() {
       alert(msg);
     }
     setExtracting(null);
-  };
-
-  const handleSaveRate = async (prId: string, quoteId: string) => {
-    const input = quoteInput[quoteId];
-    if (!input || !input.rate || parseFloat(input.rate) <= 0) { alert('Enter a valid rate'); return; }
-    try {
-      await api.put(`/purchase-requisition/${prId}/vendors/${quoteId}`, {
-        vendorRate: parseFloat(input.rate),
-        quoteRemarks: input.remarks || '',
-        quoteSource: 'MANUAL',
-      });
-      setQuoteInput(prev => { const n = { ...prev }; delete n[quoteId]; return n; });
-      load();
-    } catch (e: unknown) { alert((e as { response?: { data?: { error?: string } } }).response?.data?.error || 'Failed'); }
   };
 
   const handleAward = async (prId: string, quoteId: string) => {
@@ -1010,10 +1127,26 @@ export default function PurchaseRequisition() {
                             <tr><td colSpan={7} className="px-3 py-6 text-center text-[11px] text-slate-400 italic">No vendors added yet — click "Add Vendor" to request quotes</td></tr>
                           )}
                           {pr.quotes.map(q => {
-                            const editing = quoteInput[q.id];
                             const total = q.vendorRate ? q.vendorRate * pr.quantity : 0;
+                            const lineCount = pr.lines.length;
+                            const pricedCount = (q.lineQuotes || []).filter(lq => lq.unitRate != null && lq.unitRate > 0).length;
+                            const panelOpen = lineRatesPanelFor === q.id;
+                            const inputs = lineRateInputs[q.id] || [];
+                            const stage = q.isAwarded ? 'AWARDED'
+                              : pricedCount > 0 && pricedCount === lineCount ? 'ALL ITEMS PRICED'
+                              : pricedCount > 0 ? `${pricedCount} OF ${lineCount} PRICED`
+                              : q.quoteRequestedAt ? 'WAITING FOR RATES'
+                              : 'PENDING RFQ';
+                            const stageStyle: Record<string, string> = {
+                              'PENDING RFQ': 'border-slate-400 bg-slate-50 text-slate-600',
+                              'WAITING FOR RATES': 'border-amber-500 bg-amber-50 text-amber-700',
+                              'ALL ITEMS PRICED': 'border-blue-500 bg-blue-50 text-blue-700',
+                              'AWARDED': 'border-green-600 bg-green-50 text-green-700',
+                            };
+                            const stageClass = stageStyle[stage] || 'border-amber-500 bg-amber-50 text-amber-700';
                             return (
-                              <tr key={q.id} className={`border-b border-slate-100 ${q.isAwarded ? 'bg-green-50' : ''}`}>
+                              <React.Fragment key={q.id}>
+                              <tr className={`border-b border-slate-100 ${q.isAwarded ? 'bg-green-50' : ''}`}>
                                 <td className="px-3 py-1.5">
                                   <div className="flex items-center gap-1">
                                     {q.isAwarded && <Award size={12} className="text-green-600" />}
@@ -1025,41 +1158,27 @@ export default function PurchaseRequisition() {
                                   {q.vendor.phone && <div>{q.vendor.phone}</div>}
                                 </td>
                                 <td className="px-3 py-1.5 text-[10px]">
-                                  {(() => {
-                                    const stage = q.isAwarded ? 'AWARDED'
-                                      : q.vendorRate != null ? 'RATE RECEIVED'
-                                      : q.quoteRequestedAt ? 'WAITING FOR RATE'
-                                      : 'PENDING RFQ';
-                                    const stageStyle: Record<string, string> = {
-                                      'PENDING RFQ': 'border-slate-400 bg-slate-50 text-slate-600',
-                                      'WAITING FOR RATE': 'border-amber-500 bg-amber-50 text-amber-700',
-                                      'RATE RECEIVED': 'border-blue-500 bg-blue-50 text-blue-700',
-                                      'AWARDED': 'border-green-600 bg-green-50 text-green-700',
-                                    };
-                                    return (
-                                      <div className="space-y-0.5">
-                                        <span className={`inline-block text-[9px] font-bold uppercase tracking-wide px-1.5 py-0.5 border ${stageStyle[stage]}`}>{stage}</span>
-                                        {q.quoteRequestedAt && (
-                                          <div className="text-slate-500">
-                                            <span className="text-slate-400">Sent </span>{fmtDate(q.quoteRequestedAt)}
-                                            {q.quoteRequestedBy && <span className="text-[9px] text-slate-400"> · {q.quoteRequestedBy}</span>}
-                                          </div>
-                                        )}
-                                        {q.quotedAt && q.vendorRate != null && (
-                                          <div className="text-slate-500"><span className="text-slate-400">Replied </span>{fmtDate(q.quotedAt)}</div>
-                                        )}
+                                  <div className="space-y-0.5">
+                                    <span className={`inline-block text-[9px] font-bold uppercase tracking-wide px-1.5 py-0.5 border ${stageClass}`}>{stage}</span>
+                                    {q.quoteRequestedAt && (
+                                      <div className="text-slate-500">
+                                        <span className="text-slate-400">Sent </span>{fmtDate(q.quoteRequestedAt)}
+                                        {q.quoteRequestedBy && <span className="text-[9px] text-slate-400"> · {q.quoteRequestedBy}</span>}
                                       </div>
-                                    );
-                                  })()}
+                                    )}
+                                    {q.quotedAt && q.vendorRate != null && (
+                                      <div className="text-slate-500"><span className="text-slate-400">Replied </span>{fmtDate(q.quotedAt)}</div>
+                                    )}
+                                  </div>
                                 </td>
                                 <td className="px-3 py-1.5 text-right">
-                                  {q.vendorRate != null && !editing ? (
-                                    <div className="font-bold text-green-700 font-mono tabular-nums">{q.vendorRate.toLocaleString('en-IN')}</div>
+                                  {q.vendorRate != null ? (
+                                    <div>
+                                      <div className="font-bold text-green-700 font-mono tabular-nums">{q.vendorRate.toLocaleString('en-IN')}</div>
+                                      {lineCount > 1 && <div className="text-[9px] text-slate-400 italic">avg of {pricedCount} items</div>}
+                                    </div>
                                   ) : (
-                                    <input type="number" step="any" placeholder="Rate"
-                                      value={editing?.rate ?? ''}
-                                      onChange={e => setQuoteInput(prev => ({ ...prev, [q.id]: { rate: e.target.value, remarks: prev[q.id]?.remarks || '' } }))}
-                                      className="border border-slate-300 px-2 py-0.5 text-xs w-24 font-mono tabular-nums text-right" />
+                                    <span className="text-slate-300">—</span>
                                   )}
                                 </td>
                                 <td className="px-3 py-1.5 text-right font-mono tabular-nums text-slate-800">
@@ -1070,7 +1189,12 @@ export default function PurchaseRequisition() {
                                   {q.quoteRemarks && <div className="text-[9px] italic truncate max-w-[120px]" title={q.quoteRemarks}>{q.quoteRemarks}</div>}
                                 </td>
                                 <td className="px-3 py-1.5 text-center">
-                                  <div className="flex items-center justify-center gap-1">
+                                  <div className="flex items-center justify-center gap-1 flex-wrap">
+                                    <button onClick={() => toggleLineRatesPanel(pr.id, q.id)}
+                                      title="Enter / view item-wise rates"
+                                      className={`px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide flex items-center gap-1 ${panelOpen ? 'bg-blue-600 text-white' : 'bg-white border border-blue-500 text-blue-600 hover:bg-blue-50'}`}>
+                                      {panelOpen ? <ChevronDown size={10} /> : <ChevronRight size={10} />} Item-wise Rates
+                                    </button>
                                     <button
                                       onClick={() => {
                                         const prId = pr.id;
@@ -1081,6 +1205,7 @@ export default function PurchaseRequisition() {
                                         setThreadDrawerOnExtract(() => async (_tId: string, _rId: string) => {
                                           await api.post(`/purchase-requisition/${prId}/vendors/${vrId}/extract-quote`, { autoApply: true });
                                           load();
+                                          if (lineRatesPanelFor === vrId) loadLineRates(prId, vrId);
                                         });
                                         setThreadDrawerEmptyAction({
                                           label: 'Send RFQ Email Now',
@@ -1104,30 +1229,14 @@ export default function PurchaseRequisition() {
                                       className={`p-0.5 ${q.quoteRequestedAt ? 'text-green-600 hover:text-green-800' : 'text-blue-600 hover:text-blue-800'}`}>
                                       <Mail size={14} />
                                     </button>
-                                    {/* Keep the RFQ-preview drawer accessible as a secondary action — file icon for "Preview PDF first" */}
                                     <button onClick={() => openRfqDrawer(pr.id, q)} title="Preview RFQ PDF before sending"
                                       className="p-0.5 text-slate-400 hover:text-slate-700">
                                       <FileText size={12} />
                                     </button>
-                                    {q.vendorRate == null && (
-                                      <button onClick={() => setQuoteInput(prev => ({ ...prev, [q.id]: prev[q.id] ?? { rate: '', remarks: '' } }))}
-                                        title="Enter rate manually" className="px-1.5 py-0.5 bg-white border border-blue-500 text-blue-600 text-[10px] font-medium hover:bg-blue-50">
-                                        Enter Rate
-                                      </button>
-                                    )}
-                                    {editing && (
-                                      <button onClick={() => handleSaveRate(pr.id, q.id)} className="px-1.5 py-0.5 bg-blue-600 text-white text-[10px] font-medium hover:bg-blue-700">Save</button>
-                                    )}
-                                    {q.vendorRate != null && !editing && !q.isAwarded && ['DRAFT', 'SUBMITTED', 'APPROVED'].includes(pr.status) && (
+                                    {q.vendorRate != null && !q.isAwarded && ['DRAFT', 'SUBMITTED', 'APPROVED'].includes(pr.status) && (
                                       <button onClick={() => handleAward(pr.id, q.id)} title="Award this vendor"
                                         className="px-1.5 py-0.5 bg-green-600 text-white text-[10px] font-medium hover:bg-green-700 flex items-center gap-0.5">
                                         <Award size={10} /> Award
-                                      </button>
-                                    )}
-                                    {q.vendorRate != null && !editing && (
-                                      <button onClick={() => setQuoteInput(prev => ({ ...prev, [q.id]: { rate: String(q.vendorRate), remarks: q.quoteRemarks || '' } }))} title="Update rate"
-                                        className="text-slate-500 hover:text-slate-700 p-0.5">
-                                        <RefreshCw size={12} />
                                       </button>
                                     )}
                                     {!q.isAwarded && (
@@ -1138,6 +1247,138 @@ export default function PurchaseRequisition() {
                                   </div>
                                 </td>
                               </tr>
+                              {/* Item-wise rate-entry panel — sub-row beneath the vendor row */}
+                              {panelOpen && (
+                                <tr className="bg-slate-50">
+                                  <td colSpan={7} className="px-3 py-3">
+                                    <div className="border border-slate-300 bg-white">
+                                      <div className="bg-slate-100 border-b border-slate-300 px-3 py-2 flex items-center justify-between flex-wrap gap-2">
+                                        <div className="text-[10px] font-bold text-slate-700 uppercase tracking-widest">
+                                          Item-wise Rates from {q.vendor.name}
+                                        </div>
+                                        <div className="flex items-center gap-2">
+                                          {q.quoteRequestedAt && (
+                                            <button onClick={() => extractAIToLines(pr.id, q.id)}
+                                              disabled={lineRatesExtracting[q.id]}
+                                              title="Read the latest email reply + attached PDF and try to fill rates automatically"
+                                              className="px-2 py-1 bg-purple-600 text-white text-[10px] font-medium hover:bg-purple-700 disabled:opacity-50 flex items-center gap-1">
+                                              <Sparkles size={10} />
+                                              {lineRatesExtracting[q.id] ? 'AI reading email + PDF…' : 'AI Extract from Email/PDF'}
+                                            </button>
+                                          )}
+                                          <button onClick={() => loadLineRates(pr.id, q.id)} disabled={lineRatesLoading[q.id]}
+                                            title="Reload saved rates"
+                                            className="px-2 py-1 bg-white border border-slate-400 text-slate-700 text-[10px] font-medium hover:bg-slate-100 disabled:opacity-50 flex items-center gap-1">
+                                            <RefreshCw size={10} className={lineRatesLoading[q.id] ? 'animate-spin' : ''} /> Reload
+                                          </button>
+                                        </div>
+                                      </div>
+                                      {lineRatesError[q.id] && (
+                                        <div className="bg-amber-50 border-b border-amber-200 px-3 py-2 text-[11px] text-amber-800 flex items-start gap-1.5">
+                                          <AlertCircle size={12} className="mt-0.5 shrink-0" /> {lineRatesError[q.id]}
+                                        </div>
+                                      )}
+                                      {lineRatesLoading[q.id] && inputs.length === 0 ? (
+                                        <div className="px-3 py-6 text-center text-[11px] text-slate-400">Loading items…</div>
+                                      ) : (
+                                        <table className="w-full text-[11px]">
+                                          <thead className="bg-slate-100 border-b border-slate-200 text-slate-600">
+                                            <tr>
+                                              <th className="text-left px-3 py-1.5 w-8">#</th>
+                                              <th className="text-left px-3 py-1.5">Item</th>
+                                              <th className="text-right px-3 py-1.5 w-24">Qty × Unit</th>
+                                              <th className="text-right px-3 py-1.5 w-32">Rate (₹/{inputs[0]?.unit || 'unit'}) *</th>
+                                              <th className="text-right px-3 py-1.5 w-20">GST %</th>
+                                              <th className="text-right px-3 py-1.5 w-32">Line Total (₹)</th>
+                                              <th className="text-left px-3 py-1.5 w-40">Remarks</th>
+                                              <th className="text-center px-3 py-1.5 w-16">Source</th>
+                                            </tr>
+                                          </thead>
+                                          <tbody>
+                                            {inputs.length === 0 && (
+                                              <tr><td colSpan={8} className="px-3 py-4 text-center text-[11px] text-slate-400 italic">No items on this indent.</td></tr>
+                                            )}
+                                            {inputs.map(li => {
+                                              const rate = parseFloat(li.unitRate) || 0;
+                                              const lineTotal = rate * li.quantity;
+                                              return (
+                                                <tr key={li.lineId} className="border-b border-slate-100 last:border-b-0">
+                                                  <td className="px-3 py-1.5 text-slate-500 font-mono">{li.lineNo}</td>
+                                                  <td className="px-3 py-1.5">
+                                                    <div className="font-bold text-slate-800">{li.itemName}</div>
+                                                    {li.itemCode && <div className="text-[9px] text-slate-400 font-mono">{li.itemCode}</div>}
+                                                  </td>
+                                                  <td className="px-3 py-1.5 text-right font-mono tabular-nums text-slate-700">
+                                                    {li.quantity} {li.unit}
+                                                  </td>
+                                                  <td className="px-3 py-1.5 text-right">
+                                                    <input type="number" step="any" inputMode="decimal" placeholder="0.00"
+                                                      value={li.unitRate}
+                                                      onChange={e => updateLineInput(q.id, li.lineId, 'unitRate', e.target.value)}
+                                                      className="border border-slate-300 px-2 py-1 text-xs w-28 font-mono tabular-nums text-right focus:outline-none focus:ring-1 focus:ring-blue-500" />
+                                                  </td>
+                                                  <td className="px-3 py-1.5 text-right">
+                                                    <input type="number" step="any" inputMode="decimal" placeholder="—"
+                                                      value={li.gstPercent}
+                                                      onChange={e => updateLineInput(q.id, li.lineId, 'gstPercent', e.target.value)}
+                                                      className="border border-slate-300 px-2 py-1 text-xs w-16 font-mono tabular-nums text-right focus:outline-none focus:ring-1 focus:ring-blue-500" />
+                                                  </td>
+                                                  <td className="px-3 py-1.5 text-right font-mono tabular-nums text-slate-800">
+                                                    {lineTotal > 0 ? lineTotal.toLocaleString('en-IN', { maximumFractionDigits: 2 }) : '—'}
+                                                  </td>
+                                                  <td className="px-3 py-1.5">
+                                                    <input type="text" placeholder="(optional) e.g. brand, lead time"
+                                                      value={li.remarks}
+                                                      onChange={e => updateLineInput(q.id, li.lineId, 'remarks', e.target.value)}
+                                                      className="border border-slate-300 px-2 py-1 text-xs w-full focus:outline-none focus:ring-1 focus:ring-blue-500" />
+                                                  </td>
+                                                  <td className="px-3 py-1.5 text-center">
+                                                    {li.source === 'EMAIL_AUTO' ? (
+                                                      <span className="inline-block text-[9px] font-bold uppercase tracking-wide px-1.5 py-0.5 border border-purple-500 bg-purple-50 text-purple-700">AI</span>
+                                                    ) : li.source === 'MANUAL' ? (
+                                                      <span className="inline-block text-[9px] font-bold uppercase tracking-wide px-1.5 py-0.5 border border-slate-400 bg-slate-50 text-slate-600">MANUAL</span>
+                                                    ) : (
+                                                      <span className="text-slate-300">—</span>
+                                                    )}
+                                                  </td>
+                                                </tr>
+                                              );
+                                            })}
+                                          </tbody>
+                                          {inputs.length > 0 && (() => {
+                                            const grandTotal = inputs.reduce((sum, li) => {
+                                              const r = parseFloat(li.unitRate) || 0;
+                                              return sum + r * li.quantity;
+                                            }, 0);
+                                            return (
+                                              <tfoot className="bg-slate-50 border-t border-slate-300">
+                                                <tr>
+                                                  <td colSpan={5} className="px-3 py-1.5 text-right text-[10px] font-bold uppercase tracking-widest text-slate-600">Sub-total (excl. GST)</td>
+                                                  <td className="px-3 py-1.5 text-right font-mono tabular-nums font-bold text-slate-800">
+                                                    {grandTotal > 0 ? grandTotal.toLocaleString('en-IN', { maximumFractionDigits: 2 }) : '—'}
+                                                  </td>
+                                                  <td colSpan={2}></td>
+                                                </tr>
+                                              </tfoot>
+                                            );
+                                          })()}
+                                        </table>
+                                      )}
+                                      <div className="bg-slate-50 border-t border-slate-200 px-3 py-2 flex items-center justify-between">
+                                        <div className="text-[10px] text-slate-500">
+                                          * Rate is per unit, exclusive of GST. Leave blank for items the vendor has not quoted.
+                                        </div>
+                                        <button onClick={() => saveLineRates(pr.id, q.id)}
+                                          disabled={lineRatesSaving[q.id] || inputs.length === 0}
+                                          className="px-3 py-1 bg-blue-600 text-white text-[11px] font-bold uppercase tracking-wide hover:bg-blue-700 disabled:bg-slate-400 flex items-center gap-1">
+                                          <Check size={12} /> {lineRatesSaving[q.id] ? 'Saving…' : 'Save Rates'}
+                                        </button>
+                                      </div>
+                                    </div>
+                                  </td>
+                                </tr>
+                              )}
+                              </React.Fragment>
                             );
                           })}
                         </tbody>

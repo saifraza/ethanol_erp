@@ -7,6 +7,7 @@ import { COMPANY } from '../shared/config/company';
 import { renderDocumentPdf } from '../services/documentRenderer';
 import { sendThreadEmail, syncAndListReplies, latestThreadFor } from '../services/emailService';
 import { extractQuoteFromReply } from '../services/rfqQuoteExtractor';
+import { notifyOnNewRfqReply } from '../services/rfqReplyPoller';
 
 const router = Router();
 router.use(authenticate as any);
@@ -25,7 +26,10 @@ router.get('/', asyncHandler(async (req: AuthRequest, res: Response) => {
       include: {
         vendor: { select: { id: true, name: true, email: true, phone: true } },
         quotes: {
-          include: { vendor: { select: { id: true, name: true, email: true, phone: true } } },
+          include: {
+            vendor: { select: { id: true, name: true, email: true, phone: true } },
+            lineQuotes: { select: { id: true, requisitionLineId: true, unitRate: true, gstPercent: true, hsnCode: true, remarks: true, source: true } },
+          },
           orderBy: { createdAt: 'asc' },
         },
         lines: {
@@ -72,6 +76,47 @@ async function upsertVendorItemsForQuote(prId: string, vendorId: string, rate: n
   }
 }
 
+// Recompute the header rate (PurchaseRequisitionVendor.vendorRate) from saved
+// line rates so existing logic (award gating, totals, reports) keeps working.
+// Strategy: weighted average by qty × unitRate, sum / sum(qty). Items without
+// a saved rate are excluded from the weight so partial quotes still show a rate.
+async function recomputeHeaderRate(vrId: string): Promise<void> {
+  const vr = await prisma.purchaseRequisitionVendor.findUnique({
+    where: { id: vrId },
+    include: {
+      requisition: { include: { lines: { select: { id: true, quantity: true } } } },
+      lineQuotes: { select: { requisitionLineId: true, unitRate: true } },
+    },
+  });
+  if (!vr) return;
+  const qtyByLine = new Map(vr.requisition.lines.map(l => [l.id, l.quantity]));
+  let weightedSum = 0;
+  let totalQty = 0;
+  let lineCount = 0;
+  for (const lq of vr.lineQuotes) {
+    if (lq.unitRate == null || lq.unitRate <= 0) continue;
+    const qty = qtyByLine.get(lq.requisitionLineId) || 0;
+    if (qty <= 0) continue;
+    weightedSum += lq.unitRate * qty;
+    totalQty += qty;
+    lineCount++;
+  }
+  const totalLines = vr.requisition.lines.length;
+  const headerRate = totalQty > 0 ? Math.round((weightedSum / totalQty) * 100) / 100 : null;
+  const allLinesPriced = lineCount === totalLines && totalLines > 0;
+  await prisma.purchaseRequisitionVendor.update({
+    where: { id: vrId },
+    data: {
+      vendorRate: headerRate,
+      quotedAt: lineCount > 0 ? new Date() : null,
+      // Mark partial quotes so UI can show "X of Y items priced"
+      quoteSource: lineCount === 0
+        ? null
+        : allLinesPriced ? (vr.quoteSource || 'MANUAL') : 'EMAIL_PARTIAL',
+    },
+  });
+}
+
 // PUT /:id/vendors/:vrId — update quote rate / remarks / email meta
 router.put('/:id/vendors/:vrId', asyncHandler(async (req: AuthRequest, res: Response) => {
     const b = req.body as Record<string, unknown>;
@@ -99,6 +144,95 @@ router.put('/:id/vendors/:vrId', asyncHandler(async (req: AuthRequest, res: Resp
       await upsertVendorItemsForQuote(req.params.id, row.vendorId, data.vendorRate as number);
     }
     res.json(row);
+}));
+
+// GET /:id/vendors/:vrId/line-rates — list per-line rates for this vendor on this indent
+router.get('/:id/vendors/:vrId/line-rates', asyncHandler(async (req: AuthRequest, res: Response) => {
+    const vr = await prisma.purchaseRequisitionVendor.findUnique({
+      where: { id: req.params.vrId },
+      include: {
+        requisition: {
+          include: {
+            lines: {
+              orderBy: { lineNo: 'asc' },
+              include: { inventoryItem: { select: { id: true, name: true, code: true, unit: true } } },
+            },
+          },
+        },
+        lineQuotes: true,
+      },
+    });
+    if (!vr || vr.requisitionId !== req.params.id) return res.status(404).json({ error: 'Not found' });
+
+    const byLine = new Map(vr.lineQuotes.map(lq => [lq.requisitionLineId, lq]));
+    const lines = vr.requisition.lines.map(l => {
+      const lq = byLine.get(l.id);
+      return {
+        lineId: l.id,
+        lineNo: l.lineNo,
+        itemName: l.itemName,
+        itemCode: l.inventoryItem?.code || null,
+        quantity: l.quantity,
+        unit: l.unit,
+        estimatedCost: l.estimatedCost,
+        unitRate: lq?.unitRate ?? null,
+        gstPercent: lq?.gstPercent ?? null,
+        hsnCode: lq?.hsnCode ?? null,
+        remarks: lq?.remarks ?? null,
+        source: lq?.source ?? null,
+      };
+    });
+    res.json({ lines, vendorName: (await prisma.vendor.findUnique({ where: { id: vr.vendorId }, select: { name: true } }))?.name });
+}));
+
+// PUT /:id/vendors/:vrId/line-rates — bulk save per-line rates (manual or AI-edited)
+// Body: { lines: [{ lineId, unitRate, gstPercent?, hsnCode?, remarks? }], source?: 'MANUAL'|'EMAIL_AUTO' }
+router.put('/:id/vendors/:vrId/line-rates', asyncHandler(async (req: AuthRequest, res: Response) => {
+    const body = req.body as {
+      lines?: Array<{ lineId: string; unitRate?: number | string | null; gstPercent?: number | string | null; hsnCode?: string | null; remarks?: string | null }>;
+      source?: string;
+    };
+    if (!Array.isArray(body.lines)) return res.status(400).json({ error: 'lines[] required' });
+
+    const vr = await prisma.purchaseRequisitionVendor.findUnique({
+      where: { id: req.params.vrId },
+      include: { requisition: { include: { lines: { select: { id: true, inventoryItemId: true } } } } },
+    });
+    if (!vr || vr.requisitionId !== req.params.id) return res.status(404).json({ error: 'Not found' });
+
+    const validLineIds = new Set(vr.requisition.lines.map(l => l.id));
+    const source = body.source === 'EMAIL_AUTO' ? 'EMAIL_AUTO' : 'MANUAL';
+
+    for (const l of body.lines) {
+      if (!validLineIds.has(l.lineId)) continue;
+      const rate = l.unitRate == null || l.unitRate === '' ? null : Number(l.unitRate);
+      if (rate != null && (isNaN(rate) || rate < 0)) return res.status(400).json({ error: `Invalid rate on line ${l.lineId}` });
+      const gst = l.gstPercent == null || l.gstPercent === '' ? null : Number(l.gstPercent);
+      if (gst != null && (isNaN(gst) || gst < 0)) return res.status(400).json({ error: `Invalid GST on line ${l.lineId}` });
+
+      if (rate == null && gst == null && !l.hsnCode && !l.remarks) {
+        // Empty line — delete any existing row so the user's "clear field" is honored
+        await prisma.purchaseRequisitionVendorLine.deleteMany({
+          where: { vendorQuoteId: req.params.vrId, requisitionLineId: l.lineId },
+        });
+        continue;
+      }
+      await prisma.purchaseRequisitionVendorLine.upsert({
+        where: { vendorQuoteId_requisitionLineId: { vendorQuoteId: req.params.vrId, requisitionLineId: l.lineId } },
+        update: { unitRate: rate, gstPercent: gst, hsnCode: l.hsnCode || null, remarks: l.remarks || null, source },
+        create: { vendorQuoteId: req.params.vrId, requisitionLineId: l.lineId, unitRate: rate, gstPercent: gst, hsnCode: l.hsnCode || null, remarks: l.remarks || null, source },
+      });
+    }
+
+    await recomputeHeaderRate(req.params.vrId);
+
+    // Mirror header rate onto VendorItem master so it appears in item history
+    const updated = await prisma.purchaseRequisitionVendor.findUnique({ where: { id: req.params.vrId }, select: { vendorRate: true, vendorId: true } });
+    if (updated?.vendorRate && updated.vendorRate > 0) {
+      await upsertVendorItemsForQuote(req.params.id, updated.vendorId, updated.vendorRate);
+    }
+
+    res.json({ ok: true });
 }));
 
 // POST /:id/vendors/:vrId/request-quote — mark as requested (stores email meta)
@@ -294,6 +428,10 @@ router.get('/:id/vendors/:vrId/replies', asyncHandler(async (req: AuthRequest, r
     if (!thread) return res.json({ replies: [], threadDbId: null, error: 'RFQ email not sent yet' });
 
     const result = await syncAndListReplies(thread.id);
+    if (result.newCount && result.newCount > 0) {
+      const latest = result.replies[result.replies.length - 1];
+      await notifyOnNewRfqReply({ vrId: req.params.vrId, newCount: result.newCount, fromEmail: latest?.fromEmail });
+    }
     res.json({
       threadDbId: thread.id,
       replies: result.replies.map(r => ({
@@ -315,12 +453,13 @@ router.get('/:id/vendors/:vrId/replies', asyncHandler(async (req: AuthRequest, r
 }));
 
 // POST /:id/vendors/:vrId/extract-quote — run Gemini on the latest reply + attachments
+// On autoApply: writes per-line rates to PurchaseRequisitionVendorLine and recomputes header rate.
 router.post('/:id/vendors/:vrId/extract-quote', asyncHandler(async (req: AuthRequest, res: Response) => {
     const vr = await prisma.purchaseRequisitionVendor.findUnique({
       where: { id: req.params.vrId },
       include: {
         vendor: { select: { email: true } },
-        requisition: { select: { reqNo: true, lines: { orderBy: { lineNo: 'asc' } }, itemName: true, quantity: true, unit: true } },
+        requisition: { select: { reqNo: true, lines: { orderBy: { lineNo: 'asc' }, select: { id: true, lineNo: true, itemName: true, quantity: true, unit: true } }, itemName: true, quantity: true, unit: true } },
       },
     });
     if (!vr) return res.status(404).json({ error: 'Not found' });
@@ -340,8 +479,11 @@ router.post('/:id/vendors/:vrId/extract-quote', asyncHandler(async (req: AuthReq
       ? (latestReply.attachments as Array<{ filename: string; contentType: string; contentBase64: string }>)
       : [];
 
-    const expectedLines = (vr.requisition.lines.length > 0 ? vr.requisition.lines : [{
-      lineNo: 1, itemName: vr.requisition.itemName, quantity: vr.requisition.quantity, unit: vr.requisition.unit,
+    const indentLines = vr.requisition.lines.length > 0
+      ? vr.requisition.lines
+      : [];
+    const expectedLines = (indentLines.length > 0 ? indentLines : [{
+      id: '', lineNo: 1, itemName: vr.requisition.itemName, quantity: vr.requisition.quantity, unit: vr.requisition.unit,
     }]).map(l => ({ lineNo: l.lineNo ?? 1, itemName: l.itemName, quantity: l.quantity, unit: l.unit }));
 
     const extracted = await extractQuoteFromReply({
@@ -352,32 +494,47 @@ router.post('/:id/vendors/:vrId/extract-quote', asyncHandler(async (req: AuthReq
 
     if (!extracted) return res.status(503).json({ error: 'AI extraction not configured (GEMINI_API_KEY missing)' });
 
-    // If we got a usable unit rate, optionally auto-save it
-    let savedRate: number | null = null;
-    if (req.body.autoApply && extracted.confidence !== 'LOW') {
-      // Prefer the first line's rate, else the overall extracted total / qty
-      const firstLine = extracted.lineRates.find(l => typeof l.unitRate === 'number' && l.unitRate > 0);
-      const rate = firstLine?.unitRate
-        ?? (extracted.extractedTotal && vr.requisition.quantity > 0
-            ? Math.round((extracted.extractedTotal / vr.requisition.quantity) * 100) / 100
-            : null);
-      if (rate) {
-        const updatedRow = await prisma.purchaseRequisitionVendor.update({
-          where: { id: req.params.vrId },
-          data: {
-            vendorRate: rate,
-            quotedAt: new Date(),
-            quoteSource: 'EMAIL_AUTO',
-            quoteRemarks: [
-              extracted.overallRateNote,
-              extracted.paymentTerms ? `Payment: ${extracted.paymentTerms}` : null,
-              extracted.deliveryDays ? `Delivery: ${extracted.deliveryDays} days` : null,
-              extracted.freightTerms ? `Freight: ${extracted.freightTerms}` : null,
-            ].filter(Boolean).join(' · ') || null,
-          },
+    // If autoApply, write each extracted line rate to PurchaseRequisitionVendorLine.
+    // Always-on remarks summary stays in the header field.
+    let savedLineCount = 0;
+    let savedHeaderRate: number | null = null;
+    if (req.body.autoApply && extracted.confidence !== 'LOW' && indentLines.length > 0) {
+      // Match each extracted line to an indent line: prefer lineNo, else fuzzy on itemName
+      const byLineNo = new Map(indentLines.map(l => [l.lineNo, l]));
+      const byNameLC = new Map(indentLines.map(l => [l.itemName.toLowerCase().trim(), l]));
+      for (const lr of extracted.lineRates) {
+        if (!lr.unitRate || lr.unitRate <= 0) continue;
+        let target = lr.lineNo ? byLineNo.get(lr.lineNo) : undefined;
+        if (!target && lr.itemName) target = byNameLC.get(lr.itemName.toLowerCase().trim());
+        if (!target) continue;
+        await prisma.purchaseRequisitionVendorLine.upsert({
+          where: { vendorQuoteId_requisitionLineId: { vendorQuoteId: req.params.vrId, requisitionLineId: target.id } },
+          update: { unitRate: lr.unitRate, gstPercent: lr.gstPercent ?? null, hsnCode: lr.hsnCode || null, remarks: lr.remarks || null, source: 'EMAIL_AUTO' },
+          create: { vendorQuoteId: req.params.vrId, requisitionLineId: target.id, unitRate: lr.unitRate, gstPercent: lr.gstPercent ?? null, hsnCode: lr.hsnCode || null, remarks: lr.remarks || null, source: 'EMAIL_AUTO' },
         });
-        savedRate = rate;
-        await upsertVendorItemsForQuote(req.params.id, updatedRow.vendorId, rate);
+        savedLineCount++;
+      }
+
+      // Update header remarks (terms / payment / delivery)
+      await prisma.purchaseRequisitionVendor.update({
+        where: { id: req.params.vrId },
+        data: {
+          quoteRemarks: [
+            extracted.overallRateNote,
+            extracted.paymentTerms ? `Payment: ${extracted.paymentTerms}` : null,
+            extracted.deliveryDays ? `Delivery: ${extracted.deliveryDays} days` : null,
+            extracted.freightTerms ? `Freight: ${extracted.freightTerms}` : null,
+          ].filter(Boolean).join(' · ') || null,
+        },
+      });
+
+      if (savedLineCount > 0) {
+        await recomputeHeaderRate(req.params.vrId);
+        const after = await prisma.purchaseRequisitionVendor.findUnique({ where: { id: req.params.vrId }, select: { vendorRate: true, vendorId: true } });
+        savedHeaderRate = after?.vendorRate ?? null;
+        if (savedHeaderRate && savedHeaderRate > 0) {
+          await upsertVendorItemsForQuote(req.params.id, after!.vendorId, savedHeaderRate);
+        }
       }
     }
 
@@ -391,7 +548,13 @@ router.post('/:id/vendors/:vrId/extract-quote', asyncHandler(async (req: AuthReq
       },
     });
 
-    res.json({ extracted, savedRate, reply: { from: latestReply.fromEmail, subject: latestReply.subject, date: latestReply.receivedAt } });
+    res.json({
+      extracted,
+      savedRate: savedHeaderRate,
+      savedLineCount,
+      totalLines: indentLines.length,
+      reply: { from: latestReply.fromEmail, subject: latestReply.subject, date: latestReply.receivedAt },
+    });
 }));
 
 // GET /:id/vendors/:vrId/attachment/:filename — serve reply attachment from persisted EmailReply
