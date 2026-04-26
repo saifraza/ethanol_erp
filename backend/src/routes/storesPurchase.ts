@@ -38,7 +38,18 @@ router.get('/deals', authenticate, asyncHandler(async (req: AuthRequest, res: Re
     where: {
       ...getCompanyFilter(req),
       status: { in: statusFilter },
-      lines: { some: { inventoryItem: { category: { in: [...STORE_CATEGORIES] } } } },
+      // A "store deal" PO has at least one line that is either (a) linked
+      // to an InventoryItem in a store category, or (b) free-text — those
+      // come from the indent → quote → award flow, which is store work by
+      // definition (no other path creates inventoryItemId-null lines).
+      lines: {
+        some: {
+          OR: [
+            { inventoryItem: { category: { in: [...STORE_CATEGORIES] } } },
+            { inventoryItemId: null },
+          ],
+        },
+      },
     },
     take: 200,
     orderBy: { poDate: 'desc' },
@@ -50,6 +61,7 @@ router.get('/deals', authenticate, asyncHandler(async (req: AuthRequest, res: Re
         select: {
           id: true, description: true, rate: true, unit: true, quantity: true, receivedQty: true, pendingQty: true,
           gstPercent: true,
+          inventoryItemId: true,
           inventoryItem: { select: { category: true, name: true } },
         },
       },
@@ -59,9 +71,11 @@ router.get('/deals', authenticate, asyncHandler(async (req: AuthRequest, res: Re
 
   const round2 = (n: number) => Math.round(n * 100) / 100;
   const result = deals.map(deal => {
-    // Only count store-category lines (filter out RM/fuel from mixed POs)
+    // Count both store-category lines AND free-text lines (filter out RM/fuel
+    // from mixed POs — they have inventoryItemId set with a non-store category).
     const storeLines = deal.lines.filter(l =>
-      l.inventoryItem?.category && STORE_CATEGORIES.includes(l.inventoryItem.category as typeof STORE_CATEGORIES[number])
+      !l.inventoryItemId ||
+      (l.inventoryItem?.category && STORE_CATEGORIES.includes(l.inventoryItem.category as typeof STORE_CATEGORIES[number]))
     );
     const lines = storeLines.length > 0 ? storeLines : deal.lines;
     const orderedQty = lines.reduce((s, l) => s + (l.quantity || 0), 0);
@@ -207,13 +221,22 @@ router.get('/summary', authenticate, asyncHandler(async (req: AuthRequest, res: 
     where: {
       ...getCompanyFilter(req),
       status: { in: ['APPROVED', 'SENT', 'PARTIAL_RECEIVED', 'RECEIVED'] },
-      lines: { some: { inventoryItem: { category: { in: [...STORE_CATEGORIES] } } } },
+      // Same filter as /deals — include free-text PO lines too (indent flow).
+      lines: {
+        some: {
+          OR: [
+            { inventoryItem: { category: { in: [...STORE_CATEGORIES] } } },
+            { inventoryItemId: null },
+          ],
+        },
+      },
     },
     select: {
       status: true,
       lines: {
         select: {
           quantity: true, receivedQty: true, rate: true, gstPercent: true,
+          inventoryItemId: true,
           inventoryItem: { select: { category: true } },
         },
       },
@@ -226,9 +249,11 @@ router.get('/summary', authenticate, asyncHandler(async (req: AuthRequest, res: 
     if (d.status === 'APPROVED' || d.status === 'SENT') openCount++;
     else if (d.status === 'PARTIAL_RECEIVED') partialCount++;
     else if (d.status === 'RECEIVED') receivedCount++;
-    const lines = d.lines.filter(l =>
-      l.inventoryItem?.category && STORE_CATEGORIES.includes(l.inventoryItem.category as typeof STORE_CATEGORIES[number])
+    const storeLines = d.lines.filter(l =>
+      !l.inventoryItemId ||
+      (l.inventoryItem?.category && STORE_CATEGORIES.includes(l.inventoryItem.category as typeof STORE_CATEGORIES[number]))
     );
+    const lines = storeLines.length > 0 ? storeLines : d.lines;
     for (const l of lines) {
       const oBase = (l.quantity || 0) * (l.rate || 0);
       const rBase = (l.receivedQty || 0) * (l.rate || 0);
