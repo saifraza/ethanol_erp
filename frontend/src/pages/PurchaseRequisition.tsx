@@ -580,32 +580,6 @@ export default function PurchaseRequisition() {
     }
   };
 
-  const handleConfirmPO = async (prId: string, quoteId: string) => {
-    if (!confirm('Confirm this PO? It will be approved and a draft GRN will be created in Store Receipts. After this, the only way back is to cancel from the PO/GRN page.')) return;
-    try {
-      const res = await api.post<{ poNo: number; grn: { grnNo: number } | null }>(`/purchase-requisition/${prId}/vendors/${quoteId}/confirm-po`);
-      const { poNo, grn } = res.data;
-      alert(`PO #${poNo} approved.\nDraft GRN-${grn?.grnNo} created — track goods arrival in Store Receipts.`);
-      window.location.href = `/store/receipts?tab=grns`;
-    } catch (e: unknown) {
-      alert((e as { response?: { data?: { error?: string } } }).response?.data?.error || 'Failed to confirm PO');
-    }
-  };
-
-  const handleCancelAward = async (prId: string, quoteId: string) => {
-    if (!confirm('Cancel this award? The draft PO will be cancelled and the indent will go back so you can edit rates or pick a different vendor.')) return;
-    try {
-      const res = await api.post<{ ok: boolean; cancelledPoNo: number | null }>(`/purchase-requisition/${prId}/vendors/${quoteId}/cancel-award`);
-      const { cancelledPoNo } = res.data;
-      load();
-      alert(cancelledPoNo
-        ? `Award cancelled. PO #${cancelledPoNo} marked CANCELLED. The indent is now open for re-quoting.`
-        : 'Award cancelled. The indent is now open for re-quoting.');
-    } catch (e: unknown) {
-      alert((e as { response?: { data?: { error?: string } } }).response?.data?.error || 'Failed to cancel award');
-    }
-  };
-
   const handleDeleteQuote = async (prId: string, quoteId: string) => {
     if (!confirm('Remove this vendor row?')) return;
     try { await api.delete(`/purchase-requisition/${prId}/vendors/${quoteId}`); load(); }
@@ -1095,19 +1069,12 @@ export default function PurchaseRequisition() {
                                   <div className="flex items-center gap-1 flex-wrap">
                                     <a href={`/procurement/purchase-orders?expand=${po.id}`}
                                       className="px-2 py-0.5 bg-blue-600 text-white text-[10px] font-medium hover:bg-blue-700">Open PO</a>
-                                    {po.status === 'DRAFT' && pr.quotes.find(q => q.isAwarded) && (
-                                      <>
-                                        <button onClick={() => handleConfirmPO(pr.id, pr.quotes.find(q => q.isAwarded)!.id)}
-                                          title="Approve this PO and create the draft GRN — then track in Store Receipts"
-                                          className="px-2 py-0.5 bg-green-600 text-white text-[10px] font-medium hover:bg-green-700">
-                                          Confirm PO
-                                        </button>
-                                        <button onClick={() => handleCancelAward(pr.id, pr.quotes.find(q => q.isAwarded)!.id)}
-                                          title="Cancel the draft PO and return the indent for re-quoting (edit rates / pick another vendor)"
-                                          className="px-2 py-0.5 bg-white border border-red-500 text-red-600 text-[10px] font-medium hover:bg-red-50">
-                                          Cancel & Re-quote
-                                        </button>
-                                      </>
+                                    {po.status === 'DRAFT' && (
+                                      <a href="/store/receipts?tab=pos"
+                                        title="Confirm or cancel this draft PO from Store Receipts"
+                                        className="px-2 py-0.5 bg-amber-600 text-white text-[10px] font-medium hover:bg-amber-700">
+                                        Review in Store Receipts →
+                                      </a>
                                     )}
                                     {isReceivable && (
                                       <a href={`/store/receipts?poId=${po.id}`}
