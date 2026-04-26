@@ -96,11 +96,17 @@ export default function Weighment() {
 
   const api = axios.create({ baseURL: '/api', headers: { Authorization: `Bearer ${token}` } });
 
+  const todayISO = useMemo(() => {
+    const ist = new Date(Date.now() + 5.5 * 60 * 60 * 1000);
+    return ist.toISOString().slice(0, 10);
+  }, []);
+  const isToday = date === todayISO;
+
   const fetchData = useCallback(async () => {
     try {
       const [wRes, sRes] = await Promise.all([
         api.get(`/weighbridge/weighments?date=${date}&limit=${PAGE_SIZE}&offset=${page * PAGE_SIZE}`),
-        api.get('/weighbridge/stats'),
+        api.get(`/weighbridge/stats?date=${date}`),
       ]);
       setWeighments(wRes.data.weighments || []);
       setTotal(wRes.data.total || 0);
@@ -164,7 +170,9 @@ export default function Weighment() {
       {/* KPI Strip */}
       <div className="grid grid-cols-4 gap-0 border-x border-b border-slate-300 -mx-3 md:-mx-6">
         <div className="bg-white px-4 py-3 border-r border-slate-300 border-l-4 border-l-blue-500">
-          <div className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Today</div>
+          <div className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">
+            {isToday ? 'Today' : new Date(`${date}T00:00:00+05:30`).toLocaleDateString('en-IN', { day: '2-digit', month: 'short' })}
+          </div>
           <div className="text-xl font-bold text-slate-800 mt-1 font-mono tabular-nums">{stats.today.total}</div>
         </div>
         <div className="bg-white px-4 py-3 border-r border-slate-300 border-l-4 border-l-green-500">

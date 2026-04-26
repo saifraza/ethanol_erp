@@ -343,18 +343,20 @@ router.get('/scale-state', requireAuth, asyncHandler(async (req: AuthRequest, re
   });
 }));
 
-// GET /api/weighbridge/stats — today's summary (legacy)
-router.get('/stats', requireAuth, asyncHandler(async (_req: AuthRequest, res: Response) => {
-  const { start } = istDayRange();
+// GET /api/weighbridge/stats?date=YYYY-MM-DD — daily summary (defaults to today IST)
+router.get('/stats', requireAuth, asyncHandler(async (req: AuthRequest, res: Response) => {
+  const date = typeof req.query.date === 'string' ? req.query.date : undefined;
+  const { start, end } = istDayRange(date);
+  const range = { gte: start, lte: end };
 
   const [total, completed, pending, unsynced, catCounts] = await Promise.all([
-    prisma.weighment.count({ where: { createdAt: { gte: start } } }),
-    prisma.weighment.count({ where: { createdAt: { gte: start }, status: 'COMPLETE' } }),
-    prisma.weighment.count({ where: { createdAt: { gte: start }, status: { not: 'COMPLETE' } } }),
+    prisma.weighment.count({ where: { createdAt: range } }),
+    prisma.weighment.count({ where: { createdAt: range, status: 'COMPLETE' } }),
+    prisma.weighment.count({ where: { createdAt: range, status: { not: 'COMPLETE' } } }),
     prisma.weighment.count({ where: { cloudSynced: false, status: 'COMPLETE' } }),
     prisma.weighment.groupBy({
       by: ['materialCategory'],
-      where: { createdAt: { gte: start } },
+      where: { createdAt: range },
       _count: true,
     }),
   ]);
