@@ -34,6 +34,11 @@ router.get('/', asyncHandler(async (req: AuthRequest, res: Response) => {
           orderBy: { lineNo: 'asc' },
           include: { inventoryItem: { select: { id: true, name: true, code: true, unit: true, currentStock: true } } },
         },
+        purchaseOrders: {
+          where: { status: { not: 'CANCELLED' } },
+          orderBy: { createdAt: 'desc' },
+          select: { id: true, poNo: true, status: true, grandTotal: true },
+        },
       },
     });
 
@@ -98,8 +103,8 @@ async function upsertVendorItemsForQuote(prId: string, vendorId: string, rate: n
 
 // Recompute the header rate (PurchaseRequisitionVendor.vendorRate) from saved
 // line rates so existing logic (award gating, totals, reports) keeps working.
-// Strategy: weighted average by qty × unitRate, sum / sum(qty). Items without
-// a saved rate are excluded from the weight so partial quotes still show a rate.
+// Header source is DERIVED from line sources — not preserved from the previous
+// header value — so AI-extracted lines correctly produce an AI header.
 async function recomputeHeaderRate(vrId: string): Promise<void> {
   const vr = await prisma.purchaseRequisitionVendor.findUnique({
     where: { id: vrId },
@@ -108,11 +113,11 @@ async function recomputeHeaderRate(vrId: string): Promise<void> {
     },
   });
   if (!vr) return;
-  let lineQuotes: Array<{ requisitionLineId: string; unitRate: number | null }> = [];
+  let lineQuotes: Array<{ requisitionLineId: string; unitRate: number | null; source: string | null }> = [];
   try {
     lineQuotes = await prisma.purchaseRequisitionVendorLine.findMany({
       where: { vendorQuoteId: vrId },
-      select: { requisitionLineId: true, unitRate: true },
+      select: { requisitionLineId: true, unitRate: true, source: true },
     });
   } catch {
     return; // table missing — leave header rate unchanged
@@ -121,6 +126,7 @@ async function recomputeHeaderRate(vrId: string): Promise<void> {
   let weightedSum = 0;
   let totalQty = 0;
   let lineCount = 0;
+  const pricedSources = new Set<string>();
   for (const lq of lineQuotes) {
     if (lq.unitRate == null || lq.unitRate <= 0) continue;
     const qty = qtyByLine.get(lq.requisitionLineId) || 0;
@@ -128,18 +134,24 @@ async function recomputeHeaderRate(vrId: string): Promise<void> {
     weightedSum += lq.unitRate * qty;
     totalQty += qty;
     lineCount++;
+    if (lq.source) pricedSources.add(lq.source);
   }
   const totalLines = vr.requisition.lines.length;
   const headerRate = totalQty > 0 ? Math.round((weightedSum / totalQty) * 100) / 100 : null;
   const allLinesPriced = lineCount === totalLines && totalLines > 0;
+  let headerSource: string | null = null;
+  if (lineCount > 0) {
+    if (!allLinesPriced) headerSource = 'EMAIL_PARTIAL';
+    else if (pricedSources.size === 1) headerSource = Array.from(pricedSources)[0];
+    else if (pricedSources.size === 0) headerSource = 'MANUAL';
+    else headerSource = 'MIXED';
+  }
   await prisma.purchaseRequisitionVendor.update({
     where: { id: vrId },
     data: {
       vendorRate: headerRate,
       quotedAt: lineCount > 0 ? new Date() : null,
-      quoteSource: lineCount === 0
-        ? null
-        : allLinesPriced ? (vr.quoteSource || 'MANUAL') : 'EMAIL_PARTIAL',
+      quoteSource: headerSource,
     },
   });
 }
@@ -286,10 +298,23 @@ router.put('/:id/vendors/:vrId/line-rates', asyncHandler(async (req: AuthRequest
           });
           continue;
         }
+        // Preserve the existing source (e.g. EMAIL_AUTO) when the user clicks
+        // Save Rates without editing the AI-filled values. Only mark MANUAL
+        // when the value actually changed.
+        const existing = await prisma.purchaseRequisitionVendorLine.findUnique({
+          where: { vendorQuoteId_requisitionLineId: { vendorQuoteId: req.params.vrId, requisitionLineId: l.lineId } },
+        });
+        const valueChanged = !existing
+          || existing.unitRate !== rate
+          || existing.gstPercent !== gst
+          || (existing.hsnCode || null) !== (l.hsnCode || null)
+          || (existing.remarks || null) !== (l.remarks || null);
+        const finalSource = valueChanged ? source : (existing?.source || source);
+
         await prisma.purchaseRequisitionVendorLine.upsert({
           where: { vendorQuoteId_requisitionLineId: { vendorQuoteId: req.params.vrId, requisitionLineId: l.lineId } },
-          update: { unitRate: rate, gstPercent: gst, hsnCode: l.hsnCode || null, remarks: l.remarks || null, source },
-          create: { vendorQuoteId: req.params.vrId, requisitionLineId: l.lineId, unitRate: rate, gstPercent: gst, hsnCode: l.hsnCode || null, remarks: l.remarks || null, source },
+          update: { unitRate: rate, gstPercent: gst, hsnCode: l.hsnCode || null, remarks: l.remarks || null, source: finalSource },
+          create: { vendorQuoteId: req.params.vrId, requisitionLineId: l.lineId, unitRate: rate, gstPercent: gst, hsnCode: l.hsnCode || null, remarks: l.remarks || null, source: finalSource },
         });
       }
     } catch (err) {
@@ -331,8 +356,10 @@ router.post('/:id/vendors/:vrId/request-quote', asyncHandler(async (req: AuthReq
     res.json(row);
 }));
 
-// POST /:id/vendors/:vrId/award — award this vendor as the winning one.
-// Sets PR.vendorId to this vendor, marks this row isAwarded=true, clears others.
+// POST /:id/vendors/:vrId/award — award this vendor and auto-create a draft PO.
+// Sets PR.vendorId, marks this quote row isAwarded=true, clears others, then
+// builds a multi-line PO from the indent's lines using per-line rates if
+// available, falling back to the header rate.
 router.post('/:id/vendors/:vrId/award', asyncHandler(async (req: AuthRequest, res: Response) => {
     const row = await prisma.purchaseRequisitionVendor.findUnique({ where: { id: req.params.vrId } });
     if (!row || row.requisitionId !== req.params.id) return res.status(404).json({ error: 'Quote row not found' });
@@ -347,19 +374,84 @@ router.post('/:id/vendors/:vrId/award', asyncHandler(async (req: AuthRequest, re
         include: {
           vendor: { select: { id: true, name: true, email: true, phone: true } },
           quotes: { include: { vendor: { select: { id: true, name: true, email: true, phone: true } } } },
+          lines: { include: { inventoryItem: { select: { id: true, name: true, code: true, hsnCode: true, gstPercent: true, unit: true } } } },
         },
       }),
     ]);
-    // Mark awarded vendor as the PREFERRED vendor for these items
+    // Mark awarded vendor as PREFERRED for these items
     await upsertVendorItemsForQuote(req.params.id, row.vendorId, row.vendorRate);
-    const itemsOnIndent = await prisma.purchaseRequisitionLine.findMany({ where: { requisitionId: req.params.id }, select: { inventoryItemId: true } });
-    const awardedItemIds = itemsOnIndent.map(l => l.inventoryItemId).filter((id): id is string => !!id);
+    const awardedItemIds = pr.lines.map(l => l.inventoryItemId).filter((id): id is string => !!id);
     for (const inventoryItemId of awardedItemIds) {
-      // Unset preferred on other vendors for this item, set on the awarded one
       await prisma.vendorItem.updateMany({ where: { inventoryItemId }, data: { isPreferred: false } });
       await prisma.vendorItem.updateMany({ where: { inventoryItemId, vendorId: row.vendorId }, data: { isPreferred: true } });
     }
-    res.json(pr);
+
+    // ── Auto-create a draft PO ──
+    let autoPO: { created: boolean; poId?: string; poNo?: number; grandTotal?: number; reason?: string } = { created: false };
+    try {
+      const existing = await prisma.purchaseOrder.findFirst({
+        where: { requisitionId: req.params.id, status: { not: 'CANCELLED' } },
+        select: { id: true, poNo: true },
+      });
+      if (existing) {
+        autoPO = { created: false, poId: existing.id, poNo: existing.poNo, reason: `PO #${existing.poNo} already exists for this indent` };
+      } else {
+        // Per-line rates if available, header rate as fallback
+        let lineRateMap = new Map<string, number>();
+        let lineGstMap = new Map<string, number>();
+        try {
+          const rates = await prisma.purchaseRequisitionVendorLine.findMany({
+            where: { vendorQuoteId: req.params.vrId },
+            select: { requisitionLineId: true, unitRate: true, gstPercent: true },
+          });
+          lineRateMap = new Map(rates.filter(r => r.unitRate != null && r.unitRate > 0).map(r => [r.requisitionLineId, r.unitRate as number]));
+          lineGstMap = new Map(rates.filter(r => r.gstPercent != null).map(r => [r.requisitionLineId, r.gstPercent as number]));
+        } catch { /* per-line table missing — fall back to header rate for every line */ }
+
+        const poLines = pr.lines
+          .filter(l => l.inventoryItemId)
+          .map(l => {
+            const rate = lineRateMap.get(l.id) ?? row.vendorRate ?? 0;
+            const gst = lineGstMap.get(l.id) ?? l.inventoryItem?.gstPercent ?? 18;
+            return rate > 0 ? {
+              inventoryItemId: l.inventoryItemId!,
+              description: l.itemName,
+              hsnCode: l.inventoryItem?.hsnCode || undefined,
+              quantity: l.quantity,
+              unit: l.inventoryItem?.unit || l.unit,
+              rate,
+              gstPercent: gst,
+            } : null;
+          })
+          .filter((x): x is NonNullable<typeof x> => x !== null);
+
+        if (poLines.length === 0) {
+          autoPO = { created: false, reason: 'No PO-eligible lines (each line needs an inventory item + rate)' };
+        } else {
+          const vendor = await prisma.vendor.findUnique({
+            where: { id: row.vendorId },
+            select: { gstState: true, paymentTerms: true, creditDays: true },
+          });
+          const vendorStateCode = vendor?.gstState || '';
+          const supplyType = vendorStateCode && vendorStateCode !== COMPANY.stateCode ? 'INTER_STATE' : 'INTRA_STATE';
+          const po = await createPurchaseOrder({
+            vendorId: row.vendorId,
+            lines: poLines,
+            supplyType: supplyType as 'INTRA_STATE' | 'INTER_STATE',
+            requisitionId: req.params.id,
+            userId: req.user!.id,
+            remarks: `Auto-created on award from Indent #${pr.reqNo}`,
+            paymentTerms: vendor?.paymentTerms || undefined,
+            creditDays: vendor?.creditDays || 30,
+          });
+          autoPO = { created: true, poId: po.id, poNo: po.poNo, grandTotal: po.grandTotal };
+        }
+      }
+    } catch (err) {
+      autoPO = { created: false, reason: `Auto-PO failed: ${(err as Error).message}` };
+    }
+
+    res.json({ ...pr, autoPO });
 }));
 
 // DELETE /:id/vendors/:vrId — remove a vendor quote row

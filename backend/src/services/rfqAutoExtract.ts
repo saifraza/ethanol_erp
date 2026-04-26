@@ -161,8 +161,8 @@ export async function autoExtractIfWaiting(vrId: string): Promise<AutoExtractRes
 }
 
 // Recompute the header rate (PurchaseRequisitionVendor.vendorRate) from saved
-// line rates. Weighted average by qty. Items without a saved rate are excluded
-// so partial quotes still produce a sensible header number.
+// line rates. Header source is DERIVED from line sources (so the badge reflects
+// reality rather than whatever was there before).
 async function recomputeHeaderRate(vrId: string): Promise<number | null> {
   const vr = await prisma.purchaseRequisitionVendor.findUnique({
     where: { id: vrId },
@@ -170,11 +170,11 @@ async function recomputeHeaderRate(vrId: string): Promise<number | null> {
   });
   if (!vr) return null;
 
-  let lineQuotes: Array<{ requisitionLineId: string; unitRate: number | null }> = [];
+  let lineQuotes: Array<{ requisitionLineId: string; unitRate: number | null; source: string | null }> = [];
   try {
     lineQuotes = await prisma.purchaseRequisitionVendorLine.findMany({
       where: { vendorQuoteId: vrId },
-      select: { requisitionLineId: true, unitRate: true },
+      select: { requisitionLineId: true, unitRate: true, source: true },
     });
   } catch {
     return null;
@@ -183,6 +183,7 @@ async function recomputeHeaderRate(vrId: string): Promise<number | null> {
   let weightedSum = 0;
   let totalQty = 0;
   let lineCount = 0;
+  const pricedSources = new Set<string>();
   for (const lq of lineQuotes) {
     if (lq.unitRate == null || lq.unitRate <= 0) continue;
     const qty = qtyByLine.get(lq.requisitionLineId) || 0;
@@ -190,16 +191,24 @@ async function recomputeHeaderRate(vrId: string): Promise<number | null> {
     weightedSum += lq.unitRate * qty;
     totalQty += qty;
     lineCount++;
+    if (lq.source) pricedSources.add(lq.source);
   }
   const totalLines = vr.requisition.lines.length;
   const headerRate = totalQty > 0 ? Math.round((weightedSum / totalQty) * 100) / 100 : null;
   const allLinesPriced = lineCount === totalLines && totalLines > 0;
+  let headerSource: string | null = null;
+  if (lineCount > 0) {
+    if (!allLinesPriced) headerSource = 'EMAIL_PARTIAL';
+    else if (pricedSources.size === 1) headerSource = Array.from(pricedSources)[0];
+    else if (pricedSources.size === 0) headerSource = 'MANUAL';
+    else headerSource = 'MIXED';
+  }
   await prisma.purchaseRequisitionVendor.update({
     where: { id: vrId },
     data: {
       vendorRate: headerRate,
       quotedAt: lineCount > 0 ? new Date() : null,
-      quoteSource: lineCount === 0 ? null : (allLinesPriced ? 'EMAIL_AUTO' : 'EMAIL_PARTIAL'),
+      quoteSource: headerSource,
     },
   });
   return headerRate;

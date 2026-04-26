@@ -106,6 +106,7 @@ interface PR {
   vendorRate: number | null;
   quotes: Quote[];
   lines: IndentLine[];
+  purchaseOrders?: Array<{ id: string; poNo: number; status: string; grandTotal: number }>;
 }
 
 interface ItemHistory {
@@ -556,9 +557,25 @@ export default function PurchaseRequisition() {
   };
 
   const handleAward = async (prId: string, quoteId: string) => {
-    if (!confirm('Award this vendor? They will become the supplier for the PO.')) return;
-    try { await api.post(`/purchase-requisition/${prId}/vendors/${quoteId}/award`); load(); }
-    catch (e: unknown) { alert((e as { response?: { data?: { error?: string } } }).response?.data?.error || 'Failed'); }
+    if (!confirm('Award this vendor? A draft PO will be created automatically with the rates you have entered.')) return;
+    try {
+      const res = await api.post<{ autoPO?: { created: boolean; poId?: string; poNo?: number; grandTotal?: number; reason?: string } }>(`/purchase-requisition/${prId}/vendors/${quoteId}/award`);
+      const autoPO = res.data.autoPO;
+      load();
+      if (autoPO?.created && autoPO.poNo) {
+        if (confirm(`Awarded. Draft PO #${autoPO.poNo} created (₹${(autoPO.grandTotal || 0).toLocaleString('en-IN')}). Open it now?`)) {
+          window.location.href = `/procurement/purchase-orders?expand=${autoPO.poId}`;
+        }
+      } else if (autoPO?.poId && autoPO?.poNo) {
+        if (confirm(`Awarded. PO #${autoPO.poNo} already exists for this indent. Open it?`)) {
+          window.location.href = `/procurement/purchase-orders?expand=${autoPO.poId}`;
+        }
+      } else {
+        alert(`Awarded, but PO was not auto-created: ${autoPO?.reason || 'unknown reason'}. Create a PO manually from Procurement Actions.`);
+      }
+    } catch (e: unknown) {
+      alert((e as { response?: { data?: { error?: string } } }).response?.data?.error || 'Failed');
+    }
   };
 
   const handleDeleteQuote = async (prId: string, quoteId: string) => {
@@ -1019,6 +1036,50 @@ export default function PurchaseRequisition() {
                             </div>
                           </div>
                         )}
+                        {/* Auto-PO created on award — show next-step navigation */}
+                        {pr.purchaseOrders && pr.purchaseOrders.length > 0 && (
+                          <div className="border-t border-slate-200 pt-2 mt-2 space-y-1.5">
+                            <div className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">Linked PO</div>
+                            {pr.purchaseOrders.map(po => {
+                              const isPaid = ['PAID'].includes(po.status);
+                              const isReceivable = ['APPROVED', 'SENT', 'PARTIAL_RECEIVED'].includes(po.status);
+                              const isReceived = ['RECEIVED', 'PARTIAL_RECEIVED'].includes(po.status);
+                              return (
+                                <div key={po.id} className="flex items-center justify-between bg-blue-50 border border-blue-200 px-2.5 py-1.5">
+                                  <div className="flex items-center gap-2">
+                                    <span className="text-[11px] font-bold text-blue-800">PO #{po.poNo}</span>
+                                    <span className="text-[9px] font-bold uppercase tracking-wide px-1.5 py-0.5 border border-blue-400 bg-white text-blue-700">{po.status}</span>
+                                    <span className="text-[10px] text-slate-600 font-mono">₹{po.grandTotal.toLocaleString('en-IN')}</span>
+                                  </div>
+                                  <div className="flex items-center gap-1">
+                                    <a href={`/procurement/purchase-orders?expand=${po.id}`}
+                                      className="px-2 py-0.5 bg-blue-600 text-white text-[10px] font-medium hover:bg-blue-700">Open PO</a>
+                                    {po.status === 'DRAFT' && (
+                                      <span className="text-[10px] text-amber-700 italic px-2">→ approve & send first</span>
+                                    )}
+                                    {isReceivable && (
+                                      <a href={`/store/receipts?poId=${po.id}`}
+                                        className="px-2 py-0.5 bg-amber-600 text-white text-[10px] font-medium hover:bg-amber-700"
+                                        title="Create / update GRN — partial GRN keeps it 'awaiting material'">
+                                        Receive Goods (GRN)
+                                      </a>
+                                    )}
+                                    {isReceived && pr.vendorId && (
+                                      <a href={`/accounts/payments-out/reconcile/${pr.vendorId}?upload=1&poId=${po.id}`}
+                                        className="px-2 py-0.5 bg-green-600 text-white text-[10px] font-medium hover:bg-green-700"
+                                        title="Upload the vendor's tax invoice for this PO">
+                                        Upload Invoice
+                                      </a>
+                                    )}
+                                    {isPaid && (
+                                      <span className="text-[10px] text-green-700 font-bold px-2">✓ Paid</span>
+                                    )}
+                                  </div>
+                                </div>
+                              );
+                            })}
+                          </div>
+                        )}
                         {pr.status === 'ORDERED' && (
                           <button onClick={() => updateStatus(pr.id, 'RECEIVED')} className="px-2 py-1 bg-blue-600 text-white text-[10px] font-medium hover:bg-blue-700">Mark Received</button>
                         )}
@@ -1206,7 +1267,15 @@ export default function PurchaseRequisition() {
                                   {total > 0 ? total.toLocaleString('en-IN') : '—'}
                                 </td>
                                 <td className="px-3 py-1.5 text-[10px] text-slate-500">
-                                  {q.quoteSource || <span className="italic">—</span>}
+                                  {(() => {
+                                    const src = q.quoteSource;
+                                    if (!src) return <span className="italic">—</span>;
+                                    const label: Record<string, string> = {
+                                      EMAIL_AUTO: 'AI', EMAIL_PARTIAL: 'AI (partial)',
+                                      MANUAL: 'MANUAL', MIXED: 'MIXED', PHONE: 'PHONE', WHATSAPP: 'WHATSAPP',
+                                    };
+                                    return <span className="font-bold text-slate-700">{label[src] || src}</span>;
+                                  })()}
                                   {q.quoteRemarks && <div className="text-[9px] italic truncate max-w-[120px]" title={q.quoteRemarks}>{q.quoteRemarks}</div>}
                                 </td>
                                 <td className="px-3 py-1.5 text-center">
