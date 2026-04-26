@@ -557,29 +557,48 @@ export default function PurchaseRequisition() {
   };
 
   const handleAward = async (prId: string, quoteId: string) => {
-    if (!confirm('Award this vendor? A PO + draft GRN will be created automatically. You will be taken to Store Receipts to track goods arrival.')) return;
+    if (!confirm('Award this vendor? A DRAFT PO will be created. You can review it, then either Confirm (proceeds to GRN) or Cancel (returns the indent for re-quoting).')) return;
     try {
       const res = await api.post<{
         autoPO?: { created: boolean; poId?: string; poNo?: number; grandTotal?: number; reason?: string };
-        autoGRN?: { created: boolean; grnId?: string; grnNo?: number; reason?: string };
       }>(`/purchase-requisition/${prId}/vendors/${quoteId}/award`);
-      const { autoPO, autoGRN } = res.data;
+      const { autoPO } = res.data;
       load();
-      if (autoPO?.created && autoGRN?.created) {
-        alert(`Awarded.\nPO #${autoPO.poNo} created (₹${(autoPO.grandTotal || 0).toLocaleString('en-IN')}).\nDraft GRN-${autoGRN.grnNo} ready in Store Receipts — finalize once goods arrive, then upload the vendor invoice.`);
-        window.location.href = `/store/receipts?tab=grns`;
-      } else if (autoPO?.created && !autoGRN?.created) {
-        alert(`Awarded. PO #${autoPO.poNo} created but draft GRN was not: ${autoGRN?.reason || 'unknown reason'}. Open Store Receipts and create one manually.`);
-        window.location.href = `/store/receipts?tab=grns`;
+      if (autoPO?.created && autoPO.poNo) {
+        alert(`Awarded.\nDraft PO #${autoPO.poNo} created (₹${(autoPO.grandTotal || 0).toLocaleString('en-IN')}).\n\nReview it on this page — then click Confirm PO to proceed, or Cancel & Re-quote to revert.`);
       } else if (autoPO?.poId && autoPO?.poNo) {
-        // Existing PO already there
-        alert(`Awarded. PO #${autoPO.poNo} already exists for this indent. Going to Store Receipts.`);
-        window.location.href = `/store/receipts?tab=grns`;
+        alert(`Awarded. PO #${autoPO.poNo} already exists for this indent.`);
       } else {
-        alert(`Awarded, but PO was not auto-created: ${autoPO?.reason || 'unknown reason'}. Create a PO manually from Procurement Actions.`);
+        alert(`Awarded, but DRAFT PO was not auto-created: ${autoPO?.reason || 'unknown reason'}. Create a PO manually from Procurement Actions.`);
       }
     } catch (e: unknown) {
       alert((e as { response?: { data?: { error?: string } } }).response?.data?.error || 'Failed');
+    }
+  };
+
+  const handleConfirmPO = async (prId: string, quoteId: string) => {
+    if (!confirm('Confirm this PO? It will be approved and a draft GRN will be created in Store Receipts. After this, the only way back is to cancel from the PO/GRN page.')) return;
+    try {
+      const res = await api.post<{ poNo: number; grn: { grnNo: number } | null }>(`/purchase-requisition/${prId}/vendors/${quoteId}/confirm-po`);
+      const { poNo, grn } = res.data;
+      alert(`PO #${poNo} approved.\nDraft GRN-${grn?.grnNo} created — track goods arrival in Store Receipts.`);
+      window.location.href = `/store/receipts?tab=grns`;
+    } catch (e: unknown) {
+      alert((e as { response?: { data?: { error?: string } } }).response?.data?.error || 'Failed to confirm PO');
+    }
+  };
+
+  const handleCancelAward = async (prId: string, quoteId: string) => {
+    if (!confirm('Cancel this award? The draft PO will be cancelled and the indent will go back so you can edit rates or pick a different vendor.')) return;
+    try {
+      const res = await api.post<{ ok: boolean; cancelledPoNo: number | null }>(`/purchase-requisition/${prId}/vendors/${quoteId}/cancel-award`);
+      const { cancelledPoNo } = res.data;
+      load();
+      alert(cancelledPoNo
+        ? `Award cancelled. PO #${cancelledPoNo} marked CANCELLED. The indent is now open for re-quoting.`
+        : 'Award cancelled. The indent is now open for re-quoting.');
+    } catch (e: unknown) {
+      alert((e as { response?: { data?: { error?: string } } }).response?.data?.error || 'Failed to cancel award');
     }
   };
 
@@ -1059,8 +1078,19 @@ export default function PurchaseRequisition() {
                                   <div className="flex items-center gap-1">
                                     <a href={`/procurement/purchase-orders?expand=${po.id}`}
                                       className="px-2 py-0.5 bg-blue-600 text-white text-[10px] font-medium hover:bg-blue-700">Open PO</a>
-                                    {po.status === 'DRAFT' && (
-                                      <span className="text-[10px] text-amber-700 italic px-2">→ approve & send first</span>
+                                    {po.status === 'DRAFT' && pr.quotes.find(q => q.isAwarded) && (
+                                      <>
+                                        <button onClick={() => handleConfirmPO(pr.id, pr.quotes.find(q => q.isAwarded)!.id)}
+                                          title="Approve this PO and create the draft GRN — then track in Store Receipts"
+                                          className="px-2 py-0.5 bg-green-600 text-white text-[10px] font-medium hover:bg-green-700">
+                                          Confirm PO
+                                        </button>
+                                        <button onClick={() => handleCancelAward(pr.id, pr.quotes.find(q => q.isAwarded)!.id)}
+                                          title="Cancel the draft PO and return the indent for re-quoting (edit rates / pick another vendor)"
+                                          className="px-2 py-0.5 bg-white border border-red-500 text-red-600 text-[10px] font-medium hover:bg-red-50">
+                                          Cancel & Re-quote
+                                        </button>
+                                      </>
                                     )}
                                     {isReceivable && (
                                       <a href={`/store/receipts?poId=${po.id}`}

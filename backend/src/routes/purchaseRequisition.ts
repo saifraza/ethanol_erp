@@ -439,6 +439,9 @@ router.post('/:id/vendors/:vrId/award', asyncHandler(async (req: AuthRequest, re
           });
           const vendorStateCode = vendor?.gstState || '';
           const supplyType = vendorStateCode && vendorStateCode !== COMPANY.stateCode ? 'INTER_STATE' : 'INTRA_STATE';
+          // Create DRAFT PO — user reviews on the indent page and either
+          // confirms (→ APPROVED + partial GRN) or cancels (→ unaward vendor,
+          // indent goes back for re-quoting).
           const po = await createPurchaseOrder({
             vendorId: row.vendorId,
             lines: poLines,
@@ -449,59 +452,7 @@ router.post('/:id/vendors/:vrId/award', asyncHandler(async (req: AuthRequest, re
             paymentTerms: vendor?.paymentTerms || undefined,
             creditDays: vendor?.creditDays || 30,
           });
-          // Auto-approve so partial GRN can be created (skips DRAFT review step)
-          await prisma.purchaseOrder.update({
-            where: { id: po.id },
-            data: { status: 'APPROVED' },
-          });
           autoPO = { created: true, poId: po.id, poNo: po.poNo, grandTotal: po.grandTotal };
-
-          // Auto-create a partial GRN (status=PARTIAL, qty=0) so the indent
-          // immediately shows up in /store/receipts as "awaiting material".
-          try {
-            const dupGRN = await prisma.goodsReceipt.findFirst({
-              where: { poId: po.id, status: { in: ['DRAFT', 'PARTIAL'] }, archived: false },
-              select: { id: true, grnNo: true },
-            });
-            if (dupGRN) {
-              autoGRN = { created: false, grnId: dupGRN.id, grnNo: dupGRN.grnNo, reason: `GRN-${dupGRN.grnNo} already open for this PO` };
-            } else {
-              const companyId = pr.companyId;
-              const grnNo = await nextDocNo('GoodsReceipt', 'grnNo', companyId);
-              const grn = await prisma.goodsReceipt.create({
-                data: {
-                  grnNo,
-                  poId: po.id,
-                  vendorId: po.vendorId,
-                  grnDate: new Date(),
-                  grnType: 'EXPECTED',
-                  status: 'PARTIAL',
-                  qualityStatus: 'PENDING',
-                  userId: req.user!.id,
-                  companyId,
-                  totalQty: 0,
-                  totalAmount: 0,
-                  lines: {
-                    create: po.lines.map(l => ({
-                      poLineId: l.id,
-                      inventoryItemId: (l as { inventoryItemId?: string | null }).inventoryItemId || null,
-                      description: l.description,
-                      receivedQty: 0,
-                      acceptedQty: 0,
-                      rejectedQty: 0,
-                      unit: l.unit || 'KG',
-                      rate: l.rate,
-                      amount: 0,
-                    })),
-                  },
-                },
-                select: { id: true, grnNo: true },
-              });
-              autoGRN = { created: true, grnId: grn.id, grnNo: grn.grnNo };
-            }
-          } catch (err) {
-            autoGRN = { created: false, reason: `Auto-GRN failed: ${(err as Error).message}` };
-          }
         }
       }
     } catch (err) {
@@ -509,6 +460,107 @@ router.post('/:id/vendors/:vrId/award', asyncHandler(async (req: AuthRequest, re
     }
 
     res.json({ ...pr, autoPO, autoGRN });
+}));
+
+// POST /:id/vendors/:vrId/confirm-po — promote the DRAFT PO to APPROVED and
+// create a partial GRN so the workflow moves to /store/receipts.
+router.post('/:id/vendors/:vrId/confirm-po', asyncHandler(async (req: AuthRequest, res: Response) => {
+    const vr = await prisma.purchaseRequisitionVendor.findUnique({ where: { id: req.params.vrId } });
+    if (!vr || vr.requisitionId !== req.params.id) return res.status(404).json({ error: 'Quote row not found' });
+    if (!vr.isAwarded) return res.status(400).json({ error: 'This vendor is not the awarded one' });
+
+    const po = await prisma.purchaseOrder.findFirst({
+      where: { requisitionId: req.params.id, status: 'DRAFT' },
+      include: { lines: true },
+    });
+    if (!po) return res.status(404).json({ error: 'No DRAFT PO found for this indent' });
+
+    // 1. Approve the PO
+    await prisma.purchaseOrder.update({
+      where: { id: po.id },
+      data: { status: 'APPROVED', approvedBy: req.user!.id, approvedAt: new Date() },
+    });
+
+    // 2. Create partial GRN (idempotent — skip if one already open)
+    let grnInfo: { grnId: string; grnNo: number } | null = null;
+    const dupGRN = await prisma.goodsReceipt.findFirst({
+      where: { poId: po.id, status: { in: ['DRAFT', 'PARTIAL'] }, archived: false },
+      select: { id: true, grnNo: true },
+    });
+    if (dupGRN) {
+      grnInfo = { grnId: dupGRN.id, grnNo: dupGRN.grnNo };
+    } else {
+      const pr = await prisma.purchaseRequisition.findUnique({ where: { id: req.params.id }, select: { companyId: true } });
+      const grnNo = await nextDocNo('GoodsReceipt', 'grnNo', pr?.companyId ?? null);
+      const grn = await prisma.goodsReceipt.create({
+        data: {
+          grnNo,
+          poId: po.id,
+          vendorId: po.vendorId,
+          grnDate: new Date(),
+          grnType: 'EXPECTED',
+          status: 'PARTIAL',
+          qualityStatus: 'PENDING',
+          userId: req.user!.id,
+          companyId: pr?.companyId ?? null,
+          totalQty: 0,
+          totalAmount: 0,
+          lines: {
+            create: po.lines.map(l => ({
+              poLineId: l.id,
+              inventoryItemId: (l as { inventoryItemId?: string | null }).inventoryItemId || null,
+              description: l.description,
+              receivedQty: 0,
+              acceptedQty: 0,
+              rejectedQty: 0,
+              unit: l.unit || 'KG',
+              rate: l.rate,
+              amount: 0,
+            })),
+          },
+        },
+        select: { id: true, grnNo: true },
+      });
+      grnInfo = { grnId: grn.id, grnNo: grn.grnNo };
+    }
+
+    res.json({ poId: po.id, poNo: po.poNo, grn: grnInfo });
+}));
+
+// POST /:id/vendors/:vrId/cancel-award — undo the award, cancel the DRAFT PO,
+// return the indent to a pre-award state so user can re-quote / pick a
+// different vendor / change rates.
+router.post('/:id/vendors/:vrId/cancel-award', asyncHandler(async (req: AuthRequest, res: Response) => {
+    const vr = await prisma.purchaseRequisitionVendor.findUnique({ where: { id: req.params.vrId } });
+    if (!vr || vr.requisitionId !== req.params.id) return res.status(404).json({ error: 'Quote row not found' });
+
+    // Only safe to undo if there's a DRAFT PO (no goods received, no payments yet)
+    const po = await prisma.purchaseOrder.findFirst({
+      where: { requisitionId: req.params.id, status: { not: 'CANCELLED' } },
+      select: { id: true, poNo: true, status: true },
+    });
+    if (po && po.status !== 'DRAFT') {
+      return res.status(400).json({
+        error: `Cannot cancel — PO #${po.poNo} is already ${po.status}. Cancel from the PO page first.`,
+      });
+    }
+
+    await prisma.$transaction([
+      // Cancel the draft PO if it exists
+      ...(po ? [prisma.purchaseOrder.update({ where: { id: po.id }, data: { status: 'CANCELLED' } })] : []),
+      // Unaward the vendor
+      prisma.purchaseRequisitionVendor.update({
+        where: { id: req.params.vrId },
+        data: { isAwarded: false },
+      }),
+      // Clear the indent's awarded-vendor pointer
+      prisma.purchaseRequisition.update({
+        where: { id: req.params.id },
+        data: { vendorId: null, vendorRate: null, vendorQuotedAt: null, quoteSource: null },
+      }),
+    ]);
+
+    res.json({ ok: true, cancelledPoNo: po?.poNo ?? null });
 }));
 
 // DELETE /:id/vendors/:vrId — remove a vendor quote row
