@@ -9,6 +9,7 @@ import prisma from '../config/prisma';
 import { syncAndListReplies } from './emailService';
 import { notify } from './notify';
 import { sendTelegramMessage } from './telegramBot';
+import { autoExtractIfWaiting } from './rfqAutoExtract';
 
 const POLL_INTERVAL_MS = 5 * 60 * 1000; // 5 minutes
 const TERMINAL_STATUSES = ['REJECTED', 'COMPLETED'];
@@ -103,6 +104,18 @@ async function runOnce(): Promise<void> {
             newCount,
             fromEmail: latest?.fromEmail,
           });
+          // Auto-extract rates IFF still waiting (no rate saved yet). Vendors
+          // send unrelated follow-up emails — those are noise once a rate exists.
+          try {
+            const auto = await autoExtractIfWaiting(t.entityId);
+            if (auto.ran && (auto.savedLineCount || 0) > 0) {
+              console.log(`[rfqReplyPoller] auto-extracted ${auto.savedLineCount}/${auto.totalLines} rates (confidence=${auto.confidence}) for vr=${t.entityId}`);
+            } else if (!auto.ran) {
+              console.log(`[rfqReplyPoller] auto-extract skipped for vr=${t.entityId}: ${auto.reason}`);
+            }
+          } catch (err) {
+            console.error(`[rfqReplyPoller] auto-extract failed for vr=${t.entityId}:`, err);
+          }
         }
       } catch (err) {
         console.error(`[rfqReplyPoller] thread ${t.id} sync failed:`, err);

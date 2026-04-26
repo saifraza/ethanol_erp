@@ -520,9 +520,18 @@ export default function PurchaseRequisition() {
   const loadReplies = async (prId: string, quoteId: string) => {
     setRepliesLoading(true);
     try {
-      const res = await api.get<{ replies: RfqReply[]; count: number; error?: string }>(`/purchase-requisition/${prId}/vendors/${quoteId}/replies`);
+      const res = await api.get<{
+        replies: RfqReply[]; count: number; error?: string;
+        autoExtract?: { savedLineCount?: number; totalLines?: number; confidence?: string; reason?: string } | null;
+      }>(`/purchase-requisition/${prId}/vendors/${quoteId}/replies`);
       setReplies(res.data.replies || []);
       if (res.data.error) console.warn('[rfq]', res.data.error);
+      // Server auto-filled rates from a new reply — refresh list + open panel inputs
+      const auto = res.data.autoExtract;
+      if (auto && (auto.savedLineCount || 0) > 0) {
+        load();
+        if (lineRatesPanelFor === quoteId) loadLineRates(prId, quoteId);
+      }
     } catch (e: unknown) {
       console.error('Replies fetch failed', e);
       setReplies([]);

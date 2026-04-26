@@ -8,6 +8,7 @@ import { renderDocumentPdf } from '../services/documentRenderer';
 import { sendThreadEmail, syncAndListReplies, latestThreadFor } from '../services/emailService';
 import { extractQuoteFromReply } from '../services/rfqQuoteExtractor';
 import { notifyOnNewRfqReply } from '../services/rfqReplyPoller';
+import { autoExtractIfWaiting } from '../services/rfqAutoExtract';
 
 const router = Router();
 router.use(authenticate as any);
@@ -503,11 +504,21 @@ router.get('/:id/vendors/:vrId/replies', asyncHandler(async (req: AuthRequest, r
     if (!thread) return res.json({ replies: [], threadDbId: null, error: 'RFQ email not sent yet' });
 
     const result = await syncAndListReplies(thread.id);
+    let autoExtractInfo: { savedLineCount?: number; totalLines?: number; confidence?: string; reason?: string } | null = null;
     if (result.newCount && result.newCount > 0) {
       const latest = result.replies[result.replies.length - 1];
       await notifyOnNewRfqReply({ vrId: req.params.vrId, newCount: result.newCount, fromEmail: latest?.fromEmail });
+      // Auto-extract IFF still waiting — same guard as the background poller
+      try {
+        const auto = await autoExtractIfWaiting(req.params.vrId);
+        if (auto.ran) autoExtractInfo = { savedLineCount: auto.savedLineCount, totalLines: auto.totalLines, confidence: auto.confidence };
+        else autoExtractInfo = { reason: auto.reason };
+      } catch (err) {
+        console.error('[/replies] auto-extract failed:', err);
+      }
     }
     res.json({
+      autoExtract: autoExtractInfo,
       threadDbId: thread.id,
       replies: result.replies.map(r => ({
         id: r.id,
