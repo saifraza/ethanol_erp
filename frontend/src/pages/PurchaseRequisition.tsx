@@ -557,19 +557,24 @@ export default function PurchaseRequisition() {
   };
 
   const handleAward = async (prId: string, quoteId: string) => {
-    if (!confirm('Award this vendor? A draft PO will be created automatically with the rates you have entered.')) return;
+    if (!confirm('Award this vendor? A PO + draft GRN will be created automatically. You will be taken to Store Receipts to track goods arrival.')) return;
     try {
-      const res = await api.post<{ autoPO?: { created: boolean; poId?: string; poNo?: number; grandTotal?: number; reason?: string } }>(`/purchase-requisition/${prId}/vendors/${quoteId}/award`);
-      const autoPO = res.data.autoPO;
+      const res = await api.post<{
+        autoPO?: { created: boolean; poId?: string; poNo?: number; grandTotal?: number; reason?: string };
+        autoGRN?: { created: boolean; grnId?: string; grnNo?: number; reason?: string };
+      }>(`/purchase-requisition/${prId}/vendors/${quoteId}/award`);
+      const { autoPO, autoGRN } = res.data;
       load();
-      if (autoPO?.created && autoPO.poNo) {
-        if (confirm(`Awarded. Draft PO #${autoPO.poNo} created (₹${(autoPO.grandTotal || 0).toLocaleString('en-IN')}). Open it now?`)) {
-          window.location.href = `/procurement/purchase-orders?expand=${autoPO.poId}`;
-        }
+      if (autoPO?.created && autoGRN?.created) {
+        alert(`Awarded.\nPO #${autoPO.poNo} created (₹${(autoPO.grandTotal || 0).toLocaleString('en-IN')}).\nDraft GRN-${autoGRN.grnNo} ready in Store Receipts — finalize once goods arrive, then upload the vendor invoice.`);
+        window.location.href = `/store/receipts?tab=grns`;
+      } else if (autoPO?.created && !autoGRN?.created) {
+        alert(`Awarded. PO #${autoPO.poNo} created but draft GRN was not: ${autoGRN?.reason || 'unknown reason'}. Open Store Receipts and create one manually.`);
+        window.location.href = `/store/receipts?tab=grns`;
       } else if (autoPO?.poId && autoPO?.poNo) {
-        if (confirm(`Awarded. PO #${autoPO.poNo} already exists for this indent. Open it?`)) {
-          window.location.href = `/procurement/purchase-orders?expand=${autoPO.poId}`;
-        }
+        // Existing PO already there
+        alert(`Awarded. PO #${autoPO.poNo} already exists for this indent. Going to Store Receipts.`);
+        window.location.href = `/store/receipts?tab=grns`;
       } else {
         alert(`Awarded, but PO was not auto-created: ${autoPO?.reason || 'unknown reason'}. Create a PO manually from Procurement Actions.`);
       }

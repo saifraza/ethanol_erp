@@ -78,6 +78,8 @@ export async function sendThreadEmail(args: SendThreadArgs) {
     data: {
       entityType: args.entityType,
       entityId: args.entityId,
+      vendorId: args.vendorId || null,
+      customerId: args.customerId || null,
       subject: args.subject,
       fromEmail: process.env.SMTP_USER || 'noreply@mspil.in',
       fromName: args.fromName || 'MSPIL ERP',

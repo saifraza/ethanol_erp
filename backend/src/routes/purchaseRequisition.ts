@@ -9,6 +9,7 @@ import { sendThreadEmail, syncAndListReplies, latestThreadFor } from '../service
 import { extractQuoteFromReply } from '../services/rfqQuoteExtractor';
 import { notifyOnNewRfqReply } from '../services/rfqReplyPoller';
 import { autoExtractIfWaiting } from '../services/rfqAutoExtract';
+import { nextDocNo } from '../utils/docSequence';
 
 const router = Router();
 router.use(authenticate as any);
@@ -386,8 +387,10 @@ router.post('/:id/vendors/:vrId/award', asyncHandler(async (req: AuthRequest, re
       await prisma.vendorItem.updateMany({ where: { inventoryItemId, vendorId: row.vendorId }, data: { isPreferred: true } });
     }
 
-    // ── Auto-create a draft PO ──
+    // ── Auto-create an APPROVED PO + partial GRN so the workflow continues ──
+    // Saif's flow: award → PO + draft/partial GRN visible in /store/receipts → goods arrive → finalize → upload invoice.
     let autoPO: { created: boolean; poId?: string; poNo?: number; grandTotal?: number; reason?: string } = { created: false };
+    let autoGRN: { created: boolean; grnId?: string; grnNo?: number; reason?: string } = { created: false };
     try {
       const existing = await prisma.purchaseOrder.findFirst({
         where: { requisitionId: req.params.id, status: { not: 'CANCELLED' } },
@@ -444,14 +447,66 @@ router.post('/:id/vendors/:vrId/award', asyncHandler(async (req: AuthRequest, re
             paymentTerms: vendor?.paymentTerms || undefined,
             creditDays: vendor?.creditDays || 30,
           });
+          // Auto-approve so partial GRN can be created (skips DRAFT review step)
+          await prisma.purchaseOrder.update({
+            where: { id: po.id },
+            data: { status: 'APPROVED' },
+          });
           autoPO = { created: true, poId: po.id, poNo: po.poNo, grandTotal: po.grandTotal };
+
+          // Auto-create a partial GRN (status=PARTIAL, qty=0) so the indent
+          // immediately shows up in /store/receipts as "awaiting material".
+          try {
+            const dupGRN = await prisma.goodsReceipt.findFirst({
+              where: { poId: po.id, status: { in: ['DRAFT', 'PARTIAL'] }, archived: false },
+              select: { id: true, grnNo: true },
+            });
+            if (dupGRN) {
+              autoGRN = { created: false, grnId: dupGRN.id, grnNo: dupGRN.grnNo, reason: `GRN-${dupGRN.grnNo} already open for this PO` };
+            } else {
+              const companyId = pr.companyId;
+              const grnNo = await nextDocNo('GoodsReceipt', 'grnNo', companyId);
+              const grn = await prisma.goodsReceipt.create({
+                data: {
+                  grnNo,
+                  poId: po.id,
+                  vendorId: po.vendorId,
+                  grnDate: new Date(),
+                  grnType: 'EXPECTED',
+                  status: 'PARTIAL',
+                  qualityStatus: 'PENDING',
+                  userId: req.user!.id,
+                  companyId,
+                  totalQty: 0,
+                  totalAmount: 0,
+                  lines: {
+                    create: po.lines.map(l => ({
+                      poLineId: l.id,
+                      inventoryItemId: (l as { inventoryItemId?: string | null }).inventoryItemId || null,
+                      description: l.description,
+                      receivedQty: 0,
+                      acceptedQty: 0,
+                      rejectedQty: 0,
+                      unit: l.unit || 'KG',
+                      rate: l.rate,
+                      amount: 0,
+                    })),
+                  },
+                },
+                select: { id: true, grnNo: true },
+              });
+              autoGRN = { created: true, grnId: grn.id, grnNo: grn.grnNo };
+            }
+          } catch (err) {
+            autoGRN = { created: false, reason: `Auto-GRN failed: ${(err as Error).message}` };
+          }
         }
       }
     } catch (err) {
       autoPO = { created: false, reason: `Auto-PO failed: ${(err as Error).message}` };
     }
 
-    res.json({ ...pr, autoPO });
+    res.json({ ...pr, autoPO, autoGRN });
 }));
 
 // DELETE /:id/vendors/:vrId — remove a vendor quote row
