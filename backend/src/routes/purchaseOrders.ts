@@ -818,9 +818,13 @@ router.get('/:id/pdf', asyncHandler(async (req: AuthRequest, res: Response) => {
         .map((k) => termByKey(k))
         .filter((t): t is NonNullable<ReturnType<typeof termByKey>> => !!t)
         .map((t) => ({ group: t.group, label: t.label })),
-      // Flat list of GRN receipts against this PO — same view as OPEN-PO lines, now for all POs
+      // Flat list of GRN receipts against this PO. Hide the placeholder
+      // partial GRN that's auto-created on Confirm PO (qty=0) — that row
+      // is just a "waiting for goods" marker, not a real receipt, and it
+      // confused vendors when it appeared on the PO PDF.
       grns: (po.grns || [])
         .filter((g: any) => g.status !== 'CANCELLED')
+        .filter((g: any) => (g.lines || []).some((l: any) => (l.receivedQty || 0) > 0 || (l.acceptedQty || 0) > 0 || (l.rejectedQty || 0) > 0))
         .slice()
         .sort((a: any, b: any) => new Date(a.grnDate).getTime() - new Date(b.grnDate).getTime())
         .flatMap((g: any) =>
@@ -839,13 +843,15 @@ router.get('/:id/pdf', asyncHandler(async (req: AuthRequest, res: Response) => {
           }))
         ),
       grnTotals: (() => {
-        const nonCancelled = (po.grns || []).filter((g: any) => g.status !== 'CANCELLED');
-        const totalQty = nonCancelled.reduce((s: number, g: any) =>
+        const real = (po.grns || [])
+          .filter((g: any) => g.status !== 'CANCELLED')
+          .filter((g: any) => (g.lines || []).some((l: any) => (l.receivedQty || 0) > 0 || (l.acceptedQty || 0) > 0 || (l.rejectedQty || 0) > 0));
+        const totalQty = real.reduce((s: number, g: any) =>
           s + (g.lines || []).reduce((ls: number, l: any) => ls + (l.acceptedQty || 0), 0), 0);
-        const totalAmt = nonCancelled.reduce((s: number, g: any) =>
+        const totalAmt = real.reduce((s: number, g: any) =>
           s + (g.lines || []).reduce((ls: number, l: any) => ls + (l.amount || 0), 0), 0);
         return {
-          count: nonCancelled.length,
+          count: real.length,
           qty: Math.round(totalQty * 100) / 100,
           amount: Math.round(totalAmt * 100) / 100,
         };

@@ -399,16 +399,21 @@ router.post('/:id/vendors/:vrId/award', asyncHandler(async (req: AuthRequest, re
       if (existing) {
         autoPO = { created: false, poId: existing.id, poNo: existing.poNo, reason: `PO #${existing.poNo} already exists for this indent` };
       } else {
-        // Per-line rates if available, header rate as fallback
+        // Per-line rate / GST / HSN if available, header rate as fallback.
+        // HSN from the vendor quote (AI-extracted from the reply PDF) takes
+        // priority over the InventoryItem master so the PO mirrors what the
+        // vendor invoiced — same HSN flows PO → GRN → Vendor Invoice.
         let lineRateMap = new Map<string, number>();
         let lineGstMap = new Map<string, number>();
+        let lineHsnMap = new Map<string, string>();
         try {
           const rates = await prisma.purchaseRequisitionVendorLine.findMany({
             where: { vendorQuoteId: req.params.vrId },
-            select: { requisitionLineId: true, unitRate: true, gstPercent: true },
+            select: { requisitionLineId: true, unitRate: true, gstPercent: true, hsnCode: true },
           });
           lineRateMap = new Map(rates.filter(r => r.unitRate != null && r.unitRate > 0).map(r => [r.requisitionLineId, r.unitRate as number]));
           lineGstMap = new Map(rates.filter(r => r.gstPercent != null).map(r => [r.requisitionLineId, r.gstPercent as number]));
+          lineHsnMap = new Map(rates.filter(r => r.hsnCode && r.hsnCode.trim()).map(r => [r.requisitionLineId, (r.hsnCode as string).trim()]));
         } catch { /* per-line table missing — fall back to header rate for every line */ }
 
         // Build PO lines from indent lines. Free-text items without an
@@ -418,10 +423,11 @@ router.post('/:id/vendors/:vrId/award', asyncHandler(async (req: AuthRequest, re
           .map(l => {
             const rate = lineRateMap.get(l.id) ?? row.vendorRate ?? 0;
             const gst = lineGstMap.get(l.id) ?? l.inventoryItem?.gstPercent ?? 18;
+            const hsn = lineHsnMap.get(l.id) ?? l.inventoryItem?.hsnCode ?? undefined;
             return rate > 0 ? {
               inventoryItemId: l.inventoryItemId,
               description: l.itemName,
-              hsnCode: l.inventoryItem?.hsnCode || undefined,
+              hsnCode: hsn,
               quantity: l.quantity,
               unit: l.inventoryItem?.unit || l.unit,
               rate,
@@ -462,6 +468,19 @@ router.post('/:id/vendors/:vrId/award', asyncHandler(async (req: AuthRequest, re
     res.json({ ...pr, autoPO, autoGRN });
 }));
 
+// Generate next ITM-NNNNN code for auto-created items. Mirrors the
+// helper in inventory.ts (kept inline to avoid a cross-file import cycle).
+async function generateNextItemCode(): Promise<string> {
+  const last = await prisma.inventoryItem.findFirst({
+    where: { code: { startsWith: 'ITM-' } },
+    orderBy: { code: 'desc' },
+    select: { code: true },
+  });
+  if (!last) return 'ITM-00001';
+  const num = parseInt(last.code.replace('ITM-', ''), 10);
+  return `ITM-${String((Number.isFinite(num) ? num : 0) + 1).padStart(5, '0')}`;
+}
+
 // POST /:id/vendors/:vrId/confirm-po — promote the DRAFT PO to APPROVED and
 // create a partial GRN so the workflow moves to /store/receipts.
 router.post('/:id/vendors/:vrId/confirm-po', asyncHandler(async (req: AuthRequest, res: Response) => {
@@ -481,6 +500,81 @@ router.post('/:id/vendors/:vrId/confirm-po', asyncHandler(async (req: AuthReques
       data: { status: 'APPROVED', approvedBy: req.user!.id, approvedAt: new Date() },
     });
 
+    // 1a. Materialise free-text PO lines into InventoryItem + link the
+    // VendorItem master so this vendor↔item↔rate is remembered for next
+    // indent. Without this, every typo'd item stays orphaned: the PO PDF
+    // is fine but the Item Master / vendor history never gets populated.
+    const pr = await prisma.purchaseRequisition.findUnique({
+      where: { id: req.params.id },
+      select: { companyId: true, lines: { select: { id: true, itemName: true, inventoryItemId: true, unit: true } } },
+    });
+    const prLineByName = new Map(
+      (pr?.lines || [])
+        .filter(l => !l.inventoryItemId)
+        .map(l => [l.itemName.trim().toLowerCase(), l]),
+    );
+
+    for (const line of po.lines) {
+      if (line.inventoryItemId) continue; // already linked to master
+      const desc = (line.description || '').trim();
+      if (!desc) continue;
+
+      // Reuse an existing item with the same name (case-insensitive) before
+      // creating a new one — avoids duplicate "Bearing 6204" / "BEARING 6204".
+      let itemId: string;
+      const existing = await prisma.inventoryItem.findFirst({
+        where: {
+          name: { equals: desc, mode: 'insensitive' },
+          companyId: pr?.companyId ?? null,
+        },
+        select: { id: true },
+      });
+
+      if (existing) {
+        itemId = existing.id;
+      } else {
+        const newItem = await prisma.inventoryItem.create({
+          data: {
+            name: desc,
+            code: await generateNextItemCode(),
+            category: 'CONSUMABLE',
+            unit: line.unit || 'nos',
+            hsnCode: line.hsnCode || null,
+            gstPercent: line.gstPercent || 18,
+            defaultRate: line.rate || 0,
+            companyId: pr?.companyId ?? null,
+            remarks: `Auto-created from Indent #${req.params.id} on PO confirm`,
+          },
+          select: { id: true },
+        });
+        itemId = newItem.id;
+      }
+
+      // Backfill the PO line so the GRN we create next picks up the FK.
+      await prisma.pOLine.update({ where: { id: line.id }, data: { inventoryItemId: itemId } });
+      (line as { inventoryItemId?: string | null }).inventoryItemId = itemId;
+
+      // Backfill the indent line too — next time someone types the same
+      // free-text, it auto-resolves to this master row.
+      const prLine = prLineByName.get(desc.toLowerCase());
+      if (prLine) {
+        await prisma.purchaseRequisitionLine.update({ where: { id: prLine.id }, data: { inventoryItemId: itemId } });
+      }
+
+      // Link vendor ↔ item with this rate, mark preferred so future indents
+      // for the same item auto-pick this vendor.
+      await prisma.vendorItem.upsert({
+        where: { vendorId_inventoryItemId: { vendorId: po.vendorId, inventoryItemId: itemId } },
+        update: { rate: line.rate || 0, isPreferred: true, isActive: true, updatedAt: new Date() },
+        create: { vendorId: po.vendorId, inventoryItemId: itemId, rate: line.rate || 0, isPreferred: true, isActive: true },
+      });
+      // Other vendors for the same item lose preferred so only one stays preferred.
+      await prisma.vendorItem.updateMany({
+        where: { inventoryItemId: itemId, vendorId: { not: po.vendorId } },
+        data: { isPreferred: false },
+      });
+    }
+
     // 2. Create partial GRN (idempotent — skip if one already open)
     let grnInfo: { grnId: string; grnNo: number } | null = null;
     const dupGRN = await prisma.goodsReceipt.findFirst({
@@ -490,7 +584,6 @@ router.post('/:id/vendors/:vrId/confirm-po', asyncHandler(async (req: AuthReques
     if (dupGRN) {
       grnInfo = { grnId: dupGRN.id, grnNo: dupGRN.grnNo };
     } else {
-      const pr = await prisma.purchaseRequisition.findUnique({ where: { id: req.params.id }, select: { companyId: true } });
       const grnNo = await nextDocNo('GoodsReceipt', 'grnNo', pr?.companyId ?? null);
       const grn = await prisma.goodsReceipt.create({
         data: {
