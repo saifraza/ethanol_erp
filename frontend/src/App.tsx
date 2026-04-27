@@ -87,6 +87,11 @@ const HrSalaryStructure = React.lazy(() => import('./pages/hr/SalaryStructure'))
 const HrPayroll = React.lazy(() => import('./pages/hr/Payroll'));
 const HrPayrollDashboard = React.lazy(() => import('./pages/hr/PayrollDashboard'));
 const HrPayToday = React.lazy(() => import('./pages/hr/PayToday'));
+const HrTaxDeclarations = React.lazy(() => import('./pages/hr/TaxDeclarations'));
+const HrTdsReport = React.lazy(() => import('./pages/hr/TdsReport'));
+const HrForm16 = React.lazy(() => import('./pages/hr/Form16'));
+const HrImportSalary = React.lazy(() => import('./pages/hr/ImportSalary'));
+const HrPayrollHub = React.lazy(() => import('./pages/hr/PayrollHub'));
 
 const PurchaseRequisition = React.lazy(() => import('./pages/PurchaseRequisition'));
 // Sales & Distribution
@@ -250,8 +255,14 @@ export default function App() {
         <Route path="hr/designations" element={<HrDesignations />} />
         <Route path="hr/org-chart" element={<HrOrgChart />} />
         <Route path="hr/salary-structure" element={<HrSalaryStructure />} />
-        <Route path="hr/payroll" element={<HrPayroll />} />
-        <Route path="hr/pay-today" element={<HrPayToday />} />
+        <Route path="hr/payroll" element={<HrPayrollHub />}>
+          <Route index element={<HrPayroll />} />
+          <Route path="pay-today" element={<HrPayToday />} />
+          <Route path="import" element={<HrImportSalary />} />
+          <Route path="declarations" element={<HrTaxDeclarations />} />
+          <Route path="tds" element={<HrTdsReport />} />
+          <Route path="form-16" element={<HrForm16 />} />
+        </Route>
         <Route path="purchase-requisition" element={<Navigate to="/inventory/indents" replace />} />
         {/* Sales & Distribution */}
         <Route path="sales/customers" element={<Customers />} />

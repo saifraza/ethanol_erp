@@ -125,7 +125,7 @@ export default function Payroll() {
             <span className="text-[10px] text-slate-400">|</span>
             <span className="text-[10px] text-slate-400">{sortedRuns.length} total · workflow: DRAFT → COMPUTED → APPROVED → PAID</span>
           </div>
-          <a href="/hr/pay-today" className="px-3 py-1 bg-emerald-600 text-white text-[11px] font-bold uppercase tracking-widest hover:bg-emerald-700">Pay Today →</a>
+          <span className="text-[10px] text-slate-400">Compute → Approve → Pay (use Pay Today tab)</span>
         </div>
 
         {/* Create new run bar */}

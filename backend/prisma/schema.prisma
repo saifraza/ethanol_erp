@@ -68,6 +68,7 @@ model Company {
   invoiceSeries         InvoiceSeries[]
   fiscalYears           FiscalYear[]
   payrollRuns           PayrollRun[]
+  tdsChallans           TdsChallan[]
   shipments             Shipment[]
   dispatchRequests      DispatchRequest[]
   ethanolContracts      EthanolContract[]
@@ -4615,6 +4616,14 @@ model Employee {
   declaredOther   Float @default(0)
   rentPaidMonthly Float @default(0)
 
+  // Salary sheet category (matches MSPIL Excel structure: SENIOR/PF/NPF/DIRECTOR/etc.)
+  payCategory   String? // SENIOR | PF | NPF | DIRECTOR | SEASONAL | CONTRACT
+  defaultPayMode String @default("BANK") // CASH | BANK — main payout channel
+
+  // Reference to original Excel section/department string (for migration trace)
+  excelSection String?
+  excelSourceFile String?
+
   // Status
   status   String  @default("ACTIVE") // ACTIVE, ON_NOTICE, RELIEVED, ABSCONDING, TERMINATED
   isActive Boolean @default(true)
@@ -4747,6 +4756,27 @@ model PayrollLine {
   edliWages  Float @default(0) // min(pfWages, 15000)
   ncpDays    Int   @default(0)
 
+  // Day-level tracking (matches MSPIL salary sheet format)
+  workingDays   Int   @default(0)
+  presentDays   Int   @default(0)
+  holidayDays   Int   @default(0)
+  holidayAmount Float @default(0) // EWA = (basic+conv+med)/working * holiday
+  ewDays        Int   @default(0) // Extra Work days
+  ewAmount      Float @default(0)
+
+  // Detailed deductions (separated from `totalDeductions`)
+  advanceDeduction Float @default(0)
+  otherDeduction   Float @default(0)
+
+  // Extra pays — one-off / reimbursement (in addition to regular salary)
+  additionalAmount Float   @default(0) // From "Additional" sheet (senior staff)
+  additionalNote   String?
+  petrolAmount     Float   @default(0) // Cane Petrol reimbursement
+  mobileAllowance  Float   @default(0) // Cane Mobile reimbursement
+
+  // Source / category for filtering & reports
+  category String @default("REGULAR") // REGULAR | SENIOR | PF | NPF | DIRECTOR | SEASONAL | CONTRACT
+
   status    String   @default("COMPUTED") // COMPUTED, APPROVED, PAID, HOLD
   remarks   String?
   createdAt DateTime @default(now())
@@ -4757,6 +4787,7 @@ model PayrollLine {
   @@unique([payrollRunId, employeeId])
   @@index([payrollRunId])
   @@index([employeeId])
+  @@index([category])
 }
 
 model PayrollLineComponent {
@@ -4770,6 +4801,45 @@ model PayrollLineComponent {
 
   @@unique([payrollLineId, componentId])
   @@index([payrollLineId])
+}
+
+// ── TDS Challan (Section 192 — Salary TDS deposit to govt) ────
+// Each row = one ITNS-281 challan deposit covering payroll TDS for a month/quarter.
+// Forms the link between monthly TDS deducted and quarterly Form 24Q filing.
+model TdsChallan {
+  id              String    @id @default(cuid())
+  fyCode          String // "2026-27"
+  quarter         Int // 1=Apr-Jun, 2=Jul-Sep, 3=Oct-Dec, 4=Jan-Mar
+  month           Int // 1-12 calendar month for which TDS was deducted
+  year            Int
+  section         String    @default("192") // 192 (salary), 192A, 194, etc.
+  challanNo       String // BSR receipt no (CIN)
+  bsrCode         String // 7-digit BSR code of bank branch
+  depositDate     DateTime
+  amount          Float // tax + interest + others
+  taxAmount       Float     @default(0)
+  surcharge       Float     @default(0)
+  cess            Float     @default(0)
+  interest        Float     @default(0)
+  penalty         Float     @default(0)
+  others          Float     @default(0)
+  paymentMode     String    @default("ONLINE") // ONLINE | OTC_CHEQUE | OTC_CASH
+  bankName        String?
+  remarks         String?
+  filedInForm24Q  Boolean   @default(false)
+  filedQuarter    Int? // which Form 24Q quarter this challan was reported in
+  filedFy         String?
+  filedAt         DateTime?
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+  userId          String?
+  companyId       String? // FK → Company (null = MSPIL default)
+  company         Company?  @relation(fields: [companyId], references: [id])
+
+  @@unique([challanNo, bsrCode, depositDate])
+  @@index([fyCode, quarter])
+  @@index([month, year])
+  @@index([companyId])
 }
 
 // ── GST Reconciliation (2A / 2B) ────────────────────────────
