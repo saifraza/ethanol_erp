@@ -29,7 +29,7 @@ FEEDER_TAGS = [
 ]
 FURNACE_TAG    = "#/R1C2I2_M"
 PRESSURE_TAG   = "#/R1C1I4_M"
-STEAM_FLOW_TAG = "#/R1C4I5_M"
+STEAM_FLOW_TAG = "#/R2C2I1_M"  # corrected 2026-04-27 — R1C4I5 was mislabeled
 
 MIN_STEAM_FLOW_TPH    = 20.0
 FURNACE_LOW_C         = 550.0
