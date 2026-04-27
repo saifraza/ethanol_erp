@@ -102,8 +102,10 @@ async function fire(c: {
   pressureNow?: number; pressureDrop: number;
 }): Promise<void> {
   const settings = await prisma.settings.findFirst();
+  // Boiler-specific group preferred; fall back to primary group if unset
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const groupChatId = (settings as any)?.telegramGroupChatId as string | undefined;
+  const s = settings as any;
+  const groupChatId = (s?.telegramBoilerChatId || s?.telegramGroupChatId) as string | undefined;
   if (!groupChatId) return;
 
   const istNow = new Date(Date.now() + 5.5 * 3600 * 1000)

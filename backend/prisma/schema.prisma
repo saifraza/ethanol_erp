@@ -189,6 +189,8 @@ model Settings {
   telegramGroupName      String? // Group name (display only)
   telegramGroup2ChatId   String? // Secondary group chat ID
   telegramGroup2Name     String? // Group 2 name (display only)
+  telegramBoilerChatId   String? // Boiler-specific alarm group (sugar plant fuel-starvation alerts)
+  telegramBoilerName     String? // Boiler group name (display only)
   telegramPrivateChatIds String? // Comma-separated private chat IDs
   telegramModuleRouting  String? // JSON: { "module": "group1"|"group2"|"private" }
   // WhatsApp (outbound push via Baileys worker)
