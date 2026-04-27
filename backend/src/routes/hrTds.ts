@@ -59,10 +59,11 @@ function fyStartYearFromCode(fyCode: string): number {
 // GET /declarations — employee tax declarations + projected TDS
 // ════════════════════════════════════════════════════════════
 router.get('/declarations', asyncHandler(async (req: AuthRequest, res: Response) => {
-  const { search, regime, division } = req.query;
+  const { search, regime, division, season } = req.query;
   const where: any = { isActive: true, status: 'ACTIVE', ...getCompanyFilter(req) };
   if (regime) where.taxRegime = regime;
   if (division) where.division = division;
+  if (season) where.seasonalStatus = season;
   if (search) {
     const s = search as string;
     where.OR = [
@@ -81,6 +82,7 @@ router.get('/declarations', asyncHandler(async (req: AuthRequest, res: Response)
       id: true, empCode: true, firstName: true, lastName: true, pan: true, division: true,
       ctcAnnual: true, basicMonthly: true, taxRegime: true, epfApplicable: true,
       declared80C: true, declared80D: true, declaredHRA: true, declaredOther: true, rentPaidMonthly: true,
+      seasonalStatus: true,
       department: { select: { name: true } },
       designation: { select: { title: true } },
     },
@@ -117,6 +119,7 @@ router.get('/declarations', asyncHandler(async (req: AuthRequest, res: Response)
       division: emp.division,
       department: emp.department?.name || null,
       designation: emp.designation?.title || null,
+      seasonalStatus: emp.seasonalStatus,
       ctcAnnual: emp.ctcAnnual,
       taxRegime: emp.taxRegime,
       declared80C: emp.declared80C,

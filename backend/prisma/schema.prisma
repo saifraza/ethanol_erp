@@ -4620,6 +4620,9 @@ model Employee {
   payCategory   String? // SENIOR | PF | NPF | DIRECTOR | SEASONAL | CONTRACT
   defaultPayMode String @default("BANK") // CASH | BANK — main payout channel
 
+  // Seasonal employment status (sugar industry — crushing-season vs year-round)
+  seasonalStatus String? // SEASONAL | OFF_SEASONAL
+
   // Reference to original Excel section/department string (for migration trace)
   excelSection String?
   excelSourceFile String?

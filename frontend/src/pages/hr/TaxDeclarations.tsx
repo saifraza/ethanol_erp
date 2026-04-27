@@ -10,6 +10,7 @@ interface Declaration {
   division: string;
   department: string | null;
   designation: string | null;
+  seasonalStatus: string | null;
   ctcAnnual: number;
   taxRegime: 'NEW' | 'OLD';
   declared80C: number;
@@ -72,6 +73,7 @@ export default function TaxDeclarations() {
   const [search, setSearch] = useState('');
   const [regimeFilter, setRegimeFilter] = useState('');
   const [divisionFilter, setDivisionFilter] = useState('');
+  const [seasonFilter, setSeasonFilter] = useState('');
 
   const [editingId, setEditingId] = useState<string | null>(null);
   const [edit, setEdit] = useState({
@@ -90,6 +92,7 @@ export default function TaxDeclarations() {
       if (search) params.search = search;
       if (regimeFilter) params.regime = regimeFilter;
       if (divisionFilter) params.division = divisionFilter;
+      if (seasonFilter) params.season = seasonFilter;
       const res = await api.get('/hr/tds/declarations', { params });
       setList(res.data.employees || []);
       setTotals(res.data.totals);
@@ -98,7 +101,7 @@ export default function TaxDeclarations() {
     } finally {
       setLoading(false);
     }
-  }, [search, regimeFilter, divisionFilter]);
+  }, [search, regimeFilter, divisionFilter, seasonFilter]);
 
   useEffect(() => { load(); }, [load]);
 
@@ -212,6 +215,14 @@ export default function TaxDeclarations() {
               <option value="COMMON">Common</option>
             </select>
           </div>
+          <div>
+            <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-0.5">Season</label>
+            <select value={seasonFilter} onChange={e => setSeasonFilter(e.target.value)} className="border border-slate-300 px-2.5 py-1.5 text-xs focus:outline-none focus:ring-1 focus:ring-blue-500">
+              <option value="">All</option>
+              <option value="OFF_SEASONAL">Off-Seasonal (year-round)</option>
+              <option value="SEASONAL">Seasonal (crushing)</option>
+            </select>
+          </div>
         </div>
 
         {/* Table */}
@@ -223,7 +234,7 @@ export default function TaxDeclarations() {
           ) : (
             <table className="w-full text-xs">
               <thead><tr className="bg-slate-800 text-white">
-                {['Emp #', 'Name / Dept', 'Division', 'PAN', 'Regime', 'CTC', '80C', '80D', 'HRA', 'Rent/mo', 'Other', 'Annual Tax', 'Monthly TDS', 'Actions'].map(h => (
+                {['Emp #', 'Name / Dept', 'Division', 'Season', 'PAN', 'Regime', 'CTC', '80C', '80D', 'HRA', 'Rent/mo', 'Other', 'Annual Tax', 'Monthly TDS', 'Actions'].map(h => (
                   <th key={h} className="px-2 py-2 font-semibold text-[10px] uppercase tracking-widest border-r border-slate-700 text-left last:border-r-0 last:text-right">{h}</th>
                 ))}
               </tr></thead>
@@ -241,6 +252,15 @@ export default function TaxDeclarations() {
                         </td>
                         <td className="px-2 py-1 border-r border-slate-100">
                           <span className={`text-[9px] font-bold uppercase px-1 py-0.5 border ${DIVISION_BADGE[e.division] || 'border-slate-300'}`}>{e.division}</span>
+                        </td>
+                        <td className="px-2 py-1 border-r border-slate-100">
+                          {e.seasonalStatus === 'SEASONAL' ? (
+                            <span className="text-[9px] font-bold uppercase px-1 py-0.5 border border-orange-400 bg-orange-50 text-orange-700">SEASONAL</span>
+                          ) : e.seasonalStatus === 'OFF_SEASONAL' ? (
+                            <span className="text-[9px] font-bold uppercase px-1 py-0.5 border border-emerald-400 bg-emerald-50 text-emerald-700">OFF-SEAS</span>
+                          ) : (
+                            <span className="text-[9px] text-slate-400">—</span>
+                          )}
                         </td>
                         <td className="px-2 py-1 font-mono border-r border-slate-100">
                           {isEditing ? (
@@ -307,7 +327,7 @@ export default function TaxDeclarations() {
                       </tr>
                       {isProj && (
                         <tr key={`${e.id}-proj`}>
-                          <td colSpan={14} className="p-0 bg-slate-50 border-b border-slate-300">
+                          <td colSpan={15} className="p-0 bg-slate-50 border-b border-slate-300">
                             {projLoading || !proj ? (
                               <div className="px-3 py-6 text-center text-xs text-slate-400 uppercase tracking-widest">Loading projection...</div>
                             ) : (

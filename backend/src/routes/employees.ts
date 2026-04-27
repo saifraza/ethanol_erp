@@ -156,6 +156,7 @@ router.post('/', asyncHandler(async (req: AuthRequest, res: Response) => {
       skillCategory: b.skillCategory || null,
       shiftPattern: b.shiftPattern || null,
       workLocation: b.workLocation || 'FACTORY',
+      seasonalStatus: b.seasonalStatus || null,
       ctcAnnual: b.ctcAnnual ? parseFloat(b.ctcAnnual) : 0,
       basicMonthly: b.basicMonthly ? parseFloat(b.basicMonthly) : 0,
       epfApplicable: b.epfApplicable !== false,
@@ -188,7 +189,7 @@ router.put('/:id', asyncHandler(async (req: AuthRequest, res: Response) => {
     'aadhaar', 'pan', 'passportNo', 'uan', 'pfMemberNo', 'previousPfNo', 'esicNo',
     'pfNomineeName', 'pfNomineeRelation', 'bankName', 'bankBranch', 'bankAccount', 'bankIfsc',
     'designationId', 'departmentId', 'reportingToId', 'contractorId', 'contractRefNo',
-    'employmentType', 'skillCategory', 'shiftPattern', 'workLocation', 'taxRegime', 'status', 'remarks',
+    'employmentType', 'skillCategory', 'shiftPattern', 'workLocation', 'seasonalStatus', 'taxRegime', 'status', 'remarks',
   ];
   for (const f of stringFields) {
     if (b[f] !== undefined) data[f] = b[f] || null;

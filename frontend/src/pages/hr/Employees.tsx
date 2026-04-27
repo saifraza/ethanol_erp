@@ -55,6 +55,7 @@ interface Employee {
   skillCategory: string | null;
   shiftPattern: string | null;
   workLocation: string | null;
+  seasonalStatus?: string | null;
   contractorId: string | null;
   contractor: ContractorRef | null;
   contractStartDate: string | null;
@@ -101,7 +102,7 @@ const emptyForm = {
   pfNomineeName: '', pfNomineeRelation: '', pfNomineeDob: '', pfNomineeShare: '',
   bankName: '', bankBranch: '', bankAccount: '', bankIfsc: '',
   designationId: '', departmentId: '', reportingToId: '', dateOfJoining: '', confirmationDate: '', dateOfLeaving: '',
-  employmentType: 'PERMANENT', skillCategory: '', shiftPattern: '', workLocation: '',
+  employmentType: 'PERMANENT', skillCategory: '', shiftPattern: '', workLocation: '', seasonalStatus: '',
   contractorId: '', contractStartDate: '', contractEndDate: '', contractRefNo: '', dailyWageRate: '',
   ctcAnnual: '', taxRegime: 'NEW', epfApplicable: true, epfOnActualBasic: false,
   esiApplicable: false, ptApplicable: true, declared80C: '', declared80D: '', declaredOther: '', rentPaidMonthly: '',
@@ -200,6 +201,7 @@ export default function Employees() {
       skillCategory: emp.skillCategory || '',
       shiftPattern: emp.shiftPattern || '',
       workLocation: emp.workLocation || '',
+      seasonalStatus: emp.seasonalStatus || '',
       contractorId: emp.contractorId || '',
       contractStartDate: emp.contractStartDate ? emp.contractStartDate.slice(0, 10) : '',
       contractEndDate: emp.contractEndDate ? emp.contractEndDate.slice(0, 10) : '',
@@ -269,6 +271,7 @@ export default function Employees() {
         skillCategory: form.skillCategory || null,
         shiftPattern: form.shiftPattern || null,
         workLocation: form.workLocation || null,
+        seasonalStatus: form.seasonalStatus || null,
         contractorId: form.contractorId || null,
         contractStartDate: form.contractStartDate || null,
         contractEndDate: form.contractEndDate || null,
@@ -549,6 +552,14 @@ export default function Employees() {
               <select className={inputCls} value={form.workLocation} onChange={e => set('workLocation', e.target.value)}>
                 <option value="">-- Select --</option>
                 {WORK_LOCATIONS.map(w => <option key={w} value={w}>{w}</option>)}
+              </select>
+            </div>
+            <div>
+              <label className={labelCls}>Season Status</label>
+              <select className={inputCls} value={form.seasonalStatus || ''} onChange={e => set('seasonalStatus', e.target.value)}>
+                <option value="">— Not specified —</option>
+                <option value="OFF_SEASONAL">Off-Seasonal (year-round / permanent)</option>
+                <option value="SEASONAL">Seasonal (crushing season only)</option>
               </select>
             </div>
           </div>
