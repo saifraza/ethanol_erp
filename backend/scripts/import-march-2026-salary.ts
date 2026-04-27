@@ -403,9 +403,9 @@ const COMPONENT_CODES = [
   if (COMMIT) {
     const existing = await prisma.payrollRun.findUnique({ where: { month_year: { month: RUN_MONTH, year: RUN_YEAR } } });
     if (existing) {
-      console.log(`    Existing run found (status=${existing.status}); deleting old lines…`);
-      await prisma.payrollLineComponent.deleteMany({ where: { payrollLine: { payrollRunId: existing.id } } });
-      await prisma.payrollLine.deleteMany({ where: { payrollRunId: existing.id } });
+      const existingLines = await prisma.payrollLine.count({ where: { payrollRunId: existing.id } });
+      // Resume mode: keep partial state, only fill in missing employees
+      console.log(`    Existing run found (status=${existing.status}, ${existingLines} lines); resuming…`);
       runId = existing.id;
     } else {
       const run = await prisma.payrollRun.create({
@@ -424,11 +424,19 @@ const COMPONENT_CODES = [
   let totalGross = 0, totalDed = 0, totalNet = 0, totalTds = 0, totalPf = 0, totalAdv = 0;
   let linesWritten = 0;
 
+  // Dedupe: two name spellings can map to the same DB employee.
+  // Group source rows by empId so we get ONE PayrollLine per employee
+  // even if Excel has the same person under two slightly-different names.
+  const rowsByEmpId: Record<string, SalaryRow[]> = {};
   for (const key in empRows) {
     const empId = empIdByName[key];
     if (!empId || empId.startsWith('__NEW_')) continue; // dry-run doesn't write
+    if (!rowsByEmpId[empId]) rowsByEmpId[empId] = [];
+    rowsByEmpId[empId].push(...empRows[key]);
+  }
 
-    const empSrcRows = empRows[key];
+  for (const empId in rowsByEmpId) {
+    const empSrcRows = rowsByEmpId[empId];
     // Pick "primary" row (largest totalSalary OR first non-additional/cane)
     const main = empSrcRows
       .filter(r => r.category === 'SENIOR' || r.category === 'PF' || r.category === 'NPF')
@@ -463,6 +471,21 @@ const COMPONENT_CODES = [
     const bankAmount = isCash ? 0 : netPay;
 
     if (COMMIT) {
+      // Resume-safe: skip if line already exists (handles connection-drop restart)
+      const existingLine = await prisma.payrollLine.findUnique({
+        where: { payrollRunId_employeeId: { payrollRunId: runId, employeeId: empId } },
+        select: { id: true },
+      });
+      if (existingLine) {
+        totalGross += grossEarnings;
+        totalDed += totalDeductions;
+        totalNet += netPay;
+        totalTds += tds;
+        totalPf += epfEmployee;
+        totalAdv += advanceDeduction;
+        linesWritten++;
+        continue;
+      }
       const line = await prisma.payrollLine.create({
         data: {
           payrollRunId: runId,

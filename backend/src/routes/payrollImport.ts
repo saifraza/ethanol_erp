@@ -403,9 +403,17 @@ router.post('/commit', upload.array('files', 10), asyncHandler(async (req: AuthR
   let totalGross = 0, totalDed = 0, totalNet = 0, totalTds = 0, totalPf = 0;
   let lines = 0;
 
+  // Dedupe: two name spellings can map to the same DB employee.
+  // Merge source rows by empId so we get exactly one PayrollLine per employee.
+  const rowsByEmpId: Record<string, SalaryRow[]> = {};
   for (const key in empMap) {
     const empId = empIds[key]; if (!empId) continue;
-    const srcRows = empMap[key];
+    if (!rowsByEmpId[empId]) rowsByEmpId[empId] = [];
+    rowsByEmpId[empId].push(...empMap[key]);
+  }
+
+  for (const empId in rowsByEmpId) {
+    const srcRows = rowsByEmpId[empId];
     const main = srcRows.filter(r => ['SENIOR', 'PF', 'NPF'].includes(r.category)).sort((a, b) => (b.totalSalary || 0) - (a.totalSalary || 0))[0] || srcRows[0];
     const additional = srcRows.find(r => r.category === 'ADDITIONAL');
     const petrol = srcRows.find(r => r.category === 'CANE_PETROL');
