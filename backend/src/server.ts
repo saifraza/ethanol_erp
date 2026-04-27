@@ -123,7 +123,7 @@ const server = app.listen(PORT, HOST, async () => {
     import('./services/opcHealthWatchdog').then(m => m.startOpcWatchdog()).catch(() => {});
     import('./services/opcReadingCleanup').then(m => m.startOpcReadingCleanup()).catch(() => {});
     import('./services/siloSnapshotJob').then(m => m.startSiloSnapshotJob()).catch(() => {});
-    import('./services/boilerCombustionAlarm').then(m => m.startBoilerCombustionAlarm()).catch(() => {});
+    // boilerCombustionAlarm moved to bridge-local — see C:\mspil\sugar-opc\fuel_starvation.py
   }
 
   // Fermenter fill event detector — runs every 5 min; works OPC-first, falls back to lab
