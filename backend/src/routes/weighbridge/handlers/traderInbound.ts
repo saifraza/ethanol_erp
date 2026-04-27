@@ -155,7 +155,7 @@ export async function handleTraderInbound(w: WeighmentInput, _ctx: PushContext):
           poId: existingPO.id,
           lineNo: newLineNo,
           inventoryItemId: invItem?.id || null,
-          description: `${materialName} | ${w.vehicle_no || 'N/A'}`,
+          description: materialName,
           hsnCode: invItem?.hsnCode || '',
           quantity: receivedQty,
           unit: invItem?.unit || 'KG',
@@ -201,7 +201,7 @@ export async function handleTraderInbound(w: WeighmentInput, _ctx: PushContext):
             create: [{
               poLineId: poLine.id,
               inventoryItemId: invItem?.id || null,
-              description: `${materialName} | ${w.vehicle_no || 'N/A'}`,
+              description: materialName,
               receivedQty,
               acceptedQty: receivedQty,
               rejectedQty: 0,
@@ -234,7 +234,7 @@ export async function handleTraderInbound(w: WeighmentInput, _ctx: PushContext):
             create: [{
               lineNo: 1,
               inventoryItemId: invItem?.id || null,
-              description: `${materialName} | ${w.vehicle_no || 'N/A'}`,
+              description: materialName,
               hsnCode: invItem?.hsnCode || '',
               quantity: receivedQty,
               unit: invItem?.unit || 'KG',
@@ -268,7 +268,7 @@ export async function handleTraderInbound(w: WeighmentInput, _ctx: PushContext):
             create: [{
               poLineId: newPo.lines[0].id,
               inventoryItemId: invItem?.id || null,
-              description: `${materialName} | ${w.vehicle_no || 'N/A'}`,
+              description: materialName,
               receivedQty,
               acceptedQty: receivedQty,
               rejectedQty: 0,
