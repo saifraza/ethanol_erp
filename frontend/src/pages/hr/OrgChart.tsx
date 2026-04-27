@@ -58,8 +58,9 @@ function NodeCard({
 }) {
   const hasChildren = node.children && node.children.length > 0;
   const isCollapsed = collapsedIds.has(node.id);
-  const deptColor = hashDepartment(node.department.name);
-  const deptBg = hashDepartmentBg(node.department.name);
+  const deptName = node.department?.name || 'Unassigned';
+  const deptColor = hashDepartment(deptName);
+  const deptBg = hashDepartmentBg(deptName);
   const initials = `${node.firstName[0] || ''}${node.lastName[0] || ''}`.toUpperCase();
 
   return (
@@ -70,7 +71,7 @@ function NodeCard({
         onClick={() => hasChildren && onToggle(node.id)}
       >
         <div className="org-node-dept-badge" style={{ background: deptBg, color: deptColor }}>
-          {node.department.name}
+          {deptName}
         </div>
         <div className="org-node-body">
           <div
@@ -87,8 +88,8 @@ function NodeCard({
             <div className="org-node-name">
               {node.firstName} {node.lastName}
             </div>
-            <div className="org-node-designation">{node.designation.title}</div>
-            {node.designation.grade && (
+            <div className="org-node-designation">{node.designation?.title || '—'}</div>
+            {node.designation?.grade && (
               <div className="org-node-grade">{node.designation.grade}</div>
             )}
           </div>
@@ -152,7 +153,7 @@ export default function OrgChart() {
     const depts = new Set<string>();
     function walk(nodes: OrgNode[]) {
       for (const n of nodes) {
-        depts.add(n.department.name);
+        depts.add(n.department?.name || 'Unassigned');
         if (n.children) walk(n.children);
       }
     }
