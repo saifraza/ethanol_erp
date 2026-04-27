@@ -183,7 +183,13 @@ async function checkAlarms(opc: any, readings: { tag: string; property: string; 
   if (alerts.length > 0) {
     const prismaMain = (await import('../config/prisma')).default;
     const settings = await prismaMain.settings.findFirst();
-    const groupChatId = (settings as any)?.telegramGroupChatId;
+    // SUGAR plant alarms → boiler-specific group (fall back to primary if unset)
+    // ETHANOL alarms → primary plant group
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const s = settings as any;
+    const groupChatId = source === 'SUGAR'
+      ? (s?.telegramBoilerChatId || s?.telegramGroupChatId)
+      : s?.telegramGroupChatId;
     if (groupChatId) {
       const ist = new Date(Date.now() + 5.5 * 60 * 60 * 1000);
       const hh = ist.getUTCHours();
@@ -191,7 +197,7 @@ async function checkAlarms(opc: any, readings: { tag: string; property: string; 
       const time = `${hh % 12 || 12}:${mm} ${hh >= 12 ? 'PM' : 'AM'}`;
       const msg = `⚠️ *OPC ALARM* (${time} IST)\n\n${alerts.join('\n')}`;
       await broadcastToGroup(groupChatId, msg, 'opc-alarm');
-      console.log(`[OPC] Sent ${alerts.length} alarm(s) to Telegram group`);
+      console.log(`[OPC] Sent ${alerts.length} ${source} alarm(s) to Telegram`);
     }
   }
 }
