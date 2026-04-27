@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, ReferenceLine, Area, ComposedChart, Brush, Legend } from 'recharts';
 import api from '../../services/api';
 
@@ -161,7 +161,9 @@ interface HealthData {
   lastSync: string | null;
 }
 
-type Tab = 'live' | 'browse' | 'stats';
+type Tab = 'live' | 'browse' | 'stats' | 'compare';
+
+const COMPARE_COLORS = ['#1e40af', '#dc2626', '#0891b2', '#16a34a', '#9333ea', '#ea580c', '#0284c7', '#be185d'];
 
 // ─── Component ──────────────────────────────────────────────────────────────
 
@@ -209,6 +211,12 @@ export default function OPCTagManager({ source }: { source?: 'ETHANOL' | 'SUGAR'
   const [yZoom, setYZoom] = useState(0); // 0 = auto, positive = zoom in levels
   const [tagStats, setTagStats] = useState<TagStats | null>(null);
 
+  // Compare (multi-tag overlay) state
+  const [compareTags, setCompareTags] = useState<Set<string>>(new Set());
+  const [compareHours, setCompareHours] = useState(24);
+  const [compareData, setCompareData] = useState<Array<Record<string, number>>>([]);
+  const [compareLoading, setCompareLoading] = useState(false);
+
   const checkHealth = useCallback(async () => {
     try {
       const sq = source ? `?source=${source}` : '';
@@ -246,8 +254,9 @@ export default function OPCTagManager({ source }: { source?: 'ETHANOL' | 'SUGAR'
   useEffect(() => { checkHealth(); }, [checkHealth, source]);
 
   useEffect(() => {
-    if (tab !== 'live') return;
+    if (tab !== 'live' && tab !== 'compare') return;
     fetchLive();
+    if (tab !== 'live') return;
     const interval = setInterval(fetchLive, 30000);
     return () => clearInterval(interval);
   }, [tab]);
@@ -319,6 +328,69 @@ export default function OPCTagManager({ source }: { source?: 'ETHANOL' | 'SUGAR'
     setYZoom(0);
     fetchHistory(tag, historyHours);
   }
+
+  // Fetch history for several tags in parallel and merge by timestamp
+  const fetchCompareData = useCallback(async (tags: Set<string>, hours: number) => {
+    if (tags.size === 0) { setCompareData([]); return; }
+    setCompareLoading(true);
+    try {
+      const tagList = Array.from(tags);
+      const results = await Promise.all(tagList.map(async tag => {
+        const t = liveTags.find(lt => lt.tag === tag);
+        const valKeys = t?.values ? Object.keys(t.values) : [];
+        const prop = valKeys.includes('PV') ? 'PV'
+          : valKeys.includes('IO_VALUE') ? 'IO_VALUE'
+          : valKeys.includes('PRV_HR') ? 'PRV_HR'
+          : t?.type === 'pid' ? 'PV' : t?.type === 'totalizer' ? 'PRV_HR' : 'IO_VALUE';
+        const res = await api.get(`/opc/history/${encodeURIComponent(tag)}?hours=${hours}&property=${prop}${source ? `&source=${source}` : ''}`);
+        return { tag, readings: (res.data.readings as HourlyReading[]) || [] };
+      }));
+
+      // Bucket key = ISO of `hour` field (already aligned to hour for >6h, exact scan ts for ≤6h raw)
+      const byTime = new Map<number, Record<string, number>>();
+      for (const { tag, readings } of results) {
+        for (const r of readings) {
+          const ts = new Date(r.hour).getTime();
+          if (!byTime.has(ts)) byTime.set(ts, { __ts: ts });
+          byTime.get(ts)![tag] = r.avg;
+        }
+      }
+      const rows = Array.from(byTime.values()).sort((a, b) => (a.__ts as number) - (b.__ts as number));
+      setCompareData(rows);
+    } catch {
+      setCompareData([]);
+    } finally {
+      setCompareLoading(false);
+    }
+  }, [liveTags, source]);
+
+  useEffect(() => {
+    if (tab !== 'compare') return;
+    fetchCompareData(compareTags, compareHours);
+  }, [tab, compareTags, compareHours, fetchCompareData]);
+
+  // Auto split tags between left/right Y-axis when ranges differ > 5x
+  const compareAxisMap = useMemo(() => {
+    const tags = Array.from(compareTags);
+    const map: Record<string, 'left' | 'right'> = {};
+    if (tags.length === 0) return map;
+    const maxByTag: Record<string, number> = {};
+    for (const tag of tags) {
+      const vals = compareData.map(r => r[tag]).filter((v): v is number => typeof v === 'number');
+      maxByTag[tag] = vals.length ? Math.max(...vals.map(Math.abs)) : 0;
+    }
+    const maxes = Object.values(maxByTag).filter(v => v > 0);
+    if (maxes.length < 2) { tags.forEach(t => map[t] = 'left'); return map; }
+    const hi = Math.max(...maxes), lo = Math.min(...maxes);
+    if (hi / Math.max(lo, 0.001) < 5) { tags.forEach(t => map[t] = 'left'); return map; }
+    const mid = Math.sqrt(hi * lo); // log midpoint
+    tags.forEach(t => map[t] = (maxByTag[t] >= mid ? 'left' : 'right'));
+    return map;
+  }, [compareTags, compareData]);
+
+  const compareDualAxis = useMemo(() =>
+    Object.values(compareAxisMap).includes('left') && Object.values(compareAxisMap).includes('right'),
+  [compareAxisMap]);
 
   async function fetchStats() {
     try {
@@ -547,10 +619,10 @@ export default function OPCTagManager({ source }: { source?: 'ETHANOL' | 'SUGAR'
 
         {/* Tabs — no more "Monitored Tags" */}
         <div className="flex gap-0 border-x border-b border-slate-300 -mx-3 md:-mx-6 bg-white">
-          {(['live', 'browse', 'stats'] as Tab[]).map(t => (
+          {(['live', 'browse', 'compare', 'stats'] as Tab[]).map(t => (
             <button key={t} onClick={() => setTab(t)}
               className={`px-4 py-2 text-[11px] font-bold uppercase tracking-widest border-b-2 ${tab === t ? 'border-blue-600 text-blue-700 bg-blue-50/50' : 'border-transparent text-slate-400 hover:text-slate-600'}`}>
-              {t === 'live' ? 'Live Data' : t === 'browse' ? 'Add Tags' : 'Statistics'}
+              {t === 'live' ? 'Live Data' : t === 'browse' ? 'Add Tags' : t === 'compare' ? 'Compare' : 'Statistics'}
             </button>
           ))}
         </div>
@@ -806,6 +878,128 @@ export default function OPCTagManager({ source }: { source?: 'ETHANOL' | 'SUGAR'
               </table>
             )}
             {liveLoading && liveTags.length > 0 && <div className="px-4 py-1 text-[10px] text-slate-400 uppercase tracking-widest bg-slate-50 border-t border-slate-200">Refreshing...</div>}
+          </div>
+        )}
+
+        {/* ═══════════════════ COMPARE (multi-tag overlay) ═══════════════════ */}
+        {tab === 'compare' && (
+          <div className="-mx-3 md:-mx-6 border-x border-b border-slate-300 bg-white p-4">
+            {liveTags.length === 0 ? (
+              <div className="text-center py-12 text-xs text-slate-400 uppercase tracking-widest">No monitored tags. Add some first.</div>
+            ) : (
+              <>
+                <div className="flex items-center justify-between mb-2">
+                  <div className="text-[11px] font-bold text-slate-700 uppercase tracking-widest">Select tags to overlay {compareTags.size > 0 && <span className="text-slate-400 font-normal normal-case ml-2">{compareTags.size} selected</span>}</div>
+                  <div className="flex gap-2 items-center">
+                    {compareTags.size > 0 && (
+                      <button onClick={() => setCompareTags(new Set())} className="px-2 py-0.5 text-[10px] text-slate-500 border border-slate-300 hover:bg-slate-50 uppercase tracking-widest">Clear</button>
+                    )}
+                  </div>
+                </div>
+
+                {/* Tag chips */}
+                <div className="flex flex-wrap gap-1.5 mb-3 max-h-32 overflow-y-auto">
+                  {liveTags.map(t => {
+                    const selected = compareTags.has(t.tag);
+                    const idx = Array.from(compareTags).indexOf(t.tag);
+                    const color = selected ? COMPARE_COLORS[idx % COMPARE_COLORS.length] : undefined;
+                    return (
+                      <button key={t.tag}
+                        onClick={() => {
+                          setCompareTags(prev => {
+                            const s = new Set(prev);
+                            if (s.has(t.tag)) s.delete(t.tag);
+                            else if (s.size < 8) s.add(t.tag); // cap at 8 to keep chart readable
+                            return s;
+                          });
+                        }}
+                        className={`px-2 py-1 text-[10px] border ${selected ? 'font-bold' : 'bg-white text-slate-600 border-slate-300 hover:bg-slate-50'}`}
+                        style={selected ? { background: color + '15', borderColor: color, color } : undefined}>
+                        <span className="font-mono">{t.tag}</span>
+                        <span className="ml-1 text-[10px]">{t.description || t.label || t.area}</span>
+                      </button>
+                    );
+                  })}
+                </div>
+
+                {/* Hours selector */}
+                <div className="flex items-center gap-1 mb-3">
+                  <span className="text-[10px] text-slate-500 uppercase tracking-widest mr-1">Range</span>
+                  {[6, 12, 24, 48, 72, 168].map(h => (
+                    <button key={h} onClick={() => setCompareHours(h)}
+                      className={`px-2 py-0.5 text-[10px] font-bold border ${compareHours === h ? 'bg-slate-800 text-white border-slate-800' : 'bg-white text-slate-500 border-slate-300 hover:bg-slate-100'}`}>
+                      {h <= 24 ? `${h}h` : `${h / 24}d`}
+                    </button>
+                  ))}
+                  {compareDualAxis && (
+                    <span className="ml-3 text-[10px] text-slate-500 uppercase tracking-widest">
+                      Dual-axis (left=large range, right=small range)
+                    </span>
+                  )}
+                </div>
+
+                {/* Chart */}
+                {compareTags.size === 0 ? (
+                  <div className="text-center py-12 text-xs text-slate-400 uppercase tracking-widest">Pick at least 2 tags above</div>
+                ) : compareLoading ? (
+                  <div className="text-center py-12 text-xs text-slate-400 uppercase tracking-widest">Loading...</div>
+                ) : compareData.length === 0 ? (
+                  <div className="text-center py-12 text-xs text-slate-400 uppercase tracking-widest">No overlapping data in range</div>
+                ) : (
+                  <div className="border border-slate-300 p-3 bg-white">
+                    <ResponsiveContainer width="100%" height={420}>
+                      <LineChart data={compareData} margin={{ top: 5, right: compareDualAxis ? 50 : 20, left: 20, bottom: 5 }}>
+                        <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
+                        <XAxis
+                          dataKey="__ts"
+                          type="number"
+                          domain={['dataMin', 'dataMax']}
+                          scale="time"
+                          tickFormatter={(v: number) => {
+                            const d = new Date(v);
+                            if (compareHours <= 24) return d.toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', hour12: true });
+                            return d.toLocaleDateString('en-IN', { day: '2-digit', month: 'short' }) + ' ' + d.toLocaleTimeString('en-IN', { hour: '2-digit', hour12: true });
+                          }}
+                          tick={{ fontSize: 9 }}
+                          tickLine={false}
+                        />
+                        <YAxis yAxisId="left" tick={{ fontSize: 9 }} tickLine={false} />
+                        {compareDualAxis && <YAxis yAxisId="right" orientation="right" tick={{ fontSize: 9 }} tickLine={false} />}
+                        <Tooltip
+                          contentStyle={{ fontSize: 11, border: '1px solid #94a3b8', background: '#fff', padding: '6px 10px' }}
+                          labelFormatter={((v: number) => new Date(v).toLocaleString('en-IN', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit', hour12: true })) as any}
+                          formatter={((val: number, name: string) => [<span style={{ fontFamily: 'monospace', fontWeight: 700 }}>{typeof val === 'number' ? val.toFixed(2) : val}</span>, name]) as any}
+                          labelStyle={{ fontWeight: 700, marginBottom: 4, color: '#1e293b' }}
+                        />
+                        <Legend wrapperStyle={{ fontSize: 11 }} />
+                        {Array.from(compareTags).map((tag, idx) => {
+                          const t = liveTags.find(lt => lt.tag === tag);
+                          const labelText = t?.description || t?.label || tag;
+                          const axis = compareAxisMap[tag] || 'left';
+                          return (
+                            <Line key={tag}
+                              yAxisId={axis}
+                              type="monotone"
+                              dataKey={tag}
+                              stroke={COMPARE_COLORS[idx % COMPARE_COLORS.length]}
+                              strokeWidth={2}
+                              dot={false}
+                              connectNulls
+                              name={`${labelText}${compareDualAxis ? ' (' + (axis === 'left' ? 'L' : 'R') + ')' : ''}`}
+                            />
+                          );
+                        })}
+                        <Brush dataKey="__ts" height={20} stroke="#94a3b8" fill="#f8fafc" travellerWidth={8}
+                          tickFormatter={(v: number) => new Date(v).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', hour12: true })} />
+                      </LineChart>
+                    </ResponsiveContainer>
+                    <div className="mt-2 text-[10px] text-slate-400 uppercase tracking-widest text-center">
+                      {compareData.length} aligned data points · {compareHours <= 6 ? 'Raw scan resolution' : 'Hourly avg'}
+                    </div>
+                  </div>
+                )}
+              </>
+            )}
           </div>
         )}
 
