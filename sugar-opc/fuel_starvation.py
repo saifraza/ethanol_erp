@@ -20,6 +20,7 @@ import time
 from datetime import datetime, timedelta, timezone
 
 import telegram_local
+import boiler_state
 
 log = logging.getLogger("check_silo")
 
@@ -67,6 +68,9 @@ def _read_latest(db_path: str):
 
 def check(db_path: str) -> bool:
     """Run check_silo rule. Returns True if alarm fired."""
+    # Suppress when boiler is off (pressure < 20 bar sustained 5 min)
+    if not boiler_state.is_boiler_running(db_path):
+        return False
     latest = _read_latest(db_path)
     if not latest:
         return False

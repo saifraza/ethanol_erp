@@ -15,6 +15,7 @@ import urllib.error
 
 import telegram_local
 import fuel_starvation
+import boiler_state
 from config import CLOUD_API_URL, CLOUD_API_KEY, SOURCE, DB_PATH
 
 log = logging.getLogger("alarm_checker")
@@ -29,6 +30,12 @@ class AlarmChecker:
         self._cloud_key = CLOUD_API_KEY
 
     def check_readings(self, readings: list, tag_config: dict) -> list:
+        # Suppress all alarms when boiler is off (pressure < 20 bar for 5+ min)
+        # Avoids alarm spam during shutdowns / restarts when readings are unreliable
+        if not boiler_state.is_boiler_running(DB_PATH):
+            log.debug("Boiler off (pressure < 20 bar sustained) — alarms suppressed")
+            return []
+
         # First — multi-condition fuel-starvation (uses recent SQLite history)
         try:
             fuel_starvation.check(DB_PATH)
