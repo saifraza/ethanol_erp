@@ -81,9 +81,20 @@ $SCP factory-server/package-lock.json ${FACTORY_USER}@${FACTORY_HOST}:${REMOTE_D
 ok "files copied"
 
 # ---------- 4. Kill node (required so Windows releases Prisma DLL) ----------
-say "Stopping factory node (NOT Oracle)..."
-$SSH 'taskkill /F /IM node.exe & timeout /t 3 /nobreak >nul & exit 0' 2>&1 | grep -v "^$" || true
-ok "node stopped"
+# SURGICAL KILL: only kill the node.exe running our `dist\server.js`.
+# DO NOT use `taskkill /F /IM node.exe` — that nukes ALL node processes on the
+# box, including Oracle ERP backup scripts (restorebackup_main.js etc.) that
+# the team runs. On 2026-04-29 a third-party Oracle backup tool blanket-killed
+# our node.exe and took the factory down for ~2h. We don't return the favour.
+say "Copying scripts (stop-factory-node.ps1, watchdog.ps1)..."
+$SSH 'if not exist "C:\mspil\factory-server\scripts" mkdir "C:\mspil\factory-server\scripts"' >/dev/null 2>&1 || true
+$SCP factory-server/scripts/stop-factory-node.ps1 ${FACTORY_USER}@${FACTORY_HOST}:'C:\mspil\factory-server\scripts\stop-factory-node.ps1' || die "stop-factory-node.ps1 SCP failed"
+$SCP factory-server/scripts/watchdog.ps1 ${FACTORY_USER}@${FACTORY_HOST}:'C:\mspil\factory-server\scripts\watchdog.ps1' || die "watchdog.ps1 SCP failed"
+ok "scripts copied"
+
+say "Stopping factory node (NOT Oracle, NOT other node processes)..."
+$SSH 'powershell -NoProfile -ExecutionPolicy Bypass -File "C:\mspil\factory-server\scripts\stop-factory-node.ps1"' 2>&1 | grep -v "^$" || true
+ok "factory node stopped (other node processes left running)"
 
 # ---------- 5. npm install (only our node_modules; never touches Oracle) ----------
 # MANDATORY: always run after package.json copy. If we added a new dep
