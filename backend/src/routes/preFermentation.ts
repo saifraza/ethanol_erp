@@ -9,7 +9,9 @@ router.use(authenticate as any);
 
 // ─── CHEMICALS MASTER ───
 router.get('/chemicals', asyncHandler(async (_req: AuthRequest, res: Response) => {
-  const chemicals = await prisma.pFChemical.findMany({ where: { isActive: true }, orderBy: { name: 'asc' } });
+  const chemicals = await prisma.pFChemical.findMany({ where: { isActive: true }, orderBy: { name: 'asc' } ,
+    take: 500,
+  });
   res.json(chemicals);
 }));
 

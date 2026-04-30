@@ -75,7 +75,9 @@ async function notifyRole(targetRole: string, message: string): Promise<void> {
         ],
       },
       select: { id: true, name: true },
-    });
+    
+    take: 500,
+  });
     // For now, log. Telegram chatId mapping will be added when users register their chat.
     console.log(`[BankPayments] Notify ${targetRole}: ${message} (${users.length} users)`);
   } catch {
@@ -130,6 +132,8 @@ router.post('/batches', validate(createBatchSchema), asyncHandler(async (req: Au
   const invoices = await prisma.vendorInvoice.findMany({
     where: { id: { in: invoiceIds }, balanceAmount: { gt: 0 } },
     include: { vendor: true },
+  
+    take: 500,
   });
 
   if (invoices.length === 0) {
@@ -233,6 +237,8 @@ router.get('/batches', asyncHandler(async (req: AuthRequest, res: Response) => {
   const users = await prisma.user.findMany({
     where: { id: { in: Array.from(userIds) } },
     select: { id: true, name: true },
+  
+    take: 500,
   });
   const userMap = new Map(users.map(u => [u.id, u.name]));
 
@@ -267,7 +273,9 @@ router.get('/batches/:id', asyncHandler(async (req: AuthRequest, res: Response) 
           netPayable: true, balanceAmount: true, productName: true, quantity: true, unit: true, rate: true,
           poId: true, grnId: true,
         },
-      })
+      
+    take: 500,
+  })
     : [];
   const invoiceMap = new Map(invoices.map(inv => [inv.id, inv]));
 
@@ -277,7 +285,9 @@ router.get('/batches/:id', asyncHandler(async (req: AuthRequest, res: Response) 
     ? await prisma.purchaseOrder.findMany({
         where: { id: { in: poIds } },
         select: { id: true, poNo: true },
-      })
+      
+    take: 500,
+  })
     : [];
   const poMap = new Map(pos.map(po => [po.id, `PO-${po.poNo}`]));
 
@@ -287,7 +297,9 @@ router.get('/batches/:id', asyncHandler(async (req: AuthRequest, res: Response) 
     ? await prisma.goodsReceipt.findMany({
         where: { id: { in: grnIds } },
         select: { id: true, grnNo: true },
-      })
+      
+    take: 500,
+  })
     : [];
   const grnMap = new Map(grns.map(g => [g.id, `GRN-${g.grnNo}`]));
 
@@ -315,6 +327,8 @@ router.get('/batches/:id', asyncHandler(async (req: AuthRequest, res: Response) 
   const users = await prisma.user.findMany({
     where: { id: { in: Array.from(userIds) } },
     select: { id: true, name: true },
+  
+    take: 500,
   });
   const userMap = new Map(users.map(u => [u.id, u.name]));
 
@@ -351,7 +365,9 @@ router.delete('/batches/:id/items/:itemId', asyncHandler(async (req: AuthRequest
   await prisma.$transaction(async (tx: Parameters<Parameters<typeof prisma.$transaction>[0]>[0]) => {
     await tx.bankPaymentItem.delete({ where: { id: item.id } });
     // Recalculate totals
-    const remaining = await tx.bankPaymentItem.findMany({ where: { batchId: batch.id } });
+    const remaining = await tx.bankPaymentItem.findMany({ where: { batchId: batch.id } ,
+    take: 500,
+  });
     await tx.bankPaymentBatch.update({
       where: { id: batch.id },
       data: {
@@ -868,13 +884,17 @@ router.post('/batches/:id/ai-check', asyncHandler(async (req: AuthRequest, res: 
         productName: true, quantity: true, unit: true, rate: true,
         poId: true, grnId: true, status: true, matchStatus: true, matchRemarks: true,
       },
-    }) : [],
+    
+    take: 500,
+  }) : [],
     vendorIds.length > 0 ? prisma.vendor.findMany({
       where: { id: { in: vendorIds } },
       select: {
         id: true, name: true, gstin: true, bankAccount: true, bankIfsc: true, bankName: true,
       },
-    }) : [],
+    
+    take: 500,
+  }) : [],
     // Recent payments to same vendors (last 90 days) for anomaly detection
     vendorIds.length > 0 ? prisma.vendorPayment.findMany({
       where: {

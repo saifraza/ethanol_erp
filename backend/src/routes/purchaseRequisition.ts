@@ -119,7 +119,9 @@ async function recomputeHeaderRate(vrId: string): Promise<void> {
     lineQuotes = await prisma.purchaseRequisitionVendorLine.findMany({
       where: { vendorQuoteId: vrId },
       select: { requisitionLineId: true, unitRate: true, source: true },
-    });
+    
+    take: 500,
+  });
   } catch {
     return; // table missing — leave header rate unchanged
   }
@@ -237,7 +239,9 @@ router.get('/:id/vendors/:vrId/line-rates', asyncHandler(async (req: AuthRequest
       lineQuotes = await prisma.purchaseRequisitionVendorLine.findMany({
         where: { vendorQuoteId: req.params.vrId },
         select: { requisitionLineId: true, unitRate: true, gstPercent: true, hsnCode: true, remarks: true, source: true },
-      });
+      
+    take: 500,
+  });
     } catch (err) {
       return res.status(503).json({
         error: 'Item-wise rate storage not yet available on this server. Run the migration SQL or contact admin.',
@@ -410,7 +414,9 @@ router.post('/:id/vendors/:vrId/award', asyncHandler(async (req: AuthRequest, re
           const rates = await prisma.purchaseRequisitionVendorLine.findMany({
             where: { vendorQuoteId: req.params.vrId },
             select: { requisitionLineId: true, unitRate: true, gstPercent: true, hsnCode: true },
-          });
+          
+    take: 500,
+  });
           lineRateMap = new Map(rates.filter(r => r.unitRate != null && r.unitRate > 0).map(r => [r.requisitionLineId, r.unitRate as number]));
           lineGstMap = new Map(rates.filter(r => r.gstPercent != null).map(r => [r.requisitionLineId, r.gstPercent as number]));
           lineHsnMap = new Map(rates.filter(r => r.hsnCode && r.hsnCode.trim()).map(r => [r.requisitionLineId, (r.hsnCode as string).trim()]));
@@ -951,7 +957,9 @@ router.post('/:id/vendors/:vrId/extract-quote', asyncHandler(async (req: AuthReq
 router.get('/:id/vendors/:vrId/attachment/:filename', asyncHandler(async (req: AuthRequest, res: Response) => {
     const thread = await latestThreadFor('INDENT_QUOTE', req.params.vrId);
     if (!thread) return res.status(404).json({ error: 'No thread' });
-    const replies = await prisma.emailReply.findMany({ where: { threadId: thread.id } });
+    const replies = await prisma.emailReply.findMany({ where: { threadId: thread.id } ,
+    take: 500,
+  });
     for (const r of replies) {
       const atts = Array.isArray(r.attachments)
         ? r.attachments as Array<{ filename: string; contentType: string; contentBase64: string }>
@@ -1019,7 +1027,9 @@ router.get('/item-history/:itemId', asyncHandler(async (req: AuthRequest, res: R
 
 // GET /stats
 router.get('/stats', asyncHandler(async (_req: AuthRequest, res: Response) => {
-    const reqs = await prisma.purchaseRequisition.findMany({ where: { ...getCompanyFilter(_req) } });
+    const reqs = await prisma.purchaseRequisition.findMany({ where: { ...getCompanyFilter(_req) } ,
+    take: 500,
+  });
     const byStatus: Record<string, number> = {};
     const byUrgency: Record<string, number> = {};
     let totalValue = 0;

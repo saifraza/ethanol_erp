@@ -19,6 +19,8 @@ router.get('/:employeeId', asyncHandler(async (req: AuthRequest, res: Response) 
     where: { employeeId: req.params.employeeId },
     include: { component: true },
     orderBy: { component: { sortOrder: 'asc' } },
+  
+    take: 500,
   });
 
   // Also compute a live breakdown for comparison
@@ -59,7 +61,9 @@ router.put('/:employeeId', asyncHandler(async (req: AuthRequest, res: Response) 
   });
 
   // Get all salary component definitions
-  const allComponents = await prisma.salaryComponent.findMany({ where: { isActive: true } });
+  const allComponents = await prisma.salaryComponent.findMany({ where: { isActive: true } ,
+    take: 500,
+  });
   const componentMap = new Map(allComponents.map(c => [c.code, c]));
 
   // Map breakdown to component amounts
@@ -94,6 +98,8 @@ router.put('/:employeeId', asyncHandler(async (req: AuthRequest, res: Response) 
     where: { employeeId: req.params.employeeId },
     include: { component: true },
     orderBy: { component: { sortOrder: 'asc' } },
+  
+    take: 500,
   });
 
   res.json({ breakdown, components });

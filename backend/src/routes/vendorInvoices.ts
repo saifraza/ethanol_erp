@@ -380,7 +380,9 @@ router.get('/', asyncHandler(async (req: AuthRequest, res: Response) => {
         grn: true,
       },
       orderBy: { invoiceDate: 'desc' },
-    });
+    
+    take: 500,
+  });
 
     res.json({ invoices });
 }));
@@ -527,7 +529,9 @@ router.get('/outstanding', asyncHandler(async (req: AuthRequest, res: Response) 
       include: {
         vendor: true,
       },
-    });
+    
+    take: 500,
+  });
 
     // Group by vendor
     const grouped: Record<string, any> = {};
@@ -558,7 +562,9 @@ router.get('/itc-report', asyncHandler(async (req: AuthRequest, res: Response) =
         vendor: true,
       },
       orderBy: { invoiceDate: 'desc' },
-    });
+    
+    take: 500,
+  });
 
     const report = invoices.map((inv: any) => ({
       ...inv,
@@ -683,12 +689,16 @@ router.post('/', validate(createVendorInvoiceSchema), asyncHandler(async (req: A
           ],
         },
         select: { id: true, invoiceNo: true, vendorInvNo: true, grnId: true, lines: { select: { grnId: true } } },
-      });
+      
+    take: 500,
+  });
       if (conflicts.length > 0) {
         const grnRows = await prisma.goodsReceipt.findMany({
           where: { id: { in: grnIdsForMatch } },
           select: { id: true, grnNo: true },
-        });
+        
+    take: 500,
+  });
         const grnNumByGid: Record<string, number> = {};
         for (const g of grnRows) grnNumByGid[g.id] = g.grnNo;
         const taken: Record<string, string> = {};
@@ -708,7 +718,9 @@ router.post('/', validate(createVendorInvoiceSchema), asyncHandler(async (req: A
       const grns = await prisma.goodsReceipt.findMany({
         where: { id: { in: grnIdsForMatch } },
         include: { lines: true },
-      });
+      
+    take: 500,
+  });
       if (grns.length === grnIdsForMatch.length) {
         const allConfirmed = grns.every(g => g.status === 'CONFIRMED');
         if (!allConfirmed) {
@@ -865,6 +877,8 @@ router.post('/:id/link-grns', validate(linkGrnsSchema), asyncHandler(async (req:
       ],
     },
     select: { id: true, invoiceNo: true, vendorInvNo: true, grnId: true, lines: { select: { grnId: true } } },
+  
+    take: 500,
   });
   if (conflicts.length > 0) {
     const taken: Record<string, string> = {};

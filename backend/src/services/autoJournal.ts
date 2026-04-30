@@ -120,6 +120,8 @@ async function resolveAccounts(prisma: PrismaClient, codes: string[], companyId?
       ...(companyId ? { companyId } : {}),
     },
     select: { id: true, code: true },
+  
+    take: 500,
   });
   const cache: AccountCache = {};
   for (const a of accounts) cache[a.code] = a.id;

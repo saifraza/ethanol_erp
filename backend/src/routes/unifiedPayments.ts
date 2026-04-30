@@ -286,6 +286,8 @@ router.get('/outgoing/outstanding', asyncHandler(async (req: AuthRequest, res: R
       batch: { status: { in: ['DRAFT', 'APPROVED', 'RELEASED', 'SENT_TO_BANK'] } },
     },
     select: { vendorInvoiceId: true },
+  
+    take: 500,
   });
   const excludeInvIds = activeItems.map(i => i.vendorInvoiceId).filter(Boolean) as string[];
 
@@ -855,7 +857,9 @@ router.get('/outgoing/pending', asyncHandler(async (req: AuthRequest, res: Respo
           ],
         },
         select: { amount: true },
-      });
+      
+    take: 500,
+  });
       totalPaid += directPayments.reduce((s, p) => s + p.amount, 0);
     }
 
@@ -874,7 +878,9 @@ router.get('/outgoing/pending', asyncHandler(async (req: AuthRequest, res: Respo
         ],
       },
       select: { amount: true },
-    });
+    
+    take: 500,
+  });
     const pendingBankAmount = initiatedPayments.reduce((s, p) => s + p.amount, 0);
     const pendingBankCount = initiatedPayments.length;
 
@@ -1030,7 +1036,9 @@ router.get('/outgoing/pending', asyncHandler(async (req: AuthRequest, res: Respo
             OR: poNumbers.map(n => ({ purpose: { contains: `PO-${n}` } })),
           },
           select: { id: true, voucherNo: true, amount: true, purpose: true, payeeName: true, date: true },
-        });
+        
+    take: 500,
+  });
         // Group by PO number — exact match on "PO-{n}" to avoid PO-12 matching PO-123
         const byPoNo = new Map<number, Array<{ id: string; voucherNo: number; amount: number; payeeName: string; date: string }>>();
         for (const cv of cvs) {

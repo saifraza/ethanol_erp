@@ -63,10 +63,14 @@ router.post('/:id/compute', asyncHandler(async (req: AuthRequest, res: Response)
     include: {
       salaryComponents: { include: { component: true } },
     },
+  
+    take: 500,
   });
 
   // Get all salary component definitions for mapping
-  const allComponents = await prisma.salaryComponent.findMany({ where: { isActive: true } });
+  const allComponents = await prisma.salaryComponent.findMany({ where: { isActive: true } ,
+    take: 500,
+  });
   const componentMap = new Map(allComponents.map(c => [c.code, c]));
 
   // Delete existing lines for recompute
@@ -85,6 +89,8 @@ router.post('/:id/compute', asyncHandler(async (req: AuthRequest, res: Response)
       ],
     },
     select: { id: true },
+  
+    take: 500,
   });
   const ytdRunIds = ytdRuns.map(r => r.id);
 
@@ -93,7 +99,9 @@ router.post('/:id/compute', asyncHandler(async (req: AuthRequest, res: Response)
     const ytdLines = await prisma.payrollLine.findMany({
       where: { payrollRunId: { in: ytdRunIds } },
       select: { employeeId: true, tds: true },
-    });
+    
+    take: 500,
+  });
     for (const l of ytdLines) {
       ytdTdsMap[l.employeeId] = (ytdTdsMap[l.employeeId] || 0) + l.tds;
     }
@@ -265,6 +273,8 @@ router.get('/:id/ecr', asyncHandler(async (req: AuthRequest, res: Response) => {
   const lines = await prisma.payrollLine.findMany({
     where: { payrollRunId: req.params.id },
     include: { employee: { select: { uan: true, firstName: true, lastName: true } } },
+  
+    take: 500,
   });
 
   const rows: EcrRow[] = lines
@@ -308,6 +318,8 @@ router.get('/:id/register', asyncHandler(async (req: AuthRequest, res: Response)
       components: { include: { component: { select: { code: true, name: true, type: true } } } },
     },
     orderBy: { employee: { empNo: 'asc' } },
+  
+    take: 500,
   });
 
   res.json({ run, lines });
@@ -321,6 +333,8 @@ router.get('/:id/pf-register', asyncHandler(async (req: AuthRequest, res: Respon
       employee: { select: { empCode: true, firstName: true, lastName: true, uan: true, pfMemberNo: true } },
     },
     orderBy: { employee: { empNo: 'asc' } },
+  
+    take: 500,
   });
 
   const totals = {
@@ -348,6 +362,8 @@ router.get('/:id/esi-register', asyncHandler(async (req: AuthRequest, res: Respo
       employee: { select: { empCode: true, firstName: true, lastName: true, esicNo: true } },
     },
     orderBy: { employee: { empNo: 'asc' } },
+  
+    take: 500,
   });
 
   const totals = { grossWages: 0, esiEmployee: 0, esiEmployer: 0 };
@@ -476,7 +492,9 @@ router.post('/pay-today/execute', authorize('ADMIN', 'SUPER_ADMIN') as any, asyn
   if (!['CASH', 'BANK', 'BOTH'].includes(payMode)) { res.status(400).json({ error: 'invalid payMode' }); return; }
   const when = paidDate ? new Date(paidDate) : new Date();
 
-  const lines = await prisma.payrollLine.findMany({ where: { id: { in: payrollLineIds } } });
+  const lines = await prisma.payrollLine.findMany({ where: { id: { in: payrollLineIds } } ,
+    take: 500,
+  });
   let updated = 0;
   for (const l of lines) {
     let nextStatus = l.paidStatus;

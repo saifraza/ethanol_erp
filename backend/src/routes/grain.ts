@@ -143,6 +143,8 @@ async function getLiveSiloEstimate(yearStart: number, companyFilter: { companyId
       weightNet: true,
       quarantineWeight: true,
     },
+  
+    take: 500,
   });
 
   const pendingTruckToSilo = r2(trucks.reduce((sum, truck) => {

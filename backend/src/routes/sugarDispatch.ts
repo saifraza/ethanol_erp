@@ -43,7 +43,9 @@ router.get('/summary', asyncHandler(async (req: AuthRequest, res: Response) => {
       where: { date: { gte: dayStart, lte: dayEnd }, ...getCompanyFilter(req) },
       orderBy: { createdAt: 'desc' },
       select: { weightNet: true, bags: true },
-    });
+    
+    take: 500,
+  });
     const totalNet = trucks.reduce((s, t) => s + t.weightNet, 0);
     const totalBags = trucks.reduce((s, t) => s + t.bags, 0);
     res.json({ totalNet, truckCount: trucks.length, totalBags });

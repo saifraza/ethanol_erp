@@ -49,7 +49,9 @@ async function checkLowStock(): Promise<void> {
     const items = await prisma.inventoryItem.findMany({
       where: { isActive: true, minStock: { gt: 0 } },
       select: { id: true, name: true, code: true, currentStock: true, minStock: true, unit: true, category: true },
-    });
+    
+    take: 500,
+  });
 
     const lowStock = items.filter(i => i.currentStock <= i.minStock);
     if (lowStock.length === 0) return;

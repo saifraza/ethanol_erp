@@ -133,7 +133,9 @@ router.get('/:id', asyncHandler(async (req: AuthRequest, res: Response) => {
     const invoices = await prisma.invoice.findMany({
       where: { customerId: req.params.id },
       select: { balanceAmount: true },
-    });
+    
+    take: 500,
+  });
     const outstandingAmount = invoices.reduce((sum, inv) => sum + inv.balanceAmount, 0);
 
     // Get total orders (count of salesOrders)

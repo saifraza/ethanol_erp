@@ -47,13 +47,17 @@ router.get('/', asyncHandler(async (req: AuthRequest, res: Response) => {
         transporterPayments: { orderBy: { createdAt: 'desc' } },
       },
       orderBy: { createdAt: 'desc' },
-    });
+    
+    take: 500,
+  });
     // Attach linked invoice IDs
     const shipmentIds = shipments.map((s: any) => s.id);
     const invoices = await prisma.invoice.findMany({
       where: { shipmentId: { in: shipmentIds } },
       select: { id: true, shipmentId: true, invoiceNo: true },
-    });
+    
+    take: 500,
+  });
     const invMap = new Map<string, any>(invoices.map((i: any) => [i.shipmentId, i]));
     const enriched = shipments.map((s: any) => ({
       ...s,
@@ -91,7 +95,9 @@ router.get('/active', asyncHandler(async (req: AuthRequest, res: Response) => {
     const invs = await prisma.invoice.findMany({
       where: { shipmentId: { in: sIds } },
       select: { id: true, shipmentId: true, invoiceNo: true },
-    });
+    
+    take: 500,
+  });
     const iMap = new Map<string, any>(invs.map((i: any) => [i.shipmentId, i]));
     const enriched = shipments.map((s: any) => ({
       ...s,

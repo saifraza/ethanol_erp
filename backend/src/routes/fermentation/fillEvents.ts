@@ -49,7 +49,9 @@ router.get('/', asyncHandler(async (req: AuthRequest, res: Response) => {
     ? await prisma.fermentationBatch.findMany({
         where: { OR: pairs.map(p => ({ batchNo: p.batchNo, fermenterNo: p.fermenterNo })) },
         select: { batchNo: true, fermenterNo: true, fermentationEndTime: true, finalAlcohol: true, setupGravity: true, finalRsGravity: true },
-      })
+      
+    take: 500,
+  })
     : [];
   const bMap = new Map(batches.map(b => [`${b.batchNo}_${b.fermenterNo}`, b]));
 

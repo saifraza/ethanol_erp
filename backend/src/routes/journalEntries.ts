@@ -233,14 +233,24 @@ router.get('/ledger/:accountId', asyncHandler(async (req: AuthRequest, res: Resp
   const purchIds = collect('PURCHASE');
 
   const [sales, vendorPays, recvs, vendorInvs, stockMoves] = await Promise.all([
-    saleIds.length ? prisma.invoice.findMany({ where: { id: { in: saleIds } }, select: { id: true, customer: { select: { name: true } } } }) : [],
-    payIds.length ? prisma.vendorPayment.findMany({ where: { id: { in: payIds } }, select: { id: true, vendor: { select: { name: true } } } }) : [],
-    recvIds.length ? prisma.payment.findMany({ where: { id: { in: recvIds } }, select: { id: true, invoice: { select: { customer: { select: { name: true } } } } } }).catch(() => []) : [],
-    purchIds.length ? prisma.vendorInvoice.findMany({ where: { id: { in: purchIds } }, select: { id: true, vendor: { select: { name: true } } } }) : [],
+    saleIds.length ? prisma.invoice.findMany({ where: { id: { in: saleIds } }, select: { id: true, customer: { select: { name: true } } } ,
+    take: 500,
+  }) : [],
+    payIds.length ? prisma.vendorPayment.findMany({ where: { id: { in: payIds } }, select: { id: true, vendor: { select: { name: true } } } ,
+    take: 500,
+  }) : [],
+    recvIds.length ? prisma.payment.findMany({ where: { id: { in: recvIds } }, select: { id: true, invoice: { select: { customer: { select: { name: true } } } } } ,
+    take: 500,
+  }).catch(() => []) : [],
+    purchIds.length ? prisma.vendorInvoice.findMany({ where: { id: { in: purchIds } }, select: { id: true, vendor: { select: { name: true } } } ,
+    take: 500,
+  }) : [],
     purchIds.length ? prisma.stockMovement.findMany({
       where: { id: { in: purchIds } },
       select: { id: true, refId: true, refType: true },
-    }) : [],
+    
+    take: 500,
+  }) : [],
   ]);
   for (const s of sales)       if (s.customer?.name) partyByRef.set(`SALE:${s.id}`, s.customer.name);
   for (const v of vendorPays)  if (v.vendor?.name)   partyByRef.set(`PAYMENT:${v.id}`, v.vendor.name);
@@ -252,7 +262,9 @@ router.get('/ledger/:accountId', asyncHandler(async (req: AuthRequest, res: Resp
     const grns = await prisma.goodsReceipt.findMany({
       where: { id: { in: grnIds } },
       select: { id: true, po: { select: { vendor: { select: { name: true } } } } },
-    });
+    
+    take: 500,
+  });
     const grnVendor = new Map(grns.map(g => [g.id, g.po?.vendor?.name || null]));
     for (const sm of stockMoves) {
       const v = sm.refId ? grnVendor.get(sm.refId) : null;
@@ -535,6 +547,8 @@ router.post('/', validate(createJournalSchema), asyncHandler(async (req: AuthReq
   const accounts = await prisma.account.findMany({
     where: { id: { in: accountIds as string[] } },
     select: { id: true },
+  
+    take: 500,
   });
   if (accounts.length !== accountIds.length) {
     throw new ValidationError('One or more account IDs are invalid');

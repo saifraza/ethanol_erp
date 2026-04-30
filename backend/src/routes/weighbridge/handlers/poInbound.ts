@@ -280,7 +280,9 @@ export async function handlePoInbound(w: WeighmentInput, ctx: PushContext): Prom
           await tx.purchaseOrder.update({ where: { id: po.id }, data: { status: 'PARTIAL_RECEIVED' } });
         }
       } else {
-        const allLines = await tx.pOLine.findMany({ where: { poId: po.id } });
+        const allLines = await tx.pOLine.findMany({ where: { poId: po.id } ,
+    take: 500,
+  });
         const allDone = allLines.every(l => l.pendingQty <= 0);
         const anyPartial = allLines.some(l => l.receivedQty > 0 && l.pendingQty > 0);
         if (allDone && po.dealType !== 'OPEN') {

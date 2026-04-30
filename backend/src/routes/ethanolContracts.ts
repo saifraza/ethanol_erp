@@ -388,7 +388,9 @@ router.get('/:id/liftings', asyncHandler(async (req: AuthRequest, res: Response)
     const liftings = await prisma.ethanolLifting.findMany({
       where: { contractId: req.params.id },
       orderBy: { liftingDate: 'desc' },
-    });
+    
+    take: 500,
+  });
     res.json({ liftings });
 }));
 
@@ -524,7 +526,9 @@ router.patch('/liftings/:liftingId/rate', asyncHandler(async (req: AuthRequest, 
     const liftings = await tx.ethanolLifting.findMany({
       where: { contractId: lifting.contractId },
       select: { quantityKL: true, amount: true },
-    });
+    
+    take: 500,
+  });
     const totalKL = liftings.reduce((s: number, l: any) => s + (l.quantityKL || 0), 0);
     const totalAmt = liftings.reduce((s: number, l: any) => s + (l.amount || 0), 0);
     await tx.ethanolContract.update({
@@ -1318,7 +1322,9 @@ router.post('/:id/import-history', asyncHandler(async (req: AuthRequest, res: Re
     // Update contract totalSuppliedKL
     const allLiftings = await prisma.ethanolLifting.findMany({
       where: { contractId: contract.id }, select: { quantityKL: true },
-    });
+    
+    take: 500,
+  });
     const totalKL = allLiftings.reduce((s, l) => s + l.quantityKL, 0);
     await prisma.ethanolContract.update({ where: { id: contract.id }, data: { totalSuppliedKL: totalKL } });
 

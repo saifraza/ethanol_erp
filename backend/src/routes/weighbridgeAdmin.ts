@@ -159,7 +159,9 @@ router.get(
               },
             },
           },
-        })
+        
+    take: 500,
+  })
       : [];
 
     // Build lookup maps — prefer factoryLocalId match (unique), fall back to
@@ -191,7 +193,9 @@ router.get(
             remarks: true,
             vehicleNo: true,
           },
-        })
+        
+    take: 500,
+  })
       : [];
     const grnByTicket = new Map<number, (typeof grns)[number]>();
     for (const g of grns) {
@@ -299,7 +303,9 @@ router.get(
     const rows = await prisma.weighmentCorrection.findMany({
       where: { weighmentId: req.params.weighmentId as string },
       orderBy: { createdAt: 'desc' },
-    });
+    
+    take: 500,
+  });
     res.json(rows);
   }),
 );

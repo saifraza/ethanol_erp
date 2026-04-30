@@ -39,7 +39,9 @@ router.get('/summary', asyncHandler(async (req: AuthRequest, res: Response) => {
         paymentType: true,
         status: true,
       },
-    });
+    
+    take: 500,
+  });
 
     // Group by transporter
     const summary: Record<string, { name: string; totalFreight: number; advance: number; balance: number; paid: number; pending: number }> = {};

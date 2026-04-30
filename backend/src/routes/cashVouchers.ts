@@ -334,7 +334,9 @@ router.put(
           const allPayments = await prisma.vendorPayment.findMany({
             where: { vendorId: po.vendorId, invoiceId: null, OR: [{ remarks: { contains: `PO-${po.poNo} ` } }, { remarks: { endsWith: `PO-${po.poNo}` } }] },
             select: { amount: true },
-          });
+          
+    take: 500,
+  });
           const totalPaid = allPayments.reduce((s: number, p: { amount: number }) => s + p.amount, 0);
           if (totalPaid >= receivable - 0.01) {
             await prisma.purchaseOrder.update({ where: { id: po.id }, data: { status: 'CLOSED' } });

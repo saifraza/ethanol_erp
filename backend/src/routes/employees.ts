@@ -54,6 +54,8 @@ router.get('/org-chart', asyncHandler(async (req: AuthRequest, res: Response) =>
       department: { select: { name: true } },
     },
     orderBy: { empNo: 'asc' },
+  
+    take: 500,
   });
 
   // Build tree: find roots (no reportingTo) and recursively attach children

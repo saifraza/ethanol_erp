@@ -90,7 +90,9 @@ router.get('/summary', asyncHandler(async (req: AuthRequest, res: Response) => {
     const dayEnd = new Date(dateStr + 'T23:59:59.999Z');
     const trucks = await prisma.dDGSDispatchTruck.findMany({
       where: { date: { gte: dayStart, lte: dayEnd }, ...getCompanyFilter(req) }, orderBy: { createdAt: 'desc' },
-    });
+    
+    take: 500,
+  });
     const totalNet = trucks.reduce((s: number, t: any) => s + t.weightNet, 0);
     const totalBags = trucks.reduce((s: number, t: any) => s + t.bags, 0);
     res.json({ totalNet, truckCount: trucks.length, totalBags });

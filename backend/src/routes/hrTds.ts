@@ -211,6 +211,8 @@ router.get('/projection/:employeeId', asyncHandler(async (req: AuthRequest, res:
       ],
     },
     select: { tds: true, grossEarnings: true, payrollRun: { select: { month: true, year: true } } },
+  
+    take: 500,
   });
   const ytdTds = ytdLines.reduce((s, l) => s + (l.tds || 0), 0);
   const ytdGross = ytdLines.reduce((s, l) => s + (l.grossEarnings || 0), 0);
@@ -303,6 +305,8 @@ router.get('/register', asyncHandler(async (req: AuthRequest, res: Response) => 
         },
       },
     },
+  
+    take: 500,
   });
 
   const totals = lines.reduce((acc, l) => {
@@ -356,6 +360,8 @@ router.get('/24q', asyncHandler(async (req: AuthRequest, res: Response) => {
       ...getCompanyFilter(req),
     },
     orderBy: [{ year: 'asc' }, { month: 'asc' }],
+  
+    take: 500,
   });
 
   if (runs.length === 0) {
@@ -374,6 +380,8 @@ router.get('/24q', asyncHandler(async (req: AuthRequest, res: Response) => {
         },
       },
     },
+  
+    take: 500,
   });
 
   // Aggregate per employee (deductee)
@@ -403,6 +411,8 @@ router.get('/24q', asyncHandler(async (req: AuthRequest, res: Response) => {
   const challans = await prisma.tdsChallan.findMany({
     where: { fyCode, quarter, ...getCompanyFilter(req) },
     orderBy: [{ month: 'asc' }, { depositDate: 'asc' }],
+  
+    take: 500,
   });
 
   const totals = deductees.reduce((acc: any, d: any) => {
@@ -471,6 +481,8 @@ router.get('/form16/:employeeId', asyncHandler(async (req: AuthRequest, res: Res
       components: { include: { component: { select: { code: true, name: true, type: true } } } },
     },
     orderBy: [{ payrollRun: { year: 'asc' } }, { payrollRun: { month: 'asc' } }],
+  
+    take: 500,
   });
 
   if (lines.length === 0) {
@@ -698,12 +710,16 @@ router.get('/summary', asyncHandler(async (req: AuthRequest, res: Response) => {
       tds: true,
       payrollRun: { select: { month: true } },
     },
+  
+    take: 500,
   });
 
   // Sum challans deposited
   const challans = await prisma.tdsChallan.findMany({
     where: { fyCode, ...getCompanyFilter(req) },
     select: { amount: true, quarter: true, month: true },
+  
+    take: 500,
   });
 
   const byQuarter = [1, 2, 3, 4].map(q => {

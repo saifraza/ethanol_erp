@@ -12,6 +12,8 @@ router.get('/', asyncHandler(async (req: AuthRequest, res: Response) => {
     where: { ...getCompanyFilter(req) },
     orderBy: [{ level: 'asc' }, { title: 'asc' }],
     include: { _count: { select: { employees: true } } },
+  
+    take: 500,
   });
   res.json({ designations });
 }));

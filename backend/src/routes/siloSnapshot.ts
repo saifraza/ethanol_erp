@@ -30,7 +30,9 @@ router.get('/', authenticate, asyncHandler(async (req: AuthRequest, res: Respons
       where: { date: { gte: minDate, lt: maxDate } },
       select: { date: true, productionAL: true, productionBL: true, washKL: true, grainConsumedMT: true, yieldALperMT: true },
       orderBy: { date: 'asc' },
-    });
+    
+    take: 500,
+  });
     // Group ethanol by date string
     const ethanolByDate = new Map<string, { al: number; bl: number; washKL: number | null; grainMT: number | null; yield: number | null }>();
     for (const e of ethanolEntries) {
@@ -89,7 +91,9 @@ router.get('/latest', authenticate, asyncHandler(async (_req: AuthRequest, res: 
         },
       },
       select: { productionBL: true, productionAL: true, avgStrength: true },
-    }),
+    
+    take: 500,
+  }),
     // Previous day's snapshot for fallback yield
     prisma.siloSnapshot.findFirst({
       where: { date: { lt: snapshot.date } },

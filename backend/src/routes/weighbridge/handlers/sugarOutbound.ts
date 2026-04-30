@@ -41,7 +41,9 @@ export async function handleSugarOutbound(w: WeighmentInput, ctx: PushContext): 
         OR: [{ buyerName: { equals: partyName, mode: 'insensitive' } }],
       },
       orderBy: { createdAt: 'desc' },
-    });
+    
+    take: 500,
+  });
     const active = candidates.filter((c: any) =>
       (c.contractQtyMT || 0) === 0 || (c.totalSuppliedMT || 0) < (c.contractQtyMT || 0)
     );

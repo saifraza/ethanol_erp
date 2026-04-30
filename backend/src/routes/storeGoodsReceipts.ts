@@ -451,6 +451,8 @@ router.post('/', storeWriteAuth, validate(createSchema), asyncHandler(async (req
     },
     select: { id: true, grnNo: true, createdAt: true, userId: true },
     orderBy: { createdAt: 'desc' },
+  
+    take: 500,
   });
 
   if (draftsForPO.length > 0) {
@@ -758,7 +760,9 @@ router.post('/:id/approve', storeWriteAuth, validate(approveSchema), asyncHandle
     if (grn.poId) {
       const parentPO = await tx.purchaseOrder.findUnique({ where: { id: grn.poId }, select: { dealType: true } });
       if (parentPO?.dealType !== 'OPEN') {
-        const poLines = await tx.pOLine.findMany({ where: { poId: grn.poId } });
+        const poLines = await tx.pOLine.findMany({ where: { poId: grn.poId } ,
+    take: 500,
+  });
         const allReceived = poLines.every((l: any) => l.pendingQty === 0);
         const anyPartial = poLines.some((l: any) => l.receivedQty > 0 && l.pendingQty > 0);
         if (allReceived) {

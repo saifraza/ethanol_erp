@@ -49,12 +49,16 @@ async function snapshotWashKL(prevCreatedAt: Date | null, currentTime: Date, pre
         let readings = await opc.opcHourlyReading.findMany({
           where: { tag: WASH_TAG, property: 'PRV_HR', hour: { gte: prevCreatedAt, lt: currentTime } },
           select: { avg: true },
-        });
+        
+    take: 500,
+  });
         if (readings.length === 0) {
           readings = await opc.opcHourlyReading.findMany({
             where: { tag: WASH_FALLBACK, property: 'PV', hour: { gte: prevCreatedAt, lt: currentTime } },
             select: { avg: true },
-          });
+          
+    take: 500,
+  });
         }
         washKL = readings.reduce((s: number, r: { avg: number }) => s + r.avg, 0);
       }
@@ -223,6 +227,8 @@ async function getStandaloneDispatch(afterDate: Date | null, upToDate: Date): Pr
       ],
     },
     select: { quantityBL: true },
+  
+    take: 500,
   });
   return weighments.reduce((s, w) => s + (w.quantityBL || 0), 0);
 }
@@ -389,6 +395,8 @@ router.post('/backfill-wash', authenticate, authorize('ADMIN'), async (_req: Aut
   const entries = await prisma.ethanolProductEntry.findMany({
     orderBy: { date: 'asc' },
     select: { id: true, date: true, createdAt: true, productionAL: true, washTotalizer: true },
+  
+    take: 500,
   });
 
   // Skip bulk-imported entries (all created within same second on Mar 16)

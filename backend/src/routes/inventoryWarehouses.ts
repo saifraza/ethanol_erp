@@ -128,7 +128,9 @@ router.get('/:id', asyncHandler(async (req: AuthRequest, res: Response) => {
 // Helper: generate next warehouse code (WH-001, WH-002, ...)
 async function generateWarehouseCode(): Promise<string> {
   // Get all existing codes to avoid collisions
-  const all = await prisma.warehouse.findMany({ select: { code: true } });
+  const all = await prisma.warehouse.findMany({ select: { code: true } ,
+    take: 500,
+  });
   const existingCodes = new Set(all.map(w => w.code));
   let num = all.length + 1;
   let code = `WH-${String(num).padStart(3, '0')}`;

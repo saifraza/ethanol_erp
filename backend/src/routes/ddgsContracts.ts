@@ -202,7 +202,9 @@ router.put('/:id', asyncHandler(async (req: AuthRequest, res: Response) => {
     const dispatches = await prisma.dDGSContractDispatch.findMany({
       where: { contractId: req.params.id },
       include: { invoice: { select: { id: true, quantity: true, totalAmount: true, balanceAmount: true } } },
-    });
+    
+    take: 500,
+  });
 
     let totalInvoicedAmt = 0;
     const customerState = buyerState || existing.buyerState;

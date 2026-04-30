@@ -241,6 +241,8 @@ router.get('/summary', authenticate, asyncHandler(async (req: AuthRequest, res: 
         },
       },
     },
+  
+    take: 500,
   });
 
   let openCount = 0, partialCount = 0, receivedCount = 0;

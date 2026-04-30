@@ -60,7 +60,9 @@ router.get('/', asyncHandler(async (req: AuthRequest, res: Response) => {
     const grns = await prisma.goodsReceipt.findMany({
       where: { id: { in: grnIds } },
       select: { id: true, grnNo: true, status: true },
-    });
+    
+    take: 500,
+  });
     grns.forEach((g: any) => { grnMap[g.id] = g; });
   }
 

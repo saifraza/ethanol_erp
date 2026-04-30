@@ -242,6 +242,8 @@ router.get('/consumption', authenticate, asyncHandler(async (req: AuthRequest, r
       currentStock: true, steamRate: true, calorificValue: true,
     },
     orderBy: { name: 'asc' },
+  
+    take: 500,
   });
 
   // Get existing consumption entries for this date (scoped via fuelItem IDs)
@@ -253,6 +255,8 @@ router.get('/consumption', authenticate, asyncHandler(async (req: AuthRequest, r
       received: true, consumed: true, closingStock: true,
       steamGenerated: true, remarks: true,
     },
+  
+    take: 500,
   });
 
   const entryMap = new Map(entries.map(e => [e.fuelItemId, e]));
@@ -263,6 +267,8 @@ router.get('/consumption', authenticate, asyncHandler(async (req: AuthRequest, r
   const prevEntries = await prisma.fuelConsumption.findMany({
     where: { date: prevDate, fuelItemId: { in: fuelItemIds } },
     select: { fuelItemId: true, closingStock: true },
+  
+    take: 500,
   });
   const prevMap = new Map(prevEntries.map(e => [e.fuelItemId, e.closingStock]));
 
@@ -445,6 +451,8 @@ router.get('/summary', authenticate, asyncHandler(async (req: AuthRequest, res: 
   const fuelItems = await prisma.inventoryItem.findMany({
     where: { category: 'FUEL', isActive: true, ...cf },
     select: { id: true, name: true, currentStock: true, minStock: true, unit: true },
+  
+    take: 500,
   });
 
   const lowStock = fuelItems.filter(f => f.currentStock < f.minStock);
@@ -454,6 +462,8 @@ router.get('/summary', authenticate, asyncHandler(async (req: AuthRequest, res: 
   const todayEntries = await prisma.fuelConsumption.findMany({
     where: { date, fuelItemId: { in: fuelItemIds } },
     select: { consumed: true, steamGenerated: true, received: true },
+  
+    take: 500,
   });
 
   const totalConsumed = todayEntries.reduce((s, e) => s + e.consumed, 0);
@@ -488,6 +498,8 @@ router.get('/summary', authenticate, asyncHandler(async (req: AuthRequest, res: 
   const recent = await prisma.fuelConsumption.findMany({
     where: { date: { gte: sevenDaysAgo, lte: date }, fuelItemId: { in: fuelItemIds } },
     select: { fuelItemId: true, consumed: true },
+  
+    take: 500,
   });
   const avgByFuel = new Map<string, number>();
   for (const f of fuelItems) {
@@ -597,7 +609,9 @@ router.get('/deals', authenticate, asyncHandler(async (req: AuthRequest, res: Re
         ],
       },
       select: { amount: true },
-    });
+    
+    take: 500,
+  });
     let totalPaid = directPayments.reduce((s, p) => s + p.amount, 0);
 
     // Add invoice-based payments (from vendorPayments route which links to invoiceId)
@@ -606,7 +620,9 @@ router.get('/deals', authenticate, asyncHandler(async (req: AuthRequest, res: Re
       const invoices = await prisma.vendorInvoice.findMany({
         where: { grnId: { in: grnIds } },
         select: { paidAmount: true },
-      });
+      
+    take: 500,
+  });
       totalPaid += invoices.reduce((s, inv) => s + (inv.paidAmount || 0), 0);
     }
 

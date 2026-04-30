@@ -121,6 +121,8 @@ async function readWashDistilled(opc: any, startUTC: Date, endUTC: Date): Promis
     where: { tag: WASH_FEED_TAG, property: 'PRV_HR', hour: { gte: startUTC, lt: endUTC } },
     orderBy: { hour: 'asc' },
     select: { avg: true },
+  
+    take: 500,
   });
 
   if (readings.length === 0) {
@@ -129,7 +131,9 @@ async function readWashDistilled(opc: any, startUTC: Date, endUTC: Date): Promis
       where: { tag: WASH_FEED_FALLBACK, property: 'PV', hour: { gte: startUTC, lt: endUTC } },
       orderBy: { hour: 'asc' },
       select: { avg: true },
-    });
+    
+    take: 500,
+  });
   }
 
   if (readings.length === 0) return 0;

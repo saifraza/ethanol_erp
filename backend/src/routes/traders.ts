@@ -65,6 +65,8 @@ router.get('/', asyncHandler(async (req: AuthRequest, res: Response) => {
   const poLines = await prisma.pOLine.findMany({
     where: { po: { vendorId: { in: traderIds }, ...getCompanyFilter(req) } },
     select: { po: { select: { vendorId: true } }, receivedQty: true, rate: true },
+  
+    take: 500,
   });
   const purchaseMap = new Map<string, number>();
   for (const line of poLines) {

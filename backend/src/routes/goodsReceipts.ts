@@ -162,7 +162,9 @@ async function syncRequisitionAfterGrnConfirm(grnId: string): Promise<void> {
     const linkedPos = await prisma.purchaseOrder.findMany({
       where: { requisitionId: pr.id },
       select: { id: true },
-    });
+    
+    take: 500,
+  });
     const poIds = linkedPos.map(p => p.id);
     if (poIds.length === 0) return;
 
@@ -784,7 +786,9 @@ router.post('/', asyncHandler(async (req: AuthRequest, res: Response) => {
       } else if (parentPO?.dealType !== 'OPEN') {
         const updatedPoLines = await tx.pOLine.findMany({
           where: { poId: b.poId },
-        });
+        
+    take: 500,
+  });
         const allFullyReceived = updatedPoLines.every((line: any) => line.pendingQty === 0);
         const anyPartialReceived = updatedPoLines.some((line: any) => line.receivedQty > 0 && line.pendingQty > 0);
 
@@ -1060,7 +1064,9 @@ router.delete('/:id', asyncHandler(async (req: AuthRequest, res: Response) => {
             // Recalculate PO status from actual line state (skip OPEN deals — trader running POs)
             const parentPOForReverse = await tx.purchaseOrder.findUnique({ where: { id: grn.poId! }, select: { dealType: true } });
             if (parentPOForReverse?.dealType !== 'OPEN') {
-              const allLines = await tx.pOLine.findMany({ where: { poId: grn.poId! } });
+              const allLines = await tx.pOLine.findMany({ where: { poId: grn.poId! } ,
+    take: 500,
+  });
               const anyReceived = allLines.some((l: any) => l.receivedQty > 0 || (l.id === line.poLineId && newReceivedQty > 0));
               if (!anyReceived) {
                 await tx.purchaseOrder.update({
@@ -1087,7 +1093,9 @@ router.delete('/:id', asyncHandler(async (req: AuthRequest, res: Response) => {
           const deletedMovements = await tx.stockMovement.findMany({
             where: { refType: 'GRN', refId: grn.id, itemId },
             select: { id: true, quantity: true, direction: true },
-          });
+          
+    take: 500,
+  });
 
           if (deletedMovements.length > 0) {
             // Reverse the stock effect of each movement

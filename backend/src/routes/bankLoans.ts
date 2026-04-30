@@ -228,6 +228,8 @@ router.get('/summary', asyncHandler(async (_req: AuthRequest, res: Response) => 
       dueDate: { gte: horizonStart, lt: horizonEnd },
     },
     select: { dueDate: true, totalAmount: true, principalAmount: true, interestAmount: true, loan: { select: { loanType: true, bankName: true, loanNo: true } } },
+  
+    take: 500,
   });
   const monthBucket: Record<string, { month: string; totalOutflow: number; principal: number; interest: number; TERM_LOAN: number; WORKING_CAPITAL: number; EQUIPMENT: number; CC_LIMIT: number; count: number }> = {};
   for (let m = 0; m < 12; m++) {

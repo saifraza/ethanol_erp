@@ -30,6 +30,8 @@ router.post('/filter', authenticate, asyncHandler(async (req: AuthRequest, res: 
       },
     },
     orderBy: { date: 'asc' },
+  
+    take: 500,
   });
 
   res.json(entries);

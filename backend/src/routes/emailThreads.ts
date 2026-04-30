@@ -79,7 +79,9 @@ router.post('/:id/sync', asyncHandler(async (req: AuthRequest, res: Response) =>
 
 // POST /:id/mark-seen — mark all replies on this thread as seen
 router.post('/:id/mark-seen', asyncHandler(async (req: AuthRequest, res: Response) => {
-  const replies = await prisma.emailReply.findMany({ where: { threadId: req.params.id, seenAt: null }, select: { id: true } });
+  const replies = await prisma.emailReply.findMany({ where: { threadId: req.params.id, seenAt: null }, select: { id: true } ,
+    take: 500,
+  });
   for (const r of replies) await markReplySeen(r.id);
   res.json({ marked: replies.length });
 }));

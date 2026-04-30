@@ -59,6 +59,8 @@ router.get('/all', asyncHandler(async (req: AuthRequest, res: Response) => {
       createdAt: true,
       updatedAt: true,
     },
+  
+    take: 500,
   });
 
   res.json({ notes, count: notes.length });

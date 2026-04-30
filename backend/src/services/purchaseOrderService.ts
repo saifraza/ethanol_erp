@@ -38,7 +38,9 @@ export async function createPurchaseOrder(input: CreatePOInput) {
     const items = await prisma.inventoryItem.findMany({
       where: { id: { in: itemIds } },
       select: { id: true, name: true, hsnCode: true, gstPercent: true, unit: true },
-    });
+    
+    take: 500,
+  });
     items.forEach(m => { itemsMap[m.id] = m; });
   }
 

@@ -280,7 +280,9 @@ async function sendDailyGapSummary(prisma: any): Promise<void> {
       where: { hour: { gte: startTime, lte: now } },
       select: { hour: true },
       distinct: ['hour'],
-    });
+    
+    take: 500,
+  });
     const existingHours = new Set(hourlyReadings.map((r: { hour: Date }) => r.hour.toISOString()));
     const gapHours = expectedHours.filter(h => !existingHours.has(h.toISOString()));
 

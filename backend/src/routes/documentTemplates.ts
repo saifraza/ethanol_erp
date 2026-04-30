@@ -65,7 +65,7 @@ const DEFAULTS: Record<string, { title: string; terms: string[]; footer: string;
 
 // GET / — List all templates (with defaults merged)
 router.get('/', asyncHandler(async (_req: AuthRequest, res: Response) => {
-  const saved = await prisma.documentTemplate.findMany();
+  const saved = await prisma.documentTemplate.findMany({ take: 500 });
   const savedMap = new Map(saved.map(t => [t.docType, t]));
 
   const templates = Object.entries(DEFAULTS).map(([docType, defaults]) => {

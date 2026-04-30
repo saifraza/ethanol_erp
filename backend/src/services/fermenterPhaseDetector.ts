@@ -227,7 +227,9 @@ export async function getAllFermenterPhases(): Promise<FermenterState[]> {
       const active = await prisma.fermentationFillEvent.findMany({
         where: { endTime: null },
         select: { fermenterNo: true, confidence: true },
-      });
+      
+    take: 500,
+  });
       const activeMap = new Map(active.map(a => [a.fermenterNo, a.confidence as Confidence]));
       for (const s of states) {
         if (activeMap.has(s.fermenterNo)) {

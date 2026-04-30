@@ -181,6 +181,8 @@ export async function syncAndListReplies(threadDbId: string) {
   const replies = await prisma.emailReply.findMany({
     where: { threadId: thread.id },
     orderBy: { receivedAt: 'asc' },
+  
+    take: 500,
   });
 
   return { replies, newCount, fetchError };

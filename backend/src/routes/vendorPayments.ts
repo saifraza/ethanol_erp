@@ -107,7 +107,9 @@ async function buildPaymentAdviceData(paymentId: string) {
       where: { invoiceId: payment.invoiceId },
       orderBy: { paymentDate: 'asc' },
       select: { mode: true, amount: true, reference: true, paymentDate: true },
-    });
+    
+    take: 500,
+  });
     for (const p of siblingPayments) {
       paymentSplits.push({ mode: p.mode, amount: p.amount, reference: p.reference || '', date: p.paymentDate, type: 'Bank Transfer' });
     }
@@ -246,13 +248,21 @@ router.get('/ledger/:vendorId', asyncHandler(async (req: AuthRequest, res: Respo
 
     // Get invoices, payments, POs, and cash voucher payments by name
     const [invoices, payments, pos, cashVouchers] = await Promise.all([
-      prisma.vendorInvoice.findMany({ where: { ...getCompanyFilter(req), vendorId }, orderBy: { invoiceDate: 'asc' } }),
-      prisma.vendorPayment.findMany({ where: { ...getCompanyFilter(req), vendorId }, orderBy: { paymentDate: 'asc' } }),
-      prisma.purchaseOrder.findMany({ where: { ...getCompanyFilter(req), vendorId }, orderBy: { poDate: 'asc' } }),
+      prisma.vendorInvoice.findMany({ where: { ...getCompanyFilter(req), vendorId }, orderBy: { invoiceDate: 'asc' } ,
+    take: 500,
+  }),
+      prisma.vendorPayment.findMany({ where: { ...getCompanyFilter(req), vendorId }, orderBy: { paymentDate: 'asc' } ,
+    take: 500,
+  }),
+      prisma.purchaseOrder.findMany({ where: { ...getCompanyFilter(req), vendorId }, orderBy: { poDate: 'asc' } ,
+    take: 500,
+  }),
       prisma.cashVoucher.findMany({
         where: { type: 'PAYMENT', status: { not: 'CANCELLED' }, payeeName: { equals: vendor.name, mode: 'insensitive' } },
         orderBy: { date: 'asc' },
-      }),
+      
+    take: 500,
+  }),
     ]);
 
     // Combine and sort by date
@@ -325,7 +335,9 @@ router.get('/outstanding', asyncHandler(async (req: AuthRequest, res: Response) 
         batch: { status: { in: ['DRAFT', 'APPROVED', 'RELEASED', 'SENT_TO_BANK'] } },
       },
       select: { vendorInvoiceId: true },
-    });
+    
+    take: 500,
+  });
     const excludeIds = activeItems.map(i => i.vendorInvoiceId).filter(Boolean) as string[];
 
     const invoices = await prisma.vendorInvoice.findMany({
@@ -589,7 +601,9 @@ router.get('/tds-report', asyncHandler(async (req: AuthRequest, res: Response) =
         vendor: true,
       },
       orderBy: { paymentDate: 'desc' },
-    });
+    
+    take: 500,
+  });
 
     // Group by section
     const grouped: Record<string, any> = {};
@@ -634,7 +648,9 @@ router.post('/generate-bank-file', asyncHandler(async (req: AuthRequest, res: Re
       include: {
         vendor: true,
       },
-    });
+    
+    take: 500,
+  });
 
     if (invoices.length === 0) {
       res.status(400).json({ error: 'No outstanding invoices found for the given IDs' });
@@ -961,6 +977,8 @@ router.post('/allocate', validate(allocateSchema), asyncHandler(async (req: Auth
   const pos = poIds.length > 0 ? await prisma.purchaseOrder.findMany({
     where: { id: { in: poIds } },
     select: { id: true, poNo: true, vendorId: true, status: true, lines: { select: { receivedQty: true, rate: true, gstPercent: true } } },
+  
+    take: 500,
   }) : [];
   const poById = new Map(pos.map(p => [p.id, p]));
   for (const a of b.allocations) {

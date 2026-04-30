@@ -34,7 +34,9 @@ async function seedDefaults() {
 // GET /
 router.get('/', asyncHandler(async (req: AuthRequest, res: Response) => {
   await seedDefaults();
-  const components = await prisma.salaryComponent.findMany({ orderBy: { sortOrder: 'asc' } });
+  const components = await prisma.salaryComponent.findMany({ orderBy: { sortOrder: 'asc' } ,
+    take: 500,
+  });
   res.json({ components });
 }));
 

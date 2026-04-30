@@ -111,12 +111,16 @@ router.get('/consumption', authenticate, asyncHandler(async (req: AuthRequest, r
     where: { category: 'RAW_MATERIAL', isActive: true },
     select: { id: true, name: true, code: true, unit: true, currentStock: true },
     orderBy: { name: 'asc' },
+  
+    take: 500,
   });
 
   // Existing entries for this date
   const entries = await prisma.rawMaterialConsumption.findMany({
     where: { date },
     select: { id: true, materialItemId: true, openingStock: true, received: true, consumed: true, closingStock: true, remarks: true },
+  
+    take: 500,
   });
   const entryMap = new Map(entries.map(e => [e.materialItemId, e]));
 
@@ -126,6 +130,8 @@ router.get('/consumption', authenticate, asyncHandler(async (req: AuthRequest, r
   const prevEntries = await prisma.rawMaterialConsumption.findMany({
     where: { date: prevDate },
     select: { materialItemId: true, closingStock: true },
+  
+    take: 500,
   });
   const prevMap = new Map(prevEntries.map(e => [e.materialItemId, e.closingStock]));
 
@@ -356,7 +362,9 @@ router.get('/deals', authenticate, asyncHandler(async (req: AuthRequest, res: Re
         ],
       },
       select: { amount: true },
-    });
+    
+    take: 500,
+  });
     let totalPaid = directPayments.reduce((s, p) => s + p.amount, 0);
 
     // Invoice-based payments from GRNs
@@ -365,7 +373,9 @@ router.get('/deals', authenticate, asyncHandler(async (req: AuthRequest, res: Re
       const invoices = await prisma.vendorInvoice.findMany({
         where: { grnId: { in: grnIds } },
         select: { paidAmount: true },
-      });
+      
+    take: 500,
+  });
       totalPaid += invoices.reduce((s, inv) => s + (inv.paidAmount || 0), 0);
     }
 
@@ -916,6 +926,8 @@ router.get('/summary', authenticate, asyncHandler(async (req: AuthRequest, res: 
       po: { lines: { some: { inventoryItem: { category: { in: [...RAW_CATEGORIES] } } } } },
     },
     select: { totalQty: true },
+  
+    take: 500,
   });
   const thisMonthReceived = monthGrns.reduce((s, g) => s + (g.totalQty || 0), 0);
 
@@ -926,6 +938,8 @@ router.get('/summary', authenticate, asyncHandler(async (req: AuthRequest, res: 
       remarks: { contains: 'Raw material deal PO-' },
     },
     select: { amount: true },
+  
+    take: 500,
   });
   const thisMonthPaid = monthPayments.reduce((s, p) => s + p.amount, 0);
 
@@ -968,7 +982,9 @@ router.get('/summary', authenticate, asyncHandler(async (req: AuthRequest, res: 
         ],
       },
       select: { amount: true },
-    });
+    
+    take: 500,
+  });
     let totalPaid = directPayments.reduce((s, p) => s + p.amount, 0);
 
     // Invoice payments
@@ -977,7 +993,9 @@ router.get('/summary', authenticate, asyncHandler(async (req: AuthRequest, res: 
       const invoices = await prisma.vendorInvoice.findMany({
         where: { grnId: { in: grnIds } },
         select: { paidAmount: true },
-      });
+      
+    take: 500,
+  });
       totalPaid += invoices.reduce((s, inv) => s + (inv.paidAmount || 0), 0);
     }
 
@@ -990,6 +1008,8 @@ router.get('/summary', authenticate, asyncHandler(async (req: AuthRequest, res: 
   const todayEntries = await prisma.rawMaterialConsumption.findMany({
     where: { date: today },
     select: { consumed: true, received: true },
+  
+    take: 500,
   });
   const todayConsumed = todayEntries.reduce((s, e) => s + (e.consumed || 0), 0);
   const todayReceived = todayEntries.reduce((s, e) => s + (e.received || 0), 0);
@@ -998,6 +1018,8 @@ router.get('/summary', authenticate, asyncHandler(async (req: AuthRequest, res: 
   const allRmItems = await prisma.inventoryItem.findMany({
     where: { category: 'RAW_MATERIAL', isActive: true },
     select: { name: true, currentStock: true, minStock: true },
+  
+    take: 500,
   });
   const lowStock = allRmItems.filter(i => i.minStock > 0 && i.currentStock < i.minStock);
 

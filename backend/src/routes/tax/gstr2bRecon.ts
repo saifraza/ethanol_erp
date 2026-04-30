@@ -177,6 +177,8 @@ router.post('/:runId/auto-match', asyncHandler(async (req: AuthRequest, res: Res
   // Pass 1: Match portal entries to VendorInvoice
   const portalEntries = await prisma.gstReconEntry.findMany({
     where: { runId: run.id, source: 'PORTAL', matchStatus: { in: ['PENDING', 'ONLY_IN_PORTAL'] } },
+  
+    take: 500,
   });
 
   let matchedCount = 0;
@@ -201,7 +203,9 @@ router.post('/:runId/auto-match', asyncHandler(async (req: AuthRequest, res: Res
         cgstAmount: true, sgstAmount: true, igstAmount: true,
         vendor: { select: { id: true, name: true, gstin: true } },
       },
-    });
+    
+    take: 500,
+  });
 
     // Find best match by normalized invoice number
     const match = candidates.find(c =>
@@ -251,6 +255,8 @@ router.post('/:runId/auto-match', asyncHandler(async (req: AuthRequest, res: Res
   const matchedVIIds = await prisma.gstReconEntry.findMany({
     where: { runId: run.id, vendorInvoiceId: { not: null } },
     select: { vendorInvoiceId: true },
+  
+    take: 500,
   });
   const matchedIds = new Set(matchedVIIds.map(e => e.vendorInvoiceId!));
 
@@ -267,6 +273,8 @@ router.post('/:runId/auto-match', asyncHandler(async (req: AuthRequest, res: Res
       isRCM: true,
       vendor: { select: { name: true, gstin: true } },
     },
+  
+    take: 500,
   });
 
   const booksOnlyEntries: Array<{
@@ -485,6 +493,8 @@ router.get('/:runId/export', asyncHandler(async (req: AuthRequest, res: Response
   const entries = await prisma.gstReconEntry.findMany({
     where: { runId: run.id },
     orderBy: [{ matchStatus: 'asc' }, { supplierGstin: 'asc' }],
+  
+    take: 500,
   });
 
   const header = 'Source,Supplier GSTIN,Supplier Name,Invoice No,Invoice Date,Invoice Value,Taxable Value,CGST,SGST,IGST,Cess,Total GST,RCM,ITC Available,Match Status,Match Method,Diff CGST,Diff SGST,Diff IGST,Diff Total';

@@ -18,6 +18,8 @@ router.get('/', authenticate, authorize('ADMIN'), asyncHandler(async (req: AuthR
       isActive: true,
       createdAt: true,
     },
+  
+    take: 500,
   });
   res.json(users);
 }));

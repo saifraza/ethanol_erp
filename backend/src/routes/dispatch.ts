@@ -31,7 +31,9 @@ router.get('/active-contracts', authenticate, asyncHandler(async (req: AuthReque
         autoGenerateEInvoice: true,
       },
       orderBy: { buyerName: 'asc' },
-    });
+    
+    take: 500,
+  });
     res.json({ contracts });
 }));
 
@@ -73,7 +75,9 @@ router.get('/', authenticate, asyncHandler(async (req: AuthRequest, res: Respons
           secondWeightAt: true,
         },
         orderBy: { secondWeightAt: 'desc' },
-      });
+      
+    take: 500,
+  });
       // Map to dispatch-like shape for frontend compatibility
       const dispatches = weighments.map(w => ({
         id: w.id, ticketNo: w.ticketNo, vehicleNo: w.vehicleNo,
@@ -91,7 +95,9 @@ router.get('/', authenticate, asyncHandler(async (req: AuthRequest, res: Respons
     const dispatches = await prisma.dispatchTruck.findMany({
       where: { ...dateFilter, entryId: null, ...getCompanyFilter(req) },
       orderBy: { createdAt: 'desc' },
-    });
+    
+    take: 500,
+  });
     res.json({ dispatches });
 }));
 
@@ -126,7 +132,9 @@ router.get('/totals', authenticate, asyncHandler(async (req: AuthRequest, res: R
           ],
         },
         select: { quantityBL: true },
-      });
+      
+    take: 500,
+  });
       standaloneExtra = standalone.reduce((s, w) => s + (w.quantityBL || 0), 0);
       standaloneCount = standalone.length;
     }

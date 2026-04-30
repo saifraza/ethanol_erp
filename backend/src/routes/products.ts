@@ -12,6 +12,8 @@ router.get('/', asyncHandler(async (req: AuthRequest, res: Response) => {
   const products = await prisma.product.findMany({
     where: { isActive: true, ...getCompanyFilter(req) },
     orderBy: { name: 'asc' },
+  
+    take: 500,
   });
   res.json({ products });
 }));

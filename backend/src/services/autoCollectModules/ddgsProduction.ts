@@ -152,6 +152,8 @@ async function saveData(data: Record<string, number>): Promise<void> {
   const dailyEntries = await prisma.dDGSProductionEntry.findMany({
     where: { shiftDate },
     select: { bags: true, totalProduction: true },
+  
+    take: 500,
   });
   const totalBags = dailyEntries.reduce((sum: number, e: { bags: number | null }) => sum + (e.bags || 0), 0);
   const totalTon = dailyEntries.reduce((sum: number, e: { totalProduction: number | null }) => sum + (e.totalProduction || 0), 0);

@@ -23,7 +23,9 @@ router.use(authenticate as any);
 
 /* ═══════ CHEMICALS (shared with PF) ═══════ */
 router.get('/chemicals', async (_req: Request, res: Response) => {
-  const chemicals = await prisma.pFChemical.findMany({ where: { isActive: true }, orderBy: { name: 'asc' } });
+  const chemicals = await prisma.pFChemical.findMany({ where: { isActive: true }, orderBy: { name: 'asc' } ,
+    take: 500,
+  });
   res.json(chemicals);
 });
 
@@ -55,8 +57,12 @@ router.get('/next-batch', async (_req: Request, res: Response) => {
 /* ═══════ FREE VESSELS ═══════ */
 router.get('/free-vessels', async (_req: Request, res: Response) => {
   const [activePF, activeFerm] = await Promise.all([
-    prisma.pFBatch.findMany({ where: { phase: { not: 'DONE' } }, select: { fermenterNo: true } }),
-    prisma.fermentationBatch.findMany({ where: { phase: { not: 'DONE' } }, select: { fermenterNo: true } }),
+    prisma.pFBatch.findMany({ where: { phase: { not: 'DONE' } }, select: { fermenterNo: true } ,
+    take: 500,
+  }),
+    prisma.fermentationBatch.findMany({ where: { phase: { not: 'DONE' } }, select: { fermenterNo: true } ,
+    take: 500,
+  }),
   ]);
   const usedPF = new Set(activePF.map(b => b.fermenterNo));
   const usedFerm = new Set(activeFerm.map(b => b.fermenterNo));
@@ -75,11 +81,15 @@ router.get('/overview', async (_req: Request, res: Response) => {
     prisma.pFBatch.findMany({
       where: { phase: { not: 'DONE' } },
       include: { dosings: true, labReadings: { orderBy: { createdAt: 'asc' } } },
-    }),
+    
+    take: 500,
+  }),
     prisma.fermentationBatch.findMany({
       where: { phase: { not: 'DONE' } },
       include: { dosings: true },
-    }),
+    
+    take: 500,
+  }),
     prisma.beerWellReading.findMany({
       orderBy: { createdAt: 'desc' },
       take: 10,
@@ -98,7 +108,9 @@ router.get('/overview', async (_req: Request, res: Response) => {
     ? await prisma.fermentationEntry.findMany({
         where: { batchNo: { in: activeFermBatchNos } },
         orderBy: { createdAt: 'desc' },
-      })
+      
+    take: 500,
+  })
     : [];
 
   // Group ALL lab entries per fermenter + keep latest
@@ -314,6 +326,8 @@ router.get('/batch/:batchNo', async (req: Request, res: Response) => {
   if (fermenterNo) where.fermenterNo = fermenterNo;
   const entries = await prisma.fermentationEntry.findMany({
     where, orderBy: [{ date: 'asc' }, { analysisTime: 'asc' }]
+  ,
+    take: 500,
   });
   res.json(entries);
 });
@@ -589,6 +603,8 @@ router.get('/anomaly/:fermenterNo', async (req: Request, res: Response) => {
   const fNo = parseInt(req.params.fermenterNo);
   const allEntries = await prisma.fermentationEntry.findMany({
     where: { fermenterNo: fNo }, orderBy: [{ date: 'asc' }, { analysisTime: 'asc' }]
+  ,
+    take: 500,
   });
   if (allEntries.length === 0) return res.json({ anomalies: [], stats: null });
   const batches: Record<number, typeof allEntries> = {};
@@ -736,7 +752,9 @@ router.get('/history', asyncHandler(async (req: AuthRequest, res: Response) => {
           alcohol: true, temp: true, rs: true, rst: true, createdAt: true,
           batchNo: true, fermenterNo: true,
         },
-      });
+      
+    take: 500,
+  });
   const entriesByBatch = new Map<string, typeof allEntries>();
   for (const e of allEntries) {
     const k = `${e.batchNo}-${e.fermenterNo}`;

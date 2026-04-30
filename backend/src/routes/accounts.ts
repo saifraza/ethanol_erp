@@ -120,7 +120,9 @@ router.get('/dashboard', asyncHandler(async (req: AuthRequest, res: Response) =>
     prisma.shipment.findMany({
       where: { paymentConfirmedAt: { gte: today, lt: tomorrow }, paymentStatus: 'CONFIRMED', ...getCompanyFilter(req) },
       select: { id: true, paymentAmount: true, paymentMode: true },
-    }),
+    
+    take: 500,
+  }),
     prisma.shipment.findMany({
       where: { paymentStatus: 'CONFIRMED', paymentConfirmedAt: { not: null }, ...getCompanyFilter(req) },
       orderBy: { paymentConfirmedAt: 'desc' },

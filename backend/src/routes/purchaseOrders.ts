@@ -157,7 +157,9 @@ async function processPOLines(params: {
         id: true, name: true, unit: true, hsnCode: true, hsnCodeId: true,
         gstPercent: true, gstOverridePercent: true, gstOverrideReason: true,
       },
-    });
+    
+    take: 500,
+  });
     items.forEach((m) => { itemsMap[m.id] = m; });
   }
 
@@ -371,7 +373,9 @@ router.get('/:id', asyncHandler(async (req: AuthRequest, res: Response) => {
       },
       orderBy: { paymentDate: 'desc' },
       select: { id: true, amount: true, mode: true, reference: true, paymentDate: true, tdsDeducted: true, remarks: true, paymentStatus: true, adviceSentAt: true, adviceSentTo: true, hasGst: true, bankReceiptPath: true, bankReceiptScannedAt: true },
-    });
+    
+    take: 500,
+  });
     const directPaidTotal = directPayments.reduce((s, p) => s + p.amount, 0);
     totalPaid += directPaidTotal;
 
@@ -379,7 +383,9 @@ router.get('/:id', asyncHandler(async (req: AuthRequest, res: Response) => {
     const pendingCashVouchers = await prisma.cashVoucher.findMany({
       where: { status: 'ACTIVE', purpose: { contains: `PO-${po.poNo}` } },
       select: { id: true, voucherNo: true, amount: true, status: true },
-    });
+    
+    take: 500,
+  });
     const pendingCashTotal = pendingCashVouchers.reduce((s, v) => s + v.amount, 0);
 
     // PO amount is ALWAYS based on received weight — not ordered qty
@@ -456,7 +462,9 @@ router.post('/', validate(createPOSchema), asyncHandler(async (req: AuthRequest,
         const cats = await prisma.inventoryItem.findMany({
           where: { id: { in: ids } },
           select: { category: true },
-        });
+        
+    take: 500,
+  });
         if (cats.some((c) => c.category === 'RAW_MATERIAL')) {
           termsAccepted = [...DEFAULT_RM_TERM_KEYS];
         }
@@ -707,7 +715,9 @@ router.get('/:id/audit', asyncHandler(async (req: AuthRequest, res: Response) =>
   });
   // Resolve user names
   const userIds = [...new Set(logs.map(l => l.userId))];
-  const users = userIds.length > 0 ? await prisma.user.findMany({ where: { id: { in: userIds } }, select: { id: true, name: true } }) : [];
+  const users = userIds.length > 0 ? await prisma.user.findMany({ where: { id: { in: userIds } }, select: { id: true, name: true } ,
+    take: 500,
+  }) : [];
   const userMap = Object.fromEntries(users.map(u => [u.id, u.name]));
   res.json(logs.map(l => ({ ...l, userName: userMap[l.userId] || l.userId, changes: JSON.parse(l.changes) })));
 }));
@@ -987,6 +997,8 @@ router.get('/:id/payments', asyncHandler(async (req: AuthRequest, res: Response)
     },
     orderBy: { paymentDate: 'asc' },
     select: { id: true, paymentDate: true, amount: true, mode: true, reference: true, remarks: true, isAdvance: true, paymentStatus: true, paymentNo: true, bankReceiptPath: true, adviceSentAt: true },
+  
+    take: 500,
   });
 
   let running = 0;
@@ -999,6 +1011,8 @@ router.get('/:id/payments', asyncHandler(async (req: AuthRequest, res: Response)
   const pendingCash = await prisma.cashVoucher.findMany({
     where: { status: 'ACTIVE', purpose: { contains: `PO-${po.poNo}` } },
     select: { id: true, voucherNo: true, amount: true, date: true },
+  
+    take: 500,
   });
   const pendingCashTotal = pendingCash.reduce((s, v) => s + v.amount, 0);
 
@@ -1057,6 +1071,8 @@ router.post('/:id/pay', asyncHandler(async (req: AuthRequest, res: Response) => 
       ],
     },
     select: { amount: true },
+  
+    take: 500,
   });
   const alreadyPaid = existingPayments.reduce((s, p) => s + p.amount, 0);
 
@@ -1071,6 +1087,8 @@ router.post('/:id/pay', asyncHandler(async (req: AuthRequest, res: Response) => 
       ],
     },
     select: { amount: true },
+  
+    take: 500,
   });
   const pendingBank = pendingBankPayments.reduce((s, p) => s + p.amount, 0);
 
@@ -1081,6 +1099,8 @@ router.post('/:id/pay', asyncHandler(async (req: AuthRequest, res: Response) => 
       purpose: { contains: `PO-${po.poNo}` },
     },
     select: { amount: true },
+  
+    take: 500,
   });
   const pendingCash = pendingCashVouchers.reduce((s, v) => s + v.amount, 0);
 
@@ -1231,7 +1251,9 @@ router.post('/payments/:paymentId/confirm', asyncHandler(async (req: AuthRequest
       const allPayments = await prisma.vendorPayment.findMany({
         where: { vendorId: po.vendorId, paymentStatus: 'CONFIRMED', invoiceId: null, OR: [{ remarks: { contains: `PO-${poNo} ` } }, { remarks: { endsWith: `PO-${poNo}` } }] },
         select: { amount: true },
-      });
+      
+    take: 500,
+  });
       const totalPaid = allPayments.reduce((s, p) => s + p.amount, 0);
       if (totalPaid >= receivable - 0.01) {
         await prisma.purchaseOrder.update({ where: { id: po.id }, data: { status: 'CLOSED' } });

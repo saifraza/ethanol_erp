@@ -94,6 +94,8 @@ router.get('/items/:id/vendors', asyncHandler(async (req: AuthRequest, res: Resp
     where: { inventoryItemId: req.params.id, isActive: true },
     orderBy: [{ isPreferred: 'desc' }, { rate: 'asc' }],
     include: { vendor: { select: { id: true, name: true, email: true, phone: true, contactPerson: true } } },
+  
+    take: 500,
   });
   res.json({ vendors });
 }));
@@ -373,6 +375,8 @@ router.get('/alerts', asyncHandler(async (_req: AuthRequest, res: Response) => {
   const items = await prisma.inventoryItem.findMany({
     where: { isActive: true },
     orderBy: { name: 'asc' },
+  
+    take: 500,
   });
   const lowStock = items.filter(i => i.currentStock <= i.minStock && i.minStock > 0);
   res.json({ alerts: lowStock });
@@ -461,7 +465,9 @@ router.post('/vendors/quick', authorize('ADMIN') as any, asyncHandler(async (req
 
 // GET /summary — category-wise totals
 router.get('/summary', asyncHandler(async (_req: AuthRequest, res: Response) => {
-  const items = await prisma.inventoryItem.findMany({ where: { isActive: true } });
+  const items = await prisma.inventoryItem.findMany({ where: { isActive: true } ,
+    take: 500,
+  });
   const categories: Record<string, { count: number; totalValue: number; lowStock: number }> = {};
   for (const item of items) {
     if (!categories[item.category]) categories[item.category] = { count: 0, totalValue: 0, lowStock: 0 };

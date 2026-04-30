@@ -264,6 +264,8 @@ router.get('/gst-summary', asyncHandler(async (req: AuthRequest, res: Response) 
       },
     },
     select: { id: true, code: true, name: true },
+  
+    take: 500,
   });
 
   const accountIdMap: Record<string, string> = {};

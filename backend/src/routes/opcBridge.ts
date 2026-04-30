@@ -122,7 +122,9 @@ async function checkAlarms(opc: any, readings: { tag: string; property: string; 
     tagsWithAlarms = await opc.opcMonitoredTag.findMany({
       where: { active: true, source, OR: [{ hhAlarm: { not: null } }, { llAlarm: { not: null } }] },
       select: { tag: true, label: true, description: true, hhAlarm: true, llAlarm: true, tagType: true, source: true },
-    });
+    
+    take: 500,
+  });
   } catch {
     return; // New columns not migrated yet
   }
@@ -797,7 +799,9 @@ router.get('/wash-summary', authenticate, asyncHandler(async (_req: AuthRequest,
         where: { tag, property: PROPERTY, hour: { gte: startUTC, lt: endUTC } },
         orderBy: { hour: 'asc' },
         select: { hour: true, avg: true },
-      });
+      
+    take: 500,
+  });
 
       let washPct = 0;
       for (let i = 1; i < readings.length; i++) {
@@ -825,7 +829,9 @@ router.get('/wash-summary', authenticate, asyncHandler(async (_req: AuthRequest,
       where: { tag: WASH_FEED_TAG, property: 'PRV_HR', hour: { gte: startUTC, lt: endUTC } },
       orderBy: { hour: 'asc' },
       select: { avg: true },
-    });
+    
+    take: 500,
+  });
 
     if (readings.length === 0) {
       // Fallback: try FCV_140101 PV (control valve flow rate × 1 hr)
@@ -833,7 +839,9 @@ router.get('/wash-summary', authenticate, asyncHandler(async (_req: AuthRequest,
         where: { tag: 'FCV_140101', property: 'PV', hour: { gte: startUTC, lt: endUTC } },
         orderBy: { hour: 'asc' },
         select: { avg: true },
-      });
+      
+    take: 500,
+  });
     }
 
     if (readings.length === 0) return { totalFeedKL: 0, avgFlowRate: 0, hours: 0 };
@@ -916,6 +924,8 @@ router.get('/gaps', authenticate, asyncHandler(async (req: AuthRequest, res: Res
   const hourlyReadings = await opc.opcHourlyReading.findMany({
     where: hourlyGapWhere,
     select: { hour: true, tag: true },
+  
+    take: 500,
   });
 
   // Build map: hour → set of tags that have data

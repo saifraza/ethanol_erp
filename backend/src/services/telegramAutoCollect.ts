@@ -229,7 +229,7 @@ let schedules: AutoCollectScheduleConfig[] = [];
 export async function loadSchedules(): Promise<void> {
   try {
     // Primary: read from AutoCollectSchedule table
-    const dbSchedules = await prisma.autoCollectSchedule.findMany();
+    const dbSchedules = await prisma.autoCollectSchedule.findMany({ take: 500 });
     if (dbSchedules.length > 0) {
       schedules = dbSchedules.map((s: any) => ({
         module: s.module,

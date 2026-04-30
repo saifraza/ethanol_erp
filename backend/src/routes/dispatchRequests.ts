@@ -327,7 +327,9 @@ router.put('/:id/status', asyncHandler(async (req: AuthRequest, res: Response) =
         if (order) {
           const allLines = await prisma.salesOrderLine.findMany({
             where: { orderId: order.id },
-          });
+          
+    take: 500,
+  });
 
           const allDispatched = allLines.every((line) => line.pendingQty === 0);
           if (allDispatched) {

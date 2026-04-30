@@ -226,7 +226,9 @@ router.post('/:id/release', asyncHandler(async (req: AuthRequest, res: Response)
     // Update contract supplied KL
     const allLiftings = await tx.ethanolLifting.findMany({
       where: { contractId: contract.id }, select: { quantityKL: true },
-    });
+    
+    take: 500,
+  });
     const totalKL = allLiftings.reduce((s: number, l: any) => s + l.quantityKL, 0);
     await tx.ethanolContract.update({ where: { id: contract.id }, data: { totalSuppliedKL: totalKL } });
 

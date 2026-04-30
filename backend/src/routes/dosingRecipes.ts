@@ -11,6 +11,8 @@ router.get('/', async (_req: AuthRequest, res: Response) => {
   const recipes = await prisma.dosingRecipe.findMany({
     where: { isActive: true },
     orderBy: [{ category: 'asc' }, { order: 'asc' }]
+  ,
+    take: 500,
   });
   res.json(recipes);
 });
@@ -20,6 +22,8 @@ router.get('/:category', async (req: AuthRequest, res: Response) => {
   const recipes = await prisma.dosingRecipe.findMany({
     where: { category: req.params.category.toUpperCase(), isActive: true },
     orderBy: { order: 'asc' }
+  ,
+    take: 500,
   });
   res.json(recipes);
 });

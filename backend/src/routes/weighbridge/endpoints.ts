@@ -334,7 +334,9 @@ export function registerOtherRoutes(router: Router): void {
                   const newStatus = grnCount >= po.truckCap ? 'RECEIVED' : 'PARTIAL_RECEIVED';
                   await tx.purchaseOrder.update({ where: { id: goodsReceipt.poId }, data: { status: newStatus } });
                 } else if (po.dealType !== 'OPEN') {
-                  const allLines = await tx.pOLine.findMany({ where: { poId: goodsReceipt.poId } });
+                  const allLines = await tx.pOLine.findMany({ where: { poId: goodsReceipt.poId } ,
+    take: 500,
+  });
                   const allDone = allLines.every(l => l.pendingQty <= 0 && l.quantity > 0);
                   const anyPartial = allLines.some(l => l.receivedQty > 0 && l.pendingQty > 0);
                   if (allDone) {
@@ -526,7 +528,9 @@ export function registerOtherRoutes(router: Router): void {
       where: { isActive: true },
       select: { id: true, code: true, name: true, shortName: true, isDefault: true },
       orderBy: { name: 'asc' },
-    });
+    
+    take: 500,
+  });
 
     res.json({
       suppliers: Array.from(supplierMap.values()),
@@ -546,7 +550,9 @@ export function registerOtherRoutes(router: Router): void {
       ? await prisma.dispatchTruck.findMany({
           where: { sourceWbId: { in: sourceWbIds } },
           select: { id: true, vehicleNo: true, status: true, sourceWbId: true, weightGross: true, createdAt: true, gateInTime: true },
-        })
+        
+    take: 500,
+  })
       : [];
     const recentIssues = await prisma.plantIssue.findMany({
       where: {
@@ -627,7 +633,9 @@ export function registerOtherRoutes(router: Router): void {
             },
             orderBy: { createdAt: 'desc' },
             select: { id: true, status: true, sourceWbId: true, weightGross: true, weightTare: true, contractId: true, quantityBL: true },
-          });
+          
+    take: 500,
+  });
         }
 
         result.candidates = candidates.map(c => ({ id: c.id, status: c.status, sourceWbId: c.sourceWbId, gross: c.weightGross, tare: c.weightTare }));

@@ -106,7 +106,9 @@ router.post('/', asyncHandler(async (req: AuthRequest, res: Response) => {
     // Lookup product details for lines
     const productIds = rawLines.map((l: any) => l.productId).filter(Boolean);
     const products = productIds.length > 0
-      ? await prisma.product.findMany({ where: { id: { in: productIds } } })
+      ? await prisma.product.findMany({ where: { id: { in: productIds } } ,
+    take: 500,
+  })
       : [];
     const productMap: Record<string, typeof products[number]> = Object.fromEntries(products.map(p => [p.id, p]));
 
@@ -290,7 +292,9 @@ router.delete('/:id', asyncHandler(async (req: AuthRequest, res: Response) => {
     const drs = await prisma.dispatchRequest.findMany({
       where: { orderId: req.params.id },
       select: { id: true },
-    });
+    
+    take: 500,
+  });
     const drIds = drs.map(d => d.id);
     if (drIds.length > 0) {
       await prisma.shipment.deleteMany({ where: { dispatchRequestId: { in: drIds } } });

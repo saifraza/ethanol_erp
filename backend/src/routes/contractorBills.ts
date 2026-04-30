@@ -84,6 +84,8 @@ router.get('/', asyncHandler(async (req: AuthRequest, res: Response) => {
   const allBills = await prisma.contractorBill.findMany({
     where: { status: { not: 'CANCELLED' }, ...getCompanyFilter(req) },
     select: { status: true, netPayable: true, paidAmount: true, balanceAmount: true },
+  
+    take: 500,
   });
 
   const stats = {

@@ -105,6 +105,8 @@ router.get('/active', asyncHandler(async (req: AuthRequest, res: Response) => {
       quantity: true, totalSuppliedQty: true,
       customer: { select: { id: true, name: true } },
     },
+  
+    take: 500,
   });
 
   res.json({ orders });
@@ -140,6 +142,8 @@ router.get('/:id/dispatches', asyncHandler(async (req: AuthRequest, res: Respons
       tcsPercent: true, tcsAmount: true, tcsSection: true,
       remarks: true,
     },
+  
+    take: 500,
   }) : [];
   const invoiceByShipment = new Map(invoices.map(inv => [inv.shipmentId, inv]));
 
@@ -148,6 +152,8 @@ router.get('/:id/dispatches', asyncHandler(async (req: AuthRequest, res: Respons
   const cashVouchers = invoiceIds.length > 0 ? await prisma.cashVoucher.findMany({
     where: { linkedInvoiceId: { in: invoiceIds } },
     select: { id: true, voucherNo: true, amount: true, status: true, linkedInvoiceId: true },
+  
+    take: 500,
   }) : [];
   // Also find cash vouchers for shipments with 0% invoice (no invoice, only cash voucher)
   // These are linked via purpose containing shipment ID
@@ -155,6 +161,8 @@ router.get('/:id/dispatches', asyncHandler(async (req: AuthRequest, res: Respons
   const directCashVouchers = noInvoiceShipments.length > 0 ? await prisma.cashVoucher.findMany({
     where: { purpose: { contains: 'shipment:' }, linkedInvoiceId: { in: noInvoiceShipments } },
     select: { id: true, voucherNo: true, amount: true, status: true, linkedInvoiceId: true },
+  
+    take: 500,
   }) : [];
 
   const cvByInvoice = new Map(cashVouchers.map(cv => [cv.linkedInvoiceId, cv]));

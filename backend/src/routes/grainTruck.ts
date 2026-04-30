@@ -107,7 +107,9 @@ router.get('/', authenticate, asyncHandler(async (req: AuthRequest, res: Respons
         NOT: { remarks: { contains: '| FUEL |' } },
       },
       orderBy: { createdAt: 'desc' },
-    });
+    
+    take: 500,
+  });
 
     // Summaries — partial quarantine: to silo = net - quarantineWeight per truck
     const totalNet = trucks.reduce((s, t) => s + (t.weightNet - (t.quarantineWeight || 0)), 0);
@@ -127,7 +129,9 @@ router.get('/summary', authenticate, asyncHandler(async (req: AuthRequest, res: 
         date: { gte: start, lt: end },
         NOT: { remarks: { contains: '| FUEL |' } },
       },
-    });
+    
+    take: 500,
+  });
 
     // Partial quarantine: to silo = net - quarantineWeight
     const totalNet = trucks.reduce((s, t) => s + (t.weightNet - (t.quarantineWeight || 0)), 0);
@@ -155,7 +159,9 @@ router.get('/report', authenticate, asyncHandler(async (req: AuthRequest, res: R
         date: { gt: rangeStart, lt: rangeEnd },
       },
       orderBy: [{ date: 'asc' }, { createdAt: 'asc' }],
-    });
+    
+    take: 500,
+  });
 
     const trucks = rows.map((t) => {
       const shiftDate = shiftDateFor(t.date);
@@ -298,7 +304,9 @@ router.get('/by-po/:poId', authenticate, asyncHandler(async (req: AuthRequest, r
         secondWeightAt: true, ticketNo: true, driverName: true, driverMobile: true, transporterName: true,
         lines: { select: { description: true, receivedQty: true, acceptedQty: true, rejectedQty: true, unit: true } },
       },
-    });
+    
+    take: 500,
+  });
 
     // 2. GrainTrucks linked either by poId or by grnId (covers both paths)
     const grnIds = grns.map(g => g.id);
@@ -312,7 +320,9 @@ router.get('/by-po/:poId', authenticate, asyncHandler(async (req: AuthRequest, r
         quarantineWeight: true, quarantineReason: true, moisture: true, bags: true, remarks: true,
         grnId: true, poId: true,
       },
-    });
+    
+    take: 500,
+  });
     const truckByGrn = new Map<string, typeof trucks[0]>();
     for (const t of trucks) if (t.grnId) truckByGrn.set(t.grnId, t);
 
@@ -330,7 +340,9 @@ router.get('/by-po/:poId', authenticate, asyncHandler(async (req: AuthRequest, r
             ],
           },
           select: { id: true, grnId: true, vehicleNo: true, date: true, entryTime: true, exitTime: true, status: true, netWeight: true, grossWeight: true },
-        })
+        
+    take: 500,
+  })
       : [];
     const gateByGrn = new Map<string, typeof gateEntries[0]>();
     for (const g of gateEntries) if (g.grnId) gateByGrn.set(g.grnId, g);

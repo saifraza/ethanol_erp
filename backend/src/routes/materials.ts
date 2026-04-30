@@ -2,9 +2,10 @@ import { Router, Request, Response } from 'express';
 import prisma from '../config/prisma';
 import { authenticate, authorize, AuthRequest, getCompanyFilter, getActiveCompanyId } from '../middleware/auth';
 import { getEffectiveGstRate, resolveHsnFromString } from '../services/taxRateLookup';
+import { asyncHandler } from '../shared/middleware';
 
 const router = Router();
-router.use(authenticate as any);
+router.use(authenticate);
 
 /**
  * Resolve the effective GST for an InventoryItem given a possible hsnCodeId and
@@ -45,8 +46,7 @@ function normalizeUnit(unit: string): string {
 }
 
 // GET / — list all active items (procurement view)
-router.get('/', async (req: Request, res: Response) => {
-  try {
+router.get('/', asyncHandler(async (req: Request, res: Response) => {
     const items = await prisma.inventoryItem.findMany({
       where: { isActive: true, ...getCompanyFilter(req as AuthRequest) },
       orderBy: { name: 'asc' },
@@ -58,28 +58,26 @@ router.get('/', async (req: Request, res: Response) => {
         defaultRate: true, minStock: true, currentStock: true, location: true,
         isActive: true, remarks: true, avgCost: true,
       },
-    });
+    
+    take: 500,
+  });
     // Map to Material-compatible shape for frontend compat
     const materials = items.map(i => ({
       ...i,
       storageLocation: i.location,
     }));
     res.json({ materials });
-  } catch (err: unknown) { res.status(500).json({ error: 'Failed to load materials' }); }
-});
+}));
 
 // GET /:id — single item
-router.get('/:id', async (req: Request, res: Response) => {
-  try {
+router.get('/:id', asyncHandler(async (req: Request, res: Response) => {
     const item = await prisma.inventoryItem.findUnique({ where: { id: req.params.id } });
     if (!item) return res.status(404).json({ error: 'Material not found' });
     res.json({ ...item, storageLocation: item.location });
-  } catch (err: unknown) { res.status(500).json({ error: 'Failed to load material' }); }
-});
+}));
 
 // POST / — create item via procurement
-router.post('/', async (req: Request, res: Response) => {
-  try {
+router.post('/', asyncHandler(async (req: Request, res: Response) => {
     const b = req.body;
     const code = await generateItemCode();
 
@@ -135,12 +133,10 @@ router.post('/', async (req: Request, res: Response) => {
       },
     });
     res.status(201).json({ ...item, storageLocation: item.location });
-  } catch (err: unknown) { res.status(500).json({ error: 'Failed to create material' }); }
-});
+}));
 
 // PUT /:id — update item via procurement
-router.put('/:id', async (req: Request, res: Response) => {
-  try {
+router.put('/:id', asyncHandler(async (req: Request, res: Response) => {
     const b = req.body;
     const existing = await prisma.inventoryItem.findUnique({ where: { id: req.params.id } });
     if (!existing) return res.status(404).json({ error: 'Material not found' });
@@ -210,23 +206,19 @@ router.put('/:id', async (req: Request, res: Response) => {
 
     const item = await prisma.inventoryItem.update({ where: { id: req.params.id }, data });
     res.json({ ...item, storageLocation: item.location });
-  } catch (err: unknown) { res.status(500).json({ error: 'Failed to update material' }); }
-});
+}));
 
 // DELETE /:id — deactivate, SUPER_ADMIN only, with reference check
-router.delete('/:id', authorize('SUPER_ADMIN') as any, async (req: Request, res: Response) => {
-  try {
+router.delete('/:id', authorize('SUPER_ADMIN'), asyncHandler(async (req: Request, res: Response) => {
     const { checkMaterialReferences } = await import('../utils/referenceCheck');
     const check = await checkMaterialReferences(req.params.id);
     if (!check.canDelete) { res.status(409).json({ error: check.message }); return; }
     await prisma.inventoryItem.update({ where: { id: req.params.id }, data: { isActive: false } });
     res.json({ ok: true });
-  } catch (err: unknown) { res.status(500).json({ error: 'Failed to delete material' }); }
-});
+}));
 
 // POST /seed — seed default materials as InventoryItems
-router.post('/seed', authorize('ADMIN') as any, async (req: Request, res: Response) => {
-  try {
+router.post('/seed', authorize('ADMIN'), asyncHandler(async (req: Request, res: Response) => {
     const seeds = [
       { name: 'Maize', category: 'RAW_MATERIAL', hsnCode: '1005', unit: 'MT', gstPercent: 5 },
       { name: 'Broken Rice', category: 'RAW_MATERIAL', hsnCode: '1006', unit: 'MT', gstPercent: 5 },
@@ -251,12 +243,10 @@ router.post('/seed', authorize('ADMIN') as any, async (req: Request, res: Respon
       }
     }
     res.json({ created });
-  } catch (err: unknown) { res.status(500).json({ error: 'Seed failed' }); }
-});
+}));
 
 // POST /seed-chemicals — bulk seed all plant chemicals with department-wise rates
-router.post('/seed-chemicals', authorize('ADMIN') as any, async (req: Request, res: Response) => {
-  try {
+router.post('/seed-chemicals', authorize('ADMIN'), asyncHandler(async (req: Request, res: Response) => {
     const seeds: Array<{ name: string; unit: string; subCategory: string; defaultRate: number; remarks: string }> = [
       // ─── CPU (Condensate Polishing Unit) ───
       { name: 'Caustic Soda NaOH 100% - CPU', unit: 'kg', subCategory: 'CPU', defaultRate: 70.00, remarks: 'Monthly req: 3,000 kg' },
@@ -345,12 +335,10 @@ router.post('/seed-chemicals', authorize('ADMIN') as any, async (req: Request, r
     }
 
     res.json({ created, skipped, total: seeds.length, results });
-  } catch (err: unknown) { res.status(500).json({ error: 'Chemical seed failed' }); }
-});
+}));
 
 // POST /normalize-names — one-time fix: trim whitespace and fix known typos in InventoryItem names
-router.post('/normalize-names', authorize('ADMIN') as any, async (req: Request, res: Response) => {
-  try {
+router.post('/normalize-names', authorize('ADMIN'), asyncHandler(async (req: Request, res: Response) => {
     // Known typo fixes: old name -> correct name
     const TYPO_FIXES: Record<string, string> = {
       'Rick Husk': 'Rice Husk',
@@ -358,7 +346,9 @@ router.post('/normalize-names', authorize('ADMIN') as any, async (req: Request, 
 
     const items = await prisma.inventoryItem.findMany({
       select: { id: true, name: true },
-    });
+    
+    take: 500,
+  });
 
     let trimmed = 0;
     let typoFixed = 0;
@@ -384,13 +374,11 @@ router.post('/normalize-names', authorize('ADMIN') as any, async (req: Request, 
     }
 
     res.json({ ok: true, trimmed, typoFixed, total: items.length, changes });
-  } catch (err: unknown) { res.status(500).json({ error: 'Normalize failed' }); }
-});
+}));
 
 // POST /migrate — one-time migration: link old Material records to InventoryItem
-router.post('/migrate', authorize('ADMIN') as any, async (req: Request, res: Response) => {
-  try {
-    const materials = await prisma.material.findMany();
+router.post('/migrate', authorize('ADMIN'), asyncHandler(async (req: Request, res: Response) => {
+    const materials = await prisma.material.findMany({ take: 500 });
     const stats = { matched: 0, created: 0, poLinesUpdated: 0, grnLinesUpdated: 0 };
     const mapping: Record<string, string> = {}; // materialId -> inventoryItemId
 
@@ -470,7 +458,6 @@ router.post('/migrate', authorize('ADMIN') as any, async (req: Request, res: Res
     }
 
     res.json({ ok: true, mapping, ...stats });
-  } catch (err: unknown) { res.status(500).json({ error: 'Migration failed' }); }
-});
+}));
 
 export default router;

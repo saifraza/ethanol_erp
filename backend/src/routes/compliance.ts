@@ -507,6 +507,8 @@ router.post('/:id/auto-link', asyncHandler(async (req: AuthRequest, res: Respons
   const linkedIds = await prisma.complianceDocument.findMany({
     where: { obligationId: req.params.id },
     select: { documentId: true },
+  
+    take: 500,
   });
   const linkedSet = new Set(linkedIds.map(l => l.documentId));
 

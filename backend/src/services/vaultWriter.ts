@@ -104,7 +104,9 @@ async function generateWikiLinks(entities: Record<string, any>): Promise<string[
     try {
       const existingNotes = await prisma.vaultNote.findMany({
         select: { title: true, vaultPath: true },
-      });
+      
+    take: 500,
+  });
 
       for (const party of parties) {
         const partyLower = party.toLowerCase();

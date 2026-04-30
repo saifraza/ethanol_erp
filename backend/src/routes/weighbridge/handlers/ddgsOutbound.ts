@@ -66,7 +66,9 @@ export async function handleDDGSOutbound(w: WeighmentInput, ctx: PushContext): P
         OR: [{ buyerName: { equals: partyName, mode: 'insensitive' } }],
       },
       orderBy: { createdAt: 'desc' },
-    });
+    
+    take: 500,
+  });
     // Filter to ones with remaining qty
     const active = candidates.filter((c: any) =>
       (c.contractQtyMT || 0) === 0 || (c.totalSuppliedMT || 0) < (c.contractQtyMT || 0)

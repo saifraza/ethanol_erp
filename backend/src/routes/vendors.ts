@@ -149,7 +149,9 @@ router.get('/:id', asyncHandler(async (req: AuthRequest, res: Response) => {
     // Calculate outstanding balance (sum of vendorInvoice.balanceAmount)
     const invoices = await prisma.vendorInvoice.findMany({
       where: { vendorId: req.params.id },
-    });
+    
+    take: 500,
+  });
     const outstandingBalance = invoices.reduce((sum, inv) => sum + (inv.balanceAmount || 0), 0);
 
     // Count total POs

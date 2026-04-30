@@ -175,7 +175,9 @@ async function recomputeHeaderRate(vrId: string): Promise<number | null> {
     lineQuotes = await prisma.purchaseRequisitionVendorLine.findMany({
       where: { vendorQuoteId: vrId },
       select: { requisitionLineId: true, unitRate: true, source: true },
-    });
+    
+    take: 500,
+  });
   } catch {
     return null;
   }

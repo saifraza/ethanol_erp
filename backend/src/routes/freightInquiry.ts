@@ -27,7 +27,9 @@ router.get('/', asyncHandler(async (req: AuthRequest, res: Response) => {
         },
       },
       orderBy: { createdAt: 'desc' },
-    });
+    
+    take: 500,
+  });
     res.json({ inquiries });
 }));
 

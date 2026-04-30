@@ -22,15 +22,33 @@ router.get('/analytics', authenticate, asyncHandler(async (req: AuthRequest, res
       pfBatches, rawMaterial, settings,
       latestSiloSnapshot, grainTruckAgg,
     ] = await Promise.all([
-      prisma.grainEntry.findMany({ where: { date: { gte: from, lte: now } }, orderBy: { date: 'asc' } }),
-      prisma.ethanolProductEntry.findMany({ where: { date: { gte: from, lte: now } }, orderBy: { date: 'asc' } }),
-      prisma.dispatchTruck.findMany({ where: { date: { gte: from, lte: now }, status: { notIn: ['GATE_IN', 'TARE_WEIGHED'] }, ...getCompanyFilter(req) }, orderBy: { date: 'asc' } }),
-      prisma.dDGSStockEntry.findMany({ where: { date: { gte: from, lte: now } }, orderBy: { date: 'asc' } }),
-      prisma.dDGSDispatchTruck.findMany({ where: { date: { gte: from, lte: now }, ...getCompanyFilter(req) }, orderBy: { date: 'asc' } }),
-      prisma.dDGSProductionEntry.findMany({ where: { date: { gte: from, lte: now } }, select: { totalProduction: true, date: true, shiftDate: true } }),
-      prisma.distillationEntry.findMany({ where: { date: { gte: from, lte: now } }, orderBy: { date: 'asc' } }),
-      prisma.liquefactionEntry.findMany({ where: { date: { gte: from, lte: now } }, orderBy: { date: 'asc' } }),
-      prisma.millingEntry.findMany({ where: { date: { gte: from, lte: now } }, orderBy: { date: 'asc' } }),
+      prisma.grainEntry.findMany({ where: { date: { gte: from, lte: now } }, orderBy: { date: 'asc' } ,
+    take: 500,
+  }),
+      prisma.ethanolProductEntry.findMany({ where: { date: { gte: from, lte: now } }, orderBy: { date: 'asc' } ,
+    take: 500,
+  }),
+      prisma.dispatchTruck.findMany({ where: { date: { gte: from, lte: now }, status: { notIn: ['GATE_IN', 'TARE_WEIGHED'] }, ...getCompanyFilter(req) }, orderBy: { date: 'asc' } ,
+    take: 500,
+  }),
+      prisma.dDGSStockEntry.findMany({ where: { date: { gte: from, lte: now } }, orderBy: { date: 'asc' } ,
+    take: 500,
+  }),
+      prisma.dDGSDispatchTruck.findMany({ where: { date: { gte: from, lte: now }, ...getCompanyFilter(req) }, orderBy: { date: 'asc' } ,
+    take: 500,
+  }),
+      prisma.dDGSProductionEntry.findMany({ where: { date: { gte: from, lte: now } }, select: { totalProduction: true, date: true, shiftDate: true } ,
+    take: 500,
+  }),
+      prisma.distillationEntry.findMany({ where: { date: { gte: from, lte: now } }, orderBy: { date: 'asc' } ,
+    take: 500,
+  }),
+      prisma.liquefactionEntry.findMany({ where: { date: { gte: from, lte: now } }, orderBy: { date: 'asc' } ,
+    take: 500,
+  }),
+      prisma.millingEntry.findMany({ where: { date: { gte: from, lte: now } }, orderBy: { date: 'asc' } ,
+    take: 500,
+  }),
       prisma.fermentationBatch.findMany({
         where: { createdAt: { gte: from } },
         include: { dosings: true },
@@ -43,7 +61,9 @@ router.get('/analytics', authenticate, asyncHandler(async (req: AuthRequest, res
         orderBy: { createdAt: 'desc' },
         take: 1000,
       }),
-      prisma.rawMaterialEntry.findMany({ where: { date: { gte: from, lte: now } }, orderBy: { date: 'asc' } }),
+      prisma.rawMaterialEntry.findMany({ where: { date: { gte: from, lte: now } }, orderBy: { date: 'asc' } ,
+    take: 500,
+  }),
       prisma.settings.findFirst(),
       // Silo stock from auto-computed snapshots (replaces stale GrainEntry)
       prisma.siloSnapshot.findFirst({ orderBy: { date: 'desc' } }),
@@ -335,16 +355,28 @@ router.get('/fermentation-deep', authenticate, asyncHandler(async (req: AuthRequ
       prisma.fermentationBatch.findMany({
         where: { phase: { not: 'DONE' } },
         include: { dosings: true },
-      }),
+      
+    take: 500,
+  }),
       prisma.pFBatch.findMany({
         where: { phase: { not: 'DONE' } },
         include: { dosings: true, labReadings: { orderBy: { createdAt: 'asc' } } },
-      }),
+      
+    take: 500,
+  }),
       prisma.settings.findFirst(),
-      prisma.evaporationEntry.findMany({ where: { date: { gte: from, lte: now } }, orderBy: { date: 'asc' } }),
-      prisma.grainEntry.findMany({ where: { date: { gte: from, lte: now } }, orderBy: { date: 'asc' } }),
-      prisma.ethanolProductEntry.findMany({ where: { date: { gte: from, lte: now } }, orderBy: { date: 'asc' } }),
-      prisma.distillationEntry.findMany({ where: { date: { gte: from, lte: now } }, orderBy: { date: 'asc' } }),
+      prisma.evaporationEntry.findMany({ where: { date: { gte: from, lte: now } }, orderBy: { date: 'asc' } ,
+    take: 500,
+  }),
+      prisma.grainEntry.findMany({ where: { date: { gte: from, lte: now } }, orderBy: { date: 'asc' } ,
+    take: 500,
+  }),
+      prisma.ethanolProductEntry.findMany({ where: { date: { gte: from, lte: now } }, orderBy: { date: 'asc' } ,
+    take: 500,
+  }),
+      prisma.distillationEntry.findMany({ where: { date: { gte: from, lte: now } }, orderBy: { date: 'asc' } ,
+    take: 500,
+  }),
     ]);
 
     const gravityTarget = (settings as any)?.pfGravityTarget ?? 1.024;
@@ -663,7 +695,9 @@ router.get('/', authenticate, asyncHandler(async (req: AuthRequest, res: Respons
     const last7 = await prisma.dailyEntry.findMany({
       where: { date: { gte: new Date(today.getTime() - 7 * 86400000) } },
       orderBy: { date: 'desc' },
-    });
+    
+    take: 500,
+  });
     res.json({
       todayEntry,
       kpis: {

@@ -240,7 +240,9 @@ router.post('/preview', upload.array('files', 10), asyncHandler(async (req: Auth
     (empMap[k] = empMap[k] || []).push(r);
   }
 
-  const existing = await prisma.employee.findMany({ select: { id: true, firstName: true, lastName: true, empCode: true } });
+  const existing = await prisma.employee.findMany({ select: { id: true, firstName: true, lastName: true, empCode: true } ,
+    take: 500,
+  });
   let matched = 0, willCreate = 0;
   const employees = Object.entries(empMap).map(([key, srcRows]) => {
     const main = srcRows.filter(r => ['SENIOR', 'PF', 'NPF'].includes(r.category)).sort((a, b) => (b.totalSalary || 0) - (a.totalSalary || 0))[0] || srcRows[0];
@@ -337,7 +339,7 @@ router.post('/commit', upload.array('files', 10), asyncHandler(async (req: AuthR
   for (const c of COMPONENT_DEFS) {
     await prisma.salaryComponent.upsert({ where: { code: c.code }, create: c, update: { name: c.name } });
   }
-  const allComponents = await prisma.salaryComponent.findMany();
+  const allComponents = await prisma.salaryComponent.findMany({ take: 500 });
   const compMap = new Map(allComponents.map(c => [c.code, c]));
 
   // Group rows by employee
@@ -347,7 +349,9 @@ router.post('/commit', upload.array('files', 10), asyncHandler(async (req: AuthR
     (empMap[k] = empMap[k] || []).push(r);
   }
 
-  const existing = await prisma.employee.findMany({ select: { id: true, empNo: true, firstName: true, lastName: true } });
+  const existing = await prisma.employee.findMany({ select: { id: true, empNo: true, firstName: true, lastName: true } ,
+    take: 500,
+  });
   let nextEmpNo = (existing.reduce((m, e) => Math.max(m, e.empNo || 0), 0)) + 1;
   const empIds: Record<string, string> = {};
 

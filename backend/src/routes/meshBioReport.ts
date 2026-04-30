@@ -1,15 +1,11 @@
 import { Router, Request, Response } from 'express';
 import prisma from '../config/prisma';
-import { authenticate } from '../middleware/auth';
+import { authenticate, AuthRequest } from '../middleware/auth';
+import { asyncHandler } from '../shared/middleware';
 
 const router = Router();
-router.use(authenticate as any);
+router.use(authenticate);
 
-interface AuthRequest extends Request {
-  user?: { id: string; email: string; role: string };
-}
-
-// Timestamp utilities for date filtering
 function getDateRange(dateStr: string) {
   const start = new Date(dateStr + 'T00:00:00.000Z');
   const end = new Date(dateStr + 'T23:59:59.999Z');
@@ -17,8 +13,7 @@ function getDateRange(dateStr: string) {
 }
 
 // GET /generate?date=YYYY-MM-DD
-router.get('/generate', async (req: AuthRequest, res: Response) => {
-  try {
+router.get('/generate', asyncHandler(async (req: AuthRequest, res: Response) => {
     const dateParam = req.query.date as string;
     if (!dateParam) {
       return res.status(400).json({ error: 'Missing date parameter (format: YYYY-MM-DD)' });
@@ -38,7 +33,9 @@ router.get('/generate', async (req: AuthRequest, res: Response) => {
         date: { gte: start, lte: end },
       },
       orderBy: { date: 'asc' },
-    });
+    
+    take: 500,
+  });
 
     // Join with LabSample data for quality info.
     // N+1 fix — one IN query instead of one findUnique per truck.
@@ -48,7 +45,9 @@ router.get('/generate', async (req: AuthRequest, res: Response) => {
       : await prisma.labSample.findMany({
           where: { rstNumber: { in: rstNumbers } },
           select: { rstNumber: true, moisture: true, starchPercent: true, damagedPercent: true, tfm: true },
-        });
+        
+    take: 500,
+  });
     const labByRst = new Map(labSamples.map((l) => [l.rstNumber, l]));
     const grainTrucksWithLab = grainTrucks.map((truck) => {
       const labData = truck.uidRst ? labByRst.get(truck.uidRst) : undefined;
@@ -169,9 +168,6 @@ router.get('/generate', async (req: AuthRequest, res: Response) => {
     };
 
     res.json(report);
-  } catch (err: any) {
-    res.status(500).json({ error: err.message });
-  }
-});
+}));
 
 export default router;
