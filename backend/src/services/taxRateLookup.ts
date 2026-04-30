@@ -38,11 +38,17 @@ export interface LookupInput {
 /**
  * Resolve the effective GST rate for a given HSN on a given date.
  *
- * Precedence:
+ * Precedence (item master is the source of truth — set by Saif 2026-04-30):
  *   1. Per-item override (InventoryItem.gstOverridePercent) — used only with reason
- *   2. HsnCode → GstRate (effective-dated, condition-matched)
- *   3. Legacy InventoryItem.gstPercent scalar (backfill path)
+ *   2. InventoryItem.gstPercent (item master scalar — what procurement edits)
+ *   3. HsnCode → GstRate (statutory fallback, used only if item has no scalar)
  *   4. Zero with sourceType='none' (caller must detect)
+ *
+ * Why item master wins over HSN master: the procurement team's mental model is
+ * "I edit the item master, the rate applies." HSN-master propagation was the
+ * old model — it confused the team because edits to item.gstPercent were silently
+ * ignored when the item had an HSN linked. Now item master is authoritative;
+ * HSN is only consulted when the item has no scalar (rare — schema default = 18).
  *
  * Intra-state (CGST+SGST) vs inter-state (IGST) split is the caller's job —
  * this service returns both halves so the caller picks.
@@ -50,7 +56,7 @@ export interface LookupInput {
 export async function getEffectiveGstRate(input: LookupInput): Promise<GstRateResolution> {
   const asOf = input.on ?? new Date();
 
-  // 1. Per-item override wins
+  // 1. Per-item override wins (rare special cases — e.g. statutory exemption notification)
   if (input.itemOverridePercent != null && input.itemOverrideReason) {
     const r = input.itemOverridePercent;
     return {
@@ -69,7 +75,26 @@ export async function getEffectiveGstRate(input: LookupInput): Promise<GstRateRe
     };
   }
 
-  // 2. HSN master lookup
+  // 2. Item master scalar — the day-to-day source of truth
+  if (input.legacyGstPercent != null) {
+    const r = input.legacyGstPercent;
+    return {
+      rate: r,
+      cgst: r / 2,
+      sgst: r / 2,
+      igst: r,
+      cess: 0,
+      isExempt: r === 0,
+      isOutsideGst: false,
+      sourceHsnId: input.hsnCodeId ?? null,
+      sourceRateId: null,
+      sourceType: 'fallback_scalar',
+      conditionNote: null,
+      asOf,
+    };
+  }
+
+  // 3. HSN master fallback — only reached when item has no scalar (rare; schema default is 18)
   if (input.hsnCodeId) {
     const rates = await prisma.gstRate.findMany({
       where: {
@@ -104,25 +129,6 @@ export async function getEffectiveGstRate(input: LookupInput): Promise<GstRateRe
         asOf,
       };
     }
-  }
-
-  // 3. Legacy scalar fallback (pre-migration items)
-  if (input.legacyGstPercent != null) {
-    const r = input.legacyGstPercent;
-    return {
-      rate: r,
-      cgst: r / 2,
-      sgst: r / 2,
-      igst: r,
-      cess: 0,
-      isExempt: r === 0,
-      isOutsideGst: false,
-      sourceHsnId: null,
-      sourceRateId: null,
-      sourceType: 'fallback_scalar',
-      conditionNote: null,
-      asOf,
-    };
   }
 
   // 4. No info at all

@@ -88,12 +88,16 @@ router.use(authenticate as any);
 // ──────────────────────────────────────────────────────────────────────────
 // Shared tax line processing — single source of truth for PO GST.
 //
-// Rate resolution precedence (per line):
-//   1. Explicit hsnCodeId on line → HSN master effective rate
-//   2. inventoryItem.hsnCodeId → master rate
-//   3. inventoryItem.gstOverridePercent (with reason) → override
-//   4. inventoryItem.gstPercent (legacy scalar) → fallback
-//   5. line.gstPercent (client-supplied, last resort)
+// Rate resolution precedence (per line) — ITEM MASTER IS THE KEY (Saif 2026-04-30):
+//   1. inventoryItem.gstOverridePercent (with reason) → override (rare)
+//   2. inventoryItem.gstPercent (item master scalar — what procurement edits)
+//   3. HSN master via line.hsnCodeId or item.hsnCodeId → statutory fallback
+//   4. line.gstPercent (client-supplied, last resort)
+//
+// HSN linkage is preserved for compliance reporting + e-invoice JSON, but the
+// effective rate on the PO comes from the item master scalar — that's the field
+// the procurement team edits, and it's what gets applied. See taxRateLookup.ts
+// for the actual resolver.
 //
 // Supports inclusive/exclusive math via POLine.isRateInclusive.
 // ──────────────────────────────────────────────────────────────────────────
