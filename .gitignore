@@ -36,3 +36,11 @@ factory-server/public/assets/
 
 # Python cache (sugar-opc/)
 __pycache__/
+
+# Vision ML project
+vision/.venv/
+vision/data/
+vision/weights/
+*.pt
+*.pth
+vision/data

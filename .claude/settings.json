@@ -7,7 +7,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "if echo \"$TOOL_INPUT\" | grep -q 'git commit'; then cd /Users/saifraza/Desktop/distillery-erp/backend && npx tsc --noEmit 2>&1 && npx prisma validate 2>&1 && cd /Users/saifraza/Desktop/distillery-erp/frontend && npx tsc --noEmit 2>&1; fi",
+            "command": "if echo \"$TOOL_INPUT\" | grep -q 'git commit'; then cd /Users/saifraza/Projects/ethanol_erp/backend && npx tsc --noEmit 2>&1 && npx prisma validate 2>&1 && cd /Users/saifraza/Projects/ethanol_erp/frontend && npx tsc --noEmit 2>&1; fi",
             "timeout": 60000
           }
         ]
@@ -24,6 +24,15 @@
           }
         ]
       }
+    ]
+  },
+  "permissions": {
+    "allow": [
+      "Bash(curl -s http://localhost:1234/v1/models*)",
+      "Bash(curl -s --connect-timeout * http://localhost:1234/*)",
+      "Bash(curl -s https://app.mspil.in/assets/*)",
+      "Bash(/Applications/Tailscale.app/Contents/MacOS/Tailscale status*)",
+      "Bash(npm list *)"
     ]
   }
 }
