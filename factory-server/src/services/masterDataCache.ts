@@ -216,7 +216,15 @@ async function fullSyncFromCloud(cloudTs?: string | null): Promise<boolean> {
       cloud.purchaseOrder.findMany({
         where: {
           status: { in: ['APPROVED', 'SENT', 'PARTIAL_RECEIVED'] },
-          OR: [{ deliveryDate: null }, { deliveryDate: { gte: new Date() } }],
+          // Compare against start-of-today, not "right now". Otherwise a PO whose
+          // deliveryDate is today (stored as midnight) gets filtered out from the
+          // moment it's past midnight — i.e., the PO disappears from the factory
+          // cache on the very day the truck is supposed to arrive.
+          // (Caught 2026-04-30: PO #105 due today vanished from factory gate UI.)
+          OR: [
+            { deliveryDate: null },
+            { deliveryDate: { gte: (() => { const d = new Date(); d.setHours(0, 0, 0, 0); return d; })() } },
+          ],
         },
         select: {
           id: true, poNo: true, vendorId: true, status: true, dealType: true, companyId: true,
