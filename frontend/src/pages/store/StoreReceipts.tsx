@@ -26,6 +26,9 @@ interface StoreGRNLine {
   unit: string;
   rate: number;
   amount: number;
+  routedToStoreQty?: number | null;
+  routedToFactoryQty?: number | null;
+  routedAt?: string | null;
 }
 
 interface StoreGRN {
@@ -33,6 +36,7 @@ interface StoreGRN {
   grnNo: number;
   grnDate: string;
   status: string;
+  atGateAt?: string | null;
   vehicleNo?: string | null;
   invoiceNo?: string | null;
   invoiceDate?: string | null;
@@ -44,6 +48,31 @@ interface StoreGRN {
   po?: { id: string; poNo: number } | null;
   vendor?: { id: string; name: string } | null;
   lines?: StoreGRNLine[];
+}
+
+interface WarehouseLite {
+  id: string;
+  code: string;
+  name: string;
+}
+
+// Status presentation: GRN goes DRAFT (=Awaiting Item) → AT_GATE → CONFIRMED (=Approved).
+// Saif 2026-04-30: pre-arrival store visibility + gate-pass + approve-with-routing.
+function statusDisplay(s: string): { label: string; classes: string; pulse?: boolean } {
+  switch (s) {
+    case 'DRAFT':
+      return { label: 'Awaiting Item', classes: 'border-slate-300 bg-slate-50 text-slate-700' };
+    case 'AT_GATE':
+      return { label: 'Item at Gate', classes: 'border-amber-400 bg-amber-100 text-amber-800', pulse: true };
+    case 'CONFIRMED':
+      return { label: 'Approved', classes: 'border-green-300 bg-green-50 text-green-700' };
+    case 'PARTIAL':
+      return { label: 'Partial', classes: 'border-blue-300 bg-blue-50 text-blue-700' };
+    case 'CANCELLED':
+      return { label: 'Cancelled', classes: 'border-red-300 bg-red-50 text-red-700' };
+    default:
+      return { label: s, classes: 'border-slate-300 bg-slate-50 text-slate-600' };
+  }
 }
 
 interface ListResponse {
@@ -177,6 +206,19 @@ export default function StoreReceipts() {
   // Create modal
   const [createOpen, setCreateOpen] = useState(false);
   const [createForPO, setCreateForPO] = useState<string | null>(null);
+
+  // Approve-with-routing modal (Saif 2026-04-30)
+  const [approveGrnId, setApproveGrnId] = useState<string | null>(null);
+  const [warehouses, setWarehouses] = useState<WarehouseLite[]>([]);
+  useEffect(() => {
+    api
+      .get('/inventory/warehouses')
+      .then((res) => {
+        const list = (res.data as WarehouseLite[]) || [];
+        setWarehouses(list);
+      })
+      .catch(() => setWarehouses([]));
+  }, []);
 
   useEffect(() => {
     const t = setTimeout(() => {
@@ -451,8 +493,10 @@ export default function StoreReceipts() {
               className="border border-slate-300 px-2.5 py-1.5 text-xs focus:outline-none focus:ring-1 focus:ring-slate-400"
             >
               <option value="">All</option>
-              <option value="DRAFT">Draft</option>
-              <option value="CONFIRMED">Confirmed</option>
+              <option value="DRAFT">Awaiting Item</option>
+              <option value="AT_GATE">Item at Gate</option>
+              <option value="CONFIRMED">Approved</option>
+              <option value="CANCELLED">Cancelled</option>
               <option value="CANCELLED">Cancelled</option>
             </select>
           </div>
@@ -533,14 +577,7 @@ export default function StoreReceipts() {
                 </tr>
               )}
               {rows.map((r, i) => {
-                const statusColors =
-                  r.status === 'DRAFT'
-                    ? 'border-amber-300 bg-amber-50 text-amber-700'
-                    : r.status === 'CONFIRMED'
-                    ? 'border-green-300 bg-green-50 text-green-700'
-                    : r.status === 'CANCELLED'
-                    ? 'border-red-300 bg-red-50 text-red-700'
-                    : 'border-slate-300 bg-slate-50 text-slate-600';
+                const sd = statusDisplay(r.status);
                 return (
                   <tr
                     key={r.id}
@@ -569,9 +606,20 @@ export default function StoreReceipts() {
                       {fmtINR(r.totalAmount)}
                     </td>
                     <td className="px-3 py-1.5 text-center">
-                      <span className={`text-[9px] font-bold uppercase px-1.5 py-0.5 border ${statusColors}`}>
-                        {r.status}
-                      </span>
+                      <div className="flex items-center justify-center gap-1.5">
+                        <span className={`text-[9px] font-bold uppercase px-1.5 py-0.5 border ${sd.classes} ${sd.pulse ? 'animate-pulse' : ''}`}>
+                          {sd.label}
+                        </span>
+                        {canWrite && r.status === 'AT_GATE' && (
+                          <button
+                            onClick={(e) => { e.stopPropagation(); setApproveGrnId(r.id); }}
+                            className="text-[9px] font-bold uppercase px-2 py-0.5 bg-green-700 text-white border border-green-800 hover:bg-green-800"
+                            title="Approve and route to store / factory"
+                          >
+                            Approve
+                          </button>
+                        )}
+                      </div>
                     </td>
                   </tr>
                 );
@@ -635,6 +683,16 @@ export default function StoreReceipts() {
               setCreateForPO(null);
               setSelectedId(grnId);
             }}
+          />
+        )}
+
+        {/* Approve-with-routing modal (Saif 2026-04-30) */}
+        {approveGrnId && canWrite && (
+          <ApproveRoutingModal
+            grnId={approveGrnId}
+            warehouses={warehouses}
+            onClose={() => setApproveGrnId(null)}
+            onApproved={() => { setApproveGrnId(null); fetchRows(); fetchPendingPOs(); }}
           />
         )}
       </div>
@@ -1172,6 +1230,265 @@ function HeaderField({ label, children }: { label: string; children: React.React
     <div>
       <div className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-0.5">{label}</div>
       {children}
+    </div>
+  );
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// ApproveRoutingModal — opens from "Approve" button on AT_GATE rows.
+// Lets the store user split each line's accepted qty between a Store warehouse
+// and a Factory floor warehouse (or all to one). Hits POST /:id/approve with
+// the routing payload that the backend persists + creates two stock movements.
+// ─────────────────────────────────────────────────────────────────────────────
+interface ApproveModalLine {
+  id: string;
+  description: string;
+  acceptedQty: number;
+  unit: string;
+  toStoreQty: number;
+  toFactoryQty: number;
+}
+
+function ApproveRoutingModal({
+  grnId,
+  warehouses,
+  onClose,
+  onApproved,
+}: {
+  grnId: string;
+  warehouses: WarehouseLite[];
+  onClose: () => void;
+  onApproved: () => void;
+}) {
+  const [grn, setGrn] = useState<{ grnNo: number; vendorName?: string | null; poNo?: string | null } | null>(null);
+  const [lines, setLines] = useState<ApproveModalLine[]>([]);
+  const [storeWh, setStoreWh] = useState('');
+  const [factoryWh, setFactoryWh] = useState('');
+  const [mode, setMode] = useState<'all_store' | 'all_factory' | 'split'>('all_store');
+  const [submitting, setSubmitting] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  // Pull GRN detail to populate lines
+  useEffect(() => {
+    let cancelled = false;
+    api.get(`/goods-receipts/store/${grnId}`).then((res) => {
+      if (cancelled) return;
+      const d = res.data as {
+        grnNo: number;
+        vendorName?: string | null;
+        poNo?: string | null;
+        lines?: Array<{ id: string; description: string; acceptedQty: number; unit?: string }>;
+      };
+      setGrn({ grnNo: d.grnNo, vendorName: d.vendorName, poNo: d.poNo });
+      setLines(
+        (d.lines || []).map((l) => ({
+          id: l.id,
+          description: l.description,
+          acceptedQty: l.acceptedQty,
+          unit: l.unit || 'kg',
+          toStoreQty: l.acceptedQty, // default: all to store
+          toFactoryQty: 0,
+        })),
+      );
+    });
+    return () => { cancelled = true; };
+  }, [grnId]);
+
+  // When mode changes, redistribute defaults
+  useEffect(() => {
+    setLines((prev) =>
+      prev.map((l) => {
+        if (mode === 'all_store') return { ...l, toStoreQty: l.acceptedQty, toFactoryQty: 0 };
+        if (mode === 'all_factory') return { ...l, toStoreQty: 0, toFactoryQty: l.acceptedQty };
+        // split: keep current values, but if zeros, default 50/50
+        if (l.toStoreQty + l.toFactoryQty < 0.01) {
+          const half = l.acceptedQty / 2;
+          return { ...l, toStoreQty: half, toFactoryQty: l.acceptedQty - half };
+        }
+        return l;
+      }),
+    );
+  }, [mode]);
+
+  const updateLine = (id: string, field: 'toStoreQty' | 'toFactoryQty', val: number) => {
+    setLines((prev) =>
+      prev.map((l) => {
+        if (l.id !== id) return l;
+        const v = Math.max(0, Math.min(l.acceptedQty, val || 0));
+        if (field === 'toStoreQty') return { ...l, toStoreQty: v, toFactoryQty: Math.max(0, l.acceptedQty - v) };
+        return { ...l, toFactoryQty: v, toStoreQty: Math.max(0, l.acceptedQty - v) };
+      }),
+    );
+  };
+
+  const totalStore = useMemo(() => lines.reduce((s, l) => s + l.toStoreQty, 0), [lines]);
+  const totalFactory = useMemo(() => lines.reduce((s, l) => s + l.toFactoryQty, 0), [lines]);
+  const needsStoreWh = totalStore > 0;
+  const needsFactoryWh = totalFactory > 0;
+
+  const submit = async () => {
+    setError(null);
+    if (needsStoreWh && !storeWh) { setError('Pick a store warehouse'); return; }
+    if (needsFactoryWh && !factoryWh) { setError('Pick a factory warehouse'); return; }
+    setSubmitting(true);
+    try {
+      await api.post(`/goods-receipts/store/${grnId}/approve`, {
+        routing: {
+          storeWarehouseId: needsStoreWh ? storeWh : null,
+          factoryWarehouseId: needsFactoryWh ? factoryWh : null,
+          lines: lines.map((l) => ({ lineId: l.id, toStoreQty: l.toStoreQty, toFactoryQty: l.toFactoryQty })),
+        },
+      });
+      onApproved();
+    } catch (err: unknown) {
+      const msg = (err as { response?: { data?: { error?: string } }; message?: string }).response?.data?.error
+        || (err as { message?: string }).message
+        || 'Approve failed';
+      setError(msg);
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  return (
+    <div className="fixed inset-0 z-50 bg-black/50 flex items-center justify-center p-4" onClick={onClose}>
+      <div className="bg-white border border-slate-300 max-w-3xl w-full max-h-[90vh] overflow-auto" onClick={(e) => e.stopPropagation()}>
+        <div className="bg-slate-800 text-white px-4 py-2 flex items-center justify-between">
+          <div className="text-xs font-bold uppercase tracking-widest">
+            Approve GRN {grn ? `#${grn.grnNo}` : ''} — Route Items
+          </div>
+          <button onClick={onClose} className="text-white hover:text-slate-300 text-lg leading-none">×</button>
+        </div>
+        <div className="p-4 space-y-3">
+          {grn && (
+            <div className="text-[11px] text-slate-600">
+              <span className="font-semibold">{grn.vendorName || 'Vendor'}</span>
+              {grn.poNo && <span> · {grn.poNo}</span>}
+            </div>
+          )}
+
+          {/* Routing mode toggle */}
+          <div className="flex gap-2">
+            {(['all_store', 'all_factory', 'split'] as const).map((m) => (
+              <button
+                key={m}
+                onClick={() => setMode(m)}
+                className={`text-[10px] font-bold uppercase tracking-widest px-3 py-1 border ${
+                  mode === m ? 'bg-blue-700 text-white border-blue-800' : 'bg-white text-slate-700 border-slate-300 hover:bg-slate-50'
+                }`}
+              >
+                {m === 'all_store' && 'All to Store'}
+                {m === 'all_factory' && 'Direct to Factory'}
+                {m === 'split' && 'Split (per line)'}
+              </button>
+            ))}
+          </div>
+
+          {/* Warehouse pickers */}
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <div className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-0.5">
+                Store Warehouse {needsStoreWh && <span className="text-red-600">*</span>}
+              </div>
+              <select
+                value={storeWh}
+                onChange={(e) => setStoreWh(e.target.value)}
+                disabled={!needsStoreWh}
+                className="w-full text-xs border border-slate-300 px-2 py-1 disabled:bg-slate-100"
+              >
+                <option value="">-- Pick --</option>
+                {warehouses.map((w) => (
+                  <option key={w.id} value={w.id}>{w.code} — {w.name}</option>
+                ))}
+              </select>
+            </div>
+            <div>
+              <div className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-0.5">
+                Factory Warehouse {needsFactoryWh && <span className="text-red-600">*</span>}
+              </div>
+              <select
+                value={factoryWh}
+                onChange={(e) => setFactoryWh(e.target.value)}
+                disabled={!needsFactoryWh}
+                className="w-full text-xs border border-slate-300 px-2 py-1 disabled:bg-slate-100"
+              >
+                <option value="">-- Pick --</option>
+                {warehouses.map((w) => (
+                  <option key={w.id} value={w.id}>{w.code} — {w.name}</option>
+                ))}
+              </select>
+            </div>
+          </div>
+
+          {/* Per-line split table */}
+          <table className="w-full text-xs border border-slate-300">
+            <thead className="bg-slate-100">
+              <tr>
+                <th className="text-left px-2 py-1 border-r border-slate-300 font-semibold text-[10px] uppercase tracking-widest">Item</th>
+                <th className="text-right px-2 py-1 border-r border-slate-300 font-semibold text-[10px] uppercase tracking-widest">Accepted</th>
+                <th className="text-right px-2 py-1 border-r border-slate-300 font-semibold text-[10px] uppercase tracking-widest">To Store</th>
+                <th className="text-right px-2 py-1 font-semibold text-[10px] uppercase tracking-widest">To Factory</th>
+              </tr>
+            </thead>
+            <tbody>
+              {lines.map((l) => (
+                <tr key={l.id} className="border-t border-slate-200">
+                  <td className="px-2 py-1 border-r border-slate-200">{l.description}</td>
+                  <td className="px-2 py-1 text-right border-r border-slate-200 font-mono tabular-nums">
+                    {l.acceptedQty} {l.unit}
+                  </td>
+                  <td className="px-2 py-1 text-right border-r border-slate-200">
+                    <input
+                      type="number"
+                      min={0}
+                      max={l.acceptedQty}
+                      step="any"
+                      value={l.toStoreQty}
+                      disabled={mode !== 'split'}
+                      onChange={(e) => updateLine(l.id, 'toStoreQty', parseFloat(e.target.value))}
+                      className="w-24 text-right text-xs border border-slate-300 px-1 py-0.5 font-mono disabled:bg-slate-100"
+                    />
+                  </td>
+                  <td className="px-2 py-1 text-right">
+                    <input
+                      type="number"
+                      min={0}
+                      max={l.acceptedQty}
+                      step="any"
+                      value={l.toFactoryQty}
+                      disabled={mode !== 'split'}
+                      onChange={(e) => updateLine(l.id, 'toFactoryQty', parseFloat(e.target.value))}
+                      className="w-24 text-right text-xs border border-slate-300 px-1 py-0.5 font-mono disabled:bg-slate-100"
+                    />
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+            <tfoot className="bg-slate-50">
+              <tr>
+                <td colSpan={2} className="px-2 py-1 text-right text-[10px] font-bold uppercase tracking-widest text-slate-600">Totals</td>
+                <td className="px-2 py-1 text-right font-mono tabular-nums font-semibold">{totalStore.toFixed(2)}</td>
+                <td className="px-2 py-1 text-right font-mono tabular-nums font-semibold">{totalFactory.toFixed(2)}</td>
+              </tr>
+            </tfoot>
+          </table>
+
+          {error && <div className="text-xs text-red-600 border border-red-300 bg-red-50 px-2 py-1">{error}</div>}
+
+          <div className="flex justify-end gap-2 pt-2 border-t border-slate-200">
+            <button onClick={onClose} className="text-xs px-3 py-1 bg-white border border-slate-300 text-slate-700 hover:bg-slate-50">
+              Cancel
+            </button>
+            <button
+              onClick={submit}
+              disabled={submitting || lines.length === 0}
+              className="text-xs px-3 py-1 bg-green-700 text-white border border-green-800 hover:bg-green-800 disabled:opacity-50"
+            >
+              {submitting ? 'Approving...' : 'Approve & Route'}
+            </button>
+          </div>
+        </div>
+      </div>
     </div>
   );
 }

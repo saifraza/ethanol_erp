@@ -7,6 +7,29 @@ import prisma from '../config/prisma';
 const router = Router();
 router.use(authenticate as any);
 
+// Helper: when a gate entry is associated with a GRN, flip the GRN to AT_GATE
+// (only if currently DRAFT — meaning it's the EXPECTED stub created at PO time).
+// Saif 2026-04-30: this is what makes the store screen show "Item at the Gate".
+async function markGrnAtGate(grnId: string | null | undefined): Promise<void> {
+  if (!grnId) return;
+  try {
+    const grn = await prisma.goodsReceipt.findUnique({
+      where: { id: grnId },
+      select: { id: true, status: true, atGateAt: true },
+    });
+    if (!grn) return;
+    if (grn.status !== 'DRAFT') return; // only DRAFT (= AWAITING_ITEM) can flip
+    if (grn.atGateAt) return; // already flipped
+    await prisma.goodsReceipt.update({
+      where: { id: grnId },
+      data: { status: 'AT_GATE', atGateAt: new Date() },
+    });
+  } catch (err) {
+    // Don't fail the gate-entry op if the GRN update has an issue — log and move on
+    console.warn(`[gateEntry] markGrnAtGate failed for ${grnId}:`, err);
+  }
+}
+
 // GET / — list gate entries for a date
 router.get('/', asyncHandler(async (req: AuthRequest, res: Response) => {
   const dateStr = req.query.date as string;
@@ -77,6 +100,9 @@ router.post('/', asyncHandler(async (req: AuthRequest, res: Response) => {
     },
   });
 
+  // If linked to a GRN, flip its status to AT_GATE so the store screen sees it
+  await markGrnAtGate(entry.grnId);
+
   res.status(201).json(entry);
 }));
 
@@ -107,6 +133,9 @@ router.put('/:id', asyncHandler(async (req: AuthRequest, res: Response) => {
     where: { id: req.params.id },
     data,
   });
+
+  // If a GRN was linked or remains linked, ensure the AT_GATE flip happened
+  await markGrnAtGate(entry.grnId);
 
   res.json(entry);
 }));

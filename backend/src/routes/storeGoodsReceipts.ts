@@ -193,6 +193,26 @@ const updateSchema = z.object({
   lines: z.array(lineSchema).optional(),
 });
 
+// ─── Approve schema (optional routing decision — Saif 2026-04-30) ───
+// If `routing` is present, per-line accepted qty is split between a store
+// warehouse and a factory-floor warehouse. Sum must equal acceptedQty.
+// If absent, legacy behavior: all qty goes to a single (default) warehouse.
+const approveSchema = z.object({
+  routing: z
+    .object({
+      storeWarehouseId: z.string().optional().nullable(),
+      factoryWarehouseId: z.string().optional().nullable(),
+      lines: z.array(
+        z.object({
+          lineId: z.string(),
+          toStoreQty: z.number().nonnegative(),
+          toFactoryQty: z.number().nonnegative(),
+        }),
+      ),
+    })
+    .optional(),
+});
+
 // ═══════════════════════════════════════════════════════════════════
 // GET /pending-pos — running store POs with GRN receipt status
 // Shows APPROVED/SENT/PARTIAL_RECEIVED POs (non-weighbridge) so
@@ -329,6 +349,7 @@ router.get('/', asyncHandler(async (req: AuthRequest, res: Response) => {
         grnNo: true,
         grnDate: true,
         status: true,
+        atGateAt: true,
         vehicleNo: true,
         invoiceNo: true,
         invoiceDate: true,
@@ -348,6 +369,9 @@ router.get('/', asyncHandler(async (req: AuthRequest, res: Response) => {
             unit: true,
             rate: true,
             amount: true,
+            routedToStoreQty: true,
+            routedToFactoryQty: true,
+            routedAt: true,
           },
         },
       },
@@ -647,17 +671,51 @@ router.put('/:id', storeWriteAuth, validate(updateSchema), asyncHandler(async (r
 // POST /:id/approve — DRAFT → CONFIRMED
 // Commits PO line receivedQty/pendingQty, rolls up PO status, syncs inventory.
 // ═══════════════════════════════════════════════
-router.post('/:id/approve', storeWriteAuth, asyncHandler(async (req: AuthRequest, res: Response) => {
+router.post('/:id/approve', storeWriteAuth, validate(approveSchema), asyncHandler(async (req: AuthRequest, res: Response) => {
   const grn = await prisma.goodsReceipt.findFirst({
     where: { id: req.params.id, AND: [STORE_SOURCE_WHERE] },
     include: { lines: true },
   });
   if (!grn) throw new NotFoundError('Store GRN', req.params.id);
-  if (grn.status !== 'DRAFT') {
-    throw new ValidationError(`Can only approve DRAFT GRNs (current: ${grn.status})`);
+  // Allow approve from DRAFT (legacy) or AT_GATE (Saif 2026-04-30 flow)
+  if (grn.status !== 'DRAFT' && grn.status !== 'AT_GATE') {
+    throw new ValidationError(`Can only approve DRAFT or AT_GATE GRNs (current: ${grn.status})`);
+  }
+  const prevStatus = grn.status;
+  const routing = (req.body as { routing?: {
+    storeWarehouseId?: string | null;
+    factoryWarehouseId?: string | null;
+    lines: Array<{ lineId: string; toStoreQty: number; toFactoryQty: number }>;
+  } }).routing;
+
+  // Validate routing payload up front so we don't half-commit before catching errors
+  if (routing) {
+    for (const r of routing.lines) {
+      const line = grn.lines.find((l) => l.id === r.lineId);
+      if (!line) throw new ValidationError(`Routing references unknown line ${r.lineId}`);
+      const sum = r.toStoreQty + r.toFactoryQty;
+      if (Math.abs(sum - line.acceptedQty) > 0.01) {
+        throw new ValidationError(
+          `Line "${line.description}": routed qty ${sum} ≠ accepted ${line.acceptedQty}`,
+        );
+      }
+      if (r.toStoreQty > 0 && !routing.storeWarehouseId) {
+        throw new ValidationError('storeWarehouseId required when any line has toStoreQty > 0');
+      }
+      if (r.toFactoryQty > 0 && !routing.factoryWarehouseId) {
+        throw new ValidationError('factoryWarehouseId required when any line has toFactoryQty > 0');
+      }
+    }
+    // Make sure every line in the GRN is covered (else partial routing leaves stock unaccounted for)
+    const linesCovered = new Set(routing.lines.map((r) => r.lineId));
+    for (const l of grn.lines) {
+      if (l.acceptedQty > 0 && !linesCovered.has(l.id)) {
+        throw new ValidationError(`Line "${l.description}" missing from routing payload`);
+      }
+    }
   }
 
-  // Transaction: commit PO line qty + roll up PO status + confirm GRN
+  // Transaction: commit PO line qty + roll up PO status + confirm GRN + persist routing
   const { updated } = await prisma.$transaction(async (tx) => {
     for (const line of grn.lines) {
       if (line.poLineId) {
@@ -678,6 +736,21 @@ router.post('/:id/approve', storeWriteAuth, asyncHandler(async (req: AuthRequest
             },
           });
         }
+      }
+    }
+
+    // Persist routing decision per line (so we can audit / display later)
+    if (routing) {
+      const now = new Date();
+      for (const r of routing.lines) {
+        await tx.gRNLine.update({
+          where: { id: r.lineId },
+          data: {
+            routedToStoreQty: r.toStoreQty,
+            routedToFactoryQty: r.toFactoryQty,
+            routedAt: now,
+          },
+        });
       }
     }
 
@@ -706,27 +779,78 @@ router.post('/:id/approve', storeWriteAuth, asyncHandler(async (req: AuthRequest
   });
 
   // Inventory sync — outside the transaction because it uses its own $transaction.
-  // On failure, revert GRN to DRAFT (matches legacy goodsReceipts.ts behavior).
+  // On failure, revert GRN to its previous status (DRAFT or AT_GATE).
   try {
-    await syncStoreGrnToInventory(
-      updated.id,
-      updated.grnNo,
-      updated.lines.map((l: any) => ({
-        inventoryItemId: l.inventoryItemId || l.materialId,
-        acceptedQty: l.acceptedQty,
-        rate: l.rate,
-        unit: l.unit,
-        batchNo: l.batchNo || '',
-        storageLocation: l.storageLocation || '',
-      })),
-      null,
-      req.user!.id,
-    );
+    if (routing) {
+      // Build per-line synthetic arrays — one for store qty, one for factory qty.
+      // Each call to syncStoreGrnToInventory writes one stock movement per line.
+      const storeLines = updated.lines
+        .map((l: any) => {
+          const r = routing.lines.find((x) => x.lineId === l.id);
+          return r && r.toStoreQty > 0
+            ? {
+                inventoryItemId: l.inventoryItemId || l.materialId,
+                acceptedQty: r.toStoreQty,
+                rate: l.rate,
+                unit: l.unit,
+                batchNo: l.batchNo || '',
+                storageLocation: l.storageLocation || '',
+              }
+            : null;
+        })
+        .filter((x): x is NonNullable<typeof x> => x !== null);
+      const factoryLines = updated.lines
+        .map((l: any) => {
+          const r = routing.lines.find((x) => x.lineId === l.id);
+          return r && r.toFactoryQty > 0
+            ? {
+                inventoryItemId: l.inventoryItemId || l.materialId,
+                acceptedQty: r.toFactoryQty,
+                rate: l.rate,
+                unit: l.unit,
+                batchNo: l.batchNo || '',
+                storageLocation: l.storageLocation || '',
+              }
+            : null;
+        })
+        .filter((x): x is NonNullable<typeof x> => x !== null);
+
+      if (storeLines.length > 0 && routing.storeWarehouseId) {
+        await syncStoreGrnToInventory(updated.id, updated.grnNo, storeLines, routing.storeWarehouseId, req.user!.id);
+      }
+      if (factoryLines.length > 0 && routing.factoryWarehouseId) {
+        await syncStoreGrnToInventory(updated.id, updated.grnNo, factoryLines, routing.factoryWarehouseId, req.user!.id);
+      }
+    } else {
+      // Legacy: single-warehouse default
+      await syncStoreGrnToInventory(
+        updated.id,
+        updated.grnNo,
+        updated.lines.map((l: any) => ({
+          inventoryItemId: l.inventoryItemId || l.materialId,
+          acceptedQty: l.acceptedQty,
+          rate: l.rate,
+          unit: l.unit,
+          batchNo: l.batchNo || '',
+          storageLocation: l.storageLocation || '',
+        })),
+        null,
+        req.user!.id,
+      );
+    }
   } catch (syncErr: unknown) {
     console.error(`[StoreGRN] Inventory sync failed on approve for GRN-${updated.grnNo}: ${syncErr}`);
-    // Revert GRN and PO line updates
+    // Revert GRN status + PO line + routing fields
     await prisma.$transaction(async (tx) => {
-      await tx.goodsReceipt.update({ where: { id: updated.id }, data: { status: 'DRAFT' } });
+      await tx.goodsReceipt.update({ where: { id: updated.id }, data: { status: prevStatus } });
+      if (routing) {
+        for (const r of routing.lines) {
+          await tx.gRNLine.update({
+            where: { id: r.lineId },
+            data: { routedToStoreQty: 0, routedToFactoryQty: 0, routedAt: null },
+          });
+        }
+      }
       for (const line of grn.lines) {
         if (line.poLineId) {
           const poLine = await tx.pOLine.findUnique({ where: { id: line.poLineId } });
@@ -744,7 +868,7 @@ router.post('/:id/approve', storeWriteAuth, asyncHandler(async (req: AuthRequest
       }
     });
     return res.status(500).json({
-      error: `Approve succeeded but inventory sync failed. Reverted to DRAFT. ${syncErr instanceof Error ? syncErr.message : 'Unknown'}`,
+      error: `Approve succeeded but inventory sync failed. Reverted to ${prevStatus}. ${syncErr instanceof Error ? syncErr.message : 'Unknown'}`,
     });
   }
 

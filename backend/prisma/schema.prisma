@@ -2644,8 +2644,10 @@ model GoodsReceipt {
   qualityStatus    String        @default("PENDING") // PENDING, ACCEPTED, REJECTED, PARTIAL_ACCEPTED
   qualityRemarks   String?
   inspectedBy      String?
-  // Status
-  status           String        @default("DRAFT") // DRAFT, PARTIAL, CONFIRMED, CANCELLED
+  // Status (Saif 2026-04-30: added AT_GATE between AWAITING and CONFIRMED)
+  // Lifecycle: DRAFT (=AWAITING_ITEM for EXPECTED grnType) → AT_GATE → CONFIRMED
+  status           String        @default("DRAFT") // DRAFT, AT_GATE, PARTIAL, CONFIRMED, CANCELLED
+  atGateAt         DateTime? // set when truck for this PO checks in at gate
   grnType          String        @default("ACTUAL") // EXPECTED (pre-created from approved PO), ACTUAL (real receipt)
   expectedDate     DateTime? // when EXPECTED type: planned arrival
   archived         Boolean       @default(false) // hide from active list
@@ -2712,6 +2714,12 @@ model GRNLine {
   batchNo         String?
   expiryDate      DateTime?
   remarks         String?
+  // Routing decision at GRN approval (Saif 2026-04-30): split accepted qty
+  // between store warehouse and direct-to-factory. Sum should equal acceptedQty
+  // (validated at approve time). routedAt is set when the user clicks Approve.
+  routedToStoreQty   Float?    @default(0)
+  routedToFactoryQty Float?    @default(0)
+  routedAt           DateTime?
   createdAt       DateTime       @default(now())
 
   @@index([inventoryItemId])
