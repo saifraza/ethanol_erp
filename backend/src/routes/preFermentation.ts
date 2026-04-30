@@ -5,7 +5,7 @@ import { asyncHandler } from '../shared/middleware';
 
 const router = Router();
 
-router.use(authenticate as any);
+router.use(authenticate);
 
 // ─── CHEMICALS MASTER ───
 router.get('/chemicals', asyncHandler(async (_req: AuthRequest, res: Response) => {
@@ -99,7 +99,7 @@ router.patch('/batches/:id', asyncHandler(async (req: AuthRequest, res: Response
   res.json(batch);
 }));
 
-router.delete('/batches/:id', authorize('ADMIN') as any, asyncHandler(async (req: AuthRequest, res: Response) => {
+router.delete('/batches/:id', authorize('ADMIN'), asyncHandler(async (req: AuthRequest, res: Response) => {
   await prisma.pFBatch.delete({ where: { id: req.params.id } });
   res.json({ ok: true });
 }));
@@ -134,7 +134,7 @@ router.patch('/dosing/:id', asyncHandler(async (req: AuthRequest, res: Response)
   res.json(dosing);
 }));
 
-router.delete('/dosing/:id', authorize('ADMIN') as any, asyncHandler(async (req: AuthRequest, res: Response) => {
+router.delete('/dosing/:id', authorize('ADMIN'), asyncHandler(async (req: AuthRequest, res: Response) => {
   await prisma.pFDosing.delete({ where: { id: req.params.id } });
   res.json({ ok: true });
 }));
@@ -180,7 +180,7 @@ router.put('/lab/:id', asyncHandler(async (req: AuthRequest, res: Response) => {
   res.json(reading);
 }));
 
-router.delete('/lab/:id', authorize('ADMIN') as any, asyncHandler(async (req: AuthRequest, res: Response) => {
+router.delete('/lab/:id', authorize('ADMIN'), asyncHandler(async (req: AuthRequest, res: Response) => {
   await prisma.pFLabReading.delete({ where: { id: req.params.id } });
   res.json({ ok: true });
 }));

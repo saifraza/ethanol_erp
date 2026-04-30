@@ -5,7 +5,7 @@ import { asyncHandler } from '../shared/middleware';
 import { getGSTINDetails } from '../services/eInvoice';
 
 const router = Router();
-router.use(authenticate as any);
+router.use(authenticate);
 
 // GET /gstin-lookup/:gstin — Lookup GSTIN via Saral GSP for vendor auto-fill
 router.get('/gstin-lookup/:gstin', asyncHandler(async (req: AuthRequest, res: Response) => {
@@ -268,7 +268,7 @@ router.put('/:id', asyncHandler(async (req: AuthRequest, res: Response) => {
 }));
 
 // DELETE /:id — soft delete (isActive: false), SUPER_ADMIN only, with reference check
-router.delete('/:id', authorize('SUPER_ADMIN') as any, asyncHandler(async (req: AuthRequest, res: Response) => {
+router.delete('/:id', authorize('SUPER_ADMIN'), asyncHandler(async (req: AuthRequest, res: Response) => {
     const { checkVendorReferences } = await import('../utils/referenceCheck');
     const check = await checkVendorReferences(req.params.id);
     if (!check.canDelete) { res.status(409).json({ error: check.message }); return; }
@@ -328,7 +328,7 @@ router.delete('/:id/items/:itemId', asyncHandler(async (req: AuthRequest, res: R
 }));
 
 // POST /seed — seed default vendors
-router.post('/seed', authorize('ADMIN') as any, asyncHandler(async (req: AuthRequest, res: Response) => {
+router.post('/seed', authorize('ADMIN'), asyncHandler(async (req: AuthRequest, res: Response) => {
     const companyId = getActiveCompanyId(req);
     const vendors = await prisma.vendor.createMany({
       data: [

@@ -7,7 +7,7 @@ import { z } from 'zod';
 import { writeAuditMany } from '../../services/complianceAudit';
 
 const router = Router();
-router.use(authenticate as any);
+router.use(authenticate);
 
 const updateSchema = z.object({
   legalName: z.string().min(1).optional(),

@@ -83,7 +83,7 @@ import { getCompanyForPdf } from '../utils/pdfCompanyHelper';
 import { writeAudit, auditDiff } from '../utils/auditLog';
 
 const router = Router();
-router.use(authenticate as any);
+router.use(authenticate);
 
 // ──────────────────────────────────────────────────────────────────────────
 // Shared tax line processing — single source of truth for PO GST.

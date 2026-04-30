@@ -195,8 +195,8 @@ export async function runChat(input: {
       } else {
         try {
           result = await feature.execute(fnArgs);
-        } catch (err: any) {
-          errMsg = err.message || 'Tool execution failed';
+        } catch (err: unknown) {
+          errMsg = (err instanceof Error ? err.message : String(err)) || 'Tool execution failed';
         }
       }
       trackInvocation(featureId, errMsg);

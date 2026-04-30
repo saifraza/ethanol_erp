@@ -89,7 +89,7 @@ const updateVendorInvoiceSchema = z.object({
 });
 
 const router = Router();
-router.use(authenticate as any);
+router.use(authenticate);
 
 // ── Multer for vendor invoice uploads ──
 const uploadDir = path.join(__dirname, '../../uploads/vendor-invoices');
@@ -306,7 +306,7 @@ router.post('/upload-extract-bulk', upload.array('files', 50), asyncHandler(asyn
           const { extracted, error } = await extractInvoiceFromBuffer(buffer, file.mimetype, GEMINI_KEY);
           return { ...base, extracted, ...(error ? { error } : {}) };
         } catch (err: unknown) {
-          const msg = err instanceof Error ? err.message : 'Read/extract failed';
+          const msg = err instanceof Error ? (err instanceof Error ? err.message : String(err)) : 'Read/extract failed';
           return { ...base, extracted: null, error: msg };
         }
       }),
@@ -336,7 +336,7 @@ router.post('/upload-extract-bulk', upload.array('files', 50), asyncHandler(asyn
 // a filePath but no fileHash yet. Idempotent — already-hashed rows are
 // skipped. Admin-only. Hit once after the dedupe deploy lands.
 // ═══════════════════════════════════════════════
-router.post('/backfill-hashes', authorize('ADMIN', 'SUPER_ADMIN') as any, asyncHandler(async (req: AuthRequest, res: Response) => {
+router.post('/backfill-hashes', authorize('ADMIN', 'SUPER_ADMIN'), asyncHandler(async (req: AuthRequest, res: Response) => {
   const targets = await prisma.vendorInvoice.findMany({
     where: { filePath: { not: null }, fileHash: null },
     select: { id: true, filePath: true },

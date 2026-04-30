@@ -1,3 +1,5 @@
+import { Prisma } from '@prisma/client';
+
 /**
  * Custom invoice number generator using AppConfig as counter store.
  * Single global series: INV/ETH/001, INV/ETH/002, ...
@@ -16,7 +18,7 @@ const COUNTER_KEY = 'counter:INV/ETH';
  *
  * @param _series — IGNORED. Kept for backward compat; all invoices use ETH counter.
  */
-export async function nextInvoiceNo(tx: any, _series?: string): Promise<string> {
+export async function nextInvoiceNo(tx: Prisma.TransactionClient, _series?: string): Promise<string> {
   const rows = await tx.$queryRaw<Array<{ value: string }>>`
     INSERT INTO "AppConfig" ("key", "value", "updatedAt")
     VALUES (${COUNTER_KEY}, '1', NOW())
@@ -50,7 +52,7 @@ export function getInvoiceSeries(_contractType?: string, _productName?: string):
  * Uses AppConfig as store. Must be called inside a transaction.
  * Returns formatted string like "DCH/ETH/001", "GP/ETH/001".
  */
-export async function nextCounter(tx: any, prefix: string): Promise<string> {
+export async function nextCounter(tx: Prisma.TransactionClient, prefix: string): Promise<string> {
   const key = `counter:${prefix}`;
   const existing = await tx.appConfig.findUnique({ where: { key } });
   const counter = existing ? parseInt(existing.value, 10) + 1 : 1;

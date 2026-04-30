@@ -8,7 +8,7 @@ import { asyncHandler } from '../shared/middleware';
 import { broadcast } from '../services/messagingGateway';
 
 const router = Router();
-router.use(authenticate as any);
+router.use(authenticate);
 
 // Multer for iodine test photo
 const uploadsDir = path.join(__dirname, '..', '..', 'uploads', 'iodine');
@@ -133,7 +133,7 @@ router.put('/:id', asyncHandler(async (req: AuthRequest, res: Response) => {
   res.json(entry);
 }));
 
-router.delete('/:id', authorize('ADMIN') as any, async (req: Request, res: Response) => {
+router.delete('/:id', authorize('ADMIN'), async (req: Request, res: Response) => {
   const entry = await prisma.liquefactionEntry.findUnique({ where: { id: req.params.id } });
   if (entry?.fltIodinePhotoUrl) {
     const filename = path.basename(entry.fltIodinePhotoUrl.replace(/^\//, ''));

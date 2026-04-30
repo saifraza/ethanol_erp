@@ -71,7 +71,7 @@ export default function Payroll() {
     try {
       await api.post('/payroll', { month, year });
       loadRuns();
-    } catch (err: any) {
+    } catch (err: unknown) {
       alert(err.response?.data?.error || 'Failed to create run');
     } finally { setCreating(false); }
   };

@@ -6,7 +6,7 @@ import { asyncHandler } from '../shared/middleware';
 
 const router = Router();
 
-router.use(authenticate as any);
+router.use(authenticate);
 
 const FLOAT_FIELDS = [
   'ff1SpGravity','ff1Temp','ff2SpGravity','ff2Temp','ff3SpGravity','ff3Temp',
@@ -74,7 +74,7 @@ router.put('/:id', asyncHandler(async (req: AuthRequest, res: Response) => {
 }));
 
 // DELETE /:id — ADMIN only
-router.delete('/:id', authorize('ADMIN') as any, asyncHandler(async (req: AuthRequest, res: Response) => {
+router.delete('/:id', authorize('ADMIN'), asyncHandler(async (req: AuthRequest, res: Response) => {
   await prisma.evaporationEntry.delete({ where: { id: req.params.id } });
   res.json({ ok: true });
 }));

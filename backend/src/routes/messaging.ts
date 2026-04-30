@@ -9,7 +9,7 @@ import {
 import { asyncHandler } from '../shared/middleware';
 
 const router = Router();
-router.use(authenticate as any);
+router.use(authenticate);
 
 // POST /send-rate-request — Send freight inquiry to a transporter via email + Telegram
 router.post('/send-rate-request', asyncHandler(async (req: AuthRequest, res: Response) => {

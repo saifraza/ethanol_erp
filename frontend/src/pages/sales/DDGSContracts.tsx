@@ -246,7 +246,7 @@ const DDGSContracts: React.FC = () => {
       if (editId) { await api.put(`/ddgs-contracts/${editId}`, form); }
       else { await api.post('/ddgs-contracts', form); }
       setShowForm(false); setEditId(null); fetchData();
-    } catch (err: any) {
+    } catch (err: unknown) {
       setError(err?.response?.data?.error || 'Failed to save');
     } finally { setSaving(false); }
   };
@@ -254,7 +254,7 @@ const DDGSContracts: React.FC = () => {
   const handleDelete = async (id: string) => {
     if (!confirm('Delete this contract?')) return;
     try { await api.delete(`/ddgs-contracts/${id}`); fetchData(); }
-    catch (err: any) { setError(err?.response?.data?.error || 'Failed to delete'); }
+    catch (err: unknown) { setError(err?.response?.data?.error || 'Failed to delete'); }
   };
 
   const handleDispatchSubmit = async () => {
@@ -265,7 +265,7 @@ const DDGSContracts: React.FC = () => {
       const cid = dispatchContractId;
       setDispatchContractId(null); setDispatchForm({ ...emptyDispatchForm }); fetchData();
       if (expanded === cid) loadSupplyDetail(cid);
-    } catch (err: any) {
+    } catch (err: unknown) {
       setError(err?.response?.data?.error || 'Failed to add dispatch');
     } finally { setDispatchSaving(false); }
   };
@@ -281,7 +281,7 @@ const DDGSContracts: React.FC = () => {
         const formData = new FormData(); formData.append('pdf', file);
         await api.post(`/ddgs-contracts/${contractId}/pdf`, formData, { headers: { 'Content-Type': 'multipart/form-data' } });
         fetchData();
-      } catch (err: any) { setError(err?.response?.data?.error || 'Failed to upload PDF'); }
+      } catch (err: unknown) { setError(err?.response?.data?.error || 'Failed to upload PDF'); }
     };
     input.click();
   };
@@ -313,7 +313,7 @@ const DDGSContracts: React.FC = () => {
       setActionLoading(dispatchId);
       await api.post(`/ddgs-contracts/${contractId}/dispatches/${dispatchId}/create-invoice`);
       loadSupplyDetail(contractId);
-    } catch (err: any) { setError(err?.response?.data?.error || 'Failed to create invoice'); }
+    } catch (err: unknown) { setError(err?.response?.data?.error || 'Failed to create invoice'); }
     finally { setActionLoading(null); }
   };
 
@@ -332,7 +332,7 @@ const DDGSContracts: React.FC = () => {
       }
       loadSupplyDetail(contractId);
       fetchData();
-    } catch (err: any) { setError(err?.response?.data?.error || 'Failed to release truck'); }
+    } catch (err: unknown) { setError(err?.response?.data?.error || 'Failed to release truck'); }
     finally { setActionLoading(null); }
   };
 
@@ -362,7 +362,7 @@ const DDGSContracts: React.FC = () => {
       });
       setEwbModal(null);
       loadSupplyDetail(contractId);
-    } catch (err: any) { setError(err?.response?.data?.error || 'Failed to generate e-invoice'); }
+    } catch (err: unknown) { setError(err?.response?.data?.error || 'Failed to generate e-invoice'); }
     finally { setActionLoading(null); }
   };
 
@@ -378,7 +378,7 @@ const DDGSContracts: React.FC = () => {
       });
       setManualEwb(null);
       loadSupplyDetail(contractId);
-    } catch (err: any) { setError(err?.response?.data?.error || 'Failed to save EWB'); }
+    } catch (err: unknown) { setError(err?.response?.data?.error || 'Failed to save EWB'); }
     finally { setActionLoading(null); }
   };
 
@@ -386,7 +386,7 @@ const DDGSContracts: React.FC = () => {
     try {
       await api.patch(`/ddgs-contracts/${contractId}/auto-einvoice`, { enabled });
       fetchData();
-    } catch (err: any) { setError(err?.response?.data?.error || 'Failed to toggle'); }
+    } catch (err: unknown) { setError(err?.response?.data?.error || 'Failed to toggle'); }
   };
 
   const pctUsed = (c: Contract) => c.contractQtyMT ? Math.round((c.totalSuppliedMT / c.contractQtyMT) * 100) : 0;

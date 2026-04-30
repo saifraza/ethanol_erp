@@ -21,11 +21,11 @@ export async function handleEthanolOutbound(w: WeighmentInput, _ctx: PushContext
   // fix manually — but the factory weighment must NOT keep retrying forever.
   try {
     return await handleEthanolOutboundInner(w, _ctx);
-  } catch (err: any) {
+  } catch (err: unknown) {
     // Capture Prisma error code/meta + full context so the next failure tells us EXACTLY what's wrong
-    const errCode = err?.code || 'UNKNOWN';
-    const errMeta = err?.meta ? JSON.stringify(err.meta) : '';
-    const errMessage = err instanceof Error ? err.message : String(err);
+    const errCode = (err as Record<string, unknown>)?.code || 'UNKNOWN';
+    const errMeta = (err as Record<string, unknown>)?.meta ? JSON.stringify((err as Record<string, unknown>).meta) : '';
+    const errMessage = err instanceof Error ? (err instanceof Error ? err.message : String(err)) : String(err);
     const errStack = err instanceof Error ? err.stack : '';
     console.error(`[WB-PUSH][ETHANOL] FATAL handler error for ${w.vehicle_no} | weighmentId=${w.id} | gatePassId=${w.cloud_gate_pass_id || 'none'} | code=${errCode} | meta=${errMeta} | message=${errMessage}\nstack=${errStack}`);
 

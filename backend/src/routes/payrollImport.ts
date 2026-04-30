@@ -16,7 +16,7 @@ import { authenticate, AuthRequest, getActiveCompanyId } from '../middleware/aut
 import { asyncHandler } from '../shared/middleware';
 
 const router = Router();
-router.use(authenticate as any);
+router.use(authenticate);
 
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 20 * 1024 * 1024 } });
 

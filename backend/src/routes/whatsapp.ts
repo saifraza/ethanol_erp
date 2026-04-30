@@ -14,7 +14,7 @@ import { waStatus, waQr, waSend, waSendGroup, resetWaConfig } from '../services/
 import { resetGatewayCache } from '../services/messagingGateway';
 
 const router = Router();
-router.use(authenticate as any);
+router.use(authenticate);
 
 // ── Status ──
 

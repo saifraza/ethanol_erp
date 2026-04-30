@@ -5,7 +5,7 @@ import { authenticate, AuthRequest } from '../../middleware/auth';
 import { asyncHandler } from '../../shared/middleware';
 
 const router = Router();
-router.use(authenticate as any);
+router.use(authenticate);
 
 const listQuery = z.object({
   fermenterNo: z.coerce.number().int().min(1).max(4).optional(),

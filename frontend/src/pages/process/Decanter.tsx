@@ -98,7 +98,7 @@ export default function Decanter() {
           const text = buildPreviewText();
           await api.post('/telegram/send-report', { message: text, module: 'decanter' });
           setMsg({ type: 'ok', text: 'Saved & shared on Telegram' });
-        } catch (err: any) {
+        } catch (err: unknown) {
           setMsg({ type: 'err', text: err.response?.data?.error || 'Saved, but failed to share' });
         }
         setSharing(false);
@@ -106,7 +106,7 @@ export default function Decanter() {
         setMsg({ type: 'ok', text: `Saved at ${new Date().toLocaleTimeString()}` });
       }
       setForm(empty()); setShowPreview(false); setShowExtras(false); load();
-    } catch (err: any) {
+    } catch (err: unknown) {
       setMsg({ type: 'err', text: err.response?.data?.error || 'Save failed' });
     }
     setSaving(false);

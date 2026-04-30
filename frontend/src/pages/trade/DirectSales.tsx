@@ -161,7 +161,7 @@ export default function DirectSales() {
         setMsg({ type: 'ok', text: 'Order created' });
       }
       setForm({ ...emptyForm }); setShowForm(false); setEditId(null); fetchData();
-    } catch (err: any) { setMsg({ type: 'err', text: err.response?.data?.error || 'Save failed' }); }
+    } catch (err: unknown) { setMsg({ type: 'err', text: err.response?.data?.error || 'Save failed' }); }
     setSaving(false);
     setTimeout(() => setMsg(null), 3000);
   }
@@ -214,7 +214,7 @@ export default function DirectSales() {
       setInvoiceModal(null);
       refreshDispatches(invoiceModal.orderId);
       fetchData();
-    } catch (err: any) { setError(err.response?.data?.error || 'Failed to create invoice'); }
+    } catch (err: unknown) { setError(err.response?.data?.error || 'Failed to create invoice'); }
     setInvSaving(false);
   }
 
@@ -232,7 +232,7 @@ export default function DirectSales() {
       setEwbModal(null);
       refreshDispatches(ewbModal.orderId);
       if (res.data.ewbError) setError(`IRN OK. EWB failed: ${res.data.ewbError}`);
-    } catch (err: any) { setError(err.response?.data?.error || 'E-invoice generation failed'); }
+    } catch (err: unknown) { setError(err.response?.data?.error || 'E-invoice generation failed'); }
     setEwbSaving(false);
   }
 
@@ -247,7 +247,7 @@ export default function DirectSales() {
       await api.patch(`/direct-sales/${orderId}/shipments/${shipmentId}/manual-ewb`, formData);
       setManualEwb(null);
       refreshDispatches(orderId);
-    } catch (err: any) { setError(err.response?.data?.error || 'Failed to save EWB'); }
+    } catch (err: unknown) { setError(err.response?.data?.error || 'Failed to save EWB'); }
     setActionLoading(null);
   }
 

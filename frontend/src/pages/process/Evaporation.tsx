@@ -68,7 +68,7 @@ export default function Evaporation() {
         await shareReport();
       }
       setForm(empty()); setShowPreview(false); load();
-    } catch (err: any) {
+    } catch (err: unknown) {
       setMsg({ type: 'err', text: err.response?.data?.error || 'Save failed' });
     }
     setSaving(false);
@@ -109,7 +109,7 @@ export default function Evaporation() {
     try {
       await api.post('/telegram/send-report', { message: text, module: 'evaporation' });
       setMsg({ type: 'ok', text: 'Report shared on Telegram' });
-    } catch (err: any) {
+    } catch (err: unknown) {
       setMsg({ type: 'err', text: err.response?.data?.error || 'Failed to share on Telegram' });
     }
   };

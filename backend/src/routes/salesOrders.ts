@@ -15,7 +15,7 @@ import { getCompanyForPdf } from '../utils/pdfCompanyHelper';
 
 const router = Router();
 
-router.use(authenticate as any);
+router.use(authenticate);
 
 // GET / — List sales orders with filters
 router.get('/', asyncHandler(async (req: AuthRequest, res: Response) => {

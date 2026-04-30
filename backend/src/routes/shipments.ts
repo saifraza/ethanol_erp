@@ -21,7 +21,7 @@ import { getCompanyForPdf } from '../utils/pdfCompanyHelper';
 
 const router = Router();
 
-router.use(authenticate as any);
+router.use(authenticate);
 
 // GET / — List shipments for a date
 router.get('/', asyncHandler(async (req: AuthRequest, res: Response) => {
@@ -1052,7 +1052,7 @@ router.get('/:id/eway-bill/details', asyncHandler(async (req: AuthRequest, res: 
 }));
 
 // DELETE /:id — Delete (ADMIN only; unlinked trucks any status, linked only GATE_IN)
-router.delete('/:id', authorize('ADMIN') as any, asyncHandler(async (req: AuthRequest, res: Response) => {
+router.delete('/:id', authorize('ADMIN'), asyncHandler(async (req: AuthRequest, res: Response) => {
     const shipment = await prisma.shipment.findUnique({
       where: { id: req.params.id },
     });

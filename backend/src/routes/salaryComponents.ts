@@ -4,7 +4,7 @@ import { authenticate, AuthRequest } from '../middleware/auth';
 import { asyncHandler } from '../shared/middleware';
 
 const router = Router();
-router.use(authenticate as any);
+router.use(authenticate);
 
 const DEFAULT_COMPONENTS = [
   { code: 'BASIC', name: 'Basic Salary', type: 'EARNING', isStatutory: false, isTaxable: true, isPfWage: true, calculationType: 'PERCENTAGE_OF_GROSS', defaultPct: 50, sortOrder: 1 },

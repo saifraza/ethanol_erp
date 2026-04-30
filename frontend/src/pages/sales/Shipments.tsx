@@ -916,7 +916,7 @@ export default function Shipments() {
                                       try {
                                         await api.post(`/shipments/${s.id}/send-email`);
                                         alert('Email sent!');
-                                      } catch (err: any) { alert(err.response?.data?.error || 'Failed to send'); }
+                                      } catch (err: unknown) { alert(err.response?.data?.error || 'Failed to send'); }
                                     }}
                                       className="py-1 px-2.5 text-[10px] font-semibold bg-indigo-50 text-indigo-700 border border-indigo-200 flex items-center gap-1 hover:bg-indigo-100">
                                       <Mail size={10} /> Email

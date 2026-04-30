@@ -4,7 +4,7 @@ import { asyncHandler } from '../shared/middleware';
 import prisma from '../config/prisma';
 
 const router = Router();
-router.use(authenticate as any);
+router.use(authenticate);
 
 // GET / — list departments (with optional division filter)
 router.get('/', asyncHandler(async (req: AuthRequest, res: Response) => {
@@ -51,7 +51,7 @@ router.put('/:id', asyncHandler(async (req: AuthRequest, res: Response) => {
 }));
 
 // DELETE /:id — deactivate (soft delete), SUPER_ADMIN only
-router.delete('/:id', authorize('SUPER_ADMIN') as any, asyncHandler(async (req: AuthRequest, res: Response) => {
+router.delete('/:id', authorize('SUPER_ADMIN'), asyncHandler(async (req: AuthRequest, res: Response) => {
   await prisma.department.update({
     where: { id: req.params.id },
     data: { isActive: false },

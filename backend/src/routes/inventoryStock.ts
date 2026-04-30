@@ -5,7 +5,7 @@ import { NotFoundError } from '../shared/errors';
 import prisma from '../config/prisma';
 
 const router = Router();
-router.use(authenticate as any);
+router.use(authenticate);
 
 // ─── GET /levels — stock levels grouped by item, with warehouse/batch breakdown ───
 

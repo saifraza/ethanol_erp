@@ -31,8 +31,8 @@ export const queryTable: AIFeature = {
       try {
         const parsed = typeof args.where === 'string' ? JSON.parse(String(args.where)) : args.where;
         where = convertDateStrings(parsed);
-      } catch (err: any) {
-        return { error: `Invalid where JSON: ${err.message}` };
+      } catch (err: unknown) {
+        return { error: `Invalid where JSON: ${(err instanceof Error ? err.message : String(err))}` };
       }
     }
 
@@ -40,8 +40,8 @@ export const queryTable: AIFeature = {
     if (args.orderBy) {
       try {
         orderBy = typeof args.orderBy === 'string' ? JSON.parse(String(args.orderBy)) : args.orderBy;
-      } catch (err: any) {
-        return { error: `Invalid orderBy JSON: ${err.message}` };
+      } catch (err: unknown) {
+        return { error: `Invalid orderBy JSON: ${(err instanceof Error ? err.message : String(err))}` };
       }
     }
 

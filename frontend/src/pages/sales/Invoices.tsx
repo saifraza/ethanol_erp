@@ -74,7 +74,7 @@ export default function Invoices() {
     try {
       const res = await api.post(`/invoices/${invId}/send-email`, { to: emailTo });
       setMsg({ type: 'ok', text: `Email sent to ${res.data.sentTo}` });
-    } catch (err: any) {
+    } catch (err: unknown) {
       setMsg({ type: 'err', text: err.response?.data?.error || 'Failed to send email' });
     } finally { setEmailSending(null); }
   };
@@ -178,7 +178,7 @@ export default function Invoices() {
       const res = await api.post(`/invoices/${invoiceId}/e-invoice`, {});
       setMsg({ type: 'ok', text: `e-Invoice generated! IRN: ${res.data.irn?.slice(0, 30)}...` });
       loadInvoices(filters);
-    } catch (err: any) {
+    } catch (err: unknown) {
       const errData = err.response?.data;
       if (errData?.missingFields) {
         setMsg({ type: 'err', text: errData.error });

@@ -96,7 +96,7 @@ export default function DDGSDispatch() {
       if (share) {
         await shareTelegram();
       }
-    } catch (err: any) { setMsg({ type: 'err', text: err.response?.data?.error || 'Save failed' }); }
+    } catch (err: unknown) { setMsg({ type: 'err', text: err.response?.data?.error || 'Save failed' }); }
     setSaving(false);
   }
 
@@ -115,7 +115,7 @@ export default function DDGSDispatch() {
       setBillTruck(null); setBillRate(''); setBillInvNo('');
       await loadDispatches();
       setMsg({ type: 'ok', text: 'Bill generated' });
-    } catch (err: any) { setMsg({ type: 'err', text: err.response?.data?.error || 'Bill failed' }); }
+    } catch (err: unknown) { setMsg({ type: 'err', text: err.response?.data?.error || 'Bill failed' }); }
   }
 
   const totalNet = dispatches.reduce((s, d) => s + (d.weightNet || 0), 0);
@@ -129,7 +129,7 @@ export default function DDGSDispatch() {
     try {
       await api.post('/telegram/send-report', { message: text, module: 'ddgs-dispatch' });
       setMsg({ type: 'ok', text: 'Report sent to Telegram' });
-    } catch (err: any) {
+    } catch (err: unknown) {
       setMsg({ type: 'err', text: err.response?.data?.error || 'Failed to send Telegram' });
     }
   }

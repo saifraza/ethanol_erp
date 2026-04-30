@@ -5,7 +5,7 @@ import { asyncHandler } from '../shared/middleware';
 import { resolveNotifications } from '../services/notify';
 
 const router = Router();
-router.use(authenticate as any);
+router.use(authenticate);
 
 // Build the WHERE clause that matches notifications visible to the current user:
 // (user-specific OR role-broadcast matching their role) AND not resolved

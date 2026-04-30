@@ -11,7 +11,7 @@ const p = (v: any): number | null => v !== undefined && v !== null && v !== '' ?
 const pInt = (v: any): number | null => v !== undefined && v !== null && v !== '' ? parseInt(v) : null;
 
 const router = Router();
-router.use(authenticate as any);
+router.use(authenticate);
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 10 * 1024 * 1024 } });
 
 // ── GET all contracts ──

@@ -5,7 +5,7 @@ import { asyncHandler } from '../shared/middleware';
 
 const router = Router();
 
-router.use(authenticate as any);
+router.use(authenticate);
 
 const DRYERS = [1, 2, 3];
 const PER_DRYER = ['Moisture', 'SteamFlow', 'SteamTempIn', 'SteamTempOut', 'SyrupConsumption', 'LoadAmps'];
@@ -41,7 +41,7 @@ router.post('/', asyncHandler(async (req: AuthRequest, res: Response) => {
   res.status(201).json(entry);
 }));
 
-router.delete('/:id', authorize('ADMIN') as any, asyncHandler(async (req: AuthRequest, res: Response) => {
+router.delete('/:id', authorize('ADMIN'), asyncHandler(async (req: AuthRequest, res: Response) => {
   await prisma.dryerEntry.delete({ where: { id: req.params.id } });
   res.json({ ok: true });
 }));

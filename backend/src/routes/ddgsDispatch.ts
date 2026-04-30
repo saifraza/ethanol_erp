@@ -10,7 +10,7 @@ import { drawLetterhead } from '../utils/letterhead';
 import { renderDocumentPdf } from '../services/documentRenderer';
 
 const router = Router();
-router.use(authenticate as any);
+router.use(authenticate);
 
 // ═══════════════════════════════════════════════
 // HELPERS
@@ -435,7 +435,7 @@ router.post('/:id/eway-bill', asyncHandler(async (req: AuthRequest, res: Respons
 // ═══════════════════════════════════════════════
 // DELETE /:id
 // ═══════════════════════════════════════════════
-router.delete('/:id', authorize('ADMIN') as any, asyncHandler(async (req: AuthRequest, res: Response) => {
+router.delete('/:id', authorize('ADMIN'), asyncHandler(async (req: AuthRequest, res: Response) => {
     await prisma.dDGSDispatchTruck.delete({ where: { id: req.params.id } });
     res.json({ ok: true });
 }));

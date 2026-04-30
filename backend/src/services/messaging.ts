@@ -57,9 +57,9 @@ export async function sendEmail(opts: EmailOptions): Promise<{ success: boolean;
     });
     console.log(`[Email] Sent to ${opts.to}: ${info.messageId}`);
     return { success: true, messageId: info.messageId };
-  } catch (err: any) {
-    console.error('[Email] Failed:', err.message);
-    return { success: false, error: err.message };
+  } catch (err: unknown) {
+    console.error('[Email] Failed:', (err instanceof Error ? err.message : String(err)));
+    return { success: false, error: (err instanceof Error ? err.message : String(err)) };
   }
 }
 
@@ -80,9 +80,9 @@ export async function sendTelegram(opts: TelegramOptions): Promise<TelegramResul
   try {
     await sendTelegramMessage(opts.chatId, opts.message);
     return { success: true };
-  } catch (err: any) {
-    console.error('[Telegram] Failed:', err.message);
-    return { success: false, error: err.message };
+  } catch (err: unknown) {
+    console.error('[Telegram] Failed:', (err instanceof Error ? err.message : String(err)));
+    return { success: false, error: (err instanceof Error ? err.message : String(err)) };
   }
 }
 

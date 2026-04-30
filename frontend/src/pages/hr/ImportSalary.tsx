@@ -80,7 +80,7 @@ export default function ImportSalary() {
       for (const f of files) fd.append('files', f);
       const res = await api.post('/hr/import-salary/preview', fd, { headers: { 'Content-Type': 'multipart/form-data' }, timeout: 60000 });
       setPreview(res.data);
-    } catch (err: any) {
+    } catch (err: unknown) {
       alert(err.response?.data?.error || 'Preview failed');
     } finally {
       setLoading(false);
@@ -98,7 +98,7 @@ export default function ImportSalary() {
       fd.append('year', String(year));
       const res = await api.post('/hr/import-salary/commit', fd, { headers: { 'Content-Type': 'multipart/form-data' }, timeout: 120000 });
       setCommitted(res.data);
-    } catch (err: any) {
+    } catch (err: unknown) {
       alert(err.response?.data?.error || 'Commit failed');
     } finally {
       setCommitting(false);

@@ -897,7 +897,7 @@ function CreateReceiptModal({
       const res = await api.post('/goods-receipts/store', body);
       const grn = res.data as StoreGRN;
       onCreated(grn.id);
-    } catch (err: any) {
+    } catch (err: unknown) {
       const data = err?.response?.data;
       if (data?.error === 'DRAFT_GRN_EXISTS') {
         setDraftConflicts(data.existing || []);

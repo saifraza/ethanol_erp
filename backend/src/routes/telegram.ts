@@ -15,7 +15,7 @@ import { initTelegram, stopPolling } from '../services/telegramBot';
 import { broadcast } from '../services/messagingGateway';
 
 const router = Router();
-router.use(authenticate as any);
+router.use(authenticate);
 
 const ALL_MODULES = [
   'liquefaction', 'fermentation', 'distillation', 'milling',

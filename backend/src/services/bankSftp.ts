@@ -95,7 +95,7 @@ export async function uploadPaymentFile(fileName: string, fileBuffer: Buffer): P
     console.log(`[BankSFTP] PROD: Payment file uploaded to ${remotePath} (${fileBuffer.length} bytes)`);
     return { success: true, path: remotePath };
   } catch (err: unknown) {
-    const msg = err instanceof Error ? err.message : 'SFTP upload failed';
+    const msg = err instanceof Error ? (err instanceof Error ? err.message : String(err)) : 'SFTP upload failed';
     console.error(`[BankSFTP] PROD: Upload failed — ${msg}`);
     return { success: false, path: '', error: msg };
   }
@@ -159,7 +159,7 @@ export async function checkAckNack(): Promise<Array<{ fileName: string; content:
     }
     return results;
   } catch (err: unknown) {
-    const msg = err instanceof Error ? err.message : 'SFTP read failed';
+    const msg = err instanceof Error ? (err instanceof Error ? err.message : String(err)) : 'SFTP read failed';
     console.error(`[BankSFTP] PROD: ACK/NACK check failed — ${msg}`);
     return [];
   }
@@ -214,7 +214,7 @@ export async function downloadReports(): Promise<Array<{ fileName: string; conte
     }
     return results;
   } catch (err: unknown) {
-    const msg = err instanceof Error ? err.message : 'SFTP read failed';
+    const msg = err instanceof Error ? (err instanceof Error ? err.message : String(err)) : 'SFTP read failed';
     console.error(`[BankSFTP] PROD: Reports download failed — ${msg}`);
     return [];
   }

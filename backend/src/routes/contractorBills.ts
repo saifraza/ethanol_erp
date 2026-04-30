@@ -13,7 +13,7 @@ import fs from 'fs';
 import { generateVaultNote } from '../services/vaultWriter';
 
 const router = Router();
-router.use(authenticate as any);
+router.use(authenticate);
 
 // File upload config for contractor bills
 const uploadDir = path.join(__dirname, '../../uploads/contractor-bills');

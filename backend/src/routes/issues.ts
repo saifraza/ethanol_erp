@@ -4,7 +4,7 @@ import { authenticate, AuthRequest, authorize } from '../middleware/auth';
 import { asyncHandler } from '../shared/middleware';
 
 const router = Router();
-router.use(authenticate as any);
+router.use(authenticate);
 
 // GET / — list issues (with optional status/type filter)
 router.get('/', asyncHandler(async (req: AuthRequest, res: Response) => {
@@ -76,7 +76,7 @@ router.post('/', asyncHandler(async (req: AuthRequest, res: Response) => {
 }));
 
 // PUT /:id — update issue (status, assign, resolve)
-router.put('/:id', authorize('ADMIN') as any, asyncHandler(async (req: AuthRequest, res: Response) => {
+router.put('/:id', authorize('ADMIN'), asyncHandler(async (req: AuthRequest, res: Response) => {
   const b = req.body;
   const data: Record<string, unknown> = {};
   if (b.status !== undefined) data.status = b.status;
@@ -109,7 +109,7 @@ router.post('/:id/comment', asyncHandler(async (req: AuthRequest, res: Response)
 }));
 
 // DELETE /:id
-router.delete('/:id', authorize('ADMIN') as any, asyncHandler(async (req: AuthRequest, res: Response) => {
+router.delete('/:id', authorize('ADMIN'), asyncHandler(async (req: AuthRequest, res: Response) => {
   await prisma.plantIssue.delete({ where: { id: req.params.id } });
   res.json({ ok: true });
 }));

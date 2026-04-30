@@ -407,7 +407,7 @@ export default function GrainUnloading() {
       const res = await api.get(`/grain-truck/report${params.toString() ? `?${params.toString()}` : ''}`);
       setReceivedReport(res.data);
       setReportFilters(res.data.filters || nextFilters);
-    } catch (err: any) {
+    } catch (err: unknown) {
       setReceivedReportError(err.response?.data?.error || 'Failed to load report');
     }
     setReceivedReportLoading(false);
@@ -509,7 +509,7 @@ export default function GrainUnloading() {
       setForm({ ...emptyForm, date: form.date });
       setEditId(null);
       await loadLatest(); await loadEntries();
-    } catch (err: any) { setMsg({ type: 'err', text: err.response?.data?.error || 'Save failed' }); }
+    } catch (err: unknown) { setMsg({ type: 'err', text: err.response?.data?.error || 'Save failed' }); }
     setSaving(false);
   }
 
@@ -553,7 +553,7 @@ export default function GrainUnloading() {
       await api.delete(`/grain/${id}`);
       await loadLatest(); await loadEntries();
       setMsg({ type: 'ok', text: 'Deleted.' });
-    } catch (err: any) { setMsg({ type: 'err', text: err.response?.data?.error || 'Delete failed' }); }
+    } catch (err: unknown) { setMsg({ type: 'err', text: err.response?.data?.error || 'Delete failed' }); }
   }
 
   const DiffCell = ({ val, unit = '' }: { val: number; unit?: string }) => (

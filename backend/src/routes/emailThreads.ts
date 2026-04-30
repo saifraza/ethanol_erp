@@ -15,7 +15,7 @@ import prisma from '../config/prisma';
 import { syncAndListReplies, markReplySeen, sendThreadEmail } from '../services/emailService';
 
 const router = Router();
-router.use(authenticate as any);
+router.use(authenticate);
 
 // GET / — list threads by filter
 router.get('/', asyncHandler(async (req: AuthRequest, res: Response) => {

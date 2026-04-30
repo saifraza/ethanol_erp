@@ -5,7 +5,7 @@ import { asyncHandler } from '../shared/middleware';
 import { broadcastToPrivate } from '../services/messagingGateway';
 
 const router = Router();
-router.use(authenticate as any);
+router.use(authenticate);
 
 /** IST-aware now: Railway runs UTC, we need IST (UTC+5:30) */
 function nowIST(): Date {

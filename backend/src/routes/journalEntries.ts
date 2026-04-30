@@ -8,7 +8,7 @@ import { nextDocNo } from '../utils/docSequence';
 import { DIVISIONS } from '../shared/config/divisions';
 
 const router = Router();
-router.use(authenticate as any);
+router.use(authenticate);
 
 // ── Types (for Prisma results) ──
 interface JL { debit: number; credit: number }

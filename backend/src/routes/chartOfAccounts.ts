@@ -6,7 +6,7 @@ import { z } from 'zod';
 import prisma from '../config/prisma';
 
 const router = Router();
-router.use(authenticate as any);
+router.use(authenticate);
 
 // Types for Prisma results (used when Prisma client types unavailable)
 interface JournalLineResult { debit: number; credit: number }
@@ -278,8 +278,8 @@ router.post('/', validate(createAccountSchema), asyncHandler(async (req: AuthReq
         },
       });
       return res.status(201).json(account);
-    } catch (err: any) {
-      if (err.code === 'P2002' && attempt < 2) continue;
+    } catch (err: unknown) {
+      if ((err as Record<string, any>).code === 'P2002' && attempt < 2) continue;
       throw err;
     }
   }
@@ -309,7 +309,7 @@ router.put('/:id', validate(updateAccountSchema), asyncHandler(async (req: AuthR
 }));
 
 // ── DELETE /:id — Soft-deactivate (never hard delete), SUPER_ADMIN only ──
-router.delete('/:id', authorize('SUPER_ADMIN') as any, asyncHandler(async (req: AuthRequest, res: Response) => {
+router.delete('/:id', authorize('SUPER_ADMIN'), asyncHandler(async (req: AuthRequest, res: Response) => {
   const account = await prisma.account.findUnique({ where: { id: req.params.id } });
   if (!account) throw new NotFoundError('Account', req.params.id);
   if (!canAccessCompany(req, account.companyId)) throw new NotFoundError('Account', req.params.id);

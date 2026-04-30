@@ -49,7 +49,7 @@ const dishonourSchema = z.object({
 });
 
 const router = Router();
-router.use(authenticate as any);
+router.use(authenticate);
 
 // ═══════════════════════════════════════════════
 // GET / — List PDCs with filters

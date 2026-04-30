@@ -25,7 +25,7 @@ import {
 import { streamXlsxResponse } from '../utils/xlsxExport';
 
 const router = Router();
-router.use(authenticate as any);
+router.use(authenticate);
 
 // ──────────────────────────────────────────────────────────
 // Query-param schema (no body — GET only)

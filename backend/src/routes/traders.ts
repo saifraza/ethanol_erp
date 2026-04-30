@@ -5,7 +5,7 @@ import { asyncHandler, validate } from '../shared/middleware';
 import { z } from 'zod';
 
 const router = Router();
-router.use(authenticate as any);
+router.use(authenticate);
 
 // ── Trader = Vendor with isAgent=true ──
 // Simple master for procurement agents/traders who buy on behalf of the company
@@ -149,7 +149,7 @@ router.put('/:id', validate(traderUpdateSchema), asyncHandler(async (req: AuthRe
 }));
 
 // DELETE /:id — soft delete, SUPER_ADMIN only, with reference check
-router.delete('/:id', authorize('SUPER_ADMIN') as any, asyncHandler(async (req: AuthRequest, res: Response) => {
+router.delete('/:id', authorize('SUPER_ADMIN'), asyncHandler(async (req: AuthRequest, res: Response) => {
   const existing = await prisma.vendor.findUnique({ where: { id: req.params.id }, select: { isAgent: true } });
   if (!existing || !existing.isAgent) return res.status(404).json({ error: 'Trader not found' });
   const { checkVendorReferences } = await import('../utils/referenceCheck');

@@ -81,8 +81,8 @@ Return ONLY valid JSON, no markdown fences.`;
         related_topics: parsed.related_topics || [],
       },
     };
-  } catch (err: any) {
-    console.error('[VaultWriter] Gemini summarization failed:', err.response?.data?.error?.message || err.message);
+  } catch (err: unknown) {
+    console.error('[VaultWriter] Gemini summarization failed:', ((err as Record<string, any>).response as Record<string, any>)?.data?.error?.message || (err instanceof Error ? err.message : String(err)));
     return null;
   }
 }
@@ -339,7 +339,7 @@ export async function generateVaultNote(opts: {
     }
 
     console.log('[VaultWriter] Generated vault note:', vaultPath);
-  } catch (err: any) {
-    console.error('[VaultWriter] Error generating vault note:', err.message);
+  } catch (err: unknown) {
+    console.error('[VaultWriter] Error generating vault note:', (err instanceof Error ? err.message : String(err)));
   }
 }

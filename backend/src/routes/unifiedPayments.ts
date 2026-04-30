@@ -4,7 +4,7 @@ import { asyncHandler } from '../shared/middleware';
 import prisma from '../config/prisma';
 
 const router = Router();
-router.use(authenticate as any);
+router.use(authenticate);
 
 // ═══════════════════════════════════════════════
 // Shared types

@@ -210,7 +210,7 @@ export default function TdsReport() {
       else await api.post('/hr/tds/challans', payload);
       setShowChallanForm(false);
       await loadChallans();
-    } catch (err: any) {
+    } catch (err: unknown) {
       alert(err.response?.data?.error || JSON.stringify(err.response?.data?.details) || 'Save failed');
     } finally {
       setSavingChallan(false);

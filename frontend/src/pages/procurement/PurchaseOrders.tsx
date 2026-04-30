@@ -411,7 +411,7 @@ const PurchaseOrders: React.FC = () => {
       setMaterials(materialsResponse.data.materials || []);
       setContractorsList(contractorsResponse.data.contractors || []);
       setError('');
-    } catch (err: any) {
+    } catch (err: unknown) {
       setError(err.response?.data?.message || 'Failed to fetch data');
     } finally {
       setLoading(false);
@@ -617,7 +617,7 @@ const PurchaseOrders: React.FC = () => {
       setTermsUserEdited(false);
       setShowCreateForm(false);
       setTimeout(() => setSuccess(''), 3000);
-    } catch (err: any) {
+    } catch (err: unknown) {
       setError(err.response?.data?.message || 'Failed to create purchase order');
     } finally {
       setSubmitting(false);
@@ -630,7 +630,7 @@ const PurchaseOrders: React.FC = () => {
       await fetchData();
       setSuccess(`PO status updated to ${newStatus}`);
       setTimeout(() => setSuccess(''), 3000);
-    } catch (err: any) {
+    } catch (err: unknown) {
       setError(err.response?.data?.message || 'Failed to update status');
     }
   };
@@ -670,7 +670,7 @@ const PurchaseOrders: React.FC = () => {
       await fetchData();
       setSuccess(`Email sent to ${res.data.sentTo} — PO marked as SENT`);
       setTimeout(() => setSuccess(''), 5000);
-    } catch (err: any) {
+    } catch (err: unknown) {
       setError(err.response?.data?.error || 'Failed to send email');
     } finally {
       setEmailSending(null);

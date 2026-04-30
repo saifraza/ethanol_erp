@@ -347,7 +347,7 @@ export default function GoodsReceipts() {
       setSuccessMessage('Partial GRN created (paid & awaiting)');
       await Promise.all([fetchArrivals(), fetchGRNs()]);
       setTimeout(() => setSuccessMessage(null), 3000);
-    } catch (err: any) {
+    } catch (err: unknown) {
       setError(err?.response?.data?.error || 'Failed to create partial GRN');
     }
   };
@@ -792,7 +792,7 @@ export default function GoodsReceipts() {
                 setSuccessMessage('GRN confirmed');
                 await Promise.all([fetchArrivals(), fetchGRNs()]);
                 setTimeout(() => setSuccessMessage(null), 3000);
-              } catch (err: any) {
+              } catch (err: unknown) {
                 setError(err?.response?.data?.error || 'Failed to confirm GRN');
               }
             }}

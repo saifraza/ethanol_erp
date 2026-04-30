@@ -4,7 +4,7 @@ import { authenticate, AuthRequest, getCompanyFilter, getActiveCompanyId } from 
 import { asyncHandler } from '../shared/middleware';
 
 const router = Router();
-router.use(authenticate as any);
+router.use(authenticate);
 
 // GET / — list with filters
 router.get('/', asyncHandler(async (req: AuthRequest, res: Response) => {

@@ -8,7 +8,7 @@ import { writeAudit, writeAuditMany } from '../../services/complianceAudit';
 import { getHsnRateImpact } from '../../services/taxRateLookup';
 
 const router = Router();
-router.use(authenticate as any);
+router.use(authenticate);
 
 // GET /:id/impact — blast radius for a rate change
 router.get('/:id/impact', asyncHandler(async (req: AuthRequest, res: Response) => {

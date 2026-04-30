@@ -10,7 +10,7 @@ import axios from 'axios';
 import { nextDocNo } from '../utils/docSequence';
 
 const router = Router();
-router.use(authenticate as any);
+router.use(authenticate);
 
 // ── Multer for quotation uploads ──
 const uploadDir = path.join(__dirname, '../../uploads/project-quotations');

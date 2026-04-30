@@ -49,7 +49,7 @@ export async function runSchemaDriftGuard(): Promise<void> {
       console.warn(`  applied: ${c.sql.slice(0, 100)}`);
     }
     console.warn(`[SchemaDriftGuard] drift repair complete. Investigate why prisma db push skipped these on the last deploy.`);
-  } catch (err: any) {
-    console.error('[SchemaDriftGuard] check failed:', err?.message || err);
+  } catch (err: unknown) {
+    console.error('[SchemaDriftGuard] check failed:', (err instanceof Error ? err.message : String(err)));
   }
 }

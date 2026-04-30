@@ -15,7 +15,7 @@ import axios from 'axios';
 import { generateVaultNote } from '../services/vaultWriter';
 
 const router = Router();
-router.use(authenticate as any);
+router.use(authenticate);
 
 // ── Multer for GRN document uploads ──
 const grnUploadDir = path.join(__dirname, '../../uploads/grn-documents');

@@ -5,7 +5,7 @@ import { asyncHandler } from '../shared/middleware';
 
 const router = Router();
 
-router.use(authenticate as any);
+router.use(authenticate);
 
 // GET / — list all active products
 router.get('/', asyncHandler(async (req: AuthRequest, res: Response) => {

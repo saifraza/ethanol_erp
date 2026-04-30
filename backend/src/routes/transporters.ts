@@ -6,7 +6,7 @@ import { getGSTINDetails } from '../services/eInvoice';
 
 const router = Router();
 
-router.use(authenticate as any);
+router.use(authenticate);
 
 // GET /gstin-lookup/:gstin — Lookup GSTIN via Saral GSP and return transporter-ready details
 router.get('/gstin-lookup/:gstin', asyncHandler(async (req: AuthRequest, res: Response) => {
@@ -104,7 +104,7 @@ router.put('/:id', asyncHandler(async (req: AuthRequest, res: Response) => {
 }));
 
 // DELETE /:id — soft delete (set isActive: false), SUPER_ADMIN only, with reference check
-router.delete('/:id', authorize('SUPER_ADMIN') as any, asyncHandler(async (req: AuthRequest, res: Response) => {
+router.delete('/:id', authorize('SUPER_ADMIN'), asyncHandler(async (req: AuthRequest, res: Response) => {
     const { checkTransporterReferences } = await import('../utils/referenceCheck');
     const check = await checkTransporterReferences(req.params.id);
     if (!check.canDelete) { res.status(409).json({ error: check.message }); return; }

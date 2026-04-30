@@ -4,7 +4,7 @@ import { asyncHandler } from '../shared/middleware';
 import prisma from '../config/prisma';
 
 const router = Router();
-router.use(authenticate as any);
+router.use(authenticate);
 
 // GET / — list business divisions (+ department count)
 router.get('/', asyncHandler(async (req: AuthRequest, res: Response) => {
@@ -18,7 +18,7 @@ router.get('/', asyncHandler(async (req: AuthRequest, res: Response) => {
 }));
 
 // POST / — create a business division
-router.post('/', authorize('ADMIN', 'SUPER_ADMIN') as any, asyncHandler(async (req: AuthRequest, res: Response) => {
+router.post('/', authorize('ADMIN', 'SUPER_ADMIN'), asyncHandler(async (req: AuthRequest, res: Response) => {
   const { name, code, description } = req.body;
   if (!name || !String(name).trim()) { res.status(400).json({ error: 'Name is required' }); return; }
   const division = await prisma.businessDivision.create({
@@ -33,7 +33,7 @@ router.post('/', authorize('ADMIN', 'SUPER_ADMIN') as any, asyncHandler(async (r
 }));
 
 // PUT /:id — update a business division
-router.put('/:id', authorize('ADMIN', 'SUPER_ADMIN') as any, asyncHandler(async (req: AuthRequest, res: Response) => {
+router.put('/:id', authorize('ADMIN', 'SUPER_ADMIN'), asyncHandler(async (req: AuthRequest, res: Response) => {
   const { name, code, description, isActive } = req.body;
   const division = await prisma.businessDivision.update({
     where: { id: req.params.id },
@@ -48,7 +48,7 @@ router.put('/:id', authorize('ADMIN', 'SUPER_ADMIN') as any, asyncHandler(async 
 }));
 
 // DELETE /:id — soft delete
-router.delete('/:id', authorize('SUPER_ADMIN') as any, asyncHandler(async (req: AuthRequest, res: Response) => {
+router.delete('/:id', authorize('SUPER_ADMIN'), asyncHandler(async (req: AuthRequest, res: Response) => {
   await prisma.businessDivision.update({
     where: { id: req.params.id },
     data: { isActive: false },

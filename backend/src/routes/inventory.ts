@@ -4,9 +4,10 @@ import { authenticate, AuthRequest, authorize, getCompanyFilter, getActiveCompan
 import { asyncHandler } from '../shared/middleware';
 import { searchHSN } from '../data/hsnDatabase';
 import { isInventoryAlertsEnabled, toggleInventoryAlerts } from '../services/inventoryAlerts';
+import { Prisma } from '@prisma/client';
 
 const router = Router();
-router.use(authenticate as any);
+router.use(authenticate);
 
 // ─── ITEM LOOKUP (Smart Search) ──────────────────
 
@@ -151,7 +152,7 @@ async function generateItemCode(): Promise<string> {
 }
 
 // POST /items — create new item
-router.post('/items', authorize('ADMIN') as any, asyncHandler(async (req: AuthRequest, res: Response) => {
+router.post('/items', authorize('ADMIN'), asyncHandler(async (req: AuthRequest, res: Response) => {
   const b = req.body;
   const code = await generateItemCode();
   const item = await prisma.inventoryItem.create({
@@ -184,7 +185,7 @@ router.post('/items', authorize('ADMIN') as any, asyncHandler(async (req: AuthRe
 }));
 
 // PUT /items/:id — update item
-router.put('/items/:id', authorize('ADMIN') as any, asyncHandler(async (req: AuthRequest, res: Response) => {
+router.put('/items/:id', authorize('ADMIN'), asyncHandler(async (req: AuthRequest, res: Response) => {
   const b = req.body;
   const item = await prisma.inventoryItem.update({
     where: { id: req.params.id },
@@ -216,7 +217,7 @@ router.put('/items/:id', authorize('ADMIN') as any, asyncHandler(async (req: Aut
 }));
 
 // DELETE /items/:id — soft delete, SUPER_ADMIN only, with reference check
-router.delete('/items/:id', authorize('SUPER_ADMIN') as any, asyncHandler(async (req: AuthRequest, res: Response) => {
+router.delete('/items/:id', authorize('SUPER_ADMIN'), asyncHandler(async (req: AuthRequest, res: Response) => {
   const { checkInventoryItemReferences } = await import('../utils/referenceCheck');
   const check = await checkInventoryItemReferences(req.params.id);
   if (!check.canDelete) { res.status(409).json({ error: check.message }); return; }
@@ -251,7 +252,7 @@ router.post('/transaction', asyncHandler(async (req: AuthRequest, res: Response)
   }
 
   // Wrap in transaction to ensure atomicity
-  const result = await prisma.$transaction(async (tx: any) => {
+  const result = await prisma.$transaction(async (tx: Prisma.TransactionClient) => {
     // Re-check stock inside transaction (prevents race condition)
     const item = await tx.inventoryItem.findUnique({ where: { id: b.itemId } });
     if (!item) throw new Error('Item not found');
@@ -399,7 +400,7 @@ router.get('/items/:id/vendors', asyncHandler(async (req: AuthRequest, res: Resp
 }));
 
 // POST /items/:id/vendors — link a vendor to this item
-router.post('/items/:id/vendors', authorize('ADMIN') as any, asyncHandler(async (req: AuthRequest, res: Response) => {
+router.post('/items/:id/vendors', authorize('ADMIN'), asyncHandler(async (req: AuthRequest, res: Response) => {
   const { vendorId, rate, minOrderQty, leadTimeDays, isPreferred, remarks } = req.body;
   if (!vendorId) { res.status(400).json({ error: 'vendorId required' }); return; }
 
@@ -445,7 +446,7 @@ router.post('/items/:id/vendors', authorize('ADMIN') as any, asyncHandler(async 
 }));
 
 // DELETE /items/:id/vendors/:vendorId — unlink vendor
-router.delete('/items/:id/vendors/:vendorId', authorize('ADMIN') as any, asyncHandler(async (req: AuthRequest, res: Response) => {
+router.delete('/items/:id/vendors/:vendorId', authorize('ADMIN'), asyncHandler(async (req: AuthRequest, res: Response) => {
   await prisma.vendorItem.updateMany({
     where: { inventoryItemId: req.params.id, vendorId: req.params.vendorId },
     data: { isActive: false },
@@ -454,7 +455,7 @@ router.delete('/items/:id/vendors/:vendorId', authorize('ADMIN') as any, asyncHa
 }));
 
 // POST /vendors/quick — quick-add a new vendor (minimal fields)
-router.post('/vendors/quick', authorize('ADMIN') as any, asyncHandler(async (req: AuthRequest, res: Response) => {
+router.post('/vendors/quick', authorize('ADMIN'), asyncHandler(async (req: AuthRequest, res: Response) => {
   const { name, gstin } = req.body;
   if (!name) { res.status(400).json({ error: 'name required' }); return; }
   const vendor = await prisma.vendor.create({

@@ -5,7 +5,7 @@ import { asyncHandler } from '../shared/middleware';
 
 const router = Router();
 
-router.use(authenticate as any);
+router.use(authenticate);
 
 router.get('/', async (_req: AuthRequest, res: Response) => {
   const entries = await prisma.rawMaterialEntry.findMany({ orderBy: { date: 'desc' }, take: 200 });
@@ -54,7 +54,7 @@ router.put('/:id', asyncHandler(async (req: AuthRequest, res: Response) => {
   res.json(entry);
 }));
 
-router.delete('/:id', authorize('ADMIN') as any, async (req: AuthRequest, res: Response) => {
+router.delete('/:id', authorize('ADMIN'), async (req: AuthRequest, res: Response) => {
   await prisma.rawMaterialEntry.delete({ where: { id: req.params.id } });
   res.json({ ok: true });
 });

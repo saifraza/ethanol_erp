@@ -5,7 +5,7 @@ import { asyncHandler } from '../shared/middleware';
 
 const router = Router();
 
-router.use(authenticate as any);
+router.use(authenticate);
 
 // GET /latest — get defaults for new entry (opening stock, cumulative production/dispatch)
 router.get('/latest', asyncHandler(async (req: AuthRequest, res: Response) => {
@@ -126,7 +126,7 @@ router.post('/', asyncHandler(async (req: AuthRequest, res: Response) => {
 }));
 
 // DELETE /:id
-router.delete('/:id', authorize('ADMIN') as any, asyncHandler(async (req: AuthRequest, res: Response) => {
+router.delete('/:id', authorize('ADMIN'), asyncHandler(async (req: AuthRequest, res: Response) => {
   await prisma.dDGSStockEntry.delete({ where: { id: req.params.id } });
   res.json({ ok: true });
 }));

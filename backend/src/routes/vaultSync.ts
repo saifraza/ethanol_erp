@@ -11,7 +11,7 @@ import { authenticate, AuthRequest } from '../middleware/auth';
 import { asyncHandler } from '../shared/middleware';
 
 const router = Router();
-router.use(authenticate as any);
+router.use(authenticate);
 
 // ── GET /pending — Fetch unsynced vault notes ──
 router.get('/pending', asyncHandler(async (req: AuthRequest, res: Response) => {

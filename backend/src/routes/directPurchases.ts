@@ -4,7 +4,7 @@ import { authenticate, AuthRequest, authorize, getCompanyFilter, getActiveCompan
 import { asyncHandler } from '../shared/middleware';
 
 const router = Router();
-router.use(authenticate as any);
+router.use(authenticate);
 
 // GET / — list with optional date filter
 router.get('/', asyncHandler(async (req: AuthRequest, res: Response) => {
@@ -108,7 +108,7 @@ router.put('/:id', asyncHandler(async (req: AuthRequest, res: Response) => {
 }));
 
 // DELETE /:id
-router.delete('/:id', authorize('ADMIN') as any, asyncHandler(async (req: AuthRequest, res: Response) => {
+router.delete('/:id', authorize('ADMIN'), asyncHandler(async (req: AuthRequest, res: Response) => {
   await prisma.directPurchase.delete({ where: { id: req.params.id } });
   res.json({ ok: true });
 }));

@@ -145,6 +145,8 @@ model DailyEntry {
   updatedAt              DateTime @updatedAt
 
   @@unique([date, yearStart])
+  @@index([date])
+  @@index([status])
 }
 
 model TankDip {
@@ -864,6 +866,8 @@ model DDGSDispatchTruck {
   @@index([contractId])
   @@index([shipToCustomerId])
   @@index([division])
+  @@index([status])
+  @@index([companyId])
 }
 
 // ═══════════════════════════════════════════════
@@ -1142,6 +1146,7 @@ model GrainTruck {
   @@index([gateEntryAt])
   @@index([companyId])
   @@index([firstWeightAt])
+  @@index([materialId])
 }
 
 // ═══════════════════════════════════════════════
@@ -1194,6 +1199,9 @@ model LabSample {
   createdAt      DateTime     @default(now())
   updatedAt      DateTime     @updatedAt
   grainTrucks    GrainTruck[]
+  @@index([date])
+  @@index([result])
+  @@index([userId])
 }
 
 model AuditLog {
@@ -1207,6 +1215,8 @@ model AuditLog {
 
   @@index([entity, entityId])
   @@index([createdAt])
+  @@index([userId])
+  @@index([action])
 }
 
 // ═══════════════════════════════════════════════
@@ -1577,6 +1587,9 @@ model PlantIssue {
 
   @@index([status])
   @@index([division])
+  @@index([issueType])
+  @@index([severity])
+  @@index([createdAt])
 }
 
 model IssueComment {
@@ -1648,6 +1661,7 @@ model PurchaseRequisition {
   @@index([inventoryItemId])
   @@index([companyId])
   @@index([vendorId])
+  @@index([createdAt])
 }
 
 // ── Per-vendor quote row inside an indent ──
@@ -1938,6 +1952,7 @@ model SalesOrder {
   @@index([status])
   @@index([division])
   @@index([companyId])
+  @@index([orderDate])
 }
 
 // ── Sales Order Line Items ──
@@ -1995,6 +2010,9 @@ model DispatchRequest {
   company         Company?        @relation(fields: [companyId], references: [id])
 
   @@index([companyId])
+  @@index([orderId])
+  @@index([status])
+  @@index([deliveryDate])
 }
 
 // ── Shipment (Factory: one truck = one shipment) ──
@@ -2161,6 +2179,7 @@ model FreightInquiry {
   company           Company?           @relation(fields: [companyId], references: [id])
 
   @@index([companyId])
+  @@index([status])
 }
 
 // ── Freight Quotation (Transporter responds to inquiry) ──
@@ -2219,6 +2238,8 @@ model TransporterPayment {
 
   companyId String? // FK → Company (null = MSPIL default)
   company   Company? @relation(fields: [companyId], references: [id])
+  @@index([shipmentId])
+  @@index([status])
 }
 
 // ── Invoice (auto-generated from shipment) ──
@@ -2307,6 +2328,8 @@ model Invoice {
   @@index([division])
   @@index([companyId])
   @@index([snapshotAt])
+  @@index([orderId])
+  @@index([invoiceDate])
 }
 
 // ── Payment (against invoices) ──
@@ -2334,6 +2357,8 @@ model Payment {
 
   @@index([division])
   @@index([companyId])
+  @@index([customerId])
+  @@index([paymentDate])
 }
 
 // ═══════════════════════════════════════════════════════════════
@@ -2810,6 +2835,7 @@ model VendorInvoice {
   @@index([division])
   @@index([companyId])
   @@index([fileHash])
+  @@index([grnId])
 }
 
 // ── Vendor Invoice Line ──
@@ -3268,6 +3294,8 @@ model EthanolContract {
 
   @@index([buyerCustomerId])
   @@index([companyId])
+  @@index([status])
+  @@index([contractType])
 }
 
 model EthanolLifting {
@@ -3319,6 +3347,8 @@ model EthanolLifting {
 
   @@index([contractId])
   @@index([invoiceId])
+  @@index([liftingDate])
+  @@index([status])
 }
 
 model TelegramMessage {
@@ -3642,6 +3672,7 @@ model PostDatedCheque {
   @@index([partyId])
   @@index([direction])
   @@index([companyId])
+  @@index([chequeDate])
 }
 
 // ══════════════════════════════════════════════════════════════
@@ -3690,6 +3721,7 @@ model BankPaymentBatch {
   @@index([createdAt])
   @@index([batchNo])
   @@index([companyId])
+  @@index([paymentType])
 }
 
 model BankPaymentItem {
@@ -3975,6 +4007,7 @@ model ComplianceObligation {
   @@index([riskLevel])
   @@index([department])
   @@index([frequency])
+  @@index([createdAt])
 }
 
 // Join table: which CompanyDocuments fulfill which obligations
@@ -4062,6 +4095,8 @@ model DDGSContract {
   @@index([customerId])
   @@index([status])
   @@index([companyId])
+  @@index([startDate])
+  @@index([endDate])
 }
 
 model DDGSContractDispatch {
@@ -4171,6 +4206,7 @@ model SugarDispatchTruck {
   @@index([contractId])
   @@index([status])
   @@index([division])
+  @@index([companyId])
 }
 
 model SugarContract {
@@ -4217,6 +4253,8 @@ model SugarContract {
   @@index([customerId])
   @@index([status])
   @@index([companyId])
+  @@index([startDate])
+  @@index([endDate])
 }
 
 model SugarContractDispatch {
@@ -4507,6 +4545,9 @@ model Weighment {
   @@index([factoryCreatedAt])
   @@index([direction, materialCategory, secondWeightAt])
   @@index([syncedAt])
+  @@index([purchaseType])
+  @@index([supplierId])
+  @@index([customerId])
 }
 
 // ══════════════════════════════════════════════════════════════
@@ -4657,6 +4698,8 @@ model Employee {
   @@index([contractorId])
   @@index([companyId])
   @@index([division])
+  @@index([employmentType])
+  @@index([isActive])
 }
 
 model SalaryComponent {

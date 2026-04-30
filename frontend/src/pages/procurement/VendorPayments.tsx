@@ -316,7 +316,7 @@ const VendorPayments: React.FC = () => {
                             onClick={async () => {
                               if (!confirm(`Send payment advice to ${payment.vendor.name}?`)) return;
                               try { await api.post(`/vendor-payments/${payment.id}/send-email`); alert('Email sent!'); }
-                              catch (err: any) { alert(err.response?.data?.error || 'Failed to send'); }
+                              catch (err: unknown) { alert(err.response?.data?.error || 'Failed to send'); }
                             }}
                             title="Email Payment Advice"
                             className="p-1 bg-indigo-600 text-white hover:bg-indigo-700"

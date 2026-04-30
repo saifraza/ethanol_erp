@@ -189,14 +189,14 @@ export default function EthanolProduct() {
         try {
           await api.post('/telegram/send-report', { message: text, module: 'ethanol-product' });
           setMsg({ type: 'ok', text: 'Saved & shared to Telegram' });
-        } catch (err: any) {
+        } catch (err: unknown) {
           setMsg({ type: 'ok', text: 'Saved but Telegram share failed' });
         }
       }
 
       setForm({}); setRemarks(''); setEditId(null);
       await loadLatest(); await loadEntries(); await loadTotals();
-    } catch (err: any) { setMsg({ type: 'err', text: err.response?.data?.error || 'Save failed' }); }
+    } catch (err: unknown) { setMsg({ type: 'err', text: err.response?.data?.error || 'Save failed' }); }
     setSaving(false);
   }
 
@@ -350,7 +350,7 @@ export default function EthanolProduct() {
             try {
               await api.post('/telegram/send-report', { message: text, module: 'ethanol-product' });
               setMsg({ type: 'ok', text: 'Status shared to Telegram' });
-            } catch (err: any) {
+            } catch (err: unknown) {
               setMsg({ type: 'err', text: err.response?.data?.error || 'Failed to share' });
             }
           }} className="mt-3 w-full flex items-center justify-center gap-2 bg-green-600 text-white py-2 text-sm font-medium hover:bg-green-700">
@@ -632,7 +632,7 @@ export default function EthanolProduct() {
                 try {
                   await api.post('/telegram/send-report', { message: text, module: 'ethanol-product' });
                   setMsg({ type: 'ok', text: 'Report shared to Telegram' });
-                } catch (err: any) {
+                } catch (err: unknown) {
                   setMsg({ type: 'err', text: err.response?.data?.error || 'Failed to share' });
                 }
               }} className="flex-1 flex items-center justify-center gap-2 bg-green-600 text-white py-2.5 text-sm font-medium hover:bg-green-700">

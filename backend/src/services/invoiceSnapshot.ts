@@ -389,8 +389,8 @@ export async function auditAllSnapshots(limit = 500): Promise<{
         const sha = createHash('sha256').update(buf).digest('hex');
         if (sha !== expectedSha) return kind === 'json' ? 'json_sha_mismatch' : 'pdf_sha_mismatch';
         return null;
-      } catch (err: any) {
-        if (err?.code === 'ENOENT') return kind === 'json' ? 'json_missing' : 'pdf_missing';
+      } catch (err: unknown) {
+        if ((err as NodeJS.ErrnoException)?.code === 'ENOENT') return kind === 'json' ? 'json_missing' : 'pdf_missing';
         return 'read_error';
       }
     };

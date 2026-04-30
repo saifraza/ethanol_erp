@@ -5,7 +5,7 @@ import { asyncHandler } from '../shared/middleware';
 
 const router = Router();
 
-router.use(authenticate as any);
+router.use(authenticate);
 
 const FLOAT_FIELDS: string[] = [];
 for (let i = 1; i <= 8; i++) {
@@ -42,7 +42,7 @@ router.post('/', asyncHandler(async (req: AuthRequest, res: Response) => {
 }));
 
 // DELETE /:id — ADMIN only
-router.delete('/:id', authorize('ADMIN') as any, asyncHandler(async (req: AuthRequest, res: Response) => {
+router.delete('/:id', authorize('ADMIN'), asyncHandler(async (req: AuthRequest, res: Response) => {
   await prisma.decanterEntry.delete({ where: { id: req.params.id } });
   res.json({ ok: true });
 }));

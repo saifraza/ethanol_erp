@@ -7,7 +7,7 @@ import { validateCustomerTaxIdentity } from '../utils/gstSplit';
 
 const router = Router();
 
-router.use(authenticate as any);
+router.use(authenticate);
 
 // GET / — list all active customers
 router.get('/', asyncHandler(async (req: AuthRequest, res: Response) => {
@@ -225,7 +225,7 @@ router.put('/:id', asyncHandler(async (req: AuthRequest, res: Response) => {
 }));
 
 // DELETE /:id — soft delete (set isActive: false), SUPER_ADMIN only, with reference check
-router.delete('/:id', authorize('SUPER_ADMIN') as any, asyncHandler(async (req: AuthRequest, res: Response) => {
+router.delete('/:id', authorize('SUPER_ADMIN'), asyncHandler(async (req: AuthRequest, res: Response) => {
     const { checkCustomerReferences } = await import('../utils/referenceCheck');
     const check = await checkCustomerReferences(req.params.id);
     if (!check.canDelete) { res.status(409).json({ error: check.message }); return; }

@@ -15,9 +15,10 @@ import path from 'path';
 import os from 'os';
 
 import { calcGstSplit, stateFromGstin } from '../utils/gstSplit';
+import { Prisma } from '@prisma/client';
 
 const router = Router();
-router.use(authenticate as any);
+router.use(authenticate);
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 10 * 1024 * 1024 } });
 
 // ── GET all contracts ──
@@ -365,14 +366,14 @@ router.post('/:id/liftings', asyncHandler(async (req: AuthRequest, res: Response
                 }
               }
               console.log(`[EthanolContract] Auto e-invoice complete for lifting ${lifting.id}`);
-            } catch (err: any) {
-              console.error(`[EthanolContract] Auto IRN/EWB failed for lifting ${lifting.id}:`, err.message);
+            } catch (err: unknown) {
+              console.error(`[EthanolContract] Auto IRN/EWB failed for lifting ${lifting.id}:`, (err instanceof Error ? err.message : String(err)));
             }
           });
         }
-      } catch (err: any) {
+      } catch (err: unknown) {
         // Invoice creation failed — log but don't block the lifting creation
-        console.error(`[EthanolContract] Auto-invoice failed for lifting ${lifting.id}:`, err.message);
+        console.error(`[EthanolContract] Auto-invoice failed for lifting ${lifting.id}:`, (err instanceof Error ? err.message : String(err)));
       }
     }
 
@@ -484,7 +485,7 @@ router.patch('/liftings/:liftingId/rate', asyncHandler(async (req: AuthRequest, 
   const gst = calcGstSplit(newAmount, gstPercent, inv.customer?.state, inv.customer?.gstNo);
   const newTotal = Math.round((newAmount + gst.gstAmount) * 100) / 100;
 
-  const result = await prisma.$transaction(async (tx: any) => {
+  const result = await prisma.$transaction(async (tx: Prisma.TransactionClient) => {
     // 1. Update invoice
     await tx.invoice.update({
       where: { id: inv.id },
@@ -1101,8 +1102,8 @@ router.post('/:id/liftings/:liftingId/e-invoice', asyncHandler(async (req: AuthR
       } else {
         ewbError = ewbResult.error || 'E-Way Bill generation failed';
       }
-    } catch (err: any) {
-      ewbError = err.message || 'E-Way Bill generation error';
+    } catch (err: unknown) {
+      ewbError = (err instanceof Error ? err.message : String(err)) || 'E-Way Bill generation error';
     }
 
     res.json({

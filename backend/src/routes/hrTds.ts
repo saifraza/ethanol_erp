@@ -24,7 +24,7 @@ import { asyncHandler, validate } from '../shared/middleware';
 import { calculateTdsOnSalary } from '../services/payrollCalculator';
 
 const router = Router();
-router.use(authenticate as any);
+router.use(authenticate);
 
 // ── Helpers ───────────────────────────────────────────────────
 function fyFromMonth(month: number, year: number): { fyCode: string; fyStart: Date; fyEnd: Date } {

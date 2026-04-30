@@ -44,7 +44,7 @@ export default function InvoiceTab({ order, allShipments, invoices, flash, onRef
       const res = await api.post(`/invoices/${invoiceId}/e-invoice`, {});
       flash('ok', `e-Invoice generated! IRN: ${res.data.irn?.slice(0, 30)}...`);
       onRefresh();
-    } catch (err: any) {
+    } catch (err: unknown) {
       const errData = err.response?.data;
       if (errData?.missingFields) {
         flash('err', errData.error);
@@ -62,7 +62,7 @@ export default function InvoiceTab({ order, allShipments, invoices, flash, onRef
     try {
       const res = await api.post(`/invoices/${invoiceId}/send-email`, { to: emailTo });
       flash('ok', `Email sent to ${res.data.sentTo}`);
-    } catch (err: any) {
+    } catch (err: unknown) {
       flash('err', err.response?.data?.error || 'Failed to send email');
     }
     setActionLoading(null);

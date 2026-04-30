@@ -376,7 +376,7 @@ export default function Milling() {
       setForm({ ...emptyForm, date: form.date });
       setEditId(null);
       await loadEntries(); await loadChartData();
-    } catch (err: any) {
+    } catch (err: unknown) {
       const isNetwork = !err.response;
       setMsg({ type: 'err', text: isNetwork ? 'Server unreachable — your data is safe in the form, try again in a moment' : (err.response?.data?.error || 'Save failed') });
     }
@@ -399,7 +399,7 @@ export default function Milling() {
   async function deleteEntry(id: string) {
     if (!confirm('Delete this milling entry?')) return;
     try { await api.delete(`/milling/${id}`); await loadEntries(); await loadChartData(); setMsg({ type: 'ok', text: 'Deleted.' }); }
-    catch (err: any) { setMsg({ type: 'err', text: err.response?.data?.error || 'Delete failed' }); }
+    catch (err: unknown) { setMsg({ type: 'err', text: err.response?.data?.error || 'Delete failed' }); }
   }
 
   function fmtTime(iso: string) {

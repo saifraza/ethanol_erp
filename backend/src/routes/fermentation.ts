@@ -19,7 +19,7 @@ const storage = multer.diskStorage({
 });
 const upload = multer({ storage, limits: { fileSize: 10 * 1024 * 1024 } });
 
-router.use(authenticate as any);
+router.use(authenticate);
 
 /* ═══════ CHEMICALS (shared with PF) ═══════ */
 router.get('/chemicals', async (_req: Request, res: Response) => {
@@ -201,7 +201,7 @@ router.patch('/batches/:id', asyncHandler(async (req: AuthRequest, res: Response
   res.json(batch);
 }));
 
-router.delete('/batches/:id', authorize('ADMIN') as any, async (req: Request, res: Response) => {
+router.delete('/batches/:id', authorize('ADMIN'), async (req: Request, res: Response) => {
   await prisma.fermentationBatch.delete({ where: { id: req.params.id } });
   res.json({ ok: true });
 });
@@ -293,7 +293,7 @@ router.patch('/dosing/:id', asyncHandler(async (req: AuthRequest, res: Response)
   res.json(dosing);
 }));
 
-router.delete('/dosing/:id', authorize('ADMIN') as any, async (req: Request, res: Response) => {
+router.delete('/dosing/:id', authorize('ADMIN'), async (req: Request, res: Response) => {
   await prisma.fermDosing.delete({ where: { id: req.params.id } });
   res.json({ ok: true });
 });
@@ -587,7 +587,7 @@ router.put('/:id', asyncHandler(async (req: AuthRequest, res: Response) => {
   res.json(entry);
 }));
 
-router.delete('/:id', authorize('ADMIN') as any, async (req: Request, res: Response) => {
+router.delete('/:id', authorize('ADMIN'), async (req: Request, res: Response) => {
   const entry = await prisma.fermentationEntry.findUnique({ where: { id: req.params.id } });
   if (entry?.spentLossPhotoUrl) {
     const filename = path.basename(entry.spentLossPhotoUrl.replace(/^\//, ''));

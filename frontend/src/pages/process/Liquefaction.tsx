@@ -259,7 +259,7 @@ export default function Liquefaction() {
       setForm(emptyForm()); setIodinePhoto(null); setIodinePreview(null); load();
       setTimeout(() => setMsg(null), 5000);
       setTimeout(() => setLastSavedId(null), 8000);
-    } catch (err: any) {
+    } catch (err: unknown) {
       setMsg({ type: 'err', text: err.response?.data?.error || 'Save failed' });
     }
     setSaving(false);
@@ -302,7 +302,7 @@ export default function Liquefaction() {
       setMsg({ type: 'ok', text: 'Entry updated' });
       setEditEntry(null); load();
       setTimeout(() => setMsg(null), 3000);
-    } catch (err: any) {
+    } catch (err: unknown) {
       setMsg({ type: 'err', text: err.response?.data?.error || 'Update failed' });
     }
     setEditSaving(false);

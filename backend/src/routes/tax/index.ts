@@ -28,7 +28,7 @@ router.use('/seed', seedRoutes);
 router.use('/gstr2b-recon', gstr2bReconRoutes);
 
 // ── TDS Calculator (live preview for payment screens) ──
-router.post('/calculate-tds', authenticate as any, asyncHandler(async (req: AuthRequest, res: Response) => {
+router.post('/calculate-tds', authenticate, asyncHandler(async (req: AuthRequest, res: Response) => {
   const { vendorId, amount, overrideSectionId } = req.body;
   if (!vendorId || !amount) {
     res.status(400).json({ error: 'vendorId and amount are required' });
@@ -39,7 +39,7 @@ router.post('/calculate-tds', authenticate as any, asyncHandler(async (req: Auth
 }));
 
 // ── PO Terms catalog (standard contract clauses) ──
-router.get('/po-terms', authenticate as any, asyncHandler(async (req: AuthRequest, res: Response) => {
+router.get('/po-terms', authenticate, asyncHandler(async (req: AuthRequest, res: Response) => {
   const category = (req.query.category as string | undefined)?.toUpperCase();
   const terms = category ? termsForCategory(category) : PO_TERMS_RAW_MATERIAL;
   res.json({ terms });

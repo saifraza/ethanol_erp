@@ -7,7 +7,7 @@ import { z } from 'zod';
 import { writeAudit } from '../../services/complianceAudit';
 
 const router = Router();
-router.use(authenticate as any);
+router.use(authenticate);
 
 const createSchema = z.object({
   code: z.string().regex(/^\d{4}-\d{2}$/, 'FY code must be YYYY-YY'),

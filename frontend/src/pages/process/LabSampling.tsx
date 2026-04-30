@@ -95,7 +95,7 @@ export default function LabSampling() {
         setMsg({ type: 'ok', text: 'Sample saved' });
       }
       resetForm(); setShowForm(false); loadSamples();
-    } catch (err: any) {
+    } catch (err: unknown) {
       setMsg({ type: 'err', text: err.response?.data?.error || 'Save failed' });
     }
     setSaving(false);

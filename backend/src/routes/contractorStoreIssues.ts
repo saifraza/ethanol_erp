@@ -6,7 +6,7 @@ import { NotFoundError } from '../shared/errors';
 import { z } from 'zod';
 
 const router = Router();
-router.use(authenticate as any);
+router.use(authenticate);
 
 const WRITE_ROLES = ['ADMIN', 'SUPER_ADMIN', 'STORE_INCHARGE', 'SUPERVISOR'];
 

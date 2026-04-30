@@ -12,7 +12,7 @@ import {
 } from '../../data/taxComplianceSeed';
 
 const router = Router();
-router.use(authenticate as any);
+router.use(authenticate);
 
 const EFFECTIVE_FROM = new Date('2026-04-01');
 

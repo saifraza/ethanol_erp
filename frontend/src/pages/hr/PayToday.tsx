@@ -94,7 +94,7 @@ export default function PayToday() {
       });
       setPlan(res.data);
       setSelected(new Set(res.data.canFullyPay.map(e => e.payrollLineId)));
-    } catch (err: any) {
+    } catch (err: unknown) {
       setError(err.response?.data?.error || 'Failed to compute plan');
       setPlan(null);
     } finally { setLoading(false); }
@@ -120,7 +120,7 @@ export default function PayToday() {
       });
       setDoneMsg(`✓ Marked ${res.data.updated} payroll lines as paid via ${payMode}.`);
       setPlan(null); setSelected(new Set()); setBudget('');
-    } catch (err: any) {
+    } catch (err: unknown) {
       setError(err.response?.data?.error || 'Failed to execute');
     } finally { setExecuting(false); }
   }, [plan, selected, payMode]);

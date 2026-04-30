@@ -5,7 +5,7 @@ import { asyncHandler } from '../shared/middleware';
 import { computeEmployeePayroll, generateEcrFileContent, EcrRow } from '../services/payrollCalculator';
 
 const router = Router();
-router.use(authenticate as any);
+router.use(authenticate);
 
 // GET / — list payroll runs
 router.get('/', asyncHandler(async (req: AuthRequest, res: Response) => {
@@ -236,7 +236,7 @@ router.post('/:id/compute', asyncHandler(async (req: AuthRequest, res: Response)
 }));
 
 // PUT /:id/approve
-router.put('/:id/approve', authorize('ADMIN', 'SUPER_ADMIN') as any, asyncHandler(async (req: AuthRequest, res: Response) => {
+router.put('/:id/approve', authorize('ADMIN', 'SUPER_ADMIN'), asyncHandler(async (req: AuthRequest, res: Response) => {
   const run = await prisma.payrollRun.findUnique({ where: { id: req.params.id } });
   if (!run) { res.status(404).json({ error: 'Not found' }); return; }
   if (run.status !== 'COMPUTED') { res.status(400).json({ error: 'Only COMPUTED payroll can be approved' }); return; }
@@ -249,7 +249,7 @@ router.put('/:id/approve', authorize('ADMIN', 'SUPER_ADMIN') as any, asyncHandle
 }));
 
 // PUT /:id/mark-paid
-router.put('/:id/mark-paid', authorize('ADMIN', 'SUPER_ADMIN') as any, asyncHandler(async (req: AuthRequest, res: Response) => {
+router.put('/:id/mark-paid', authorize('ADMIN', 'SUPER_ADMIN'), asyncHandler(async (req: AuthRequest, res: Response) => {
   const run = await prisma.payrollRun.findUnique({ where: { id: req.params.id } });
   if (!run) { res.status(404).json({ error: 'Not found' }); return; }
   if (run.status !== 'APPROVED') { res.status(400).json({ error: 'Only APPROVED payroll can be marked paid' }); return; }
@@ -486,7 +486,7 @@ router.post('/pay-today/plan', asyncHandler(async (req: AuthRequest, res: Respon
 
 // POST /pay-today/execute — mark selected lines as paid
 // Body: { payrollLineIds: string[], payMode: 'CASH' | 'BANK' | 'BOTH', paidDate?: string, reference?: string }
-router.post('/pay-today/execute', authorize('ADMIN', 'SUPER_ADMIN') as any, asyncHandler(async (req: AuthRequest, res: Response) => {
+router.post('/pay-today/execute', authorize('ADMIN', 'SUPER_ADMIN'), asyncHandler(async (req: AuthRequest, res: Response) => {
   const { payrollLineIds, payMode, paidDate, reference } = req.body;
   if (!Array.isArray(payrollLineIds) || payrollLineIds.length === 0) { res.status(400).json({ error: 'payrollLineIds required' }); return; }
   if (!['CASH', 'BANK', 'BOTH'].includes(payMode)) { res.status(400).json({ error: 'invalid payMode' }); return; }

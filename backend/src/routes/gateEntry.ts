@@ -5,7 +5,7 @@ import { NotFoundError } from '../shared/errors';
 import prisma from '../config/prisma';
 
 const router = Router();
-router.use(authenticate as any);
+router.use(authenticate);
 
 // Helper: when a gate entry is associated with a GRN, flip the GRN to AT_GATE
 // (only if currently DRAFT — meaning it's the EXPECTED stub created at PO time).

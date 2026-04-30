@@ -249,7 +249,7 @@ export function registerPushRoutes(router: Router): void {
           }
         }).catch(() => {});
 
-      } catch (err: any) {
+      } catch (err: unknown) {
         // Per-item error isolation — one bad record doesn't fail the whole batch.
         //
         // CRITICAL: ALWAYS ACK the weighment even on handler error. Without this,
@@ -259,11 +259,11 @@ export function registerPushRoutes(router: Router): void {
         //
         // The cloud DispatchTruck/Shipment may be left orphaned at GATE_IN — that's
         // a separate cleanup, but the factory queue must drain.
-        const errCode = err?.code || 'UNKNOWN';
-        const errMeta = err?.meta ? JSON.stringify(err.meta) : '';
-        const errMessage = err instanceof Error ? err.message : String(err);
+        const errCode = (err as Record<string, unknown>)?.code || 'UNKNOWN';
+        const errMeta = (err as Record<string, unknown>)?.meta ? JSON.stringify((err as Record<string, unknown>).meta) : '';
+        const errMessage = err instanceof Error ? (err instanceof Error ? err.message : String(err)) : String(err);
         const errStack = err instanceof Error ? err.stack || '' : '';
-        const handlerName = (err?.handlerName as string) || 'unknown';
+        const handlerName = ((err as Record<string, unknown>)?.handlerName as string) || 'unknown';
         console.error(
           `[WB-PUSH] FATAL handler error | vehicle=${w.vehicle_no} | wbId=${w.id} | dir=${w.direction} | mat=${w.material} | code=${errCode} | meta=${errMeta} | message=${errMessage}\nstack=${errStack}`,
         );

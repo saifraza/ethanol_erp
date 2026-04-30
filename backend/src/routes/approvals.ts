@@ -5,7 +5,7 @@ import { asyncHandler } from '../shared/middleware';
 import { resolveNotifications } from '../services/notify';
 
 const router = Router();
-router.use(authenticate as any);
+router.use(authenticate);
 
 // GET / — list approvals (filter by status, type)
 router.get('/', asyncHandler(async (req: AuthRequest, res: Response) => {
@@ -40,7 +40,7 @@ router.get('/:id', asyncHandler(async (req: AuthRequest, res: Response) => {
 }));
 
 // PUT /:id — approve or reject (admin only)
-router.put('/:id', authorize('ADMIN') as any, asyncHandler(async (req: AuthRequest, res: Response) => {
+router.put('/:id', authorize('ADMIN'), asyncHandler(async (req: AuthRequest, res: Response) => {
   const { status, reviewNote } = req.body;
   if (!['APPROVED', 'REJECTED'].includes(status)) {
     return res.status(400).json({ error: 'Status must be APPROVED or REJECTED' });

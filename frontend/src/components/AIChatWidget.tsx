@@ -151,7 +151,7 @@ export default function AIChatWidget({ pageContext }: { pageContext?: string }) 
             content: '✓ Excel downloaded. Ask another question or say "download" again for the same data.',
             timestamp: new Date(),
           }]);
-        } catch (err: any) {
+        } catch (err: unknown) {
           setMessages(prev => [...prev, {
             id: (Date.now() + 1).toString(), role: 'assistant',
             content: `Excel export failed: ${err?.message || 'unknown'}`,
@@ -184,7 +184,7 @@ export default function AIChatWidget({ pageContext }: { pageContext?: string }) 
         turns: res.data.turns,
       };
       setMessages(prev => [...prev, aiMsg]);
-    } catch (err: any) {
+    } catch (err: unknown) {
       const errorMsg = err?.response?.data?.error || err?.message || 'Failed to get response';
       setMessages(prev => [...prev, { id: (Date.now() + 1).toString(), role: 'assistant', content: `Error: ${errorMsg}`, timestamp: new Date() }]);
     } finally {
@@ -212,7 +212,7 @@ export default function AIChatWidget({ pageContext }: { pageContext?: string }) 
       a.download = `${userQuestion.replace(/[^a-z0-9]+/gi, '-').toLowerCase().slice(0, 60) || 'report'}-${new Date().toISOString().slice(0, 10)}.xlsx`;
       a.click();
       URL.revokeObjectURL(url);
-    } catch (err: any) {
+    } catch (err: unknown) {
       alert(`Excel export failed: ${err?.message || 'unknown'}`);
     }
   };

@@ -76,7 +76,7 @@ export default function Form16() {
     try {
       const res = await api.get(`/hr/tds/form16/${empId}`, { params: { fy: fyCode } });
       setForm16(res.data);
-    } catch (err: any) {
+    } catch (err: unknown) {
       alert(err.response?.data?.error || 'Failed to load Form 16 data');
     } finally {
       setForm16Loading(false);

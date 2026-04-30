@@ -6,7 +6,7 @@ import { z } from 'zod';
 import prisma from '../config/prisma';
 
 const router = Router();
-router.use(authenticate as any);
+router.use(authenticate);
 
 // ─── Schemas ────────────────────────────────────────
 
@@ -143,7 +143,7 @@ async function generateWarehouseCode(): Promise<string> {
 
 // ─── POST / — create warehouse ───
 
-router.post('/', authorize('ADMIN', 'MANAGER') as any, validate(createWarehouseSchema), asyncHandler(async (req: AuthRequest, res: Response) => {
+router.post('/', authorize('ADMIN', 'MANAGER'), validate(createWarehouseSchema), asyncHandler(async (req: AuthRequest, res: Response) => {
   const code = await generateWarehouseCode();
   const warehouse = await prisma.warehouse.create({ data: { ...req.body, code, companyId: getActiveCompanyId(req) } });
   res.status(201).json(warehouse);
@@ -151,7 +151,7 @@ router.post('/', authorize('ADMIN', 'MANAGER') as any, validate(createWarehouseS
 
 // ─── PUT /:id — update warehouse ───
 
-router.put('/:id', authorize('ADMIN', 'MANAGER') as any, validate(updateWarehouseSchema), asyncHandler(async (req: AuthRequest, res: Response) => {
+router.put('/:id', authorize('ADMIN', 'MANAGER'), validate(updateWarehouseSchema), asyncHandler(async (req: AuthRequest, res: Response) => {
   const existing = await prisma.warehouse.findUnique({ where: { id: req.params.id } });
   if (!existing) throw new NotFoundError('Warehouse', req.params.id);
 
@@ -164,7 +164,7 @@ router.put('/:id', authorize('ADMIN', 'MANAGER') as any, validate(updateWarehous
 
 // ─── POST /:id/bins — add bin to warehouse ───
 
-router.post('/:id/bins', authorize('ADMIN', 'MANAGER') as any, validate(createBinSchema), asyncHandler(async (req: AuthRequest, res: Response) => {
+router.post('/:id/bins', authorize('ADMIN', 'MANAGER'), validate(createBinSchema), asyncHandler(async (req: AuthRequest, res: Response) => {
   const warehouse = await prisma.warehouse.findUnique({ where: { id: req.params.id } });
   if (!warehouse) throw new NotFoundError('Warehouse', req.params.id);
 
@@ -181,7 +181,7 @@ router.post('/:id/bins', authorize('ADMIN', 'MANAGER') as any, validate(createBi
 
 // ─── PUT /bins/:binId — update bin ───
 
-router.put('/bins/:binId', authorize('ADMIN', 'MANAGER') as any, validate(updateBinSchema), asyncHandler(async (req: AuthRequest, res: Response) => {
+router.put('/bins/:binId', authorize('ADMIN', 'MANAGER'), validate(updateBinSchema), asyncHandler(async (req: AuthRequest, res: Response) => {
   const existing = await prisma.storageBin.findUnique({ where: { id: req.params.binId } });
   if (!existing) throw new NotFoundError('StorageBin', req.params.binId);
 

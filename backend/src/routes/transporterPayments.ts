@@ -5,7 +5,7 @@ import { asyncHandler } from '../shared/middleware';
 import { onTransporterPaymentMade } from '../services/autoJournal';
 
 const router = Router();
-router.use(authenticate as any);
+router.use(authenticate);
 
 // GET / — List transporter payments
 router.get('/', asyncHandler(async (req: AuthRequest, res: Response) => {

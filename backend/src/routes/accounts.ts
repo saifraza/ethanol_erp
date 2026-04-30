@@ -4,9 +4,10 @@ import { asyncHandler } from '../shared/middleware';
 import { NotFoundError } from '../shared/errors';
 import prisma from '../config/prisma';
 import { onShipmentPaymentConfirmed } from '../services/autoJournal';
+import { Prisma } from '@prisma/client';
 
 const router = Router();
-router.use(authenticate as any);
+router.use(authenticate);
 
 // ═══════════════════════════════════════════════
 // GET /pending — Shipments awaiting payment confirmation
@@ -298,7 +299,7 @@ router.delete('/:id/payment', asyncHandler(async (req: AuthRequest, res: Respons
     });
 
     if (originalEntry) {
-      await prisma.$transaction(async (tx: any) => {
+      await prisma.$transaction(async (tx: Prisma.TransactionClient) => {
         // Create reversal entry with debits/credits swapped
         await tx.journalEntry.create({
           data: {

@@ -10,7 +10,7 @@ import { getTemplate } from '../utils/templateHelper';
 import { renderDocumentPdf } from '../services/documentRenderer';
 
 const router = Router();
-router.use(authenticate as any);
+router.use(authenticate);
 
 // GET / — List freight inquiries
 router.get('/', asyncHandler(async (req: AuthRequest, res: Response) => {

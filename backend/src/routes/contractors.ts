@@ -6,7 +6,7 @@ import { NotFoundError } from '../shared/errors';
 import { z } from 'zod';
 
 const router = Router();
-router.use(authenticate as any);
+router.use(authenticate);
 
 // PAN 4th character determines entity type
 function detectPanType(pan: string): { panType: string; tdsPercent: number } {

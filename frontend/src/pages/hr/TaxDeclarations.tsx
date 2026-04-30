@@ -135,7 +135,7 @@ export default function TaxDeclarations() {
       await api.put(`/hr/tds/declarations/${id}`, payload);
       setEditingId(null);
       await load();
-    } catch (err: any) {
+    } catch (err: unknown) {
       alert(err.response?.data?.error || 'Save failed');
     } finally {
       setSaving(false);

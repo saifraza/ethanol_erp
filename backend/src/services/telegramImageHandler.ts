@@ -35,8 +35,8 @@ async function analyzeImage(imageBuffer: Buffer, prompt: string): Promise<string
 
     const text = res.data?.candidates?.[0]?.content?.parts?.[0]?.text;
     return text || null;
-  } catch (err: any) {
-    console.error('[ImageHandler] Gemini API error:', err.response?.data?.error?.message || err.message);
+  } catch (err: unknown) {
+    console.error('[ImageHandler] Gemini API error:', ((err as Record<string, any>).response as Record<string, any>)?.data?.error?.message || (err instanceof Error ? err.message : String(err)));
     return null;
   }
 }

@@ -16,7 +16,7 @@ import { AI_FEATURES, getFeaturesByKind } from '../services/ai/registry';
 import { runChat, getUsageStats } from '../services/ai/chat';
 
 const router = Router();
-router.use(authenticate as any);
+router.use(authenticate);
 
 // ─── AI access control ───────────────────────────
 // AI has read-access to the entire database (invoices, payroll, loans,
@@ -59,8 +59,8 @@ router.post('/chat', asyncHandler(async (req: AuthRequest, res: Response) => {
       history,
     });
     res.json(result);
-  } catch (err: any) {
-    res.status(502).json({ error: err.message || 'AI failed' });
+  } catch (err: unknown) {
+    res.status(502).json({ error: (err instanceof Error ? err.message : String(err)) || 'AI failed' });
   }
 }));
 

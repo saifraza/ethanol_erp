@@ -11,7 +11,7 @@ import { lightragUpload, lightragClassify, isRagEnabled } from '../services/ligh
 import { generateVaultNote } from '../services/vaultWriter';
 
 const router = Router();
-router.use(authenticate as any);
+router.use(authenticate);
 
 // ── Multer setup ─────────────────────────────────────────
 const uploadDir = path.resolve(__dirname, '../../uploads/company-documents');

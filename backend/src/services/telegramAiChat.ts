@@ -118,8 +118,8 @@ async function handleAiMessage(chatId: string, text: string, name: string | null
     if (out.length > 4000) out = out.slice(0, 3990) + '\n\n_(truncated — use the web app for full data)_';
 
     await sendTelegramMessage(chatId, out);
-  } catch (err: any) {
-    await sendTelegramMessage(chatId, `⚠️ AI error: ${err?.message || 'unknown'}`);
+  } catch (err: unknown) {
+    await sendTelegramMessage(chatId, `⚠️ AI error: ${(err instanceof Error ? err.message : 'unknown')}`);
   }
 
   return true;

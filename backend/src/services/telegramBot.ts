@@ -64,8 +64,8 @@ export async function initTelegram(): Promise<boolean> {
     console.log(`[Telegram] Bot connected: @${botInfo!.username} (${botInfo!.firstName})`);
     startPolling();
     return true;
-  } catch (err: any) {
-    console.error('[Telegram] Failed to connect:', err.message);
+  } catch (err: unknown) {
+    console.error('[Telegram] Failed to connect:', (err instanceof Error ? err.message : String(err)));
     botApi = null;
     return false;
   }
@@ -103,9 +103,9 @@ export async function sendTelegramMessage(
     } catch { /* table may not exist yet */ }
 
     return { success: true };
-  } catch (err: any) {
+  } catch (err: unknown) {
     // Retry without Markdown if parsing fails
-    if (err.response?.data?.description?.includes('parse')) {
+    if (((err as Record<string, any>).response as Record<string, any>)?.data?.description?.includes('parse')) {
       try {
         await botApi.post('/sendMessage', { chat_id: chatId, text: message });
         return { success: true };
@@ -115,7 +115,7 @@ export async function sendTelegramMessage(
         return { success: false, error: errMsg };
       }
     }
-    const errMsg = err.response?.data?.description || err.message;
+    const errMsg = ((err as Record<string, any>).response as Record<string, any>)?.data?.description || (err instanceof Error ? err.message : String(err));
     console.error(`[Telegram] Send failed (${chatId}): ${errMsg}`);
     return { success: false, error: errMsg };
   }
@@ -150,7 +150,7 @@ export async function sendTelegramKeyboard(
       });
     } catch { /* table may not exist yet */ }
     return { success: true };
-  } catch (err: any) {
+  } catch (err: unknown) {
     // Retry without Markdown
     try {
       await botApi.post('/sendMessage', {
@@ -176,8 +176,8 @@ export async function downloadTelegramFile(fileId: string): Promise<Buffer | nul
     const url = `https://api.telegram.org/file/bot${token}/${filePath}`;
     const dlRes = await axios.get(url, { responseType: 'arraybuffer', timeout: 30000 });
     return Buffer.from(dlRes.data);
-  } catch (err: any) {
-    console.error('[Telegram] File download failed:', err.message);
+  } catch (err: unknown) {
+    console.error('[Telegram] File download failed:', (err instanceof Error ? err.message : String(err)));
     return null;
   }
 }
@@ -302,9 +302,9 @@ async function poll(): Promise<void> {
           }
         }
       }
-    } catch (err: any) {
+    } catch (err: unknown) {
       if (pollingActive) {
-        console.error('[Telegram] Poll error:', err.message);
+        console.error('[Telegram] Poll error:', (err instanceof Error ? err.message : String(err)));
         await new Promise(r => setTimeout(r, 5000)); // back off on error
       }
     }

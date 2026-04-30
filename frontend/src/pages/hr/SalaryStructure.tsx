@@ -115,7 +115,7 @@ export default function SalaryStructure() {
       const updated = { ...selectedEmployee, [field]: value };
       setSelectedEmployee(updated);
       setEmployees(prev => prev.map(e => e.id === selectedEmployee.id ? updated : e));
-    } catch (err: any) {
+    } catch (err: unknown) {
       alert(err.response?.data?.error || 'Failed to update');
     }
   };

@@ -723,12 +723,12 @@ export async function generateEwayBill(input: EwayBillInput): Promise<EwayBillRe
         validUpto: result.validUpto || result.ValidUpto || result.EwbValidTill,
         rawResponse: result,
       };
-    } catch (err: any) {
-      console.error('[E-Way Bill Saral] Error:', err.message);
-      if (err.message.includes('auth') || err.message.includes('Auth') || err.message.includes('token')) {
+    } catch (err: unknown) {
+      console.error('[E-Way Bill Saral] Error:', (err instanceof Error ? err.message : String(err)));
+      if ((err instanceof Error ? err.message : String(err)).includes('auth') || (err instanceof Error ? err.message : String(err)).includes('Auth') || (err instanceof Error ? err.message : String(err)).includes('token')) {
         clearSaralAuthCache();
       }
-      return { success: false, error: `Saral GSP error: ${err.message}` };
+      return { success: false, error: `Saral GSP error: ${(err instanceof Error ? err.message : String(err))}` };
     }
   }
 
@@ -747,15 +747,15 @@ export async function generateEwayBill(input: EwayBillInput): Promise<EwayBillRe
         validUpto: result.validUpto,
         rawResponse: result,
       };
-    } catch (err: any) {
-      console.error('[E-Way Bill NIC] Error:', err.message);
+    } catch (err: unknown) {
+      console.error('[E-Way Bill NIC] Error:', (err instanceof Error ? err.message : String(err)));
       // Clear auth cache on auth errors
-      if (err.message.includes('Auth') || err.message.includes('token')) {
+      if ((err instanceof Error ? err.message : String(err)).includes('Auth') || (err instanceof Error ? err.message : String(err)).includes('token')) {
         nicAuthCache = null;
       }
       return {
         success: false,
-        error: `NIC API error: ${err.message}`,
+        error: `NIC API error: ${(err instanceof Error ? err.message : String(err))}`,
       };
     }
   }
@@ -800,11 +800,11 @@ export async function generateEwayBill(input: EwayBillInput): Promise<EwayBillRe
         rawResponse: data,
       };
     }
-  } catch (err: any) {
-    console.error('[E-Way Bill GSP] API call failed:', err.message);
+  } catch (err: unknown) {
+    console.error('[E-Way Bill GSP] API call failed:', (err instanceof Error ? err.message : String(err)));
     return {
       success: false,
-      error: `GSP API error: ${err.message}`,
+      error: `GSP API error: ${(err instanceof Error ? err.message : String(err))}`,
     };
   }
 }
@@ -827,8 +827,8 @@ export async function cancelEwayBill(ewayBillNo: string, cancelReason: number, c
         cancelRmrk: cancelRemarks,
       });
       return { success: true, ewayBillNo, rawResponse: result };
-    } catch (err: any) {
-      return { success: false, error: err.message };
+    } catch (err: unknown) {
+      return { success: false, error: (err instanceof Error ? err.message : String(err)) };
     }
   }
 
@@ -852,8 +852,8 @@ export async function cancelEwayBill(ewayBillNo: string, cancelReason: number, c
         }
       }
       throw new Error(lastErr || 'All cancel paths failed');
-    } catch (err: any) {
-      return { success: false, error: err.message };
+    } catch (err: unknown) {
+      return { success: false, error: (err instanceof Error ? err.message : String(err)) };
     }
   }
 
@@ -884,8 +884,8 @@ export async function updateVehicle(ewayBillNo: string, vehicleNo: string, fromP
         transMode: transMode || '1',
       });
       return { success: true, ewayBillNo, rawResponse: result };
-    } catch (err: any) {
-      return { success: false, error: err.message };
+    } catch (err: unknown) {
+      return { success: false, error: (err instanceof Error ? err.message : String(err)) };
     }
   }
 

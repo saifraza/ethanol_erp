@@ -64,7 +64,7 @@ export default function Distillation() {
       setForm(emptyForm()); setShowPreview(false);
       setSwPhoto(null); setSwPreview(null); setRcPhoto(null); setRcPreview(null);
       load();
-    } catch (err: any) {
+    } catch (err: unknown) {
       setMsg({ type: 'err', text: err.response?.data?.error || 'Save failed' });
     }
     setSaving(false);
@@ -105,7 +105,7 @@ export default function Distillation() {
       const text = buildPreviewText();
       await api.post('/telegram/send-report', { message: text, module: 'distillation' });
       setMsg({ type: 'ok', text: 'Report shared via Telegram' });
-    } catch (err: any) {
+    } catch (err: unknown) {
       setMsg({ type: 'err', text: err.response?.data?.error || 'Failed to share report' });
     }
   };

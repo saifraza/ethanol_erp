@@ -8,7 +8,7 @@ import path from 'path';
 import fs from 'fs';
 
 const router = Router();
-router.use(authenticate as any);
+router.use(authenticate);
 
 // Multer setup for spent wash & RC less photos
 const uploadDir = path.join(__dirname, '../../uploads/distillation');
@@ -66,7 +66,7 @@ router.post('/', upload.fields([
   broadcast('distillation', lines).catch(() => {});
 }));
 
-router.delete('/:id', authorize('ADMIN') as any, asyncHandler(async (req: AuthRequest, res: Response) => {
+router.delete('/:id', authorize('ADMIN'), asyncHandler(async (req: AuthRequest, res: Response) => {
   const entry = await prisma.distillationEntry.findUnique({ where: { id: req.params.id } });
   if (entry) {
     // Clean up photo files

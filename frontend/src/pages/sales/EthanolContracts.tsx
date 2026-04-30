@@ -251,7 +251,7 @@ const EthanolContracts: React.FC = () => {
       if (editId) { await api.put(`/ethanol-contracts/${editId}`, form); }
       else { await api.post('/ethanol-contracts', form); }
       setShowForm(false); setEditId(null); fetchData();
-    } catch (err: any) {
+    } catch (err: unknown) {
       setError(err?.response?.data?.error || 'Failed to save');
     } finally { setSaving(false); }
   };
@@ -259,7 +259,7 @@ const EthanolContracts: React.FC = () => {
   const handleDelete = async (id: string) => {
     if (!confirm('Delete this contract?')) return;
     try { await api.delete(`/ethanol-contracts/${id}`); fetchData(); }
-    catch (err: any) { setError(err?.response?.data?.error || 'Failed to delete'); }
+    catch (err: unknown) { setError(err?.response?.data?.error || 'Failed to delete'); }
   };
 
   const handleLiftingSubmit = async () => {
@@ -270,7 +270,7 @@ const EthanolContracts: React.FC = () => {
       const contractIdToRefresh = liftingContractId;
       setLiftingContractId(null); setLiftForm({ ...emptyLiftingForm }); fetchData();
       if (expanded === contractIdToRefresh) loadSupplyDetail(contractIdToRefresh);
-    } catch (err: any) {
+    } catch (err: unknown) {
       setError(err?.response?.data?.error || 'Failed to add lifting');
     } finally { setLiftSaving(false); }
   };
@@ -281,7 +281,7 @@ const EthanolContracts: React.FC = () => {
       await api.delete(`/ethanol-contracts/liftings/${liftingId}`);
       fetchData();
       if (expanded) loadSupplyDetail(expanded);
-    } catch (err: any) { setError(err?.response?.data?.error || 'Failed to delete'); }
+    } catch (err: unknown) { setError(err?.response?.data?.error || 'Failed to delete'); }
   };
 
   const handlePdfUpload = async (contractId: string) => {
@@ -293,7 +293,7 @@ const EthanolContracts: React.FC = () => {
         const formData = new FormData(); formData.append('pdf', file);
         await api.post(`/ethanol-contracts/${contractId}/pdf`, formData, { headers: { 'Content-Type': 'multipart/form-data' } });
         fetchData();
-      } catch (err: any) { setError(err?.response?.data?.error || 'Failed to upload PDF'); }
+      } catch (err: unknown) { setError(err?.response?.data?.error || 'Failed to upload PDF'); }
     };
     input.click();
   };
@@ -329,7 +329,7 @@ const EthanolContracts: React.FC = () => {
       setActionLoading(liftingId);
       await api.post(`/ethanol-contracts/${contractId}/liftings/${liftingId}/create-invoice`);
       loadSupplyDetail(contractId);
-    } catch (err: any) { setError(err?.response?.data?.error || 'Failed to create invoice'); }
+    } catch (err: unknown) { setError(err?.response?.data?.error || 'Failed to create invoice'); }
     finally { setActionLoading(null); }
   };
 
@@ -358,7 +358,7 @@ const EthanolContracts: React.FC = () => {
         setShowIrnDetail(d.liftingId);
       }
       loadSupplyDetail(contractId);
-    } catch (err: any) { setError(err?.response?.data?.error || 'Failed to release truck'); }
+    } catch (err: unknown) { setError(err?.response?.data?.error || 'Failed to release truck'); }
     finally { setActionLoading(null); }
   };
 
@@ -408,7 +408,7 @@ const EthanolContracts: React.FC = () => {
       }
       setEwbModal(null);
       loadSupplyDetail(contractId);
-    } catch (err: any) { setError(err?.response?.data?.error || 'Failed to generate e-invoice'); }
+    } catch (err: unknown) { setError(err?.response?.data?.error || 'Failed to generate e-invoice'); }
     finally { setActionLoading(null); }
   };
 
@@ -424,7 +424,7 @@ const EthanolContracts: React.FC = () => {
       });
       setManualEwb(null);
       loadSupplyDetail(contractId);
-    } catch (err: any) { setError(err?.response?.data?.error || 'Failed to save EWB'); }
+    } catch (err: unknown) { setError(err?.response?.data?.error || 'Failed to save EWB'); }
     finally { setActionLoading(null); }
   };
 
@@ -432,7 +432,7 @@ const EthanolContracts: React.FC = () => {
     try {
       await api.patch(`/ethanol-contracts/${contractId}/auto-einvoice`, { enabled });
       fetchData();
-    } catch (err: any) { setError(err?.response?.data?.error || 'Failed to toggle'); }
+    } catch (err: unknown) { setError(err?.response?.data?.error || 'Failed to toggle'); }
   };
 
   // Excel export

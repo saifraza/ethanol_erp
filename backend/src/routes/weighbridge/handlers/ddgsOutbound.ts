@@ -364,8 +364,8 @@ export async function handleDDGSOutbound(w: WeighmentInput, ctx: PushContext): P
         invoiceDate: txResult.invoice!.invoiceDate,
         customer: { state: txResult.customer!.state },
       } as any);
-    } catch (err: any) {
-      process.stderr.write(`[DDGS_OUT] auto-journal failed for invoice ${txResult.invoiceId}: ${err?.message || err}\n`);
+    } catch (err: unknown) {
+      process.stderr.write(`[DDGS_OUT] auto-journal failed for invoice ${txResult.invoiceId}: ${(err instanceof Error ? err.message : String(err))}\n`);
     }
 
     // Auto IRN + EWB if contract enabled it + customer has full GST details
@@ -401,8 +401,8 @@ export async function handleDDGSOutbound(w: WeighmentInput, ctx: PushContext): P
             // EWB auto-generation disabled: EWB amount often differs from invoice amount.
             // User uploads EWB PDF manually via manual-ewb endpoint on the contract/dispatch page.
           }
-        } catch (err: any) {
-          process.stderr.write(`[DDGS_OUT] IRN/EWB failed for invoice ${txResult.invoiceId}: ${err?.message || err}\n`);
+        } catch (err: unknown) {
+          process.stderr.write(`[DDGS_OUT] IRN/EWB failed for invoice ${txResult.invoiceId}: ${(err instanceof Error ? err.message : String(err))}\n`);
         }
       });
     }

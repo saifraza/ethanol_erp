@@ -12,7 +12,7 @@ import { autoExtractIfWaiting } from '../services/rfqAutoExtract';
 import { nextDocNo } from '../utils/docSequence';
 
 const router = Router();
-router.use(authenticate as any);
+router.use(authenticate);
 
 // GET / — list requisitions (with optional status filter)
 router.get('/', asyncHandler(async (req: AuthRequest, res: Response) => {
@@ -1493,7 +1493,7 @@ router.put('/:id/issue', asyncHandler(async (req: AuthRequest, res: Response) =>
           }
         }
       } catch (err: unknown) {
-        const message = err instanceof Error ? err.message : 'Unknown error';
+        const message = err instanceof Error ? (err instanceof Error ? err.message : String(err)) : 'Unknown error';
         autoPO = { created: false, reason: `Auto-PO failed: ${message}` };
       }
     }
@@ -1691,7 +1691,7 @@ router.put('/:id', asyncHandler(async (req: AuthRequest, res: Response) => {
 }));
 
 // DELETE /:id
-router.delete('/:id', authorize('ADMIN') as any, asyncHandler(async (req: AuthRequest, res: Response) => {
+router.delete('/:id', authorize('ADMIN'), asyncHandler(async (req: AuthRequest, res: Response) => {
     await prisma.purchaseRequisition.delete({ where: { id: req.params.id } });
     res.json({ ok: true });
 }));

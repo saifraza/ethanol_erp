@@ -9,7 +9,7 @@ import fs from 'fs';
 import { generateVaultNote } from '../services/vaultWriter';
 
 const router = Router();
-router.use(authenticate as any);
+router.use(authenticate);
 
 // Setup multer for file uploads
 const uploadDir = path.resolve(__dirname, '../../uploads/shipment-docs');

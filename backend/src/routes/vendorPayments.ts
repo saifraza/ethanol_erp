@@ -13,6 +13,7 @@ import multer from 'multer';
 import path from 'path';
 import fs from 'fs';
 import axios from 'axios';
+import { Prisma } from '@prisma/client';
 
 // ── Zod schemas ──
 const createVendorPaymentSchema = z.object({
@@ -69,7 +70,7 @@ const allocateSchema = z.object({
 });
 
 const router = Router();
-router.use(authenticate as any);
+router.use(authenticate);
 
 // ── Multer for bank-receipt uploads (PDF/JPG of bank confirmation) ──
 const bankReceiptDir = path.join(__dirname, '../../uploads/bank-receipts');
@@ -382,7 +383,7 @@ router.post('/', validate(createVendorPaymentSchema), asyncHandler(async (req: A
     const companyId = getActiveCompanyId(req);
     const paymentNo = await nextDocNo('VendorPayment', 'paymentNo', companyId);
 
-    const payment = await prisma.$transaction(async (tx: any) => {
+    const payment = await prisma.$transaction(async (tx: Prisma.TransactionClient) => {
       const newPayment = await tx.vendorPayment.create({
         data: {
           paymentNo,
@@ -486,7 +487,7 @@ router.post('/split-payment', validate(splitPaymentSchema), asyncHandler(async (
     }
     const poRef = poNo ? `Fuel deal PO-${poNo}` : '';
 
-    const results = await prisma.$transaction(async (tx: any) => {
+    const results = await prisma.$transaction(async (tx: Prisma.TransactionClient) => {
       const created: Array<{ type: string; id: string; mode: string; amount: number }> = [];
 
       for (const split of splits) {
@@ -501,13 +502,12 @@ router.post('/split-payment', validate(splitPaymentSchema), asyncHandler(async (
               date: paymentDate,
               payeeName: vendor.name,
               amount: amt,
-              purpose: poRef || 'Vendor payment',
+              purpose: [poRef, split.remarks || `Split payment to ${vendor.name}`].filter(Boolean).join(' | '),
               category: 'MATERIAL',
               paymentMode: 'CASH',
               paymentRef: split.reference || '',
               authorizedBy: req.user!.name || req.user!.email,
               status: 'ACTIVE',
-              remarks: [poRef, split.remarks || `Split payment to ${vendor.name}`].filter(Boolean).join(' | '),
               userId,
             },
           });
@@ -990,7 +990,7 @@ router.post('/allocate', validate(allocateSchema), asyncHandler(async (req: Auth
   const created: Array<{ id: string; poNo?: number; amount: number; type: 'PO_PAYMENT' | 'ADVANCE'; paymentStatus: string }> = [];
   const closedPOs: number[] = [];
 
-  await prisma.$transaction(async (tx: any) => {
+  await prisma.$transaction(async (tx: Prisma.TransactionClient) => {
     // One VendorPayment per PO allocation
     let tdsRemaining = b.tdsDeducted || 0;
     for (const alloc of b.allocations) {

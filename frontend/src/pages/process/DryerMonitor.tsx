@@ -55,7 +55,7 @@ export default function DryerMonitor() {
       }
 
       setForm(empty()); setShowPreview(false); load();
-    } catch (err: any) {
+    } catch (err: unknown) {
       setMsg({ type: 'err', text: err.response?.data?.error || 'Save failed' });
     }
     setSaving(false);

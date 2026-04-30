@@ -7,7 +7,7 @@ import prisma from '../config/prisma';
 import { randomUUID } from 'crypto';
 
 const router = Router();
-router.use(authenticate as any);
+router.use(authenticate);
 
 // ═══════════════════════════════════════════════
 // Zod Schemas

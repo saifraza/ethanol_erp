@@ -3,7 +3,7 @@ import { authenticate, AuthRequest } from '../middleware/auth';
 import calibrationData from '../data/calibrations.json';
 
 const router = Router();
-router.use(authenticate as any);
+router.use(authenticate);
 
 console.log(`Calibration data loaded: ${Object.keys(calibrationData).length} tanks`);
 

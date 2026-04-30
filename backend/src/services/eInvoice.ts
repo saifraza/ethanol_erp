@@ -464,17 +464,17 @@ export async function generateIRN(invoiceData: any, retryCount = 0, companyId?: 
     }
 
     return { success: false, error: errorMsg, rawResponse: result };
-  } catch (err: any) {
-    console.error(`[E-Invoice] Error (attempt ${retryCount + 1}):`, err.message);
+  } catch (err: unknown) {
+    console.error(`[E-Invoice] Error (attempt ${retryCount + 1}):`, (err instanceof Error ? err.message : String(err)));
     // Retry on network errors (socket, timeout, ECONNRESET)
-    if (retryCount < MAX_RETRIES && (err.message.includes('Network error') || err.message.includes('socket') || err.message.includes('ECONNRESET') || err.message.includes('timed out'))) {
+    if (retryCount < MAX_RETRIES && ((err instanceof Error ? err.message : String(err)).includes('Network error') || (err instanceof Error ? err.message : String(err)).includes('socket') || (err instanceof Error ? err.message : String(err)).includes('ECONNRESET') || (err instanceof Error ? err.message : String(err)).includes('timed out'))) {
       console.log(`[E-Invoice] Network error — retrying (${retryCount + 1}/${MAX_RETRIES})...`);
       return generateIRN(invoiceData, retryCount + 1, companyId);
     }
-    if (err.message.includes('auth') || err.message.includes('Auth') || err.message.includes('token')) {
+    if ((err instanceof Error ? err.message : String(err)).includes('auth') || (err instanceof Error ? err.message : String(err)).includes('Auth') || (err instanceof Error ? err.message : String(err)).includes('token')) {
       clearSaralAuthCache();
     }
-    return { success: false, error: `E-Invoice error: ${err.message}` };
+    return { success: false, error: `E-Invoice error: ${(err instanceof Error ? err.message : String(err))}` };
   }
 }
 
@@ -525,12 +525,12 @@ export async function cancelIRN(irn: string, cancelReason: string, cancelRemarks
       : result.Error || result.error || JSON.stringify(result).slice(0, 300);
 
     return { success: false, irn, error: errorMsg, rawResponse: result };
-  } catch (err: any) {
-    console.error('[E-Invoice Cancel] Error:', err.message);
-    if (err.message.includes('auth') || err.message.includes('Auth') || err.message.includes('token')) {
+  } catch (err: unknown) {
+    console.error('[E-Invoice Cancel] Error:', (err instanceof Error ? err.message : String(err)));
+    if ((err instanceof Error ? err.message : String(err)).includes('auth') || (err instanceof Error ? err.message : String(err)).includes('Auth') || (err instanceof Error ? err.message : String(err)).includes('token')) {
       clearSaralAuthCache();
     }
-    return { success: false, irn, error: `Cancel error: ${err.message}` };
+    return { success: false, irn, error: `Cancel error: ${(err instanceof Error ? err.message : String(err))}` };
   }
 }
 
@@ -568,12 +568,12 @@ export async function getIRNDetails(irn: string): Promise<any> {
       : result.Error || result.error || JSON.stringify(result).slice(0, 300);
 
     return { success: false, error: errorMsg };
-  } catch (err: any) {
-    console.error('[E-Invoice Details] Error:', err.message);
-    if (err.message.includes('auth') || err.message.includes('Auth') || err.message.includes('token')) {
+  } catch (err: unknown) {
+    console.error('[E-Invoice Details] Error:', (err instanceof Error ? err.message : String(err)));
+    if ((err instanceof Error ? err.message : String(err)).includes('auth') || (err instanceof Error ? err.message : String(err)).includes('Auth') || (err instanceof Error ? err.message : String(err)).includes('token')) {
       clearSaralAuthCache();
     }
-    return { success: false, error: `Details fetch error: ${err.message}` };
+    return { success: false, error: `Details fetch error: ${(err instanceof Error ? err.message : String(err))}` };
   }
 }
 
@@ -667,16 +667,16 @@ export async function generateEWBByIRN(irn: string, ewbData: any, retryCount = 0
       : result.Error || result.error || JSON.stringify(result).slice(0, 300);
 
     return { success: false, error: errorMsg, rawResponse: result };
-  } catch (err: any) {
-    console.error(`[E-Invoice EWB] Error (attempt ${retryCount + 1}):`, err.message);
-    if (retryCount < MAX_RETRIES && (err.message.includes('Network error') || err.message.includes('socket') || err.message.includes('ECONNRESET') || err.message.includes('timed out') || err.message.includes('fetch failed'))) {
+  } catch (err: unknown) {
+    console.error(`[E-Invoice EWB] Error (attempt ${retryCount + 1}):`, (err instanceof Error ? err.message : String(err)));
+    if (retryCount < MAX_RETRIES && ((err instanceof Error ? err.message : String(err)).includes('Network error') || (err instanceof Error ? err.message : String(err)).includes('socket') || (err instanceof Error ? err.message : String(err)).includes('ECONNRESET') || (err instanceof Error ? err.message : String(err)).includes('timed out') || (err instanceof Error ? err.message : String(err)).includes('fetch failed'))) {
       console.log(`[E-Invoice EWB] Network error — retrying (${retryCount + 1}/${MAX_RETRIES})...`);
       return generateEWBByIRN(irn, ewbData, retryCount + 1, companyId);
     }
-    if (err.message.includes('auth') || err.message.includes('Auth') || err.message.includes('token')) {
+    if ((err instanceof Error ? err.message : String(err)).includes('auth') || (err instanceof Error ? err.message : String(err)).includes('Auth') || (err instanceof Error ? err.message : String(err)).includes('token')) {
       clearSaralAuthCache();
     }
-    return { success: false, error: `E-way bill generation error: ${err.message}` };
+    return { success: false, error: `E-way bill generation error: ${(err instanceof Error ? err.message : String(err))}` };
   }
 }
 
@@ -790,12 +790,12 @@ export async function generateStandaloneEWB(ewbPayload: any, retryCount = 0, com
       ? errors.map((e: any) => `${e.ErrorCode || e.errorCode}: ${e.ErrorMessage || e.errorMessage}`).join('; ')
       : JSON.stringify(result).slice(0, 300);
     return { success: false, error: errorMsg, rawResponse: result };
-  } catch (err: any) {
-    console.error(`[E-Invoice Standalone EWB] Error (attempt ${retryCount + 1}):`, err.message);
-    if (retryCount < MAX_RETRIES && (err.message.includes('Network') || err.message.includes('socket') || err.message.includes('fetch failed'))) {
+  } catch (err: unknown) {
+    console.error(`[E-Invoice Standalone EWB] Error (attempt ${retryCount + 1}):`, (err instanceof Error ? err.message : String(err)));
+    if (retryCount < MAX_RETRIES && ((err instanceof Error ? err.message : String(err)).includes('Network') || (err instanceof Error ? err.message : String(err)).includes('socket') || (err instanceof Error ? err.message : String(err)).includes('fetch failed'))) {
       return generateStandaloneEWB(ewbPayload, retryCount + 1, companyId);
     }
-    return { success: false, error: `Standalone EWB error: ${err.message}` };
+    return { success: false, error: `Standalone EWB error: ${(err instanceof Error ? err.message : String(err))}` };
   }
 }
 
@@ -873,16 +873,16 @@ export async function getGSTINDetails(gstin: string): Promise<any> {
         : result.Error || result.error || JSON.stringify(result).slice(0, 300);
 
       return { success: false, error: errorMsg };
-    } catch (err: any) {
-      console.error(`[E-Invoice GSTIN] Error (attempt ${attempt + 1}):`, err.message);
+    } catch (err: unknown) {
+      console.error(`[E-Invoice GSTIN] Error (attempt ${attempt + 1}):`, (err instanceof Error ? err.message : String(err)));
       // Retry on network errors (fetch failed, ECONNRESET, timeout)
-      if (attempt < MAX_RETRIES && (err.message.includes('fetch failed') || err.message.includes('ECONNRESET') || err.message.includes('abort'))) {
+      if (attempt < MAX_RETRIES && ((err instanceof Error ? err.message : String(err)).includes('fetch failed') || (err instanceof Error ? err.message : String(err)).includes('ECONNRESET') || (err instanceof Error ? err.message : String(err)).includes('abort'))) {
         continue;
       }
-      if (err.message.includes('auth') || err.message.includes('Auth') || err.message.includes('token')) {
+      if ((err instanceof Error ? err.message : String(err)).includes('auth') || (err instanceof Error ? err.message : String(err)).includes('Auth') || (err instanceof Error ? err.message : String(err)).includes('token')) {
         clearSaralAuthCache();
       }
-      return { success: false, error: `GSTIN lookup error: ${err.message}` };
+      return { success: false, error: `GSTIN lookup error: ${(err instanceof Error ? err.message : String(err))}` };
     }
   }
 

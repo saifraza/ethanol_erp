@@ -5,7 +5,7 @@ import { z } from 'zod';
 import prisma from '../config/prisma';
 
 const router = Router();
-router.use(authenticate as any);
+router.use(authenticate);
 
 // AI access allow-list (same as ai-v2). Restricts chat + config endpoints.
 const DEFAULT_ALLOWED = ['ADMIN', 'SUPER_ADMIN', 'OWNER', 'ACCOUNTS_MANAGER', 'FINANCE'];
@@ -159,7 +159,7 @@ router.post('/chat', asyncHandler(async (req: AuthRequest, res: Response) => {
       model: config.model,
     });
   } catch (err: unknown) {
-    const errMsg = err instanceof Error ? err.message : 'Unknown error';
+    const errMsg = err instanceof Error ? (err instanceof Error ? err.message : String(err)) : 'Unknown error';
     console.error(`AI proxy error (${config.provider}):`, errMsg);
 
     if (errMsg.includes('timeout') || errMsg.includes('abort')) {

@@ -5,7 +5,7 @@ import { renderPreviewHtml, renderPreviewPdf } from '../services/documentRendere
 import { asyncHandler } from '../shared/middleware';
 
 const router = Router();
-router.use(authenticate as any);
+router.use(authenticate);
 
 // Default terms for each document type
 const DEFAULTS: Record<string, { title: string; terms: string[]; footer: string; bankDetails?: string }> = {
@@ -120,7 +120,7 @@ router.get('/:docType', asyncHandler(async (req: AuthRequest, res: Response) => 
 }));
 
 // PUT /:docType — Create or update template
-router.put('/:docType', authorize('ADMIN') as any, asyncHandler(async (req: AuthRequest, res: Response) => {
+router.put('/:docType', authorize('ADMIN'), asyncHandler(async (req: AuthRequest, res: Response) => {
   const docType = req.params.docType.toUpperCase();
   const { title, terms, footer, bankDetails, companyInfo, remarks } = req.body;
 

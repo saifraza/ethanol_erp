@@ -6,7 +6,7 @@ import { generateEwayBill, MSPIL } from '../services/ewayBill';
 import { renderDocumentPdf } from '../services/documentRenderer';
 
 const router = Router();
-router.use(authenticate as any);
+router.use(authenticate);
 
 // ─── helpers ───
 function isInterstate(partyGstin: string | null): boolean {
@@ -356,7 +356,7 @@ router.post('/:id/eway-bill', asyncHandler(async (req: AuthRequest, res: Respons
 }));
 
 // DELETE /:id
-router.delete('/:id', authorize('ADMIN') as any, asyncHandler(async (req: AuthRequest, res: Response) => {
+router.delete('/:id', authorize('ADMIN'), asyncHandler(async (req: AuthRequest, res: Response) => {
     const truck = await prisma.sugarDispatchTruck.findUnique({ where: { id: req.params.id } });
     if (!truck) { res.status(404).json({ error: 'Not found' }); return; }
     if (truck.status === 'BILLED' || truck.status === 'RELEASED') {

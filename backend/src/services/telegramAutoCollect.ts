@@ -204,9 +204,9 @@ async function handleIncoming(chatId: string, text: string, _name: string | null
       }
 
       console.log(`[TG-AutoCollect] ${session.module} completed for ${chatId}`);
-    } catch (err: any) {
+    } catch (err: unknown) {
       activeSessions.delete(chatId);
-      await sendSessionMessage(session, `❌ Failed to save: ${err.message}. Please enter manually in the ERP.`);
+      await sendSessionMessage(session, `❌ Failed to save: ${(err instanceof Error ? err.message : String(err))}. Please enter manually in the ERP.`);
       console.error('[TG-AutoCollect] Save error:', err);
     }
   }

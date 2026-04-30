@@ -18,7 +18,7 @@ import fs from 'fs';
 import axios from 'axios';
 
 const router = Router();
-router.use(authenticate as any);
+router.use(authenticate);
 
 // Smart Upload touches vendor/invoice data via AI — gate to same roles as chat
 const DEFAULT_ALLOWED = ['ADMIN', 'SUPER_ADMIN', 'OWNER', 'ACCOUNTS_MANAGER', 'FINANCE', 'PROCUREMENT_MANAGER'];
@@ -206,14 +206,14 @@ router.post('/classify', upload.single('file'), asyncHandler(async (req: Request
   let result: ClassifyResult;
   try {
     result = await classifyAndExtract(fileBuffer, mimeType);
-  } catch (err: any) {
+  } catch (err: unknown) {
     res.json({
       filePath,
       docType: 'OTHER',
       confidence: 0,
-      reason: err.message || 'Classification failed',
+      reason: (err instanceof Error ? err.message : String(err)) || 'Classification failed',
       supported: false,
-      error: err.message,
+      error: (err instanceof Error ? err.message : String(err)),
     });
     return;
   }

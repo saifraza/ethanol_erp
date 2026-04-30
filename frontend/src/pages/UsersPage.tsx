@@ -58,7 +58,7 @@ export default function UsersPage() {
       setShowAdd(false);
       setForm({ name: '', password: '', role: 'OPERATOR', modules: [] });
       load();
-    } catch (err: any) { flash(err.response?.data?.error || 'Error', 'error'); }
+    } catch (err: unknown) { flash(err.response?.data?.error || 'Error', 'error'); }
   };
 
   const toggleActive = async (id: string, isActive: boolean) => {
@@ -88,14 +88,14 @@ export default function UsersPage() {
     try {
       await api.put(`/users/${id}/password`, { password: newPwd });
       setChangingPwdId(null); setNewPwd(''); flash('Password changed!');
-    } catch (err: any) { flash(err.response?.data?.error || 'Error', 'error'); }
+    } catch (err: unknown) { flash(err.response?.data?.error || 'Error', 'error'); }
   };
 
   const deleteUser = async (id: string) => {
     try {
       await api.delete(`/users/${id}`);
       setConfirmDelete(null); flash('User deleted!'); load();
-    } catch (err: any) { flash(err.response?.data?.error || 'Error', 'error'); }
+    } catch (err: unknown) { flash(err.response?.data?.error || 'Error', 'error'); }
   };
 
   return (

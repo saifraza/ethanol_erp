@@ -16,6 +16,7 @@
 import { PrismaClient } from '@prisma/client';
 import { DEFAULT_DIVISION } from '../shared/config/divisions';
 import { MSPIL_COMPANY_ID } from '../shared/config/company';
+import { Prisma } from '@prisma/client';
 
 // TODO: Currently the plant is ethanol-only, so all auto-generated entries are
 // tagged ETHANOL. When Sugar/Power modules come online, route per-module.
@@ -130,7 +131,7 @@ async function resolveAccounts(prisma: PrismaClient, codes: string[], companyId?
 
 /** Helper: create journal entry with lines in a transaction */
 async function createJournalEntry(
-  tx: any,
+  tx: Prisma.TransactionClient,
   params: {
     date: Date;
     narration: string;
@@ -300,7 +301,7 @@ export async function onSaleInvoiceCreated(
       }
     }
 
-    return await prisma.$transaction(async (tx: any) => {
+    return await prisma.$transaction(async (tx: Prisma.TransactionClient) => {
       return createJournalEntry(tx, {
         date: invoice.invoiceDate,
         narration: `Sale Invoice ${displayNo} — ${invoice.productName}`,
@@ -341,7 +342,7 @@ export async function onSalePaymentReceived(
     const accts = await resolveAccounts(prisma, [bankCode, ACCT.TRADE_RECEIVABLE], payment.companyId);
     if (!accts[bankCode] || !accts[ACCT.TRADE_RECEIVABLE]) return null;
 
-    return await prisma.$transaction(async (tx: any) => {
+    return await prisma.$transaction(async (tx: Prisma.TransactionClient) => {
       return createJournalEntry(tx, {
         date: payment.paymentDate,
         narration: `Payment received — ${payment.mode} ${payment.reference || ''}`.trim(),
@@ -383,7 +384,7 @@ export async function onShipmentPaymentConfirmed(
     const accts = await resolveAccounts(prisma, [bankCode, ACCT.TRADE_RECEIVABLE], shipment.companyId);
     if (!accts[bankCode] || !accts[ACCT.TRADE_RECEIVABLE]) return null;
 
-    return await prisma.$transaction(async (tx: any) => {
+    return await prisma.$transaction(async (tx: Prisma.TransactionClient) => {
       return createJournalEntry(tx, {
         date: new Date(),
         narration: `Shipment #${shipment.shipmentNo} payment — ${shipment.paymentMode} ${shipment.paymentRef || ''}`.trim(),
@@ -455,7 +456,7 @@ export async function onPurchaseBooked(
 
     lines.push({ accountId: accts[ACCT.TRADE_PAYABLE], debit: 0, credit: purchase.totalAmount, narration: purchase.refNo });
 
-    return await prisma.$transaction(async (tx: any) => {
+    return await prisma.$transaction(async (tx: Prisma.TransactionClient) => {
       return createJournalEntry(tx, {
         date: purchase.date,
         narration: `Purchase — ${purchase.refNo}`,
@@ -563,7 +564,7 @@ export async function onVendorInvoiceBooked(
       ? `Vendor Invoice VI-${invoice.invoiceNo}${vendorRef} — ${invoice.poType} Expense + GST`
       : `Vendor Invoice VI-${invoice.invoiceNo}${vendorRef} — Input GST`;
 
-    return await prisma.$transaction(async (tx: any) => {
+    return await prisma.$transaction(async (tx: Prisma.TransactionClient) => {
       return createJournalEntry(tx, {
         date: invoice.invoiceDate,
         narration: label,
@@ -636,7 +637,7 @@ export async function onVendorPaymentMade(
       lines.push({ accountId: tdsAccountId, debit: 0, credit: payment.tdsDeducted, narration: `TDS deducted ${payment.tdsSection || ''}`.trim() });
     }
 
-    return await prisma.$transaction(async (tx: any) => {
+    return await prisma.$transaction(async (tx: Prisma.TransactionClient) => {
       return createJournalEntry(tx, {
         date: payment.paymentDate,
         narration: `Vendor payment — ${payment.mode} ${payment.reference || ''}`.trim(),
@@ -707,7 +708,7 @@ export async function onStockMovement(
       ];
     }
 
-    return await prisma.$transaction(async (tx: any) => {
+    return await prisma.$transaction(async (tx: Prisma.TransactionClient) => {
       return createJournalEntry(tx, {
         date: movement.date,
         narration: `Stock ${movement.direction === 'IN' ? 'receipt' : 'issue'} #${movement.movementNo} — ${movement.itemName}`,
@@ -750,7 +751,7 @@ export async function onTransporterPaymentMade(
     const accts = await resolveAccounts(prisma, [bankCode, ACCT.TRANSPORT_EXPENSE], payment.companyId);
     if (!accts[bankCode] || !accts[ACCT.TRANSPORT_EXPENSE]) return null;
 
-    return await prisma.$transaction(async (tx: any) => {
+    return await prisma.$transaction(async (tx: Prisma.TransactionClient) => {
       return createJournalEntry(tx, {
         date: payment.paymentDate,
         narration: `Freight payment to ${payment.transporterName} — ${payment.mode} ${payment.reference || ''}`.trim(),
@@ -793,7 +794,7 @@ export async function createAdvanceJournal(
     const accts = await resolveAccounts(prisma, [bankCode, ACCT.ADVANCE_TO_SUPPLIERS], payment.companyId);
     if (!accts[bankCode] || !accts[ACCT.ADVANCE_TO_SUPPLIERS]) return null;
 
-    return await prisma.$transaction(async (tx: any) => {
+    return await prisma.$transaction(async (tx: Prisma.TransactionClient) => {
       return createJournalEntry(tx, {
         date: payment.paymentDate,
         narration: `Advance to trader — ${payment.mode} ${payment.reference || ''}`.trim(),
@@ -845,7 +846,7 @@ export async function onContractorBillConfirmed(
     lines.push({ accountId: accts[ACCT.CONTRACTOR_PAYABLE], debit: 0, credit: bill.netPayable, narration: `Payable — Bill #${bill.billNo}` });
     if (bill.tdsAmount > 0) lines.push({ accountId: accts[ACCT.TDS_PAYABLE], debit: 0, credit: bill.tdsAmount, narration: `TDS u/s 194C — ${bill.contractorName}` });
 
-    return await prisma.$transaction(async (tx: any) => {
+    return await prisma.$transaction(async (tx: Prisma.TransactionClient) => {
       return createJournalEntry(tx, {
         date: bill.billDate, narration: `Contractor bill #${bill.billNo} — ${bill.contractorName}`,
         refType: 'CONTRACTOR_BILL', refId: bill.id, userId: bill.userId, companyId: bill.companyId, lines,
@@ -879,7 +880,7 @@ export async function onContractorPaymentMade(
     ];
     if (payment.tdsDeducted > 0) lines.push({ accountId: accts[ACCT.TDS_PAYABLE], debit: 0, credit: payment.tdsDeducted, narration: `TDS u/s 194C` });
 
-    return await prisma.$transaction(async (tx: any) => {
+    return await prisma.$transaction(async (tx: Prisma.TransactionClient) => {
       return createJournalEntry(tx, {
         date: payment.paymentDate, narration: `Contractor payment to ${payment.contractorName} — ${payment.mode} ${payment.reference || ''}`.trim(),
         refType: 'CONTRACTOR_PAYMENT', refId: payment.id, userId: payment.userId, companyId: payment.companyId, lines,

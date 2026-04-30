@@ -146,7 +146,7 @@ export default function GrainUnloadingTrucks() {
       setMsg({ type: 'ok', text: `Truck saved at ${now}` });
       resetForm();
       setTrucks(truckList);
-    } catch (err: any) { setMsg({ type: 'err', text: err.response?.data?.error || 'Save failed' }); }
+    } catch (err: unknown) { setMsg({ type: 'err', text: err.response?.data?.error || 'Save failed' }); }
     setSaving(false);
   }
 

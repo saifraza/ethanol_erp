@@ -21,7 +21,7 @@ import path from 'path';
 import fs from 'fs';
 
 const router = Router();
-router.use(authenticate as any);
+router.use(authenticate);
 
 // File upload config for store GRN invoice/e-way bill
 const uploadDir = path.join(__dirname, '../../uploads/store-grn');
@@ -40,7 +40,7 @@ const STORE_SOURCE_WHERE = {
 } as const;
 
 const STORE_WRITE_ROLES = ['STORE_INCHARGE', 'PROCUREMENT_MANAGER', 'ADMIN', 'SUPER_ADMIN'];
-const storeWriteAuth = authorize(...STORE_WRITE_ROLES) as any;
+const storeWriteAuth = authorize(...STORE_WRITE_ROLES);
 
 // ─── Helper: sync GRN lines to inventory (copied from goodsReceipts.ts
 // syncGrnToInventory — keep in sync until extracted into a shared service). ───

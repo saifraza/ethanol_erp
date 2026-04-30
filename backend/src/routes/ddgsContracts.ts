@@ -17,7 +17,7 @@ const p = (v: any): number | null => v !== undefined && v !== null && v !== '' ?
 const pInt = (v: any): number | null => v !== undefined && v !== null && v !== '' ? parseInt(v) : null;
 
 const router = Router();
-router.use(authenticate as any);
+router.use(authenticate);
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 10 * 1024 * 1024 } });
 
 // ── GET all contracts ──
@@ -530,9 +530,9 @@ router.post('/:id/dispatches', asyncHandler(async (req: AuthRequest, res: Respon
             // User uploads EWB PDF manually via PATCH /dispatches/:id/manual-ewb.
           }
         }
-      } catch (err: any) {
+      } catch (err: unknown) {
         // Structured error logging only
-        process.stderr.write(`[DDGSContract] Auto e-invoice failed for dispatch ${dispatch.id}: ${err.message}\n`);
+        process.stderr.write(`[DDGSContract] Auto e-invoice failed for dispatch ${dispatch.id}: ${(err instanceof Error ? err.message : String(err))}\n`);
       }
     });
   }
@@ -888,8 +888,8 @@ router.post('/:id/dispatches/:dispatchId/e-invoice', asyncHandler(async (req: Au
     } else {
       ewbError = ewbResult.error || 'E-Way Bill generation failed';
     }
-  } catch (err: any) {
-    ewbError = err.message || 'E-Way Bill generation error';
+  } catch (err: unknown) {
+    ewbError = (err instanceof Error ? err.message : String(err)) || 'E-Way Bill generation error';
   }
 
   res.json({

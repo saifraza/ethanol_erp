@@ -16,7 +16,7 @@ import path from 'path';
 import fs from 'fs';
 
 const router = Router();
-router.use(authenticate as any);
+router.use(authenticate);
 
 // ── Schemas ──────────────────────────────────────────────
 const querySchema = z.object({

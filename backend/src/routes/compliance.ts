@@ -8,7 +8,7 @@ import { lightragQuery, isRagEnabled } from '../services/lightragClient';
 import { COMPLIANCE_SEED } from '../data/complianceSeed';
 
 const router = Router();
-router.use(authenticate as any);
+router.use(authenticate);
 
 // ── Schemas ──────────────────────────────────────────────
 

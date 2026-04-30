@@ -23,7 +23,7 @@ import { onVendorPaymentMade } from '../services/autoJournal';
 import { sendTelegramMessage } from '../services/telegramBot';
 
 const router = Router();
-router.use(authenticate as any);
+router.use(authenticate);
 
 // ══════════════════════════════════════════════════════════════
 // HELPERS
@@ -1017,7 +1017,7 @@ Be concise. Use Indian Rupee formatting. This is a real financial system — be 
 
     res.json(result);
   } catch (err: unknown) {
-    const msg = err instanceof Error ? err.message : 'Unknown error';
+    const msg = err instanceof Error ? (err instanceof Error ? err.message : String(err)) : 'Unknown error';
     if (msg.includes('timeout') || msg.includes('abort')) {
       res.status(504).json({ error: 'AI check timed out. Try again.' });
     } else {

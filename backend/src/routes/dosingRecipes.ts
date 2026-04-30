@@ -4,7 +4,7 @@ import { authenticate, AuthRequest, authorize } from '../middleware/auth';
 import { asyncHandler } from '../shared/middleware';
 
 const router = Router();
-router.use(authenticate as any);
+router.use(authenticate);
 
 /* GET all recipes grouped by category */
 router.get('/', async (_req: AuthRequest, res: Response) => {
@@ -29,7 +29,7 @@ router.get('/:category', async (req: AuthRequest, res: Response) => {
 });
 
 /* POST create recipe */
-router.post('/', authorize('ADMIN') as any, asyncHandler(async (req: AuthRequest, res: Response) => {
+router.post('/', authorize('ADMIN'), asyncHandler(async (req: AuthRequest, res: Response) => {
   const { category, chemicalName, quantity, unit, order } = req.body;
   const recipe = await prisma.dosingRecipe.create({
     data: {
@@ -44,7 +44,7 @@ router.post('/', authorize('ADMIN') as any, asyncHandler(async (req: AuthRequest
 }));
 
 /* PATCH update recipe */
-router.patch('/:id', authorize('ADMIN') as any, asyncHandler(async (req: AuthRequest, res: Response) => {
+router.patch('/:id', authorize('ADMIN'), asyncHandler(async (req: AuthRequest, res: Response) => {
   const data: Record<string, unknown> = {};
   const b = req.body;
   if (b.chemicalName !== undefined) data.chemicalName = b.chemicalName;
@@ -57,7 +57,7 @@ router.patch('/:id', authorize('ADMIN') as any, asyncHandler(async (req: AuthReq
 }));
 
 /* DELETE (soft) */
-router.delete('/:id', authorize('ADMIN') as any, async (req: AuthRequest, res: Response) => {
+router.delete('/:id', authorize('ADMIN'), async (req: AuthRequest, res: Response) => {
   await prisma.dosingRecipe.update({ where: { id: req.params.id }, data: { isActive: false } });
   res.json({ ok: true });
 });

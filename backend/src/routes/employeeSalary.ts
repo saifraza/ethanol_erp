@@ -5,7 +5,7 @@ import { asyncHandler } from '../shared/middleware';
 import { calculateCtcBreakdown } from '../services/payrollCalculator';
 
 const router = Router();
-router.use(authenticate as any);
+router.use(authenticate);
 
 // GET /:employeeId — get salary breakdown
 router.get('/:employeeId', asyncHandler(async (req: AuthRequest, res: Response) => {

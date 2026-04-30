@@ -94,7 +94,7 @@ router.post('/admin/backfill-snapshots-key', asyncHandler(async (req, res) => {
     res.json(results);
 }));
 
-router.use(authenticate as any);
+router.use(authenticate);
 
 // GET / — List invoices with filters
 router.get('/', asyncHandler(async (req: AuthRequest, res: Response) => {
@@ -427,8 +427,8 @@ router.get('/:id/pdf', asyncHandler(async (req: AuthRequest, res: Response) => {
           return res.send(buf);
         }
         console.error(`[Invoice] CRITICAL SHA MISMATCH on INV-${snap.invoiceNo}: file=${sha} db=${snap.snapshotPdfSha}. Falling back to live render.`);
-      } catch (err: any) {
-        const isMissing = err?.code === 'ENOENT';
+      } catch (err: unknown) {
+        const isMissing = (err as NodeJS.ErrnoException)?.code === 'ENOENT';
         if (isMissing) {
           // Snapshot file is gone (e.g. Railway redeploy wiped ephemeral disk).
           // Clear the orphan pointer so future self-heal can re-freeze, then fall through to live render.
@@ -442,7 +442,7 @@ router.get('/:id/pdf', asyncHandler(async (req: AuthRequest, res: Response) => {
             } as any,
           }).catch(() => {});
         } else {
-          console.error(`[Invoice] Snapshot read failed for INV-${snap.invoiceNo}, falling back to live render:`, err instanceof Error ? err.message : err);
+          console.error(`[Invoice] Snapshot read failed for INV-${snap.invoiceNo}, falling back to live render:`, err instanceof Error ? (err instanceof Error ? err.message : String(err)) : err);
         }
       }
     }

@@ -7,6 +7,7 @@ import { nextInvoiceNo } from '../utils/invoiceCounter';
 import { onSaleInvoiceCreated } from '../services/autoJournal';
 import { recomputeEthanolEntryByDate } from './ethanolProduct';
 import { calcGstSplit } from '../utils/gstSplit';
+import { Prisma } from '@prisma/client';
 
 const router = Router();
 
@@ -32,7 +33,7 @@ function nowIST(): Date {
 
 // calcGstSplit imported from ../utils/gstSplit
 
-async function nextCounter(tx: any, prefix: string): Promise<string> {
+async function nextCounter(tx: Prisma.TransactionClient, prefix: string): Promise<string> {
   const key = `counter:${prefix}`;
   const existing = await tx.appConfig.findUnique({ where: { key } });
   const counter = existing ? parseInt(existing.value, 10) + 1 : 1;
@@ -176,7 +177,7 @@ router.post('/:id/release', asyncHandler(async (req: AuthRequest, res: Response)
   const totalAmount = Math.round(amount + gst.gstAmount);
   const ist = new Date();
 
-  const result = await prisma.$transaction(async (tx: any) => {
+  const result = await prisma.$transaction(async (tx: Prisma.TransactionClient) => {
     // Re-check status inside transaction to prevent double-release race
     const fresh = await tx.dispatchTruck.findUnique({ where: { id: truck.id }, select: { status: true, liftingId: true } });
     if (fresh?.status === 'RELEASED' || fresh?.liftingId) throw new Error('Already released');

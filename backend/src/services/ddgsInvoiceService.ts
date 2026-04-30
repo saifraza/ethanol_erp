@@ -151,8 +151,8 @@ export async function createDDGSInvoiceFromTruck(truckId: string): Promise<strin
       customerId: customer.id, userId: 'system-weighbridge', invoiceDate: inv.invoiceDate,
       customer: { state: customer.state },
     } as any);
-  } catch (err: any) {
-    process.stderr.write(`[ddgsInvoiceService] journal failed for ${invoiceId}: ${err.message}\n`);
+  } catch (err: unknown) {
+    process.stderr.write(`[ddgsInvoiceService] journal failed for ${invoiceId}: ${(err instanceof Error ? err.message : String(err))}\n`);
   }
 
   // Auto IRN + EWB if contract flag set and customer has full GST details
@@ -173,8 +173,8 @@ export async function createDDGSInvoiceFromTruck(truckId: string): Promise<strin
         // EWB auto-generation disabled: EWB amount often differs from invoice amount.
         // User uploads EWB PDF manually via PATCH /ddgs-contracts/:id/dispatches/:dispatchId/manual-ewb.
       }
-    } catch (err: any) {
-      process.stderr.write(`[ddgsInvoiceService] IRN/EWB failed for ${invoiceId}: ${err.message}\n`);
+    } catch (err: unknown) {
+      process.stderr.write(`[ddgsInvoiceService] IRN/EWB failed for ${invoiceId}: ${(err instanceof Error ? err.message : String(err))}\n`);
     }
   }
 

@@ -6,7 +6,7 @@ import { z } from 'zod';
 import prisma from '../config/prisma';
 
 const router = Router();
-router.use(authenticate as any);
+router.use(authenticate);
 
 // ── Zod Schemas ─────────────────────────────────────────────
 

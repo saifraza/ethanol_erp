@@ -15,10 +15,11 @@ const createPaymentSchema = z.object({
   remarks: z.string().optional().nullable(),
 });
 import { onSalePaymentReceived } from '../services/autoJournal';
+import { Prisma } from '@prisma/client';
 
 const router = Router();
 
-router.use(authenticate as any);
+router.use(authenticate);
 
 // GET / — List payments with filters
 router.get('/', asyncHandler(async (req: AuthRequest, res: Response) => {
@@ -199,7 +200,7 @@ router.post('/', validate(createPaymentSchema), asyncHandler(async (req: AuthReq
   }
 
   // Wrap in transaction to ensure atomicity
-  const result = await prisma.$transaction(async (tx: any) => {
+  const result = await prisma.$transaction(async (tx: Prisma.TransactionClient) => {
     // Create payment
     const payment = await tx.payment.create({
       data: {

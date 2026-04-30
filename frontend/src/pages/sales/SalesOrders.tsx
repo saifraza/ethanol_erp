@@ -40,7 +40,7 @@ export default function SalesOrders() {
     try {
       const res = await api.post(`/sales-orders/${orderId}/send-email`, { to: emailTo });
       setMsg({ type: 'ok', text: `Email sent to ${res.data.sentTo}` });
-    } catch (err: any) {
+    } catch (err: unknown) {
       setMsg({ type: 'err', text: err.response?.data?.error || 'Failed to send email' });
     } finally { setEmailSending(null); }
   };

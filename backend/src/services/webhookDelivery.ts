@@ -102,7 +102,7 @@ async function deliverEvent(evt: WebhookEventRow): Promise<void> {
     }
   } catch (err: unknown) {
     clearTimeout(timeout);
-    const message = err instanceof Error ? err.message : String(err);
+    const message = err instanceof Error ? (err instanceof Error ? err.message : String(err)) : String(err);
     await markFailed(evt, message.slice(0, 500));
   }
 }
@@ -162,7 +162,7 @@ async function processQueue(): Promise<void> {
       console.log(`[Webhook] Processed ${events.length} events`);
     }
   } catch (err: unknown) {
-    const message = err instanceof Error ? err.message : String(err);
+    const message = err instanceof Error ? (err instanceof Error ? err.message : String(err)) : String(err);
     console.error('[Webhook] Queue processing error:', message);
   }
 }

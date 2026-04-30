@@ -13,7 +13,7 @@ import { NotFoundError } from '../shared/errors';
 import prisma from '../config/prisma';
 
 const router = Router();
-router.use(authenticate as any);
+router.use(authenticate);
 
 // Source discriminator — keep in sync with storeGoodsReceipts.ts
 export const AUTO_SOURCE_WHERE = {

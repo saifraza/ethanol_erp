@@ -282,8 +282,8 @@ export async function handleSugarOutbound(w: WeighmentInput, ctx: PushContext): 
         invoiceDate: txResult.invoice!.invoiceDate,
         customer: { state: txResult.customer!.state },
       } as any);
-    } catch (err: any) {
-      process.stderr.write(`[SUGAR_OUT] auto-journal failed for invoice ${txResult.invoiceId}: ${err?.message || err}\n`);
+    } catch (err: unknown) {
+      process.stderr.write(`[SUGAR_OUT] auto-journal failed for invoice ${txResult.invoiceId}: ${(err instanceof Error ? err.message : String(err))}\n`);
     }
 
     if (contract?.autoGenerateEInvoice && txResult.customer?.gstNo && txResult.customer?.state && txResult.customer?.pincode && txResult.customer?.address) {
@@ -310,8 +310,8 @@ export async function handleSugarOutbound(w: WeighmentInput, ctx: PushContext): 
               await prisma.invoice.update({ where: { id: inv.id }, data: { ewbNo: ewbRes.ewayBillNo, ewbDate: new Date(), ewbStatus: 'GENERATED' } as any });
             }
           }
-        } catch (err: any) {
-          process.stderr.write(`[SUGAR_OUT] IRN/EWB failed for invoice ${txResult.invoiceId}: ${err?.message || err}\n`);
+        } catch (err: unknown) {
+          process.stderr.write(`[SUGAR_OUT] IRN/EWB failed for invoice ${txResult.invoiceId}: ${(err instanceof Error ? err.message : String(err))}\n`);
         }
       });
     }

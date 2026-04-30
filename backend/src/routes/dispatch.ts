@@ -374,8 +374,8 @@ router.post('/', authenticate, upload.single('photo'), asyncHandler(async (req: 
                   }
                 }
                 console.log(`[Dispatch] Auto e-invoice complete for dispatch ${dispatch.id}`);
-              } catch (err: any) {
-                console.error(`[Dispatch] Auto e-invoice failed:`, err.message);
+              } catch (err: unknown) {
+                console.error(`[Dispatch] Auto e-invoice failed:`, (err instanceof Error ? err.message : String(err)));
               }
             });
           }

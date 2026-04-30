@@ -25,7 +25,7 @@ const HSN_MAP: Record<string, string> = {
 import { calcGstSplit } from '../utils/gstSplit';
 
 const router = Router();
-router.use(authenticate as any);
+router.use(authenticate);
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 5 * 1024 * 1024 } });
 
 // GET / — list orders with optional filters
@@ -548,8 +548,8 @@ router.post('/:orderId/shipments/:shipmentId/e-invoice', asyncHandler(async (req
     } else {
       ewbError = ewbResult.error || 'E-Way Bill generation failed';
     }
-  } catch (err: any) {
-    ewbError = err.message || 'E-Way Bill generation error';
+  } catch (err: unknown) {
+    ewbError = (err instanceof Error ? err.message : String(err)) || 'E-Way Bill generation error';
   }
 
   res.json({
@@ -807,7 +807,7 @@ router.get('/:orderId/shipments/:shipmentId/ewb-pdf', asyncHandler(async (req: A
 }));
 
 // DELETE /:id
-router.delete('/:id', authorize('ADMIN') as any, asyncHandler(async (req: AuthRequest, res: Response) => {
+router.delete('/:id', authorize('ADMIN'), asyncHandler(async (req: AuthRequest, res: Response) => {
   await prisma.directSale.delete({ where: { id: req.params.id } });
   res.json({ ok: true });
 }));

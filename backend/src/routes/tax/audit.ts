@@ -4,7 +4,7 @@ import { authenticate, AuthRequest } from '../../middleware/auth';
 import { asyncHandler } from '../../shared/middleware';
 
 const router = Router();
-router.use(authenticate as any);
+router.use(authenticate);
 
 router.get('/', asyncHandler(async (req: AuthRequest, res: Response) => {
   const take = Math.min(parseInt((req.query.limit as string) || '100', 10) || 100, 500);
