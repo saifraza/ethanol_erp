@@ -2,7 +2,7 @@
 
 ## 🚨 STOP — Before ANY bulk SQL, schema change, or `prisma db push` on prod
 Read **[.claude/skills/incident-2026-04-16-db-damage.md](.claude/skills/incident-2026-04-16-db-damage.md)** first. Non-negotiable rules (learned the hard way):
-1. **`pg_dump` locally BEFORE any destructive op** → `~/Desktop/mspil-db-backups/`
+1. **`pg_dump` locally BEFORE any destructive op** → `<repo>/db-backups/` (gitignored)
 2. **Never run `prisma db push` on prod from your laptop** — let Railway's Procfile do it on deploy
 3. **Never use `--accept-data-loss` on prod**
 4. **Never run `pg_restore --clean` without a local pg_dump first** — if interrupted, constraints get dropped

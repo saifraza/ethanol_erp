@@ -36,7 +36,7 @@ Honest answer: **we don't have a definitive smoking gun.** The Activity Log wasn
 
 1. **Before ANY bulk SQL on prod, `pg_dump` first to local disk.** One line:
    ```bash
-   pg_dump "$DATABASE_URL" --format=custom --compress=9 -f ~/Desktop/mspil-db-backups/mspil-prod-$(date +%Y%m%d_%H%M%S)_IST.dump
+   pg_dump "$DATABASE_URL" --format=custom --compress=9 -f "$(git rev-parse --show-toplevel)/db-backups/mspil-prod-$(date +%Y%m%d_%H%M%S)_IST.dump"
    ```
    Verify the file size (must be > 1 MB) before running anything destructive.
 

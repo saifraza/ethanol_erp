@@ -14,7 +14,7 @@
  *   - --execute is required to write. Without it, every UPDATE is inside a
  *     BEGIN/ROLLBACK so you can verify counts with zero data risk.
  *   - --execute also requires a recent pg_dump file in
- *     ~/Desktop/mspil-db-backups/ (mtime < 24h). If none, script aborts.
+ *     <repo>/db-backups/ (mtime < 24h). If none, script aborts.
  *     Pass --i-have-backed-up-outside to override (only if you took a dump via
  *     another method, e.g. Railway snapshot).
  *   - Shows per-table counts before and after. Re-runs audit at the end.
@@ -25,7 +25,7 @@
  *
  *   # 2. BACKUP prod database FIRST:
  *   pg_dump "$DATABASE_URL" --format=custom --compress=9 \
- *     -f ~/Desktop/mspil-db-backups/mspil-prod-$(date +%Y%m%d_%H%M%S)_IST.dump
+ *     -f "$(git rev-parse --show-toplevel)/db-backups/mspil-prod-$(date +%Y%m%d_%H%M%S)_IST.dump"
  *   # confirm file > 1 MB before proceeding
  *
  *   # 3. EXECUTE (writes to prod):
@@ -36,7 +36,6 @@
  */
 import prisma from '../src/config/prisma';
 import fs from 'fs';
-import os from 'os';
 import path from 'path';
 
 const MSPIL_ID = 'b499264a-8c73-4595-ab9b-7dc58f58c4d2';
@@ -150,7 +149,8 @@ function checkBackup(): void {
     log('⚠ --i-have-backed-up-outside set — skipping local backup check.');
     return;
   }
-  const backupDir = path.join(os.homedir(), 'Desktop', 'mspil-db-backups');
+  // backend/scripts/foo.ts → ../../db-backups (repo root)
+  const backupDir = path.resolve(__dirname, '..', '..', 'db-backups');
   if (!fs.existsSync(backupDir)) {
     throw new Error(
       `No backup directory at ${backupDir}. Run pg_dump first (see script header), ` +
@@ -389,8 +389,8 @@ async function main() {
   } else {
     log('DRY RUN complete. To execute:');
     log('  1. pg_dump "$DATABASE_URL" --format=custom --compress=9 \\');
-    log('       -f ~/Desktop/mspil-db-backups/mspil-prod-$(date +%Y%m%d_%H%M%S)_IST.dump');
-    log('  2. Verify the backup file is > 1 MB: ls -lh ~/Desktop/mspil-db-backups/');
+    log('       -f "$(git rev-parse --show-toplevel)/db-backups/mspil-prod-$(date +%Y%m%d_%H%M%S)_IST.dump"');
+    log('  2. Verify the backup file is > 1 MB: ls -lh "$(git rev-parse --show-toplevel)/db-backups/"');
     log('  3. npx ts-node scripts/backfill-company-mspil.ts --execute');
   }
 }

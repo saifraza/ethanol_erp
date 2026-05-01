@@ -44,3 +44,6 @@ vision/weights/
 *.pt
 *.pth
 vision/data
+
+# Local DB backups (pg_dump output — never committed)
+db-backups/
