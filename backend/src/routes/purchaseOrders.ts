@@ -815,12 +815,15 @@ router.get('/:id/pdf', asyncHandler(async (req: AuthRequest, res: Response) => {
       otherCharges: po.otherCharges,
       roundOff: po.roundOff,
       grandTotal: (() => {
-        const calc = Math.round(po.lines.reduce((s: number, l: any) => {
+        const linesSum = Math.round(po.lines.reduce((s: number, l: any) => {
           const hasReceipts = (l.receivedQty || 0) > 0;
           const qty = hasReceipts ? (l.receivedQty || 0) : (l.quantity >= 900000 ? 0 : l.quantity);
           const base = qty * l.rate;
           return s + base + base * (l.gstPercent || 0) / 100;
         }, 0) * 100) / 100;
+        // Header charges (freight/other/round-off) are not derivable from lines —
+        // must be added back or PDF Grand Total under-states by that amount.
+        const calc = Math.round((linesSum + (po.freightCharge || 0) + (po.otherCharges || 0) + (po.roundOff || 0)) * 100) / 100;
         return calc > 0 ? calc : (po.grandTotal || 0);
       })(),
       preparedBy: 'Purchase Department',
