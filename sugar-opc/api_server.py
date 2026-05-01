@@ -24,7 +24,7 @@ import asyncio
 import threading
 import os
 from http.server import HTTPServer, BaseHTTPRequestHandler
-from urllib.parse import urlparse, parse_qs
+from urllib.parse import urlparse, parse_qs, unquote
 from datetime import datetime, timedelta
 from typing import Optional
 from collections import defaultdict
@@ -92,20 +92,28 @@ async def _get_fuji_client():
     return client
 
 
-async def _read_tag_live_async(tag_name: str):
+async def _read_tag_live_async(tag_name: str, properties: list = None):
     client = await _get_fuji_client()
-    node_id = f"ns=2;s={tag_name}.PV"
-    try:
-        node = client.get_node(node_id)
-        value = await node.read_value()
-        return {
-            "tag": tag_name,
-            "source": SOURCE,
-            "values": {"PV": round(float(value), 4) if value is not None else None},
-            "readAt": datetime.utcnow().isoformat() + "Z",
-        }
-    except Exception as e:
-        return {"tag": tag_name, "error": str(e)}
+    if properties is None:
+        properties = ["PV"]
+    values = {}
+    for prop in properties:
+        node_id = f"ns=2;s={tag_name}.{prop}"
+        try:
+            node = client.get_node(node_id)
+            value = await node.read_value()
+            if value is not None:
+                values[prop] = round(float(value), 4)
+        except Exception:
+            pass
+    if not values:
+        return {"tag": tag_name, "error": "No readable properties"}
+    return {
+        "tag": tag_name,
+        "source": SOURCE,
+        "values": values,
+        "readAt": datetime.utcnow().isoformat() + "Z",
+    }
 
 
 _start_time = time.time()
@@ -136,29 +144,47 @@ class OPCAPIHandler(BaseHTTPRequestHandler):
             return json.loads(self.rfile.read(length))
         return {}
 
+    def _extract_tag(self, path: str, prefix: str, params: dict) -> str:
+        """Extract tag name from query param (?tag=) or URL path, handling # encoding."""
+        if "tag" in params:
+            return params["tag"][0]
+        raw = path.split(prefix)[1] if prefix in path else ""
+        return unquote(raw)
+
     def do_GET(self):
         if not _check_rate_limit(self.client_address[0]):
             self._json({"error": "Rate limited"}, 429)
             return
         parsed = urlparse(self.path)
-        path = parsed.path.rstrip("/")
+        path = unquote(parsed.path).rstrip("/")
         params = parse_qs(parsed.query)
 
         try:
             if path == "/health":
                 self._handle_health()
             elif path.startswith("/read/"):
-                tag = path.split("/read/")[1]
+                tag = self._extract_tag(path, "/read/", params)
                 self._handle_read_tag(tag)
             elif path == "/monitor":
                 self._handle_list_monitored()
             elif path == "/live":
-                self._handle_live_all()
+                tag_param = params.get("tag", [None])[0]
+                if tag_param:
+                    self._handle_live_tag(tag_param)
+                else:
+                    self._handle_live_all()
             elif path.startswith("/live/"):
-                tag = path.split("/live/")[1]
+                tag = self._extract_tag(path, "/live/", params)
                 self._handle_live_tag(tag)
+            elif path == "/history":
+                tag = params.get("tag", [None])[0]
+                if not tag:
+                    self._json({"error": "tag param required"}, 400)
+                    return
+                hours = int(params.get("hours", ["24"])[0])
+                self._handle_history(tag, hours)
             elif path.startswith("/history/"):
-                tag = path.split("/history/")[1]
+                tag = self._extract_tag(path, "/history/", params)
                 hours = int(params.get("hours", ["24"])[0])
                 self._handle_history(tag, hours)
             elif path == "/stats":
@@ -186,10 +212,12 @@ class OPCAPIHandler(BaseHTTPRequestHandler):
         if not _check_rate_limit(self.client_address[0]):
             self._json({"error": "Rate limited"}, 429)
             return
-        path = urlparse(self.path).path.rstrip("/")
+        parsed = urlparse(self.path)
+        path = unquote(parsed.path).rstrip("/")
+        params = parse_qs(parsed.query)
         try:
             if path.startswith("/monitor/"):
-                tag = path.split("/monitor/")[1]
+                tag = self._extract_tag(path, "/monitor/", params)
                 self._handle_remove_monitor(tag)
             else:
                 self._json({"error": "Not found"}, 404)
@@ -197,10 +225,12 @@ class OPCAPIHandler(BaseHTTPRequestHandler):
             self._json({"error": str(e)}, 500)
 
     def _handle_read_tag(self, tag_name):
+        is_pid = "PID" in tag_name.upper()
+        props = ["PV", "SV", "MV"] if is_pid else ["PV"]
         loop = _get_browse_loop()
         with _browse_lock:
             try:
-                result = loop.run_until_complete(_read_tag_live_async(tag_name))
+                result = loop.run_until_complete(_read_tag_live_async(tag_name, props))
                 self._json(result)
             except Exception as e:
                 self._json({"error": f"Cannot connect to OPC: {e}"}, 502)

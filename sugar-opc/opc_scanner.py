@@ -214,13 +214,13 @@ class OPCScanner:
             cursor = db.execute("SELECT tag, area, folder, tag_type FROM monitored_tags")
             return [{"tag": r[0], "area": r[1], "folder": r[2], "type": r[3], "label": r[0], "hh_alarm": None, "ll_alarm": None, "push_to_cloud": True} for r in cursor.fetchall()]
 
-    async def _read_tag_value(self, tag_name: str) -> Optional[float]:
-        """Read .PV from a Fuji tag using direct node ID.
+    async def _read_tag_value(self, tag_name: str, property: str = "PV") -> Optional[float]:
+        """Read a property from a Fuji tag using direct node ID.
 
         Fuji tags: ns=2;s=#/R1C1I1_M.PV (Module tags)
         The tag_name in our DB is the full tag like #/R1C1I1_M
         """
-        node_id = f"ns=2;s={tag_name}.PV"
+        node_id = f"ns=2;s={tag_name}.{property}"
         try:
             node = self.client.get_node(node_id)
             value = await node.read_value()
@@ -253,18 +253,22 @@ class OPCScanner:
             if self._shutdown.is_set():
                 break
             tag_name = t["tag"]  # e.g. #/R1C1I1_M
-            try:
-                val = await self._read_tag_value(tag_name)
-            except Exception as e:
-                log.debug(f"  {tag_name}: read error: {e}")
-                self.connected = False
-                break
+            props = ["PV", "SV", "MV"] if t["type"] == "pid" else ["PV"]
+            for prop in props:
+                try:
+                    val = await self._read_tag_value(tag_name, prop)
+                except Exception as e:
+                    log.debug(f"  {tag_name}.{prop}: read error: {e}")
+                    self.connected = False
+                    break
 
-            if val is not None:
-                prop = "PV"
-                results[tag_name] = {prop: val}
-                rows.append((tag_name, t["area"], t["type"], prop, val, now_str, batch))
-                latest_rows.append((tag_name, prop, val, t["area"], t["type"], now_str))
+                if val is not None:
+                    results.setdefault(tag_name, {})[prop] = val
+                    rows.append((tag_name, t["area"], t["type"], prop, val, now_str, batch))
+                    latest_rows.append((tag_name, prop, val, t["area"], t["type"], now_str))
+            else:
+                continue
+            break  # outer break on connection error
 
         if rows:
             db = self._get_db()
