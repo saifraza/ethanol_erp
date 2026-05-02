@@ -47,7 +47,9 @@ router.get('/', asyncHandler(async (req: AuthRequest, res: Response) => {
   });
 }));
 
-// POST / — create entry
+// POST / — create entry. Upserts Farmer master by phone (fallback aadhaar) so
+// office-entered direct purchases roll up into the same farmer ledger as
+// gate-captured ones.
 router.post('/', asyncHandler(async (req: AuthRequest, res: Response) => {
   const b = req.body;
   const quantity = parseFloat(b.quantity) || 0;
@@ -55,14 +57,43 @@ router.post('/', asyncHandler(async (req: AuthRequest, res: Response) => {
   const amount = quantity * rate;
   const deductions = parseFloat(b.deductions) || 0;
   const netPayable = amount - deductions;
+  const phone = (b.sellerPhone || '').replace(/\D/g, '').slice(-10) || null;
+  const aadhaar = b.sellerAadhaar || null;
+  const companyId = getActiveCompanyId(req);
+
+  // Resolve farmer: client-supplied id wins; else look up by phone/aadhaar; else create.
+  let farmerId: string | null = b.farmerId || null;
+  if (!farmerId && (phone || aadhaar)) {
+    let farmer = phone ? await prisma.farmer.findFirst({ where: { phone } }) : null;
+    if (!farmer && aadhaar) {
+      farmer = await prisma.farmer.findFirst({ where: { aadhaar } });
+    }
+    if (!farmer && b.sellerName) {
+      const count = await prisma.farmer.count();
+      farmer = await prisma.farmer.create({
+        data: {
+          code: `F-${String(count + 1).padStart(4, '0')}`,
+          name: b.sellerName,
+          phone,
+          aadhaar,
+          village: b.sellerVillage || null,
+          rawMaterialTypes: b.materialName || null,
+          kycStatus: 'PENDING',
+          isRCM: true,
+          companyId,
+        },
+      });
+    }
+    farmerId = farmer?.id ?? null;
+  }
 
   const purchase = await prisma.directPurchase.create({
     data: {
       date: b.date ? new Date(b.date) : new Date(),
       sellerName: b.sellerName,
-      sellerPhone: b.sellerPhone || null,
+      sellerPhone: phone,
       sellerVillage: b.sellerVillage || null,
-      sellerAadhaar: b.sellerAadhaar || null,
+      sellerAadhaar: aadhaar,
       materialName: b.materialName,
       quantity,
       unit: b.unit || 'KG',
@@ -81,7 +112,8 @@ router.post('/', asyncHandler(async (req: AuthRequest, res: Response) => {
       netPayable,
       remarks: b.remarks || null,
       userId: req.user!.id,
-      companyId: getActiveCompanyId(req),
+      companyId,
+      farmerId,
     },
   });
 

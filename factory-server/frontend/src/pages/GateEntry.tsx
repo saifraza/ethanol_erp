@@ -62,9 +62,13 @@ export default function GateEntry() {
   const [driverPhone, setDriverPhone] = useState('');
   const [bags, setBags] = useState('');
   const [remarks, setRemarks] = useState('');
-  // Spot fields
+  // Farmer / Spot fields (purchaseType='SPOT' on the wire — kept for backward compat
+  // with existing weighbridge handler. UI labels say "Farmer" since that's what these
+  // entries actually are now that we have a Farmer master.)
   const [sellerPhone, setSellerPhone] = useState('');
   const [sellerVillage, setSellerVillage] = useState('');
+  const [sellerAadhaar, setSellerAadhaar] = useState('');
+  const [maanNumber, setMaanNumber] = useState('');
   const [rate, setRate] = useState('');
   const [paymentMode, setPaymentMode] = useState('CASH');
   // Outbound
@@ -291,7 +295,7 @@ export default function GateEntry() {
     setSelectedPoId(''); setSelectedPoLineId(''); setPoNumber('');
     setTransporter(''); setVehicleType(''); setDriverPhone('');
     setBags(''); setRemarks('');
-    setSellerPhone(''); setSellerVillage(''); setRate(''); setPaymentMode('CASH');
+    setSellerPhone(''); setSellerVillage(''); setSellerAadhaar(''); setMaanNumber(''); setRate(''); setPaymentMode('CASH');
     setCustomerName(''); setSelectedTraderId('');
     setEthContractId(''); setDriverName(''); setDestination(''); setRstNo(''); setSealNo('');
     setShipToMode('SAME'); setShipToCustomerId('');
@@ -341,6 +345,8 @@ export default function GateEntry() {
       if (direction === 'INBOUND' && purchaseType === 'SPOT') {
         body.sellerPhone = sellerPhone;
         body.sellerVillage = sellerVillage;
+        body.sellerAadhaar = sellerAadhaar || undefined;
+        body.maanNumber = maanNumber || undefined;
         body.rate = rate ? parseFloat(rate) : undefined;
         body.paymentMode = paymentMode;
       }
@@ -442,8 +448,8 @@ export default function GateEntry() {
               PO Purchase
             </button>
             <button onClick={() => setPurchaseType('SPOT')}
-              className={`px-3 py-1.5 text-sm font-bold uppercase ${purchaseType === 'SPOT' ? 'bg-blue-600 text-white' : 'bg-white border border-slate-300 text-slate-600 hover:bg-slate-50'}`}>
-              Spot Purchase
+              className={`px-3 py-1.5 text-sm font-bold uppercase ${purchaseType === 'SPOT' ? 'bg-emerald-700 text-white' : 'bg-white border border-slate-300 text-slate-600 hover:bg-slate-50'}`}>
+              Farmer
             </button>
             <button onClick={() => setPurchaseType('TRADER')}
               className={`px-3 py-1.5 text-sm font-bold uppercase ${purchaseType === 'TRADER' ? 'bg-purple-600 text-white' : 'bg-white border border-slate-300 text-slate-600 hover:bg-slate-50'}`}>
@@ -555,7 +561,7 @@ export default function GateEntry() {
           ) : (
             <div>
               <label className="text-xs font-bold text-slate-700 uppercase tracking-widest block mb-1">
-                {purchaseType === 'SPOT' ? 'Seller Name' : 'Supplier'}
+                {purchaseType === 'SPOT' ? 'Farmer Name' : 'Supplier'}
                 {isPOLike && masterLoading && <span className="text-yellow-500 animate-pulse ml-1">searching...</span>}
               </label>
               {supplierLocked ? (
@@ -655,18 +661,32 @@ export default function GateEntry() {
             </div>
           )}
 
-          {/* Spot purchase fields */}
+          {/* Farmer / Spot purchase fields */}
           {direction === 'INBOUND' && purchaseType === 'SPOT' && (
             <>
               <div>
-                <label className="text-xs font-bold text-slate-700 uppercase tracking-widest block mb-1">Seller Phone</label>
-                <input value={sellerPhone} onChange={e => setSellerPhone(e.target.value)}
-                  className="w-full border border-slate-300 px-3 py-2.5 text-sm focus:outline-none focus:ring-1 focus:ring-slate-400" placeholder="9876543210" />
+                <label className="text-xs font-bold text-slate-700 uppercase tracking-widest block mb-1">Farmer Phone *</label>
+                <input value={sellerPhone} onChange={e => setSellerPhone(e.target.value.replace(/\D/g, '').slice(0, 10))}
+                  className="w-full border border-slate-300 px-3 py-2.5 text-sm font-mono focus:outline-none focus:ring-1 focus:ring-slate-400" placeholder="9876543210" />
+                <div className="text-[10px] text-slate-500 mt-0.5">Used as primary key — same phone next trip rolls into existing ledger.</div>
               </div>
               <div>
-                <label className="text-xs font-bold text-slate-700 uppercase tracking-widest block mb-1">Seller Village</label>
+                <label className="text-xs font-bold text-slate-700 uppercase tracking-widest block mb-1">Farmer Village</label>
                 <input value={sellerVillage} onChange={e => setSellerVillage(e.target.value)}
                   className="w-full border border-slate-300 px-3 py-2.5 text-sm focus:outline-none focus:ring-1 focus:ring-slate-400" />
+              </div>
+              <div>
+                <label className="text-xs font-bold text-slate-700 uppercase tracking-widest block mb-1">Aadhaar (optional)</label>
+                <input value={sellerAadhaar} onChange={e => setSellerAadhaar(e.target.value.replace(/\D/g, '').slice(0, 12))}
+                  className="w-full border border-slate-300 px-3 py-2.5 text-sm font-mono focus:outline-none focus:ring-1 focus:ring-slate-400" placeholder="12-digit Aadhaar" />
+              </div>
+              <div>
+                <label className="text-xs font-bold text-slate-700 uppercase tracking-widest block mb-1">
+                  Maan / Mandi No. {materialName && /corn|maize/i.test(materialName) && <span className="text-red-600">*</span>}
+                </label>
+                <input value={maanNumber} onChange={e => setMaanNumber(e.target.value)}
+                  className="w-full border border-slate-300 px-3 py-2.5 text-sm font-mono focus:outline-none focus:ring-1 focus:ring-slate-400"
+                  placeholder="Mandi license — required for corn" />
               </div>
               <div>
                 <label className="text-xs font-bold text-slate-700 uppercase tracking-widest block mb-1">Rate (per KG)</label>

@@ -379,7 +379,7 @@ router.post('/gate-entry', requireAuth, requireRole('GATE_ENTRY', 'ADMIN'), asyn
     vehicleNo, direction, purchaseType, supplierName, supplierId, materialName,
     poId, poLineId, poNumber, transporter, vehicleType,
     driverName, driverPhone, bags, remarks, operatorName,
-    sellerPhone, sellerVillage, sellerAadhaar,
+    sellerPhone, sellerVillage, sellerAadhaar, maanNumber,
     rate, deductions, deductionReason, paymentMode, paymentRef,
     cloudGatePassId,
     // DDGS outbound: cloud DDGSContract UUID selected at gate entry
@@ -553,7 +553,9 @@ router.post('/gate-entry', requireAuth, requireRole('GATE_ENTRY', 'ADMIN'), asyn
       driverName: driverName || null,
       driverPhone: driverPhone || null,
       bags: bags ? parseInt(bags) : null,
-      remarks: remarks || null,
+      // Stash maan number in remarks (no DB column yet) — cloud handler parses
+      // it back when upserting the Farmer record. Format: "MAAN:XXX | <user remarks>"
+      remarks: maanNumber ? `MAAN:${String(maanNumber).trim()}${remarks ? ' | ' + remarks : ''}` : (remarks || null),
       operatorName: operatorName || req.user?.name || null,
       shift,
       gateEntryAt,

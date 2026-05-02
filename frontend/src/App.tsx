@@ -121,6 +121,9 @@ const RawMaterialPurchase = React.lazy(() => import('./pages/procurement/RawMate
 // Direct Trade
 const DirectPurchases = React.lazy(() => import('./pages/trade/DirectPurchases'));
 const DirectSales = React.lazy(() => import('./pages/trade/DirectSales'));
+// Farmer master + ledger
+const Farmers = React.lazy(() => import('./pages/farmers/Farmers'));
+const FarmerDetail = React.lazy(() => import('./pages/farmers/FarmerDetail'));
 // Accounts
 const ChartOfAccounts = React.lazy(() => import('./pages/accounts/ChartOfAccounts'));
 const JournalEntryPage = React.lazy(() => import('./pages/accounts/JournalEntry'));
@@ -292,6 +295,9 @@ export default function App() {
         {/* Direct Trade */}
         <Route path="trade/purchases" element={<DirectPurchases />} />
         <Route path="trade/sales" element={<DirectSales />} />
+        {/* Farmers */}
+        <Route path="farmers" element={<Farmers />} />
+        <Route path="farmers/:id" element={<FarmerDetail />} />
         {/* Accounts */}
         <Route path="accounts/chart" element={<ChartOfAccounts />} />
         <Route path="accounts/journal" element={<JournalEntryPage />} />

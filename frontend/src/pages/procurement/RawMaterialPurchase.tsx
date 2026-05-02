@@ -1,8 +1,27 @@
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
+import { Link } from 'react-router-dom';
 import api from '../../services/api';
 import { useAuth } from '../../context/AuthContext';
 import WeighbridgeTrucksModal from '../../components/WeighbridgeTrucksModal';
 import VendorLedgerModal from '../../components/VendorLedgerModal';
+
+interface FarmerWithBalance {
+  id: string;
+  code: string | null;
+  name: string;
+  phone: string | null;
+  village: string | null;
+  district: string | null;
+  maanNumber: string | null;
+  rawMaterialTypes: string | null;
+  kycStatus: string;
+  trips: number;
+  totalQty: number;
+  totalPurchased: number;
+  totalPaid: number;
+  outstanding: number;
+  lastTripDate: string | null;
+}
 
 interface MaterialItem {
   id: string;
@@ -84,7 +103,8 @@ const EMPTY_FORM: Partial<MaterialItem> = {
 export default function RawMaterialPurchase() {
   const { user } = useAuth();
   const isAdmin = user?.role === 'ADMIN' || user?.role === 'SUPER_ADMIN';
-  const [tab, setTab] = useState<'master' | 'daily' | 'deals'>('deals');
+  const [tab, setTab] = useState<'master' | 'daily' | 'deals' | 'farmers'>('deals');
+  const [farmers, setFarmers] = useState<FarmerWithBalance[]>([]);
   const [materials, setMaterials] = useState<MaterialItem[]>([]);
   const [rows, setRows] = useState<ConsumptionRow[]>([]);
   const [summary, setSummary] = useState<Summary | null>(null);
@@ -138,6 +158,13 @@ export default function RawMaterialPurchase() {
     } catch (err) { console.error(err); }
   }, []);
 
+  const fetchFarmers = useCallback(async () => {
+    try {
+      const res = await api.get<FarmerWithBalance[]>('/farmers/with-balance');
+      setFarmers(res.data);
+    } catch (err) { console.error(err); }
+  }, []);
+
   const fetchVendors = useCallback(async () => {
     try {
       const res = await api.get<{ vendors: VendorOption[] } | VendorOption[]>('/vendors');
@@ -149,8 +176,8 @@ export default function RawMaterialPurchase() {
 
   useEffect(() => {
     setLoading(true);
-    Promise.all([fetchMaster(), fetchSummary(), fetchConsumption(), fetchDeals(), fetchVendors()]).finally(() => setLoading(false));
-  }, [fetchMaster, fetchSummary, fetchConsumption, fetchDeals, fetchVendors]);
+    Promise.all([fetchMaster(), fetchSummary(), fetchConsumption(), fetchDeals(), fetchVendors(), fetchFarmers()]).finally(() => setLoading(false));
+  }, [fetchMaster, fetchSummary, fetchConsumption, fetchDeals, fetchVendors, fetchFarmers]);
 
   // Load RM contract T&C catalog once (non-blocking; modal shows nothing if unavailable)
   useEffect(() => {
@@ -499,6 +526,9 @@ export default function RawMaterialPurchase() {
           <button onClick={() => setTab('deals')} className={`px-5 py-2.5 text-[11px] font-bold uppercase tracking-widest border-b-2 ${tab === 'deals' ? 'border-blue-600 text-slate-800' : 'border-transparent text-slate-400 hover:text-slate-600'}`}>
             Deals {deals.length > 0 && <span className="ml-1 bg-orange-500 text-white text-[9px] px-1.5 py-0.5">{deals.length}</span>}
           </button>
+          <button onClick={() => setTab('farmers')} className={`px-5 py-2.5 text-[11px] font-bold uppercase tracking-widest border-b-2 ${tab === 'farmers' ? 'border-emerald-600 text-slate-800' : 'border-transparent text-slate-400 hover:text-slate-600'}`}>
+            Farmers {farmers.length > 0 && <span className="ml-1 bg-emerald-600 text-white text-[9px] px-1.5 py-0.5">{farmers.length}</span>}
+          </button>
           <button onClick={() => setTab('daily')} className={`px-5 py-2.5 text-[11px] font-bold uppercase tracking-widest border-b-2 ${tab === 'daily' ? 'border-blue-600 text-slate-800' : 'border-transparent text-slate-400 hover:text-slate-600'}`}>
             Daily Consumption
           </button>
@@ -635,6 +665,65 @@ export default function RawMaterialPurchase() {
               </table>
             </div>
           </>
+        )}
+
+        {/* TAB: FARMERS — direct gate purchases (separate from Vendor POs) */}
+        {tab === 'farmers' && (
+          <div className="-mx-3 md:-mx-6 border-x border-b border-slate-300 overflow-x-auto bg-white">
+            <div className="px-4 py-2 bg-slate-50 border-b border-slate-200 flex items-center justify-between">
+              <div className="text-[11px] font-bold uppercase tracking-widest text-slate-600">
+                Farmer Direct Purchases — Auto-created from gate entry (purchaseType=FARMER)
+              </div>
+              <Link to="/farmers" className="text-[11px] font-bold uppercase tracking-widest text-emerald-700 hover:underline">
+                Manage Farmers →
+              </Link>
+            </div>
+            <table className="w-full text-sm">
+              <thead className="bg-slate-100 border-b border-slate-300">
+                <tr className="text-[11px] uppercase tracking-widest text-slate-600">
+                  <th className="px-3 py-2 text-left font-bold">Code</th>
+                  <th className="px-3 py-2 text-left font-bold">Name</th>
+                  <th className="px-3 py-2 text-left font-bold">Phone</th>
+                  <th className="px-3 py-2 text-left font-bold">Village</th>
+                  <th className="px-3 py-2 text-left font-bold">Material</th>
+                  <th className="px-3 py-2 text-right font-bold">Trips</th>
+                  <th className="px-3 py-2 text-right font-bold">Qty (KG)</th>
+                  <th className="px-3 py-2 text-right font-bold">Purchased</th>
+                  <th className="px-3 py-2 text-right font-bold">Paid</th>
+                  <th className="px-3 py-2 text-right font-bold">Outstanding</th>
+                  <th className="px-3 py-2 text-left font-bold">Last Trip</th>
+                  <th className="px-3 py-2"></th>
+                </tr>
+              </thead>
+              <tbody>
+                {farmers.length === 0 && (
+                  <tr><td colSpan={12} className="px-3 py-12 text-center text-slate-400 text-sm">
+                    No farmers yet. Farmers are auto-created when a "Farmer" gate entry weighs in.
+                  </td></tr>
+                )}
+                {farmers.map(f => (
+                  <tr key={f.id} className="border-b border-slate-200 hover:bg-slate-50">
+                    <td className="px-3 py-2 font-mono text-xs">{f.code || '—'}</td>
+                    <td className="px-3 py-2 font-bold text-slate-800">{f.name}</td>
+                    <td className="px-3 py-2 font-mono text-xs">{f.phone || '—'}</td>
+                    <td className="px-3 py-2">{f.village || '—'}</td>
+                    <td className="px-3 py-2 text-xs">{f.rawMaterialTypes || '—'}</td>
+                    <td className="px-3 py-2 text-right font-mono">{f.trips}</td>
+                    <td className="px-3 py-2 text-right font-mono">{f.totalQty.toLocaleString('en-IN')}</td>
+                    <td className="px-3 py-2 text-right font-mono">₹{f.totalPurchased.toLocaleString('en-IN')}</td>
+                    <td className="px-3 py-2 text-right font-mono">₹{f.totalPaid.toLocaleString('en-IN')}</td>
+                    <td className={`px-3 py-2 text-right font-mono font-bold ${f.outstanding > 0 ? 'text-amber-700' : 'text-slate-400'}`}>
+                      ₹{f.outstanding.toLocaleString('en-IN')}
+                    </td>
+                    <td className="px-3 py-2 text-xs">{f.lastTripDate ? new Date(f.lastTripDate).toLocaleDateString('en-IN') : '—'}</td>
+                    <td className="px-3 py-2 text-right">
+                      <Link to={`/farmers/${f.id}`} className="text-xs text-blue-700 hover:underline">Ledger →</Link>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
         )}
 
         {/* TAB: DEALS */}

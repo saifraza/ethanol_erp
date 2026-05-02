@@ -89,6 +89,8 @@ model Company {
   sugarDispatchTrucks   SugarDispatchTruck[]
   transporterPayments   TransporterPayment[]
   projectPurchases      ProjectPurchase[]
+  farmers               Farmer[]
+  farmerPayments        FarmerPayment[]
 }
 
 model User {
@@ -3164,9 +3166,101 @@ model DirectPurchase {
   companyId String? // FK → Company (null = MSPIL default)
   company   Company? @relation(fields: [companyId], references: [id])
 
+  // Farmer master link — added 2026-05-02. Nullable so legacy rows don't break.
+  // Backfilled by /farmers/backfill admin endpoint that groups by sellerPhone.
+  farmerId  String?
+  farmer    Farmer?  @relation(fields: [farmerId], references: [id])
+
   @@index([date])
   @@index([isPaid])
   @@index([division])
+  @@index([companyId])
+  @@index([farmerId])
+}
+
+// ══════════════════════════════════════════════════════════════
+// FARMER MASTER — separate from Vendor master.
+// Vendors = GSTIN-registered industrial parties (TDS/MSME/credit terms).
+// Farmers = unregistered individuals selling raw material at gate (mandi-license driven,
+// scale to thousands per season, RCM applicable). Keeping them apart prevents the
+// vendor master from getting clogged and lets us run farmer-only reports cleanly.
+// ══════════════════════════════════════════════════════════════
+
+model Farmer {
+  id        String   @id @default(uuid())
+  code      String?  @unique // auto-generated F-0001 etc.
+  name      String
+  // Identifiers — phone is primary match key, aadhaar fallback
+  phone     String? // 10-digit, no country code
+  aadhaar   String? // 12-digit
+  // Mandatory for grain procurement under MP/UP mandi rules
+  maanNumber String?
+  // Address
+  village   String?
+  tehsil    String?
+  district  String?
+  state     String?
+  pincode   String?
+  // Bank details for UPI/NEFT payouts
+  bankName    String?
+  bankAccount String?
+  bankIfsc    String?
+  upiId       String?
+  // What this farmer typically supplies — comma-separated for multi-material support
+  // e.g. "CORN,BROKEN_RICE". Used for filtering at gate but not enforced.
+  rawMaterialTypes String?
+  // KYC
+  kycStatus String  @default("PENDING") // PENDING, VERIFIED, REJECTED
+  kycNotes  String?
+  // RCM — most farmers are unregistered for GST → reverse charge applies
+  isRCM     Boolean  @default(true)
+  isActive  Boolean  @default(true)
+  remarks   String?
+
+  division  String?  @default("ETHANOL")
+  companyId String? // null = MSPIL default
+  company   Company? @relation(fields: [companyId], references: [id])
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  purchases DirectPurchase[]
+  payments  FarmerPayment[]
+
+  @@index([phone])
+  @@index([aadhaar])
+  @@index([maanNumber])
+  @@index([companyId])
+  @@index([isActive])
+}
+
+// ══════════════════════════════════════════════════════════════
+// FARMER PAYMENTS — payouts to farmers (cash voucher / UPI / bank).
+// Separate from VendorPayment so farmer ledger doesn't mix with Trade Creditors.
+// Posted to dedicated GL account 2003 (Farmers Payable) via autoJournal.
+// ══════════════════════════════════════════════════════════════
+
+model FarmerPayment {
+  id          String   @id @default(uuid())
+  paymentNo   Int      @default(autoincrement())
+  farmerId    String
+  farmer      Farmer   @relation(fields: [farmerId], references: [id])
+  paymentDate DateTime @default(now())
+  amount      Float
+  mode        String   @default("CASH") // CASH, UPI, NEFT, RTGS, BANK_TRANSFER
+  reference   String? // UPI ref / cheque no / UTR
+  remarks     String?
+  // Optional link to a specific DirectPurchase if paying for a single trip
+  purchaseId  String?
+  userId      String
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  companyId String?
+  company   Company? @relation(fields: [companyId], references: [id])
+
+  @@index([farmerId])
+  @@index([paymentDate])
   @@index([companyId])
 }
 

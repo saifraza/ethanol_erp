@@ -68,6 +68,7 @@ export const MODULE_DEFS: ModuleDef[] = [
   { key: 'auto-grn', label: 'Auto GRN (WB)', to: '/procurement/goods-receipts/auto', icon: PackageCheck, group: 'procurement' },
   // Contractors merged into Vendor Master (category: CONTRACTOR_*)
   { key: 'raw-material-purchase', label: 'RM Deals', to: '/procurement/raw-material-purchase', icon: Handshake, group: 'procurement' },
+  { key: 'farmers', label: 'Farmers', to: '/farmers', icon: Users, group: 'procurement' },
 
   // ── ACCOUNTS (day-to-day transactions) ──
   { key: 'cash-book', label: 'Cash Book', to: '/accounts/cash-book', icon: IndianRupee, group: 'accounts' },

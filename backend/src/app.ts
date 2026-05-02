@@ -72,6 +72,8 @@ import contractorStoreIssueRoutes from './routes/contractorStoreIssues';
 // Direct Trade (cash purchases/sales without paperwork)
 import directPurchaseRoutes from './routes/directPurchases';
 import directSaleRoutes from './routes/directSales';
+// Farmer master (separate from Vendor — for raw material gate purchases)
+import farmerRoutes from './routes/farmers';
 // Ethanol Supply
 import ethanolContractRoutes from './routes/ethanolContracts';
 import ethanolGatePassRoutes from './routes/ethanolGatePass';
@@ -274,6 +276,8 @@ app.use('/api/contractor-store-issues', contractorStoreIssueRoutes);
 // Direct Trade
 app.use('/api/direct-purchases', directPurchaseRoutes);
 app.use('/api/direct-sales', directSaleRoutes);
+// Farmer master
+app.use('/api/farmers', farmerRoutes);
 // Ethanol Supply
 app.use('/api/ethanol-contracts', ethanolContractRoutes);
 app.use('/api/ethanol-gate-pass', ethanolGatePassRoutes);
