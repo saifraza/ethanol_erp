@@ -28,5 +28,16 @@ aptPkgs = [
   "fonts-noto-cjk"
 ]
 
+[phases.build]
+# The full build (backend tsc + prisma + frontend vite) already runs during
+# the install phase via package.json's `postinstall: npm run build` hook.
+# Without this override, nixpacks would auto-detect and run a second build,
+# which OOM-killed the container on 2026-05-02 (Railway log ended silently
+# after the source COPY — classic kernel-OOM signature, no error message).
+# A no-op build phase keeps the install-time build artifacts in the image.
+cmds = ["echo 'Build performed during install via postinstall hook'"]
+
 [variables]
 # Let pdfRenderer.ts auto-detect Chromium path (system or bundled)
+# Headroom for tsc + vite build combined (default Node heap is ~1.5GB).
+NODE_OPTIONS = "--max-old-space-size=4096"
