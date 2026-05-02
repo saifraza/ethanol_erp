@@ -188,6 +188,16 @@ The smoke test checks: TypeScript compilation, frontend build, all 3 Prisma sche
 
 ---
 
+## Local-only directories — DO NOT push to origin
+
+**`vision/`** — truck re-ID / camera ML project. Local research code, ML weights (.pt files), Python `.venv`, training data. **Gitignored as of 2026-05-02.** A teammate accidentally pushed the source files in commit `5666406` which then caused repeated pull conflicts on every dev machine ("untracked files would be overwritten by checkout") because each machine had its own local copy. Removed from origin tracking via `git rm -r --cached vision/`; now in `.gitignore`. Never re-add it. If you need to share vision code between machines, use SCP / a separate repo / shared drive — not this one.
+
+**Symptoms when you forget**: `git pull` fails with "untracked files would be overwritten" listing files under `vision/`. **Fix**: confirm `vision/` is in `.gitignore`; `git rm -r --cached vision/` if it crept back in; pull again.
+
+Same rule applies to: `db-backups/` (pg_dump output), `weighbridge/data/` and `weighbridge/logs/` (factory PC runtime state), `**/.venv/`, `**/node_modules/`. None of these belong on origin.
+
+---
+
 ## Codex Integration (GPT-5.4 Second Opinion)
 
 `/codex:rescue` — delegates investigation, diagnosis, or code review to Codex. Use for deep audits, second opinions on complex logic, root-cause diagnosis, and test coverage gaps. Not for simple one-file edits.

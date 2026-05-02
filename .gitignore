@@ -37,13 +37,14 @@ factory-server/public/assets/
 # Python cache (sugar-opc/)
 __pycache__/
 
-# Vision ML project
-vision/.venv/
-vision/data/
-vision/weights/
+# Vision ML project — local-only, never tracked.
+# 2026-05-02: removed from origin via `git rm -r --cached vision/` after the
+# initial push (commit 5666406) caused repeated "untracked files would be
+# overwritten by checkout" pull conflicts on dev machines. ML weights, venv,
+# data, and source all stay on the local filesystem only.
+vision/
 *.pt
 *.pth
-vision/data
 
 # Local DB backups (pg_dump output — never committed)
 db-backups/
