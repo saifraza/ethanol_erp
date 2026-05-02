@@ -71,6 +71,24 @@ export default function GateEntry() {
   const [maanNumber, setMaanNumber] = useState('');
   const [rate, setRate] = useState('');
   const [paymentMode, setPaymentMode] = useState('CASH');
+  // Farmer master lookup — populated when sellerPhone matches an existing record.
+  type FarmerMaster = {
+    id: string; code: string | null; name: string;
+    phone: string | null; aadhaar: string | null; maanNumber: string | null;
+    village: string | null; tehsil?: string | null; district: string | null;
+    state: string | null; pincode?: string | null;
+    rawMaterialTypes?: string | null;
+  };
+  const [matchedFarmer, setMatchedFarmer] = useState<FarmerMaster | null>(null);
+  const [farmerLookupLoading, setFarmerLookupLoading] = useState(false);
+  const [farmers, setFarmers] = useState<FarmerMaster[]>([]);
+  // True when operator picked "+ New farmer" — shows a text input for the new name.
+  const [enteringNewFarmer, setEnteringNewFarmer] = useState(false);
+  // Live cloud reachability for the farmer master. Polled while in Farmer mode.
+  // Drives the "Cloud OFFLINE" badge and disables new-farmer creation while down,
+  // because phone-keyed dedup breaks if multiple offline operators register the
+  // same farmer with different spellings.
+  const [cloudFarmerOnline, setCloudFarmerOnline] = useState<boolean | null>(null);
   // Outbound
   const [customerName, setCustomerName] = useState('');
   const [driverLicense, setDriverLicense] = useState('');
@@ -184,6 +202,83 @@ export default function GateEntry() {
     return () => clearInterval(iv);
   }, [loadMasterData, loadCount]);
 
+  // Load farmer master list once when the operator opens Farmer (SPOT) mode.
+  // Refreshed on each tab-switch so a freshly created farmer shows up without
+  // a full page reload. 500 farmer cap is plenty for one site.
+  const loadFarmers = useCallback(async () => {
+    try {
+      const res = await api.get('/farmers/list');
+      setFarmers(res.data?.farmers || []);
+    } catch {
+      setFarmers([]);
+    }
+  }, [api]);
+
+  useEffect(() => {
+    if (purchaseType === 'SPOT' && direction === 'INBOUND') {
+      loadFarmers();
+    }
+  }, [purchaseType, direction, loadFarmers]);
+
+  // Poll cloud reachability every 20s while operator is on Farmer mode.
+  // Real-time check (not just cache freshness) because we use it to gate
+  // submission of NEW farmers — that decision needs an immediate signal.
+  useEffect(() => {
+    if (purchaseType !== 'SPOT' || direction !== 'INBOUND') return;
+    let cancelled = false;
+    const ping = async () => {
+      try {
+        const res = await api.get('/farmers/cloud-status');
+        if (!cancelled) setCloudFarmerOnline(!!res.data?.online);
+      } catch {
+        if (!cancelled) setCloudFarmerOnline(false);
+      }
+    };
+    ping();
+    const iv = setInterval(ping, 20000);
+    return () => { cancelled = true; clearInterval(iv); };
+  }, [purchaseType, direction, api]);
+
+  // Debounced farmer lookup — when operator types a 10-digit farmer phone in
+  // SPOT/Farmer mode, hit the cloud Farmer master and auto-fill empty fields.
+  // Phone is the dedup key so the second-trip same-phone rolls into the existing
+  // ledger; this just lets the operator see "✓ Existing farmer F-0001" instead
+  // of re-typing the name and village every visit.
+  useEffect(() => {
+    if (purchaseType !== 'SPOT' || direction !== 'INBOUND') {
+      setMatchedFarmer(null);
+      return;
+    }
+    if (sellerPhone.length !== 10) {
+      setMatchedFarmer(null);
+      return;
+    }
+    let cancelled = false;
+    setFarmerLookupLoading(true);
+    const t = setTimeout(async () => {
+      try {
+        const res = await api.get('/farmers/lookup', { params: { phone: sellerPhone } });
+        if (cancelled) return;
+        if (res.data?.found && res.data.farmer) {
+          const f = res.data.farmer;
+          setMatchedFarmer(f);
+          // Only fill empty fields — don't overwrite operator edits in flight
+          setSupplierName(prev => prev || f.name || '');
+          setSellerVillage(prev => prev || f.village || '');
+          setSellerAadhaar(prev => prev || f.aadhaar || '');
+          setMaanNumber(prev => prev || f.maanNumber || '');
+        } else {
+          setMatchedFarmer(null);
+        }
+      } catch (err) {
+        if (!cancelled) setMatchedFarmer(null);
+      } finally {
+        if (!cancelled) setFarmerLookupLoading(false);
+      }
+    }, 350);
+    return () => { cancelled = true; clearTimeout(t); };
+  }, [sellerPhone, purchaseType, direction, api]);
+
   // Ethanol contracts come from master-data cache (works offline)
   // Updated in loadMasterData alongside suppliers, materials, etc.
 
@@ -296,6 +391,8 @@ export default function GateEntry() {
     setTransporter(''); setVehicleType(''); setDriverPhone('');
     setBags(''); setRemarks('');
     setSellerPhone(''); setSellerVillage(''); setSellerAadhaar(''); setMaanNumber(''); setRate(''); setPaymentMode('CASH');
+    setMatchedFarmer(null);
+    setEnteringNewFarmer(false);
     setCustomerName(''); setSelectedTraderId('');
     setEthContractId(''); setDriverName(''); setDestination(''); setRstNo(''); setSealNo('');
     setShipToMode('SAME'); setShipToCustomerId('');
@@ -309,6 +406,28 @@ export default function GateEntry() {
     if (direction === 'INBOUND' && purchaseType === 'TRADER' && !selectedTraderId) { alert('Select a trader'); return; }
     if (direction === 'INBOUND' && purchaseType === 'TRADER' && (!rate || parseFloat(rate) <= 0)) { alert('Rate is required for trader purchases'); return; }
     if (direction === 'INBOUND' && purchaseType === 'TRADER' && !materialName) { alert('Select a material/product'); return; }
+    // Farmer (SPOT) mode: phone + aadhaar both mandatory, both digit-checked.
+    if (direction === 'INBOUND' && purchaseType === 'SPOT') {
+      if (!supplierName.trim()) { alert('Farmer name is required'); return; }
+      if (sellerPhone.length !== 10) { alert('Farmer phone must be 10 digits'); return; }
+      if (sellerAadhaar.length !== 12) { alert('Farmer Aadhaar must be 12 digits — required for KYC'); return; }
+      // Block new-farmer creation when cloud is offline. Existing farmers (picked
+      // from dropdown) are fine since the master record already exists; the
+      // weighment will sync up when connectivity returns.
+      const isNewFarmer = !matchedFarmer;
+      if (isNewFarmer) {
+        try {
+          const status = await api.get('/farmers/cloud-status');
+          if (!status.data?.online) {
+            alert('Cloud / Internet is offline.\n\nNew farmers can only be registered when the ERP is reachable, otherwise the same farmer ends up as duplicate records on different machines.\n\nPlease wait for the connection to restore, then submit again. Existing farmers (from the dropdown) can still be processed offline.');
+            return;
+          }
+        } catch {
+          alert('Could not verify cloud connection. Please retry — new farmers cannot be registered offline.');
+          return;
+        }
+      }
+    }
     setSaving(true);
     try {
       const body: Record<string, unknown> = {
@@ -561,8 +680,14 @@ export default function GateEntry() {
           ) : (
             <div>
               <label className="text-xs font-bold text-slate-700 uppercase tracking-widest block mb-1">
-                {purchaseType === 'SPOT' ? 'Farmer Name' : 'Supplier'}
+                {purchaseType === 'SPOT' ? 'Farmer Name *' : 'Supplier'}
                 {isPOLike && masterLoading && <span className="text-yellow-500 animate-pulse ml-1">searching...</span>}
+                {purchaseType === 'SPOT' && cloudFarmerOnline === true && (
+                  <span className="ml-2 px-1.5 py-0.5 bg-emerald-100 text-emerald-700 border border-emerald-300 text-[9px] font-bold uppercase tracking-wider">CLOUD ONLINE</span>
+                )}
+                {purchaseType === 'SPOT' && cloudFarmerOnline === false && (
+                  <span className="ml-2 px-1.5 py-0.5 bg-red-100 text-red-700 border border-red-300 text-[9px] font-bold uppercase tracking-wider animate-pulse">CLOUD OFFLINE — NEW FARMERS BLOCKED</span>
+                )}
               </label>
               {supplierLocked ? (
                 <input value={supplierName} readOnly disabled
@@ -573,6 +698,57 @@ export default function GateEntry() {
                   <option value="">-- Select --</option>
                   {filteredSuppliers.map(s => <option key={s.id} value={s.name}>{s.name}</option>)}
                 </select>
+              ) : purchaseType === 'SPOT' ? (
+                <>
+                  <select
+                    value={
+                      enteringNewFarmer
+                        ? '__NEW__'
+                        : (farmers.find(f => f.name === supplierName) ? supplierName : (supplierName ? '__NEW__' : ''))
+                    }
+                    onChange={e => {
+                      const v = e.target.value;
+                      setSelectedPoId('');
+                      if (v === '') {
+                        setEnteringNewFarmer(false);
+                        setSupplierName('');
+                        setMatchedFarmer(null);
+                      } else if (v === '__NEW__') {
+                        setEnteringNewFarmer(true);
+                        setSupplierName('');
+                        setMatchedFarmer(null);
+                      } else {
+                        setEnteringNewFarmer(false);
+                        const f = farmers.find(x => x.name === v);
+                        if (f) {
+                          setSupplierName(f.name);
+                          setMatchedFarmer(f);
+                          if (!sellerPhone && f.phone) setSellerPhone(f.phone);
+                          if (!sellerVillage && f.village) setSellerVillage(f.village);
+                          if (!sellerAadhaar && f.aadhaar) setSellerAadhaar(f.aadhaar);
+                          if (!maanNumber && f.maanNumber) setMaanNumber(f.maanNumber);
+                        }
+                      }
+                    }}
+                    className="w-full border border-slate-300 px-3 py-2.5 text-sm focus:outline-none focus:ring-1 focus:ring-slate-400">
+                    <option value="">-- Select farmer --</option>
+                    {farmers.map(f => (
+                      <option key={f.id} value={f.name}>
+                        {f.name}{f.phone ? ` · ${f.phone}` : ''}{f.village ? ` · ${f.village}` : ''}
+                      </option>
+                    ))}
+                    <option value="__NEW__" disabled={cloudFarmerOnline === false}>
+                      {cloudFarmerOnline === false ? '+ New farmer (offline — blocked)' : '+ New farmer (type below)'}
+                    </option>
+                  </select>
+                  {(enteringNewFarmer || (supplierName && !farmers.find(f => f.name === supplierName))) && (
+                    <input value={supplierName}
+                      onChange={e => setSupplierName(e.target.value)}
+                      autoFocus={enteringNewFarmer}
+                      className="w-full border border-slate-300 px-3 py-2.5 text-sm mt-2 focus:outline-none focus:ring-1 focus:ring-slate-400"
+                      placeholder="Type new farmer name" />
+                  )}
+                </>
               ) : (
                 <input value={supplierName} onChange={e => { setSupplierName(e.target.value); setSelectedPoId(''); }}
                   className="w-full border border-slate-300 px-3 py-2.5 text-sm focus:outline-none focus:ring-1 focus:ring-slate-400"
@@ -665,10 +841,23 @@ export default function GateEntry() {
           {direction === 'INBOUND' && purchaseType === 'SPOT' && (
             <>
               <div>
-                <label className="text-xs font-bold text-slate-700 uppercase tracking-widest block mb-1">Farmer Phone *</label>
+                <label className="text-xs font-bold text-slate-700 uppercase tracking-widest block mb-1">
+                  Farmer Phone *
+                  {farmerLookupLoading && <span className="ml-2 text-[10px] font-normal text-yellow-600 animate-pulse normal-case tracking-normal">searching master...</span>}
+                </label>
                 <input value={sellerPhone} onChange={e => setSellerPhone(e.target.value.replace(/\D/g, '').slice(0, 10))}
-                  className="w-full border border-slate-300 px-3 py-2.5 text-sm font-mono focus:outline-none focus:ring-1 focus:ring-slate-400" placeholder="9876543210" />
-                <div className="text-[10px] text-slate-500 mt-0.5">Used as primary key — same phone next trip rolls into existing ledger.</div>
+                  className={`w-full border px-3 py-2.5 text-sm font-mono focus:outline-none focus:ring-1 ${matchedFarmer ? 'border-emerald-500 bg-emerald-50 focus:ring-emerald-400' : 'border-slate-300 focus:ring-slate-400'}`}
+                  placeholder="9876543210" />
+                {matchedFarmer ? (
+                  <div className="text-[10px] text-emerald-700 font-bold mt-0.5">
+                    ✓ Existing farmer{matchedFarmer.code ? ` ${matchedFarmer.code}` : ''} — {matchedFarmer.name}
+                    {matchedFarmer.village && <span className="font-normal"> · {matchedFarmer.village}</span>}
+                  </div>
+                ) : sellerPhone.length === 10 && !farmerLookupLoading ? (
+                  <div className="text-[10px] text-blue-700 font-bold mt-0.5">+ New farmer — will be auto-created on weighment.</div>
+                ) : (
+                  <div className="text-[10px] text-slate-500 mt-0.5">Used as primary key — same phone next trip rolls into existing ledger.</div>
+                )}
               </div>
               <div>
                 <label className="text-xs font-bold text-slate-700 uppercase tracking-widest block mb-1">Farmer Village</label>
@@ -676,9 +865,15 @@ export default function GateEntry() {
                   className="w-full border border-slate-300 px-3 py-2.5 text-sm focus:outline-none focus:ring-1 focus:ring-slate-400" />
               </div>
               <div>
-                <label className="text-xs font-bold text-slate-700 uppercase tracking-widest block mb-1">Aadhaar (optional)</label>
+                <label className="text-xs font-bold text-slate-700 uppercase tracking-widest block mb-1">
+                  Aadhaar *
+                  {sellerAadhaar.length > 0 && sellerAadhaar.length !== 12 && (
+                    <span className="ml-2 text-[10px] font-normal text-red-600 normal-case tracking-normal">need 12 digits</span>
+                  )}
+                </label>
                 <input value={sellerAadhaar} onChange={e => setSellerAadhaar(e.target.value.replace(/\D/g, '').slice(0, 12))}
-                  className="w-full border border-slate-300 px-3 py-2.5 text-sm font-mono focus:outline-none focus:ring-1 focus:ring-slate-400" placeholder="12-digit Aadhaar" />
+                  className={`w-full border px-3 py-2.5 text-sm font-mono focus:outline-none focus:ring-1 ${sellerAadhaar.length === 12 ? 'border-emerald-500 bg-emerald-50 focus:ring-emerald-400' : 'border-slate-300 focus:ring-slate-400'}`}
+                  placeholder="12-digit Aadhaar" />
               </div>
               <div>
                 <label className="text-xs font-bold text-slate-700 uppercase tracking-widest block mb-1">

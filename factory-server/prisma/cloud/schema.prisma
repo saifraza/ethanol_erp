@@ -261,3 +261,28 @@ model GrainTruck {
 
   @@index([date])
 }
+
+// ── Farmer (cloud: Farmer table) — phone-keyed master used by gate entry ──
+// Read-only here; cloud spotInbound handler is the single writer.
+model Farmer {
+  id               String   @id @default(uuid())
+  code             String?  @unique
+  name             String
+  phone            String?
+  aadhaar          String?
+  maanNumber       String?
+  village          String?
+  tehsil           String?
+  district         String?
+  state            String?
+  pincode          String?
+  rawMaterialTypes String?
+  kycStatus        String   @default("PENDING")
+  isActive         Boolean  @default(true)
+  companyId        String?
+  createdAt        DateTime @default(now())
+
+  @@index([phone])
+  @@index([aadhaar])
+  @@index([companyId])
+}
