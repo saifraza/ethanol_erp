@@ -250,8 +250,12 @@ app.listen(config.port, '0.0.0.0', () => {
   // Initialize in-memory master data cache (load from disk, then 5s cloud sync)
   initMasterDataCache().catch(err => console.error('[CACHE] Init failed:', err));
 
-  // Start weight-triggered video/photo capture for ML training corpus
-  startWeightTriggeredCapture();
+  // Weight-triggered video/photo capture for ML training corpus.
+  // PAUSED 2026-05-03 — corpus is sufficient (38.6 GB / 51k clips on factory disk).
+  // Operational gross/tare snapshots in routes/weighbridge.ts are unaffected.
+  // Re-enable by uncommenting; existing data on factory disk is intact.
+  // startWeightTriggeredCapture();
+  void startWeightTriggeredCapture; // keep import live to avoid TS unused-import error
 
   // Send factory server's own heartbeat to cloud
   sendHeartbeatToCloud();
