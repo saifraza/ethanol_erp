@@ -1159,12 +1159,12 @@ ${row('Tested By', w.labTestedBy)}
 ${row('Tested At', fmtIST(w.labTestedAt))}`;
   }
 
-  // Spot purchase section
+  // Farmer / Spot purchase section (FARMER is the new wire value, SPOT legacy)
   let spotSection = '';
-  if (w.purchaseType === 'SPOT') {
+  if (w.purchaseType === 'SPOT' || w.purchaseType === 'FARMER') {
     spotSection = `
 <div class="line"></div>
-<div class="center bold" style="font-size:10px; margin:2px 0;">SPOT PURCHASE</div>
+<div class="center bold" style="font-size:10px; margin:2px 0;">FARMER DIRECT PURCHASE</div>
 ${row('Rate/KG', w.rate != null ? `Rs ${w.rate.toFixed(2)}` : '--')}
 ${w.netWeight != null && w.rate != null ? row('Gross Amt', `Rs ${(w.netWeight * w.rate).toFixed(2)}`) : ''}
 ${w.deductions != null ? row('Deductions', `Rs ${w.deductions.toFixed(2)}`) : ''}
@@ -1515,7 +1515,9 @@ router.post('/correction', requireWbKey, asyncHandler(async (req: Request, res: 
   if ('bags' in f) updateData.bags = f.bags;
   // purchaseType: added 2026-04-16. PO mode vs JOB_WORK mode mistakes can be
   // corrected when the downstream PO.dealType doesn't match the stamped
-  // purchaseType. Valid values: PO / SPOT / TRADER / JOB_WORK / OUTBOUND.
+  // purchaseType. Valid values: PO / FARMER / TRADER / JOB_WORK / OUTBOUND.
+  // (Legacy "SPOT" still accepted on read for old in-flight records — it's an
+  // alias for FARMER. New writes from the factory frontend use FARMER.)
   if ('purchaseType' in f) updateData.purchaseType = f.purchaseType;
 
   if (body.cancel) {

@@ -76,7 +76,9 @@ function detectHandler(w: WeighmentInput, ctx: PushContext): PushHandler {
   const hasPoWork = w.po_id && (ctx.purchaseType === 'PO' || ctx.purchaseType === 'JOB_WORK');
   if (hasPoWork) return handlePoInbound;
 
-  if (ctx.purchaseType === 'SPOT') return handleSpotInbound;
+  // FARMER is the new wire value (matches RM Deals module convention);
+  // SPOT kept as legacy alias for in-flight queues + older factory builds.
+  if (ctx.purchaseType === 'SPOT' || ctx.purchaseType === 'FARMER') return handleSpotInbound;
 
   const hasTraderWork = ctx.purchaseType === 'TRADER' && w.supplier_id;
   if (hasTraderWork) return handleTraderInbound;

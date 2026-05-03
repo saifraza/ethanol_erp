@@ -204,14 +204,48 @@ async function fullSyncFromCloud(cloudTs?: string | null): Promise<boolean> {
         orderBy: { name: 'asc' },
         take: 500,
       }),
-      cloud.inventoryItem.findMany({
-        where: { isActive: true },
-        select: {
-          id: true, name: true, unit: true, category: true, hsnCode: true, gstPercent: true,
-          division: true, aliases: true, handlerKey: true, isContractBased: true, needsLabTest: true, companyId: true,
-        },
-        orderBy: { name: 'asc' },
-        take: 500,
+      // GENERAL hardware category alone is ~2932 items, which on its own
+      // exhausts any sane `take` and pushes gate-critical RAW_MATERIAL +
+      // SPARE_PART past the cut-off when sorted alphabetically. Caught
+      // 2026-05-03: farmers' grain trips had no "Maize / Corn" to pick at
+      // the gate because RM-00003 was at position ~3000 in the alpha sort.
+      //
+      // Fix: two parallel queries, then merged + de-duplicated. Priority
+      // query unconditionally pulls every gate-relevant category — these
+      // are small (single digits each) so no cap risk. Bulk query handles
+      // the long tail (mostly hardware) for procurement / browse use cases.
+      Promise.all([
+        cloud.inventoryItem.findMany({
+          where: {
+            isActive: true,
+            category: { in: ['RAW_MATERIAL', 'FUEL', 'FINISHED_GOOD', 'CHEMICAL', 'CONSUMABLE'] },
+          },
+          select: {
+            id: true, name: true, unit: true, category: true, hsnCode: true, gstPercent: true,
+            division: true, aliases: true, handlerKey: true, isContractBased: true, needsLabTest: true, companyId: true,
+          },
+          orderBy: [{ category: 'asc' }, { name: 'asc' }],
+          take: 500,
+        }),
+        cloud.inventoryItem.findMany({
+          where: {
+            isActive: true,
+            category: { notIn: ['RAW_MATERIAL', 'FUEL', 'FINISHED_GOOD', 'CHEMICAL', 'CONSUMABLE'] },
+          },
+          select: {
+            id: true, name: true, unit: true, category: true, hsnCode: true, gstPercent: true,
+            division: true, aliases: true, handlerKey: true, isContractBased: true, needsLabTest: true, companyId: true,
+          },
+          orderBy: [{ category: 'asc' }, { name: 'asc' }],
+          take: 3000,
+        }),
+      ]).then(([priority, rest]) => {
+        const seen = new Set<string>();
+        const out: typeof priority = [];
+        for (const m of [...priority, ...rest]) {
+          if (!seen.has(m.id)) { seen.add(m.id); out.push(m); }
+        }
+        return out;
       }),
       cloud.purchaseOrder.findMany({
         where: {

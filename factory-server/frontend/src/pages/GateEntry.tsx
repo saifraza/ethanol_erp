@@ -49,7 +49,7 @@ export default function GateEntry() {
   const [selectedCompanyId, setSelectedCompanyId] = useState('');
   const [selectedCompanyCode, setSelectedCompanyCode] = useState('');
   const [direction, setDirection] = useState<'INBOUND' | 'OUTBOUND'>('INBOUND');
-  const [purchaseType, setPurchaseType] = useState<'PO' | 'SPOT' | 'TRADER' | 'JOB_WORK'>('PO');
+  const [purchaseType, setPurchaseType] = useState<'PO' | 'FARMER' | 'TRADER' | 'JOB_WORK'>('PO');
   const [selectedTraderId, setSelectedTraderId] = useState('');
   const [vehicleNo, setVehicleNo] = useState('');
   const [supplierName, setSupplierName] = useState('');
@@ -62,9 +62,10 @@ export default function GateEntry() {
   const [driverPhone, setDriverPhone] = useState('');
   const [bags, setBags] = useState('');
   const [remarks, setRemarks] = useState('');
-  // Farmer / Spot fields (purchaseType='SPOT' on the wire — kept for backward compat
-  // with existing weighbridge handler. UI labels say "Farmer" since that's what these
-  // entries actually are now that we have a Farmer master.)
+  // Farmer fields. Wire value is `FARMER` (matches RM Deals module convention
+  // — see frontend/src/pages/procurement/RawMaterialPurchase.tsx). The cloud
+  // dispatcher accepts the legacy "SPOT" alias for in-flight queues / older
+  // factory builds, so a half-deployed system stays consistent.
   const [sellerPhone, setSellerPhone] = useState('');
   const [sellerVillage, setSellerVillage] = useState('');
   const [sellerAadhaar, setSellerAadhaar] = useState('');
@@ -202,6 +203,23 @@ export default function GateEntry() {
     return () => clearInterval(iv);
   }, [loadMasterData, loadCount]);
 
+  // Resolve a farmer's rawMaterialTypes (e.g. "CORN" or "CORN,BROKEN_RICE")
+  // to a concrete material name from the master list. Tries exact case-
+  // insensitive match first, then partial. Returns '' if nothing matches —
+  // operator falls back to picking manually. Used by both the phone-lookup
+  // path and the dropdown-pick path so they auto-fill the Product field.
+  const pickFarmerMaterial = useCallback((rmTypes?: string | null): string => {
+    if (!rmTypes) return '';
+    const types = rmTypes.split(',').map(s => s.trim().toUpperCase()).filter(Boolean);
+    for (const type of types) {
+      const exact = materials.find(m => m.name.toUpperCase() === type);
+      if (exact) return exact.name;
+      const partial = materials.find(m => m.name.toUpperCase().includes(type));
+      if (partial) return partial.name;
+    }
+    return '';
+  }, [materials]);
+
   // Load farmer master list once when the operator opens Farmer (SPOT) mode.
   // Refreshed on each tab-switch so a freshly created farmer shows up without
   // a full page reload. 500 farmer cap is plenty for one site.
@@ -215,7 +233,7 @@ export default function GateEntry() {
   }, [api]);
 
   useEffect(() => {
-    if (purchaseType === 'SPOT' && direction === 'INBOUND') {
+    if (purchaseType === 'FARMER' && direction === 'INBOUND') {
       loadFarmers();
     }
   }, [purchaseType, direction, loadFarmers]);
@@ -224,7 +242,7 @@ export default function GateEntry() {
   // Real-time check (not just cache freshness) because we use it to gate
   // submission of NEW farmers — that decision needs an immediate signal.
   useEffect(() => {
-    if (purchaseType !== 'SPOT' || direction !== 'INBOUND') return;
+    if (purchaseType !== 'FARMER' || direction !== 'INBOUND') return;
     let cancelled = false;
     const ping = async () => {
       try {
@@ -245,7 +263,7 @@ export default function GateEntry() {
   // ledger; this just lets the operator see "✓ Existing farmer F-0001" instead
   // of re-typing the name and village every visit.
   useEffect(() => {
-    if (purchaseType !== 'SPOT' || direction !== 'INBOUND') {
+    if (purchaseType !== 'FARMER' || direction !== 'INBOUND') {
       setMatchedFarmer(null);
       return;
     }
@@ -267,6 +285,8 @@ export default function GateEntry() {
           setSellerVillage(prev => prev || f.village || '');
           setSellerAadhaar(prev => prev || f.aadhaar || '');
           setMaanNumber(prev => prev || f.maanNumber || '');
+          // Auto-pick farmer's typical raw material (e.g. CORN) from master
+          setMaterialName(prev => prev || pickFarmerMaterial(f.rawMaterialTypes));
         } else {
           setMatchedFarmer(null);
         }
@@ -277,7 +297,7 @@ export default function GateEntry() {
       }
     }, 350);
     return () => { cancelled = true; clearTimeout(t); };
-  }, [sellerPhone, purchaseType, direction, api]);
+  }, [sellerPhone, purchaseType, direction, api, pickFarmerMaterial]);
 
   // Ethanol contracts come from master-data cache (works offline)
   // Updated in loadMasterData alongside suppliers, materials, etc.
@@ -407,7 +427,7 @@ export default function GateEntry() {
     if (direction === 'INBOUND' && purchaseType === 'TRADER' && (!rate || parseFloat(rate) <= 0)) { alert('Rate is required for trader purchases'); return; }
     if (direction === 'INBOUND' && purchaseType === 'TRADER' && !materialName) { alert('Select a material/product'); return; }
     // Farmer (SPOT) mode: phone + aadhaar both mandatory, both digit-checked.
-    if (direction === 'INBOUND' && purchaseType === 'SPOT') {
+    if (direction === 'INBOUND' && purchaseType === 'FARMER') {
       if (!supplierName.trim()) { alert('Farmer name is required'); return; }
       if (sellerPhone.length !== 10) { alert('Farmer phone must be 10 digits'); return; }
       if (sellerAadhaar.length !== 12) { alert('Farmer Aadhaar must be 12 digits — required for KYC'); return; }
@@ -461,7 +481,7 @@ export default function GateEntry() {
         body.poNumber = poNumber || undefined;
         if (purchaseType === 'JOB_WORK') body.purchaseType = 'JOB_WORK';
       }
-      if (direction === 'INBOUND' && purchaseType === 'SPOT') {
+      if (direction === 'INBOUND' && purchaseType === 'FARMER') {
         body.sellerPhone = sellerPhone;
         body.sellerVillage = sellerVillage;
         body.sellerAadhaar = sellerAadhaar || undefined;
@@ -566,8 +586,8 @@ export default function GateEntry() {
               className={`px-3 py-1.5 text-sm font-bold uppercase ${purchaseType === 'PO' ? 'bg-blue-600 text-white' : 'bg-white border border-slate-300 text-slate-600 hover:bg-slate-50'}`}>
               PO Purchase
             </button>
-            <button onClick={() => setPurchaseType('SPOT')}
-              className={`px-3 py-1.5 text-sm font-bold uppercase ${purchaseType === 'SPOT' ? 'bg-emerald-700 text-white' : 'bg-white border border-slate-300 text-slate-600 hover:bg-slate-50'}`}>
+            <button onClick={() => setPurchaseType('FARMER')}
+              className={`px-3 py-1.5 text-sm font-bold uppercase ${purchaseType === 'FARMER' ? 'bg-emerald-700 text-white' : 'bg-white border border-slate-300 text-slate-600 hover:bg-slate-50'}`}>
               Farmer
             </button>
             <button onClick={() => setPurchaseType('TRADER')}
@@ -680,12 +700,12 @@ export default function GateEntry() {
           ) : (
             <div>
               <label className="text-xs font-bold text-slate-700 uppercase tracking-widest block mb-1">
-                {purchaseType === 'SPOT' ? 'Farmer Name *' : 'Supplier'}
+                {purchaseType === 'FARMER' ? 'Farmer Name *' : 'Supplier'}
                 {isPOLike && masterLoading && <span className="text-yellow-500 animate-pulse ml-1">searching...</span>}
-                {purchaseType === 'SPOT' && cloudFarmerOnline === true && (
+                {purchaseType === 'FARMER' && cloudFarmerOnline === true && (
                   <span className="ml-2 px-1.5 py-0.5 bg-emerald-100 text-emerald-700 border border-emerald-300 text-[9px] font-bold uppercase tracking-wider">CLOUD ONLINE</span>
                 )}
-                {purchaseType === 'SPOT' && cloudFarmerOnline === false && (
+                {purchaseType === 'FARMER' && cloudFarmerOnline === false && (
                   <span className="ml-2 px-1.5 py-0.5 bg-red-100 text-red-700 border border-red-300 text-[9px] font-bold uppercase tracking-wider animate-pulse">CLOUD OFFLINE — NEW FARMERS BLOCKED</span>
                 )}
               </label>
@@ -698,7 +718,7 @@ export default function GateEntry() {
                   <option value="">-- Select --</option>
                   {filteredSuppliers.map(s => <option key={s.id} value={s.name}>{s.name}</option>)}
                 </select>
-              ) : purchaseType === 'SPOT' ? (
+              ) : purchaseType === 'FARMER' ? (
                 <>
                   <select
                     value={
@@ -727,6 +747,11 @@ export default function GateEntry() {
                           if (!sellerVillage && f.village) setSellerVillage(f.village);
                           if (!sellerAadhaar && f.aadhaar) setSellerAadhaar(f.aadhaar);
                           if (!maanNumber && f.maanNumber) setMaanNumber(f.maanNumber);
+                          // Auto-select the farmer's typical raw material (CORN etc.)
+                          if (!materialName) {
+                            const m = pickFarmerMaterial(f.rawMaterialTypes);
+                            if (m) setMaterialName(m);
+                          }
                         }
                       }
                     }}
@@ -838,7 +863,7 @@ export default function GateEntry() {
           )}
 
           {/* Farmer / Spot purchase fields */}
-          {direction === 'INBOUND' && purchaseType === 'SPOT' && (
+          {direction === 'INBOUND' && purchaseType === 'FARMER' && (
             <>
               <div>
                 <label className="text-xs font-bold text-slate-700 uppercase tracking-widest block mb-1">

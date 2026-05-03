@@ -93,7 +93,9 @@ export async function runPrePhase(w: WeighmentInput, ctx: PushContext): Promise<
       // NF-1 FIX: Only short-circuit if there's no PO/SPOT/TRADER work to do.
       // Otherwise the stub gets reported but downstream handler still runs.
       const hasPOWork = w.po_id && (ctx.purchaseType === 'PO' || ctx.purchaseType === 'JOB_WORK');
-      const hasSPOTWork = ctx.purchaseType === 'SPOT';
+      // FARMER is the new wire value (RM Deals module convention); SPOT kept
+      // as legacy alias so old weighments in the queue keep deserializing.
+      const hasSPOTWork = ctx.purchaseType === 'SPOT' || ctx.purchaseType === 'FARMER';
       const hasTRADERWork = ctx.purchaseType === 'TRADER' && w.supplier_id;
       const shortCircuit = !hasPOWork && !hasSPOTWork && !hasTRADERWork;
 
