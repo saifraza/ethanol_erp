@@ -72,6 +72,11 @@ export default function GateEntry() {
   const [maanNumber, setMaanNumber] = useState('');
   const [rate, setRate] = useState('');
   const [paymentMode, setPaymentMode] = useState('CASH');
+  // Penalty / deductions (Rs amount off the gross). Reason is free text but
+  // the dropdown gives the common ones so operator data stays consistent
+  // for ledger reporting (moisture, broken grain, foreign matter, etc.).
+  const [deductions, setDeductions] = useState('');
+  const [deductionReason, setDeductionReason] = useState('');
   // Farmer master lookup — populated when sellerPhone matches an existing record.
   type FarmerMaster = {
     id: string; code: string | null; name: string;
@@ -411,6 +416,7 @@ export default function GateEntry() {
     setTransporter(''); setVehicleType(''); setDriverPhone('');
     setBags(''); setRemarks('');
     setSellerPhone(''); setSellerVillage(''); setSellerAadhaar(''); setMaanNumber(''); setRate(''); setPaymentMode('CASH');
+    setDeductions(''); setDeductionReason('');
     setMatchedFarmer(null);
     setEnteringNewFarmer(false);
     setCustomerName(''); setSelectedTraderId('');
@@ -431,6 +437,10 @@ export default function GateEntry() {
       if (!supplierName.trim()) { alert('Farmer name is required'); return; }
       if (sellerPhone.length !== 10) { alert('Farmer phone must be 10 digits'); return; }
       if (sellerAadhaar.length !== 12) { alert('Farmer Aadhaar must be 12 digits — required for KYC'); return; }
+      if (deductions && parseFloat(deductions) > 0 && !deductionReason) {
+        alert('Penalty reason required when a deduction amount is entered.');
+        return;
+      }
       // Block new-farmer creation when cloud is offline. Existing farmers (picked
       // from dropdown) are fine since the master record already exists; the
       // weighment will sync up when connectivity returns.
@@ -488,6 +498,8 @@ export default function GateEntry() {
         body.maanNumber = maanNumber || undefined;
         body.rate = rate ? parseFloat(rate) : undefined;
         body.paymentMode = paymentMode;
+        body.deductions = deductions ? parseFloat(deductions) : undefined;
+        body.deductionReason = deductionReason || undefined;
       }
       if (direction === 'INBOUND' && purchaseType === 'TRADER') {
         body.purchaseType = 'TRADER';
@@ -918,6 +930,35 @@ export default function GateEntry() {
                 <select value={paymentMode} onChange={e => setPaymentMode(e.target.value)}
                   className="w-full border border-slate-300 px-3 py-2.5 text-sm focus:outline-none focus:ring-1 focus:ring-slate-400">
                   {PAYMENT_MODES.map(m => <option key={m} value={m}>{m}</option>)}
+                </select>
+              </div>
+              {/* Penalty / deduction (Rs amount + reason). Optional. */}
+              <div>
+                <label className="text-xs font-bold text-slate-700 uppercase tracking-widest block mb-1">
+                  Penalty / Deduction (Rs)
+                </label>
+                <input value={deductions}
+                  onChange={e => setDeductions(e.target.value.replace(/[^\d.]/g, ''))}
+                  inputMode="decimal"
+                  className="w-full border border-slate-300 px-3 py-2.5 text-sm font-mono focus:outline-none focus:ring-1 focus:ring-slate-400"
+                  placeholder="0.00" />
+                <div className="text-[10px] text-slate-500 mt-0.5">Subtracted from gross amount on payment slip.</div>
+              </div>
+              <div>
+                <label className="text-xs font-bold text-slate-700 uppercase tracking-widest block mb-1">
+                  Penalty Reason {deductions && parseFloat(deductions) > 0 && <span className="text-red-600">*</span>}
+                </label>
+                <select value={deductionReason}
+                  onChange={e => setDeductionReason(e.target.value)}
+                  className="w-full border border-slate-300 px-3 py-2.5 text-sm focus:outline-none focus:ring-1 focus:ring-slate-400">
+                  <option value="">-- Select reason --</option>
+                  <option value="MOISTURE">Moisture (high)</option>
+                  <option value="BROKEN">Broken grain</option>
+                  <option value="FOREIGN_MATTER">Foreign matter / dust</option>
+                  <option value="DAMAGED">Damaged grain</option>
+                  <option value="ADMIXTURE">Admixture (variety mix)</option>
+                  <option value="DISCOLOURED">Discoloured / weevil</option>
+                  <option value="OTHER">Other (note in remarks)</option>
                 </select>
               </div>
             </>

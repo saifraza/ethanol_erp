@@ -1082,6 +1082,24 @@ router.get('/print/gate-pass/:id', asyncHandler(async (req: AuthRequest, res: Re
   const w = await prisma.weighment.findUnique({ where: { id: req.params.id as string } });
   if (!w) { res.status(404).send('Not found'); return; }
 
+  // For a FARMER trip, the gate pass should also show the agreed rate +
+  // any pre-noted penalty so the farmer / driver / operator all carry the
+  // same numbers from the gate. Final settlement still happens on the
+  // payment slip (final-slip) once net weight is known.
+  let farmerSection = '';
+  if (w.purchaseType === 'SPOT' || w.purchaseType === 'FARMER') {
+    farmerSection = `
+<div class="line"></div>
+<div class="center bold" style="font-size:10px; margin:2px 0;">FARMER DEAL</div>
+${row('Farmer Phone', w.sellerPhone)}
+${row('Village', w.sellerVillage)}
+${row('Rate/KG', w.rate != null ? `Rs ${w.rate.toFixed(2)}` : '--')}
+${w.deductions != null && w.deductions > 0 ? row('Penalty', `Rs ${w.deductions.toFixed(2)}`) : ''}
+${w.deductionReason ? row('Penalty Reason', w.deductionReason) : ''}
+${row('Payment Mode', w.paymentMode || 'CASH')}
+<div class="center" style="font-size:9px; margin:3px 0; font-style:italic;">Final amount on payment slip after net weight</div>`;
+  }
+
   const body = `
 <div class="center bold" style="font-size:13px; margin:4px 0;">GATE PASS</div>
 <div class="big">T-${String(w.ticketNo || 0).padStart(4, '0')}</div>
@@ -1101,6 +1119,7 @@ ${row('Shift', w.shift)}
 ${row('Gate Entry', fmtIST(w.gateEntryAt))}
 ${row('Operator', w.operatorName)}
 ${w.remarks ? row('Remarks', w.remarks) : ''}
+${farmerSection}
 ${await qrImg(w.localId)}
 `;
 
@@ -1176,14 +1195,17 @@ ${row('Seller Phone', w.sellerPhone)}
 ${row('Village', w.sellerVillage)}`;
   }
 
+  const isFarmer = w.purchaseType === 'SPOT' || w.purchaseType === 'FARMER';
+  const slipTitle = isFarmer ? 'PAYMENT SLIP' : 'WEIGHMENT SLIP';
+
   const body = `
-<div class="center bold" style="font-size:13px; margin:4px 0;">WEIGHMENT SLIP</div>
+<div class="center bold" style="font-size:13px; margin:4px 0;">${slipTitle}</div>
 <div class="big">T-${String(w.ticketNo || 0).padStart(4, '0')}</div>
 <div class="line"></div>
 ${row('Vehicle', w.vehicleNo)}
 ${row('Direction', w.direction)}
 ${row('Type', w.purchaseType)}
-${row('Supplier', w.supplierName)}
+${row(isFarmer ? 'Farmer' : 'Supplier', w.supplierName)}
 ${row('Material', w.materialName)}
 ${row('PO No', w.poNumber)}
 ${row('Bags', w.bags)}
