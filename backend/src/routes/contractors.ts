@@ -38,8 +38,108 @@ const updateSchema = createSchema.partial().extend({
   isActive: z.boolean().optional(),
 });
 
+// Vendor categories that represent a contractor relationship.
+// CONTRACTOR_* came from the Vendors UI; TRANSPORTER and TURNKEY_CONTRACTOR
+// also bill labour/services, so they're treated the same here.
+const CONTRACTOR_VENDOR_CATEGORIES = [
+  'CONTRACTOR_CIVIL',
+  'CONTRACTOR_ELECTRICAL',
+  'CONTRACTOR_MANPOWER',
+  'CONTRACTOR_OTHER',
+  'TURNKEY_CONTRACTOR',
+  'TRANSPORTER',
+];
+
+function vendorCategoryToContractorType(category: string | null | undefined): string {
+  if (!category) return 'OTHER';
+  if (category === 'TRANSPORTER') return 'TRANSPORT';
+  if (category === 'TURNKEY_CONTRACTOR') return 'OTHER';
+  // CONTRACTOR_CIVIL → CIVIL, CONTRACTOR_MANPOWER → MANPOWER, etc.
+  return category.replace(/^CONTRACTOR_/, '');
+}
+
+/**
+ * Ensure a Contractor row exists for every contractor-category Vendor.
+ * Idempotent — only creates rows that are missing. Skips vendors with no PAN
+ * (Contractor.pan is required); the operator must add a PAN on the vendor
+ * before that vendor will appear in contractor-flow dropdowns.
+ *
+ * Why: users keep contractors in the Vendor master (with category like
+ * CONTRACTOR_CIVIL). Work Orders + Contractor Bills FK to the Contractor
+ * table, so without this sync those flows never see vendor-side contractors.
+ */
+async function syncContractorsFromVendors(companyId: string | null | undefined): Promise<void> {
+  const where: Record<string, unknown> = {
+    isActive: true,
+    category: { in: CONTRACTOR_VENDOR_CATEGORIES },
+    contractor: null, // no existing Contractor backlink
+    pan: { not: null },
+  };
+  if (companyId !== undefined) where.companyId = companyId;
+
+  const orphans = await prisma.vendor.findMany({
+    where,
+    select: {
+      id: true, name: true, tradeName: true, category: true, pan: true,
+      gstin: true, gstState: true, phone: true, email: true, address: true,
+      bankName: true, bankBranch: true, bankAccount: true, bankIfsc: true,
+      tdsSection: true, companyId: true,
+    },
+    take: 500,
+  });
+
+  if (orphans.length === 0) return;
+
+  const last = await prisma.contractor.findFirst({
+    orderBy: { contractorCode: 'desc' },
+    select: { contractorCode: true },
+  });
+  let nextNum = last ? parseInt(last.contractorCode.replace('CON-', ''), 10) + 1 : 1;
+
+  for (const v of orphans) {
+    if (!v.pan || v.pan.length !== 10) continue;
+    const { panType, tdsPercent } = detectPanType(v.pan);
+    const contractorCode = `CON-${String(nextNum).padStart(3, '0')}`;
+    nextNum += 1;
+    try {
+      await prisma.contractor.create({
+        data: {
+          contractorCode,
+          name: v.name,
+          tradeName: v.tradeName ?? null,
+          pan: v.pan,
+          panType,
+          gstin: v.gstin ?? null,
+          gstState: v.gstState ?? null,
+          contractorType: vendorCategoryToContractorType(v.category),
+          phone: v.phone ?? null,
+          email: v.email ?? null,
+          address: v.address ?? null,
+          bankName: v.bankName ?? null,
+          bankBranch: v.bankBranch ?? null,
+          bankAccount: v.bankAccount ?? null,
+          bankIfsc: v.bankIfsc ?? null,
+          tdsSection: v.tdsSection ?? '194C',
+          tdsPercent,
+          isActive: true,
+          vendorId: v.id,
+          companyId: v.companyId ?? null,
+        },
+      });
+    } catch (err) {
+      // Could be a unique-constraint race (e.g. concurrent calls or duplicate PAN).
+      // Log + skip; next call will pick up anything still missing.
+      console.warn(`[contractors:sync] failed to promote vendor ${v.id}:`, err instanceof Error ? err.message : err);
+    }
+  }
+}
+
 // GET / — list contractors
 router.get('/', asyncHandler(async (req: AuthRequest, res: Response) => {
+  // Auto-promote any contractor-category vendor that doesn't yet have a
+  // Contractor row. Cheap: only writes when truly missing.
+  await syncContractorsFromVendors(getActiveCompanyId(req));
+
   const where: Record<string, unknown> = { ...getCompanyFilter(req) };
   if (req.query.active === 'true') where.isActive = true;
   if (req.query.type) where.contractorType = req.query.type;

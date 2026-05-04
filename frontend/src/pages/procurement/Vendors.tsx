@@ -209,11 +209,22 @@ export default function Vendors() {
     checkDuplicates(name, gstin, pan, phone, editId);
   }, [name, gstin, pan, phone, showForm, editId, checkDuplicates]);
 
-  const filteredVendors = vendors.filter(v =>
-    v.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-    v.phone?.toLowerCase().includes(searchQuery.toLowerCase()) ||
-    v.gstin?.toLowerCase().includes(searchQuery.toLowerCase())
-  );
+  const filteredVendors = vendors.filter(v => {
+    const q = searchQuery.toLowerCase().trim();
+    if (!q) return true;
+    // Category labels in the UI use words like "Contractor - Civil"; match the
+    // raw enum (CONTRACTOR_CIVIL) AND any user-typed alias (e.g. "contractor",
+    // "civil") by normalising both sides.
+    const categoryHay = (v.category || '').toLowerCase().replace(/_/g, ' ');
+    return (
+      v.name.toLowerCase().includes(q) ||
+      v.tradeName?.toLowerCase().includes(q) ||
+      v.phone?.toLowerCase().includes(q) ||
+      v.gstin?.toLowerCase().includes(q) ||
+      v.pan?.toLowerCase().includes(q) ||
+      categoryHay.includes(q)
+    );
+  });
 
   const resetForm = () => {
     setName('');
