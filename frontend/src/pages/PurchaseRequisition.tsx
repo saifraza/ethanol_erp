@@ -293,7 +293,7 @@ export default function PurchaseRequisition() {
       const res = await api.post<{
         savedLineCount: number;
         totalLines: number;
-        extracted: { confidence: string; lineRates: Array<{ itemName?: string; unitRate?: number }>; overallRateNote?: string; extractedTotal?: number; notes?: string };
+        extracted: { confidence: string; lineRates: Array<{ itemName?: string; unitRate?: number }>; overallRateNote?: string; extractedTotal?: number; notes?: string; overallDiscountPercent?: number };
         matchDiagnostics?: Array<{ aiName: string | null; aiUnitRate: number | null; matched: string | null; strategy: string | null }>;
         indentLineNames?: string[];
       }>(
@@ -306,6 +306,12 @@ export default function PurchaseRequisition() {
       await loadLineRates(prId, vrId);
       load();
       const { savedLineCount, totalLines, extracted, matchDiagnostics, indentLineNames } = res.data;
+      // Reflect the AI-extracted footer discount in the Overall Discount input
+      // so the buyer sees what was applied to every line (it's already saved
+      // per-line via the backend's effectiveLineDiscount).
+      if (extracted.overallDiscountPercent && extracted.overallDiscountPercent > 0) {
+        setBulkDiscountInput(prev => ({ ...prev, [vrId]: String(extracted.overallDiscountPercent) }));
+      }
       setAiDiagnostics(prev => ({
         ...prev,
         [vrId]: {
