@@ -968,6 +968,28 @@ router.post('/:id/vendors/:vrId/extract-quote', asyncHandler(async (req: AuthReq
       const indentLinesLite = indentLines.map(l => ({ id: l.id, lineNo: l.lineNo ?? 1, itemName: l.itemName }));
       const positionalFallback = usableExtracted.length === indentLines.length;
 
+      // Wipe stale AI lines from any previous extraction before writing the new
+      // ones. Without this, a previous run's prices for items the new AI run
+      // doesn't match get left behind, mixed in with the new data — buyers
+      // can't tell what was just extracted vs what's leftover.
+      // ONLY wipe AI-source rows; manual entries are kept (the user typed those
+      // intentionally, often after a prior AI run). Only wipe when the new run
+      // produced at least one usable rate (defensive — don't lose old data on
+      // a failed extraction).
+      if (usableExtracted.length > 0) {
+        try {
+          await prisma.purchaseRequisitionVendorLine.deleteMany({
+            where: {
+              vendorQuoteId: req.params.vrId,
+              source: { in: ['EMAIL_AUTO', 'EMAIL_AUTO_LOW'] },
+            },
+          });
+        } catch {
+          // Per-line table missing — fall through; the upsert below will fail
+          // the same way and we'll go down the header-only fallback path.
+        }
+      }
+
       try {
         for (let i = 0; i < extracted.lineRates.length; i++) {
           const lr = extracted.lineRates[i];
