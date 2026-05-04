@@ -5256,3 +5256,32 @@ model ProjectQuotationLine {
 
   @@index([quotationId])
 }
+
+// ── AI call audit trail — every call to an AI provider (Gemini today, future
+// OpenAI/Anthropic) writes one row. Powers the Settings → AI Usage page so
+// we can see which features burn the most tokens, which are failing, and
+// what the running cost is. Append-only.
+model AiCallLog {
+  id               String   @id @default(cuid())
+  feature          String   // "rfq-extraction" | "telegram-image" | "ai-chat" | etc
+  provider         String   @default("gemini") // gemini | openai | anthropic
+  model            String   // e.g. "gemini-3-flash-preview"
+  userId           String?  // Who triggered (if user-facing); null for background pollers
+  contextRef       String?  // Free-form key for the entity this call relates to (vrId, indentId, chatId, etc)
+  inputTokens      Int      @default(0)
+  outputTokens     Int      @default(0)
+  totalTokens      Int      @default(0)
+  estimatedCostUsd Float    @default(0)
+  estimatedCostInr Float    @default(0)
+  durationMs       Int      @default(0)
+  success          Boolean
+  errorMessage     String?
+  metadata         Json     @default("{}")  // feature-specific extras (filename, confidence, etc)
+  createdAt        DateTime @default(now())
+
+  @@index([feature, createdAt])
+  @@index([model])
+  @@index([userId])
+  @@index([success])
+  @@index([createdAt])
+}

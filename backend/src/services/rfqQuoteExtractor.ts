@@ -15,6 +15,7 @@
  */
 
 import { GoogleGenAI, Type } from '@google/genai';
+import { logAiCall } from './aiCallLogger';
 
 // One additional charge line (handling, documentation, courier, etc.) — used
 // when the vendor lists a charge that doesn't fit the named buckets below.
@@ -105,6 +106,10 @@ export async function extractQuoteFromReply(opts: {
   replyBody: string;
   attachments?: Array<{ filename: string; contentType: string; contentBase64: string }>;
   expectedLines: Line[];         // so Gemini knows what items to match
+  // Audit context — passed through to AiCallLog so the Settings page can
+  // group by user / link back to the indent vendor row.
+  userId?: string | null;
+  contextRef?: string | null;
 }): Promise<ExtractedQuote | null> {
   const client = getClient();
   if (!client) return null;
@@ -265,6 +270,12 @@ ${opts.replyBody.slice(0, 8000)}
     required: ['lineRates', 'confidence'],
   };
 
+  const t0 = Date.now();
+  let inputTokens = 0;
+  let outputTokens = 0;
+  let confidence: 'HIGH' | 'MEDIUM' | 'LOW' | undefined;
+  let success = false;
+  let errorMessage: string | null = null;
   try {
     const result = await client.models.generateContent({
       model: MODEL,
@@ -277,11 +288,16 @@ ${opts.replyBody.slice(0, 8000)}
       contents: [{ role: 'user', parts }],
     });
 
+    inputTokens = result.usageMetadata?.promptTokenCount ?? 0;
+    outputTokens = result.usageMetadata?.candidatesTokenCount ?? 0;
+
     const text = result.text?.trim() ?? '';
     if (!text) {
       const finishReason = result.candidates?.[0]?.finishReason ?? 'unknown';
       console.error(`[rfq-ai] Gemini returned no text (model=${MODEL}, finishReason=${finishReason})`);
-      return { lineRates: [], confidence: 'LOW', notes: `AI returned no content (finishReason: ${finishReason})` };
+      errorMessage = `no content (finishReason: ${finishReason})`;
+      confidence = 'LOW';
+      return { lineRates: [], confidence, notes: `AI returned no content (finishReason: ${finishReason})` };
     }
 
     // responseMimeType=application/json should give pure JSON, but fall back
@@ -291,17 +307,41 @@ ${opts.replyBody.slice(0, 8000)}
       const parsed = JSON.parse(clean) as ExtractedQuote;
       if (!parsed.confidence) parsed.confidence = 'MEDIUM';
       if (!Array.isArray(parsed.lineRates)) parsed.lineRates = [];
+      success = true;
+      confidence = parsed.confidence;
       return parsed;
     } catch {
       console.error('[rfq-ai] Non-JSON response from', MODEL, ':', text.slice(0, 300));
-      return { lineRates: [], confidence: 'LOW', notes: `AI response was not valid JSON (model: ${MODEL})` };
+      errorMessage = 'non-JSON response from model';
+      confidence = 'LOW';
+      return { lineRates: [], confidence, notes: `AI response was not valid JSON (model: ${MODEL})` };
     }
   } catch (err) {
     // Surface the actual SDK error so operators see what went wrong (wrong
     // model, quota, network, etc.) instead of the generic fallback.
     const message = err instanceof Error ? err.message : String(err);
     console.error(`[rfq-ai] Gemini call failed (model=${MODEL}):`, message);
+    errorMessage = message;
     return null;
+  } finally {
+    // Best-effort audit log. Never throws.
+    void logAiCall({
+      feature: 'rfq-extraction',
+      provider: 'gemini',
+      model: MODEL,
+      userId: opts.userId ?? null,
+      contextRef: opts.contextRef ?? null,
+      inputTokens,
+      outputTokens,
+      durationMs: Date.now() - t0,
+      success,
+      errorMessage,
+      metadata: {
+        confidence: confidence ?? null,
+        attachmentCount: (opts.attachments ?? []).length,
+        expectedLineCount: opts.expectedLines.length,
+      },
+    });
   }
 }
 

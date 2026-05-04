@@ -36,6 +36,7 @@ import dosingRecipeRoutes from './routes/dosingRecipes';
 import inventoryRoutes from './routes/inventory';
 import issueRoutes from './routes/issues';
 import purchaseRequisitionRoutes from './routes/purchaseRequisition';
+import aiUsageRoutes from './routes/aiUsage';
 // Sales & Distribution module
 import customerRoutes from './routes/customers';
 import productRoutes from './routes/products';
@@ -240,6 +241,7 @@ app.use('/api/hr/import-salary', payrollImportRoutes);
 
 app.use('/api/issues', issueRoutes);
 app.use('/api/purchase-requisition', purchaseRequisitionRoutes);
+app.use('/api/ai-usage', aiUsageRoutes);
 // Sales & Distribution
 app.use('/api/customers', customerRoutes);
 app.use('/api/products', productRoutes);

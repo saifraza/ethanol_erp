@@ -86,6 +86,8 @@ export async function autoExtractIfWaiting(vrId: string): Promise<AutoExtractRes
     replyBody: latestReply.bodyText || latestReply.bodyHtml || '',
     attachments,
     expectedLines,
+    contextRef: `vrId:${vrId}`,
+    // userId null — background poller has no user context
   });
   if (!extracted) return { ran: false, reason: 'AI not configured (GEMINI_API_KEY missing)' };
 

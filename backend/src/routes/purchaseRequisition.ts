@@ -920,6 +920,8 @@ router.post('/:id/vendors/:vrId/extract-quote', asyncHandler(async (req: AuthReq
       replyBody: latestReply.bodyText || latestReply.bodyHtml || '',
       attachments,
       expectedLines,
+      userId: req.user?.id ?? null,
+      contextRef: `vrId:${req.params.vrId}`,
     });
 
     if (!extracted) return res.status(503).json({ error: 'AI extraction not configured (GEMINI_API_KEY missing)' });
