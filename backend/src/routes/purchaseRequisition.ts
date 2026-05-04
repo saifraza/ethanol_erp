@@ -953,19 +953,60 @@ router.post('/:id/vendors/:vrId/extract-quote', asyncHandler(async (req: AuthReq
         savedLineCount = 0;
       }
 
-      await prisma.purchaseRequisitionVendor.update({
-        where: { id: req.params.vrId },
-        data: {
-          quoteRemarks: [
-            extracted.overallRateNote,
-            extracted.paymentTerms ? `Payment: ${extracted.paymentTerms}` : null,
-            extracted.deliveryDays ? `Delivery: ${extracted.deliveryDays} days` : null,
-            extracted.freightTerms ? `Freight: ${extracted.freightTerms}` : null,
-            extracted.notes ? `Notes: ${extracted.notes}` : null,
-          ].filter(Boolean).join(' · ') || null,
-          ...quoteCostFieldsForDb(extracted),
-        },
-      });
+      // Persist vendor row (quoteRemarks + cost-template fields). Wrapped
+      // in its own try/catch so a missing column doesn't abort the whole
+      // route — we keep the per-line saves and tell the client what failed.
+      const costFields = quoteCostFieldsForDb(extracted);
+      console.log('[extract-quote] persisting vendor row', { vrId: req.params.vrId, costFields });
+      try {
+        await prisma.purchaseRequisitionVendor.update({
+          where: { id: req.params.vrId },
+          data: {
+            quoteRemarks: [
+              extracted.overallRateNote,
+              extracted.paymentTerms ? `Payment: ${extracted.paymentTerms}` : null,
+              extracted.deliveryDays ? `Delivery: ${extracted.deliveryDays} days` : null,
+              extracted.freightTerms ? `Freight: ${extracted.freightTerms}` : null,
+              extracted.notes ? `Notes: ${extracted.notes}` : null,
+            ].filter(Boolean).join(' · ') || null,
+            ...costFields,
+          },
+        });
+        console.log('[extract-quote] vendor row update OK');
+      } catch (err) {
+        console.error('[extract-quote] vendor row update FAILED:', err instanceof Error ? err.message : err);
+        // Try a fallback that writes ONLY the columns we know existed before
+        // the cost template was added. If even this fails, return 500 with the
+        // real error so the UI shows it.
+        try {
+          await prisma.purchaseRequisitionVendor.update({
+            where: { id: req.params.vrId },
+            data: {
+              quoteRemarks: [
+                extracted.overallRateNote,
+                extracted.paymentTerms ? `Payment: ${extracted.paymentTerms}` : null,
+                extracted.deliveryDays ? `Delivery: ${extracted.deliveryDays} days` : null,
+                extracted.freightTerms ? `Freight: ${extracted.freightTerms}` : null,
+                extracted.notes ? `Notes: ${extracted.notes}` : null,
+              ].filter(Boolean).join(' · ') || null,
+            },
+          });
+          console.warn('[extract-quote] cost columns missing — saved remarks only. Run SchemaDriftGuard or check schema.');
+          return res.status(200).json({
+            extracted,
+            savedRate: null,
+            savedLineCount,
+            totalLines: indentLines.length,
+            warning: `Cost components could not be saved: ${err instanceof Error ? err.message : String(err)}`,
+            reply: { from: latestReply.fromEmail, subject: latestReply.subject, date: latestReply.receivedAt },
+          });
+        } catch (err2) {
+          return res.status(500).json({
+            error: `Persist failed: ${err2 instanceof Error ? err2.message : String(err2)}`,
+            originalError: err instanceof Error ? err.message : String(err),
+          });
+        }
+      }
 
       if (savedLineCount > 0) {
         await recomputeHeaderRate(req.params.vrId);
