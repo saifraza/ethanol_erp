@@ -274,6 +274,9 @@ export default function PurchaseRequisition() {
   };
 
   const extractAIToLines = async (prId: string, vrId: string) => {
+    const pr = reqs.find(r => r.id === prId);
+    const q = pr?.quotes.find(qq => qq.id === vrId);
+    if (!confirmOverwriteIfNeeded(q)) return;
     setLineRatesExtracting(prev => ({ ...prev, [vrId]: true }));
     setLineRatesError(prev => ({ ...prev, [vrId]: null }));
     try {
@@ -675,7 +678,40 @@ export default function PurchaseRequisition() {
     setRepliesLoading(false);
   };
 
+  // Returns true if buyer already has values on this vendor row that AI Extract
+  // would overwrite — header rate, per-line rates, cost components, or remarks.
+  // Used to gate AI Extract behind a confirm() so a stray click doesn't wipe
+  // negotiated edits (Saif: 2026-05-04).
+  const hasExistingQuoteData = (q: Quote): string[] => {
+    const fields: string[] = [];
+    if (q.vendorRate != null && q.vendorRate > 0) fields.push(`header rate ₹${q.vendorRate.toLocaleString('en-IN')}`);
+    if ((q.pricedLineCount || 0) > 0) fields.push(`${q.pricedLineCount} item rate(s)`);
+    const costFields: Array<[string, number | undefined]> = [
+      ['packing', (q.packingPercent || 0) + (q.packingAmount || 0)],
+      ['freight', (q.freightPercent || 0) + (q.freightAmount || 0)],
+      ['insurance', (q.insurancePercent || 0) + (q.insuranceAmount || 0)],
+      ['loading', (q.loadingPercent || 0) + (q.loadingAmount || 0)],
+    ];
+    const setCosts = costFields.filter(([, v]) => (v || 0) > 0).map(([n]) => n);
+    if (setCosts.length) fields.push(`${setCosts.join('/')} cost components`);
+    if ((q.tcsPercent || 0) > 0) fields.push('TCS%');
+    if (q.quoteRemarks) fields.push('remarks');
+    return fields;
+  };
+
+  const confirmOverwriteIfNeeded = (q: Quote | undefined): boolean => {
+    if (!q) return true;
+    const existing = hasExistingQuoteData(q);
+    if (existing.length === 0) return true;
+    return confirm(
+      `This vendor already has:\n  • ${existing.join('\n  • ')}\n\nRunning AI Extract will overwrite these with what the AI reads from the latest reply / PDF.\n\nContinue?`
+    );
+  };
+
   const handleExtractQuote = async (prId: string, quoteId: string, autoApply: boolean) => {
+    const pr = reqs.find(r => r.id === prId);
+    const q = pr?.quotes.find(qq => qq.id === quoteId);
+    if (!confirmOverwriteIfNeeded(q)) return;
     setExtracting(quoteId);
     try {
       const res = await api.post<{ extracted: ExtractedQuote; savedRate: number | null }>(
@@ -1451,7 +1487,8 @@ export default function PurchaseRequisition() {
                                         setThreadDrawerTitle(`Thread — ${q.vendor.name}`);
                                         setThreadDrawerContext(`Indent #${pr.reqNo} · ${q.vendor.email || 'no email'}`);
                                         setThreadDrawerOnExtract(() => async (_tId: string, _rId: string) => {
-                                          await api.post(`/purchase-requisition/${prId}/vendors/${vrId}/extract-quote`, { autoApply: true });
+                                          if (!confirmOverwriteIfNeeded(q)) return;
+                                          await api.post(`/purchase-requisition/${prId}/vendors/${vrId}/extract-quote`, { autoApply: true }, { timeout: 120000 });
                                           load();
                                           if (lineRatesPanelFor === vrId) loadLineRates(prId, vrId);
                                         });
@@ -1858,7 +1895,8 @@ export default function PurchaseRequisition() {
                           setThreadDrawerTitle(`Thread — ${q.vendor.name}`);
                           setThreadDrawerContext(`Indent #${pr.reqNo} · ${q.vendor.email || ''}`);
                           setThreadDrawerOnExtract(() => async (_tId: string, _rId: string) => {
-                            await api.post(`/purchase-requisition/${prId}/vendors/${vrId}/extract-quote`, { autoApply: true });
+                            if (!confirmOverwriteIfNeeded(q)) return;
+                            await api.post(`/purchase-requisition/${prId}/vendors/${vrId}/extract-quote`, { autoApply: true }, { timeout: 120000 });
                             load();
                           });
                           setThreadDrawerEmptyAction({
