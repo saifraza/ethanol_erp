@@ -7,9 +7,14 @@
  *   - delivery days, payment terms, GST %, validity
  *
  * Returns null if Gemini is not configured or cannot confidently extract.
+ *
+ * Uses the official @google/genai SDK so we get auth, retry, and endpoint
+ * routing for free — same pattern as Anvil's packages/ai/src/providers/gemini.ts.
+ * Raw axios calls to v1beta worked for 2.x but stopped working for 3.x models;
+ * the SDK abstracts that.
  */
 
-import axios from 'axios';
+import { GoogleGenAI } from '@google/genai';
 
 export interface ExtractedQuote {
   overallRateNote?: string;                    // free-text e.g. "Rs.120/kg FOR basis"
@@ -43,18 +48,33 @@ interface Line {
   unit: string;
 }
 
-// Gemini 3 Flash (preview) — same price tier as 2.5 Flash but stronger at
-// long-context document parsing (catches footer terms like "Discount - 31%"
-// that 2.5 Flash often missed when they sat below a long line table).
-const MODEL = 'gemini-3-flash-preview';
+// Model selection — accuracy beats cost for procurement extraction (a missed
+// discount or wrong rate goes straight to a real PO). Default is Gemini 3
+// Flash (preview): Pro-level accuracy at Flash pricing, stronger long-context
+// than 2.5 Flash for footer terms below long line tables.
+//
+// Override per-env without a deploy via GEMINI_MODEL.
+//   GEMINI_MODEL=gemini-3-flash-preview  (default — current best price/accuracy)
+//   GEMINI_MODEL=gemini-2.5-pro          (proven fallback if 3-flash misbehaves)
+//   GEMINI_MODEL=gemini-3-pro            (when GA — top accuracy)
+const MODEL = process.env.GEMINI_MODEL || 'gemini-3-flash-preview';
+
+let cachedClient: GoogleGenAI | undefined;
+function getClient(): GoogleGenAI | null {
+  if (cachedClient) return cachedClient;
+  const apiKey = process.env.GEMINI_API_KEY;
+  if (!apiKey) return null;
+  cachedClient = new GoogleGenAI({ apiKey });
+  return cachedClient;
+}
 
 export async function extractQuoteFromReply(opts: {
   replyBody: string;
   attachments?: Array<{ filename: string; contentType: string; contentBase64: string }>;
   expectedLines: Line[];         // so Gemini knows what items to match
 }): Promise<ExtractedQuote | null> {
-  const key = process.env.GEMINI_API_KEY;
-  if (!key) return null;
+  const client = getClient();
+  if (!client) return null;
 
   const itemsPrompt = opts.expectedLines.map(l =>
     `  - Line ${l.lineNo}: ${l.itemName} (qty ${l.quantity} ${l.unit})`
@@ -110,39 +130,54 @@ Other rules:
 ${opts.replyBody.slice(0, 8000)}
 --- END EMAIL BODY ---`;
 
-  const parts: Array<Record<string, unknown>> = [{ text: prompt }];
+  type GeminiPart =
+    | { text: string }
+    | { inlineData: { mimeType: string; data: string } };
+  const parts: GeminiPart[] = [];
 
-  // Attach PDF/image files if present
+  // PDF/image attachments first (per Anvil's pattern — improves grounding)
   for (const a of opts.attachments || []) {
     if (a.contentType === 'application/pdf' || a.contentType.startsWith('image/')) {
-      parts.push({
-        inlineData: { mimeType: a.contentType, data: a.contentBase64 },
-      });
+      parts.push({ inlineData: { mimeType: a.contentType, data: a.contentBase64 } });
     }
   }
+  parts.push({ text: prompt });
 
   try {
-    const res = await axios.post(
-      `https://generativelanguage.googleapis.com/v1beta/models/${MODEL}:generateContent?key=${key}`,
-      { contents: [{ parts }], generationConfig: { temperature: 0.1 } },
-      { timeout: 60000 },
-    );
+    const result = await client.models.generateContent({
+      model: MODEL,
+      config: {
+        responseMimeType: 'application/json',
+        temperature: 0.1,
+        maxOutputTokens: 8000,
+      },
+      contents: [{ role: 'user', parts }],
+    });
 
-    const text: string = res.data?.candidates?.[0]?.content?.parts?.[0]?.text || '';
-    // Strip any markdown code fence
+    const text = result.text?.trim() ?? '';
+    if (!text) {
+      const finishReason = result.candidates?.[0]?.finishReason ?? 'unknown';
+      console.error(`[rfq-ai] Gemini returned no text (model=${MODEL}, finishReason=${finishReason})`);
+      return { lineRates: [], confidence: 'LOW', notes: `AI returned no content (finishReason: ${finishReason})` };
+    }
+
+    // responseMimeType=application/json should give pure JSON, but fall back
+    // to fence-stripping in case the model wraps it anyway.
     const clean = text.replace(/^```(?:json)?\s*/i, '').replace(/\s*```\s*$/, '').trim();
     try {
       const parsed = JSON.parse(clean) as ExtractedQuote;
-      // Minimal normalization
       if (!parsed.confidence) parsed.confidence = 'MEDIUM';
       if (!Array.isArray(parsed.lineRates)) parsed.lineRates = [];
       return parsed;
     } catch {
-      console.error('[rfq-ai] Non-JSON response:', text.slice(0, 300));
-      return { lineRates: [], confidence: 'LOW', notes: 'AI response was not valid JSON' };
+      console.error('[rfq-ai] Non-JSON response from', MODEL, ':', text.slice(0, 300));
+      return { lineRates: [], confidence: 'LOW', notes: `AI response was not valid JSON (model: ${MODEL})` };
     }
   } catch (err) {
-    console.error('[rfq-ai] Gemini call failed:', err instanceof Error ? err.message : err);
+    // Surface the actual SDK error so operators see what went wrong (wrong
+    // model, quota, network, etc.) instead of the generic fallback.
+    const message = err instanceof Error ? err.message : String(err);
+    console.error(`[rfq-ai] Gemini call failed (model=${MODEL}):`, message);
     return null;
   }
 }
