@@ -100,6 +100,7 @@ interface LineRateInput {
   lineNo: number;
   itemName: string;
   itemCode?: string | null;
+  lineRemarks?: string | null;  // indent-line remarks (model/spec) — shown next to itemName
   quantity: number;
   unit: string;
   estimatedCost: number;
@@ -229,14 +230,14 @@ export default function PurchaseRequisition() {
     setLineRatesError(prev => ({ ...prev, [vrId]: null }));
     try {
       const res = await api.get<{ lines: Array<{
-        lineId: string; lineNo: number; itemName: string; itemCode: string | null;
+        lineId: string; lineNo: number; itemName: string; itemCode: string | null; lineRemarks: string | null;
         quantity: number; unit: string; estimatedCost: number;
         unitRate: number | null; gstPercent: number | null; hsnCode: string | null; discountPercent: number; remarks: string | null; source: string | null;
       }> }>(`/purchase-requisition/${prId}/vendors/${vrId}/line-rates`);
       setLineRateInputs(prev => ({
         ...prev,
         [vrId]: res.data.lines.map(l => ({
-          lineId: l.lineId, lineNo: l.lineNo, itemName: l.itemName, itemCode: l.itemCode,
+          lineId: l.lineId, lineNo: l.lineNo, itemName: l.itemName, itemCode: l.itemCode, lineRemarks: l.lineRemarks,
           quantity: l.quantity, unit: l.unit, estimatedCost: l.estimatedCost,
           unitRate: l.unitRate != null ? String(l.unitRate) : '',
           gstPercent: l.gstPercent != null ? String(l.gstPercent) : '',
@@ -1805,6 +1806,11 @@ export default function PurchaseRequisition() {
                                                   <td className="px-3 py-1.5">
                                                     <div className="font-bold text-slate-800">{li.itemName}</div>
                                                     {li.itemCode && <div className="text-[9px] text-slate-400 font-mono">{li.itemCode}</div>}
+                                                    {li.lineRemarks && (
+                                                      <div className="text-[9px] text-slate-500 italic mt-0.5" title={li.lineRemarks}>
+                                                        {li.lineRemarks.length > 70 ? li.lineRemarks.slice(0, 70) + '…' : li.lineRemarks}
+                                                      </div>
+                                                    )}
                                                   </td>
                                                   <td className="px-3 py-1.5 text-right font-mono tabular-nums text-slate-700">
                                                     {li.quantity} {li.unit}
