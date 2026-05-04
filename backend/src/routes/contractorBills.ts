@@ -4,6 +4,7 @@ import { authenticate, AuthRequest, getCompanyFilter, getActiveCompanyId } from 
 import { asyncHandler, validate } from '../shared/middleware';
 import { NotFoundError, ValidationError } from '../shared/errors';
 import { onContractorBillConfirmed, onContractorPaymentMade } from '../services/autoJournal';
+import { recomputeWorkOrderTotals } from './workOrders';
 import { z } from 'zod';
 import { COMPANY } from '../shared/config/company';
 import multer from 'multer';
@@ -35,6 +36,7 @@ const lineSchema = z.object({
 const createBillSchema = z.object({
   contractorId: z.string().uuid(),
   purchaseOrderId: z.string().optional().nullable(),
+  workOrderId: z.string().optional().nullable(),
   billDate: z.string().optional(),
   billPath: z.enum(['CREATED', 'UPLOADED']),
   description: z.string().min(1),
@@ -115,7 +117,7 @@ router.get('/:id', asyncHandler(async (req: AuthRequest, res: Response) => {
 
 // POST / — create bill (Path A: CREATED with lines, Path B: UPLOADED with amounts)
 router.post('/', validate(createBillSchema), asyncHandler(async (req: AuthRequest, res: Response) => {
-  const { contractorId, purchaseOrderId, billPath, lines, vendorBillNo, cgstPercent, sgstPercent, igstPercent, description, billDate } = req.body;
+  const { contractorId, purchaseOrderId, workOrderId, billPath, lines, vendorBillNo, cgstPercent, sgstPercent, igstPercent, description, billDate } = req.body;
 
   const contractor = await prisma.contractor.findUnique({ where: { id: contractorId } });
   if (!contractor) throw new NotFoundError('Contractor', contractorId);
@@ -146,6 +148,7 @@ router.post('/', validate(createBillSchema), asyncHandler(async (req: AuthReques
     data: {
       contractorId,
       purchaseOrderId: purchaseOrderId || null,
+      workOrderId: workOrderId || null,
       billDate: billDate ? new Date(billDate) : new Date(),
       billPath,
       description,
@@ -274,6 +277,9 @@ router.post('/:id/confirm', asyncHandler(async (req: AuthRequest, res: Response)
     billDate: bill.billDate,
   });
 
+  // Roll up billed amount on the linked WorkOrder, if any
+  if (bill.workOrderId) await recomputeWorkOrderTotals(bill.workOrderId);
+
   res.json(updated);
 }));
 
@@ -291,6 +297,8 @@ router.post('/:id/cancel', asyncHandler(async (req: AuthRequest, res: Response) 
     where: { id: req.params.id },
     data: { status: 'CANCELLED' },
   });
+
+  if (bill.workOrderId) await recomputeWorkOrderTotals(bill.workOrderId);
 
   res.json(updated);
 }));
@@ -415,6 +423,9 @@ router.post('/:id/pay', validate(paySchema), asyncHandler(async (req: AuthReques
     userId: req.user!.id,
     paymentDate: paymentDate ? new Date(paymentDate) : new Date(),
   });
+
+  // Roll up paid amount on the linked WorkOrder, if any
+  if (bill.workOrderId) await recomputeWorkOrderTotals(bill.workOrderId);
 
   res.status(201).json(result);
 }));

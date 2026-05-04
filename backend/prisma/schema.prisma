@@ -59,6 +59,7 @@ model Company {
   contractorBills       ContractorBill[]
   contractorPayments    ContractorPayment[]
   contractorStoreIssues ContractorStoreIssue[]
+  workOrders            WorkOrder[]
   directPurchases       DirectPurchase[]
   directSales           DirectSale[]
   approvals             Approval[]
@@ -2978,6 +2979,7 @@ model Contractor {
   bills          ContractorBill[]
   payments       ContractorPayment[]
   storeIssues    ContractorStoreIssue[]
+  workOrders     WorkOrder[]
   employees      Employee[]
   purchaseOrders PurchaseOrder[]
 
@@ -2998,6 +3000,8 @@ model ContractorBill {
   contractor        Contractor     @relation(fields: [contractorId], references: [id])
   purchaseOrderId   String?
   purchaseOrder     PurchaseOrder? @relation(fields: [purchaseOrderId], references: [id])
+  workOrderId       String?
+  workOrder         WorkOrder?     @relation(fields: [workOrderId], references: [id])
   billDate          DateTime       @default(now())
   billPath          String         @default("CREATED") // CREATED | UPLOADED
   description       String // Summary of work done
@@ -3040,6 +3044,7 @@ model ContractorBill {
 
   @@index([contractorId])
   @@index([purchaseOrderId])
+  @@index([workOrderId])
   @@index([status])
   @@index([billDate])
   @@index([division])
@@ -3141,6 +3146,127 @@ model ContractorStoreIssueLine {
   remarks         String?
 
   @@index([issueId])
+}
+
+// ══════════════════════════════════════════════════════════════
+// CONTRACTOR WORK ORDER — Authorisation to perform a job at agreed
+// scope, rate, GST, TDS. Bills (ContractorBill) link via workOrderId
+// so payment + journal flow rides on the existing rails.
+// ══════════════════════════════════════════════════════════════
+
+model WorkOrder {
+  id              String     @id @default(uuid())
+  woNo            Int        @default(autoincrement())
+  contractorId    String
+  contractor      Contractor @relation(fields: [contractorId], references: [id])
+  // Scope
+  title           String // short title — "Boiler shed roofing"
+  description     String? // detailed scope of work
+  startDate       DateTime?
+  endDate         DateTime? // expected completion
+  siteLocation    String? // "Distillery Plant — bay 4"
+  // GST supply type (mirrors PurchaseOrder)
+  supplyType      String     @default("INTRA_STATE") // INTRA_STATE (CGST+SGST) | INTER_STATE (IGST)
+  placeOfSupply   String? // state code
+  // Header totals (denormalised from lines)
+  subtotal        Float      @default(0) // sum of (qty × rate)
+  discountAmount  Float      @default(0)
+  taxableAmount   Float      @default(0) // subtotal - discount
+  totalCgst       Float      @default(0)
+  totalSgst       Float      @default(0)
+  totalIgst       Float      @default(0)
+  totalGst        Float      @default(0)
+  grandTotal      Float      @default(0) // taxable + GST
+  // Retention (held back from each bill until close-out)
+  retentionPercent Float     @default(0)
+  retentionAmount  Float     @default(0)
+  // TDS
+  tdsSection      String     @default("194C") // snapshot from contractor master
+  tdsPercent      Float      @default(0)
+  tdsAmount       Float      @default(0) // tdsPercent × taxableAmount (estimated)
+  // Settlement (rolled up from confirmed ContractorBills)
+  billedAmount    Float      @default(0) // sum of confirmed bill subtotals against this WO
+  paidAmount      Float      @default(0) // sum of payments through linked bills
+  balanceAmount   Float      @default(0) // grandTotal - billed (positive = unbilled scope left)
+  progressPercent Float      @default(0) // last reported % completion
+  // Lifecycle
+  status          String     @default("DRAFT") // DRAFT | APPROVED | IN_PROGRESS | COMPLETED | CLOSED | CANCELLED
+  approvedBy      String?
+  approvedAt      DateTime?
+  startedAt       DateTime?
+  completedAt     DateTime?
+  closedAt        DateTime?
+  cancelledAt     DateTime?
+  cancelReason    String?
+  // Payment terms
+  paymentTerms    String? // free text — "30% advance, 60% on completion, 10% retention release after 90 days"
+  creditDays      Int        @default(30)
+  // Refs
+  remarks         String?
+  userId          String // created by
+  createdAt       DateTime   @default(now())
+  updatedAt       DateTime   @updatedAt
+
+  lines    WorkOrderLine[]
+  progress WorkOrderProgress[]
+  bills    ContractorBill[]
+
+  division  String?  @default("ETHANOL") // SUGAR | POWER | ETHANOL | COMMON
+  companyId String? // FK → Company (null = MSPIL default)
+  company   Company? @relation(fields: [companyId], references: [id])
+
+  @@index([contractorId])
+  @@index([status])
+  @@index([startDate])
+  @@index([division])
+  @@index([companyId])
+}
+
+model WorkOrderLine {
+  id              String    @id @default(uuid())
+  woId            String
+  workOrder       WorkOrder @relation(fields: [woId], references: [id], onDelete: Cascade)
+  lineNo          Int       @default(1)
+  description     String // scope line — "RCC roofing 12m × 8m"
+  hsnSac          String? // HSN/SAC code (services use SAC)
+  quantity        Float     @default(1)
+  unit            String    @default("NOS") // NOS, DAYS, SQ.FT, CU.M, MT, KG, LUMP, LM
+  rate            Float     @default(0)
+  amount          Float     @default(0) // qty × rate
+  discountPercent Float     @default(0)
+  discountAmount  Float     @default(0)
+  taxableAmount   Float     @default(0) // amount - discount
+  // GST split
+  gstPercent      Float     @default(18)
+  cgstPercent     Float     @default(0)
+  cgstAmount      Float     @default(0)
+  sgstPercent     Float     @default(0)
+  sgstAmount      Float     @default(0)
+  igstPercent     Float     @default(0)
+  igstAmount      Float     @default(0)
+  totalGst        Float     @default(0)
+  lineTotal       Float     @default(0) // taxable + gst
+  // Progress against this line
+  completedQty    Float     @default(0)
+  remarks         String?
+  createdAt       DateTime  @default(now())
+
+  @@index([woId])
+}
+
+model WorkOrderProgress {
+  id          String    @id @default(uuid())
+  woId        String
+  workOrder   WorkOrder @relation(fields: [woId], references: [id], onDelete: Cascade)
+  reportedAt  DateTime  @default(now())
+  percent     Float     @default(0) // running % completion (0-100)
+  workDone    String // narrative — "RCC slab cured day 7"
+  photoUrl    String?
+  reportedBy  String // userId
+  remarks     String?
+
+  @@index([woId])
+  @@index([reportedAt])
 }
 
 // ══════════════════════════════════════════════════════════════

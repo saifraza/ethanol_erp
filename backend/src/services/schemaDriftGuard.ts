@@ -58,6 +58,8 @@ const EXPECTED_COLUMNS: ColumnCheck[] = [
   { table: 'PurchaseRequisitionVendor', column: 'tcsPercent',           sql: `ALTER TABLE "PurchaseRequisitionVendor" ADD COLUMN IF NOT EXISTS "tcsPercent" DOUBLE PRECISION NOT NULL DEFAULT 0` },
   { table: 'PurchaseRequisitionVendor', column: 'deliveryBasis',        sql: `ALTER TABLE "PurchaseRequisitionVendor" ADD COLUMN IF NOT EXISTS "deliveryBasis" TEXT` },
   { table: 'PurchaseRequisitionVendor', column: 'additionalCharges',    sql: `ALTER TABLE "PurchaseRequisitionVendor" ADD COLUMN IF NOT EXISTS "additionalCharges" JSONB NOT NULL DEFAULT '[]'::jsonb` },
+  // 2026-05-04 — Contractor Work Orders — link existing ContractorBill back to a WO
+  { table: 'ContractorBill', column: 'workOrderId', sql: `ALTER TABLE "ContractorBill" ADD COLUMN IF NOT EXISTS "workOrderId" TEXT` },
 ];
 
 const EXPECTED_TABLES: TableCheck[] = [
@@ -156,6 +158,114 @@ const EXPECTED_TABLES: TableCheck[] = [
       CREATE INDEX IF NOT EXISTS "FarmerPayment_companyId_idx" ON "FarmerPayment"("companyId");
     `,
   },
+  // 2026-05-04 — Contractor Work Orders (authorisation for a contractor to perform a job)
+  {
+    table: 'WorkOrder',
+    sql: `
+      CREATE TABLE IF NOT EXISTS "WorkOrder" (
+        "id" TEXT NOT NULL,
+        "woNo" SERIAL NOT NULL,
+        "contractorId" TEXT NOT NULL,
+        "title" TEXT NOT NULL,
+        "description" TEXT,
+        "startDate" TIMESTAMP(3),
+        "endDate" TIMESTAMP(3),
+        "siteLocation" TEXT,
+        "supplyType" TEXT NOT NULL DEFAULT 'INTRA_STATE',
+        "placeOfSupply" TEXT,
+        "subtotal" DOUBLE PRECISION NOT NULL DEFAULT 0,
+        "discountAmount" DOUBLE PRECISION NOT NULL DEFAULT 0,
+        "taxableAmount" DOUBLE PRECISION NOT NULL DEFAULT 0,
+        "totalCgst" DOUBLE PRECISION NOT NULL DEFAULT 0,
+        "totalSgst" DOUBLE PRECISION NOT NULL DEFAULT 0,
+        "totalIgst" DOUBLE PRECISION NOT NULL DEFAULT 0,
+        "totalGst" DOUBLE PRECISION NOT NULL DEFAULT 0,
+        "grandTotal" DOUBLE PRECISION NOT NULL DEFAULT 0,
+        "retentionPercent" DOUBLE PRECISION NOT NULL DEFAULT 0,
+        "retentionAmount" DOUBLE PRECISION NOT NULL DEFAULT 0,
+        "tdsSection" TEXT NOT NULL DEFAULT '194C',
+        "tdsPercent" DOUBLE PRECISION NOT NULL DEFAULT 0,
+        "tdsAmount" DOUBLE PRECISION NOT NULL DEFAULT 0,
+        "billedAmount" DOUBLE PRECISION NOT NULL DEFAULT 0,
+        "paidAmount" DOUBLE PRECISION NOT NULL DEFAULT 0,
+        "balanceAmount" DOUBLE PRECISION NOT NULL DEFAULT 0,
+        "progressPercent" DOUBLE PRECISION NOT NULL DEFAULT 0,
+        "status" TEXT NOT NULL DEFAULT 'DRAFT',
+        "approvedBy" TEXT,
+        "approvedAt" TIMESTAMP(3),
+        "startedAt" TIMESTAMP(3),
+        "completedAt" TIMESTAMP(3),
+        "closedAt" TIMESTAMP(3),
+        "cancelledAt" TIMESTAMP(3),
+        "cancelReason" TEXT,
+        "paymentTerms" TEXT,
+        "creditDays" INTEGER NOT NULL DEFAULT 30,
+        "remarks" TEXT,
+        "userId" TEXT NOT NULL,
+        "division" TEXT DEFAULT 'ETHANOL',
+        "companyId" TEXT,
+        "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        "updatedAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        CONSTRAINT "WorkOrder_pkey" PRIMARY KEY ("id")
+      );
+      CREATE INDEX IF NOT EXISTS "WorkOrder_contractorId_idx" ON "WorkOrder"("contractorId");
+      CREATE INDEX IF NOT EXISTS "WorkOrder_status_idx" ON "WorkOrder"("status");
+      CREATE INDEX IF NOT EXISTS "WorkOrder_startDate_idx" ON "WorkOrder"("startDate");
+      CREATE INDEX IF NOT EXISTS "WorkOrder_division_idx" ON "WorkOrder"("division");
+      CREATE INDEX IF NOT EXISTS "WorkOrder_companyId_idx" ON "WorkOrder"("companyId");
+    `,
+  },
+  {
+    table: 'WorkOrderLine',
+    sql: `
+      CREATE TABLE IF NOT EXISTS "WorkOrderLine" (
+        "id" TEXT NOT NULL,
+        "woId" TEXT NOT NULL,
+        "lineNo" INTEGER NOT NULL DEFAULT 1,
+        "description" TEXT NOT NULL,
+        "hsnSac" TEXT,
+        "quantity" DOUBLE PRECISION NOT NULL DEFAULT 1,
+        "unit" TEXT NOT NULL DEFAULT 'NOS',
+        "rate" DOUBLE PRECISION NOT NULL DEFAULT 0,
+        "amount" DOUBLE PRECISION NOT NULL DEFAULT 0,
+        "discountPercent" DOUBLE PRECISION NOT NULL DEFAULT 0,
+        "discountAmount" DOUBLE PRECISION NOT NULL DEFAULT 0,
+        "taxableAmount" DOUBLE PRECISION NOT NULL DEFAULT 0,
+        "gstPercent" DOUBLE PRECISION NOT NULL DEFAULT 18,
+        "cgstPercent" DOUBLE PRECISION NOT NULL DEFAULT 0,
+        "cgstAmount" DOUBLE PRECISION NOT NULL DEFAULT 0,
+        "sgstPercent" DOUBLE PRECISION NOT NULL DEFAULT 0,
+        "sgstAmount" DOUBLE PRECISION NOT NULL DEFAULT 0,
+        "igstPercent" DOUBLE PRECISION NOT NULL DEFAULT 0,
+        "igstAmount" DOUBLE PRECISION NOT NULL DEFAULT 0,
+        "totalGst" DOUBLE PRECISION NOT NULL DEFAULT 0,
+        "lineTotal" DOUBLE PRECISION NOT NULL DEFAULT 0,
+        "completedQty" DOUBLE PRECISION NOT NULL DEFAULT 0,
+        "remarks" TEXT,
+        "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        CONSTRAINT "WorkOrderLine_pkey" PRIMARY KEY ("id")
+      );
+      CREATE INDEX IF NOT EXISTS "WorkOrderLine_woId_idx" ON "WorkOrderLine"("woId");
+    `,
+  },
+  {
+    table: 'WorkOrderProgress',
+    sql: `
+      CREATE TABLE IF NOT EXISTS "WorkOrderProgress" (
+        "id" TEXT NOT NULL,
+        "woId" TEXT NOT NULL,
+        "reportedAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        "percent" DOUBLE PRECISION NOT NULL DEFAULT 0,
+        "workDone" TEXT NOT NULL,
+        "photoUrl" TEXT,
+        "reportedBy" TEXT NOT NULL,
+        "remarks" TEXT,
+        CONSTRAINT "WorkOrderProgress_pkey" PRIMARY KEY ("id")
+      );
+      CREATE INDEX IF NOT EXISTS "WorkOrderProgress_woId_idx" ON "WorkOrderProgress"("woId");
+      CREATE INDEX IF NOT EXISTS "WorkOrderProgress_reportedAt_idx" ON "WorkOrderProgress"("reportedAt");
+    `,
+  },
 ];
 
 async function checkAndCreateTables(): Promise<void> {
@@ -213,6 +323,8 @@ export async function runSchemaDriftGuard(): Promise<void> {
     // Add the DirectPurchase.farmerId index too — covered above for the column
     // but the index lives separately. Idempotent.
     await prisma.$executeRawUnsafe(`CREATE INDEX IF NOT EXISTS "DirectPurchase_farmerId_idx" ON "DirectPurchase"("farmerId")`);
+    // 2026-05-04 — index for ContractorBill ↔ WorkOrder linkage
+    await prisma.$executeRawUnsafe(`CREATE INDEX IF NOT EXISTS "ContractorBill_workOrderId_idx" ON "ContractorBill"("workOrderId")`);
     console.log('[SchemaDriftGuard] OK — all expected columns + tables present');
   } catch (err: unknown) {
     console.error('[SchemaDriftGuard] check failed:', (err instanceof Error ? err.message : String(err)));
