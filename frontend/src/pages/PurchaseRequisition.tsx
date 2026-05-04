@@ -280,6 +280,9 @@ export default function PurchaseRequisition() {
       const res = await api.post<{ savedLineCount: number; totalLines: number; extracted: { confidence: string } }>(
         `/purchase-requisition/${prId}/vendors/${vrId}/extract-quote`,
         { autoApply: true },
+        // Gemini PDF extraction takes 15-40s; the global 10s axios timeout
+        // would otherwise trigger client-side retries that look like a failure.
+        { timeout: 120000 },
       );
       await loadLineRates(prId, vrId);
       load();
@@ -675,7 +678,11 @@ export default function PurchaseRequisition() {
   const handleExtractQuote = async (prId: string, quoteId: string, autoApply: boolean) => {
     setExtracting(quoteId);
     try {
-      const res = await api.post<{ extracted: ExtractedQuote; savedRate: number | null }>(`/purchase-requisition/${prId}/vendors/${quoteId}/extract-quote`, { autoApply });
+      const res = await api.post<{ extracted: ExtractedQuote; savedRate: number | null }>(
+        `/purchase-requisition/${prId}/vendors/${quoteId}/extract-quote`,
+        { autoApply },
+        { timeout: 120000 },  // Gemini PDF parse can take 15-40s
+      );
       setExtracted(prev => ({ ...prev, [quoteId]: res.data.extracted }));
       if (res.data.savedRate) {
         alert(`AI extracted rate Rs.${res.data.savedRate.toLocaleString('en-IN')} and applied to this vendor.`);
