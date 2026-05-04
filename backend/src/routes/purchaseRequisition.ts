@@ -276,6 +276,10 @@ router.get('/:id/vendors/:vrId/line-rates', asyncHandler(async (req: AuthRequest
         lineNo: l.lineNo,
         itemName: l.itemName,
         itemCode: l.inventoryItem?.code || null,
+        // Indent-line remarks (often has model/spec like "Make: GAJANAN, Model:
+        // NYM60B1Y"). Shown next to the item name in the UI so duplicate-looking
+        // names (same part across multiple pump models) are distinguishable.
+        lineRemarks: l.remarks ?? null,
         quantity: l.quantity,
         unit: l.unit,
         estimatedCost: l.estimatedCost,
