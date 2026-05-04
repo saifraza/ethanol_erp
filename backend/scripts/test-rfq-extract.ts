@@ -60,16 +60,32 @@ async function main() {
   console.log('\n=== KEY FIELDS ===');
   console.log(`confidence:              ${result.confidence}`);
   console.log(`overallDiscountPercent:  ${result.overallDiscountPercent ?? '(not extracted)'}`);
+  console.log(`packingPercent:          ${result.packingPercent ?? '(not extracted)'}`);
+  console.log(`packingAmount:           ${result.packingAmount ?? '(not extracted)'}`);
+  console.log(`freightPercent:          ${result.freightPercent ?? '(not extracted)'}`);
+  console.log(`freightAmount:           ${result.freightAmount ?? '(not extracted)'}`);
+  console.log(`insurancePercent:        ${result.insurancePercent ?? '(not extracted)'}`);
+  console.log(`insuranceAmount:         ${result.insuranceAmount ?? '(not extracted)'}`);
+  console.log(`isRateInclusiveOfGst:    ${result.isRateInclusiveOfGst ?? '(not extracted)'}`);
+  console.log(`deliveryBasis:           ${result.deliveryBasis ?? '(not extracted)'}`);
+  console.log(`tcsPercent:              ${result.tcsPercent ?? '(not extracted)'}`);
+  console.log(`additionalCharges:       ${result.additionalCharges ? JSON.stringify(result.additionalCharges) : '(none)'}`);
   console.log(`paymentTerms:            ${result.paymentTerms ?? '(not extracted)'}`);
   console.log(`deliveryDays:            ${result.deliveryDays ?? '(not extracted)'}`);
   console.log(`freightTerms:            ${result.freightTerms ?? '(not extracted)'}`);
   console.log(`quoteValidityDays:       ${result.quoteValidityDays ?? '(not extracted)'}`);
   console.log(`lineRates count:         ${result.lineRates.length}`);
-  if (result.overallDiscountPercent === 31) {
-    console.log('\n✅ SUCCESS — Gajanan footer discount (31%) was extracted correctly.');
-  } else {
-    console.log('\n⚠️  Footer discount not 31% — check the prompt or model output.');
-  }
+
+  const checks: string[] = [];
+  if (result.overallDiscountPercent === 31) checks.push('discount 31%');
+  if (result.packingPercent === 2) checks.push('packing 2%');
+  if (result.deliveryBasis === 'EX_WORKS') checks.push('delivery basis EX_WORKS');
+  if (result.confidence === 'HIGH') checks.push('HIGH confidence');
+  console.log(`\n✅ Verified: ${checks.join(', ') || 'none'}`);
+  const missing: string[] = [];
+  if (result.overallDiscountPercent !== 31) missing.push('discount 31%');
+  if (result.packingPercent !== 2) missing.push('packing 2%');
+  if (missing.length) console.log(`⚠️  Missing: ${missing.join(', ')}`);
 }
 
 main().catch(err => {

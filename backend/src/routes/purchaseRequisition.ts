@@ -6,7 +6,7 @@ import { createPurchaseOrder } from '../services/purchaseOrderService';
 import { COMPANY } from '../shared/config/company';
 import { renderDocumentPdf } from '../services/documentRenderer';
 import { sendThreadEmail, syncAndListReplies, latestThreadFor } from '../services/emailService';
-import { extractQuoteFromReply, effectiveLineDiscount } from '../services/rfqQuoteExtractor';
+import { extractQuoteFromReply, effectiveLineDiscount, quoteCostFieldsForDb } from '../services/rfqQuoteExtractor';
 import { notifyOnNewRfqReply } from '../services/rfqReplyPoller';
 import { autoExtractIfWaiting } from '../services/rfqAutoExtract';
 import { nextDocNo } from '../utils/docSequence';
@@ -202,6 +202,24 @@ router.put('/:id/vendors/:vrId', asyncHandler(async (req: AuthRequest, res: Resp
     if (b.quoteEmailSubject !== undefined) data.quoteEmailSubject = b.quoteEmailSubject;
     if (b.quoteEmailThreadId !== undefined) data.quoteEmailThreadId = b.quoteEmailThreadId;
     if (b.quoteEmailMessageId !== undefined) data.quoteEmailMessageId = b.quoteEmailMessageId;
+
+    // Cost-template fields — buyer-editable before award. Each is optional;
+    // we only write fields the request actually provided so partial saves work.
+    const numFields = ['packingPercent', 'packingAmount', 'freightPercent', 'freightAmount',
+      'insurancePercent', 'insuranceAmount', 'loadingPercent', 'loadingAmount', 'tcsPercent'] as const;
+    for (const f of numFields) {
+      if (b[f] !== undefined) {
+        const n = typeof b[f] === 'number' ? b[f] as number : parseFloat(b[f] as string);
+        if (isNaN(n) || n < 0) return res.status(400).json({ error: `Invalid ${f}` });
+        data[f] = n;
+      }
+    }
+    if (b.isRateInclusiveOfGst !== undefined) data.isRateInclusiveOfGst = !!b.isRateInclusiveOfGst;
+    if (b.deliveryBasis !== undefined) data.deliveryBasis = b.deliveryBasis || null;
+    if (b.additionalCharges !== undefined) {
+      if (!Array.isArray(b.additionalCharges)) return res.status(400).json({ error: 'additionalCharges must be an array' });
+      data.additionalCharges = b.additionalCharges;
+    }
 
     const row = await prisma.purchaseRequisitionVendor.update({
       where: { id: req.params.vrId },
@@ -462,6 +480,22 @@ router.post('/:id/vendors/:vrId/award', asyncHandler(async (req: AuthRequest, re
           // Create DRAFT PO — user reviews on the indent page and either
           // confirms (→ APPROVED + partial GRN) or cancels (→ unaward vendor,
           // indent goes back for re-quoting).
+          // Compute header charges from the vendor's cost template.
+          // Percent-based charges apply to the post-discount basic value (sum
+          // of taxableAmount before adding GST). Fixed amounts are added as-is.
+          const lineSubtotalBasic = poLines.reduce((s, l) => s + (l.quantity * l.rate * (1 - (l.discountPercent ?? 0) / 100)), 0);
+          const pctOnBasic = (pct: number) => lineSubtotalBasic * (pct / 100);
+          const freightCharge = pctOnBasic(row.freightPercent) + (row.freightAmount || 0);
+          const additionalChargesArr = Array.isArray(row.additionalCharges) ? row.additionalCharges as Array<{ percent?: number; amount?: number }> : [];
+          const additionalChargesTotal = additionalChargesArr.reduce((s, c) => s + (c.percent ? pctOnBasic(c.percent) : 0) + (c.amount || 0), 0);
+          const otherCharges = pctOnBasic(row.packingPercent) + (row.packingAmount || 0)
+            + pctOnBasic(row.insurancePercent) + (row.insuranceAmount || 0)
+            + pctOnBasic(row.loadingPercent) + (row.loadingAmount || 0)
+            + additionalChargesTotal;
+
+          // Create DRAFT PO — user reviews on the indent page and either
+          // confirms (→ APPROVED + partial GRN) or cancels (→ unaward vendor,
+          // indent goes back for re-quoting).
           const po = await createPurchaseOrder({
             vendorId: row.vendorId,
             lines: poLines,
@@ -471,6 +505,8 @@ router.post('/:id/vendors/:vrId/award', asyncHandler(async (req: AuthRequest, re
             remarks: `Auto-created on award from Indent #${pr.reqNo}`,
             paymentTerms: vendor?.paymentTerms || undefined,
             creditDays: vendor?.creditDays || 30,
+            freightCharge,
+            otherCharges,
           });
           autoPO = { created: true, poId: po.id, poNo: po.poNo, grandTotal: po.grandTotal };
         }
@@ -925,7 +961,9 @@ router.post('/:id/vendors/:vrId/extract-quote', asyncHandler(async (req: AuthReq
             extracted.paymentTerms ? `Payment: ${extracted.paymentTerms}` : null,
             extracted.deliveryDays ? `Delivery: ${extracted.deliveryDays} days` : null,
             extracted.freightTerms ? `Freight: ${extracted.freightTerms}` : null,
+            extracted.notes ? `Notes: ${extracted.notes}` : null,
           ].filter(Boolean).join(' · ') || null,
+          ...quoteCostFieldsForDb(extracted),
         },
       });
 

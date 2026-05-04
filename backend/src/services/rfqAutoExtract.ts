@@ -13,7 +13,7 @@
  */
 
 import prisma from '../config/prisma';
-import { extractQuoteFromReply, effectiveLineDiscount } from './rfqQuoteExtractor';
+import { extractQuoteFromReply, effectiveLineDiscount, quoteCostFieldsForDb } from './rfqQuoteExtractor';
 
 const TERMINAL_STATUSES = ['REJECTED', 'COMPLETED'];
 
@@ -126,7 +126,7 @@ export async function autoExtractIfWaiting(vrId: string): Promise<AutoExtractRes
     }
   }
 
-  // Always update header remarks with vendor terms (payment / delivery / freight)
+  // Always update header remarks + structured cost components from the AI
   await prisma.purchaseRequisitionVendor.update({
     where: { id: vrId },
     data: {
@@ -135,7 +135,9 @@ export async function autoExtractIfWaiting(vrId: string): Promise<AutoExtractRes
         extracted.paymentTerms ? `Payment: ${extracted.paymentTerms}` : null,
         extracted.deliveryDays ? `Delivery: ${extracted.deliveryDays} days` : null,
         extracted.freightTerms ? `Freight: ${extracted.freightTerms}` : null,
+        extracted.notes ? `Notes: ${extracted.notes}` : null,
       ].filter(Boolean).join(' · ') || null,
+      ...quoteCostFieldsForDb(extracted),
     },
   });
 
