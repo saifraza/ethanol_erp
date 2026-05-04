@@ -3,13 +3,22 @@
 ## 🚨 STOP — Before ANY bulk SQL, schema change, or `prisma db push` on prod
 Read **[.claude/skills/incident-2026-04-16-db-damage.md](.claude/skills/incident-2026-04-16-db-damage.md)** first. Non-negotiable rules (learned the hard way):
 1. **`pg_dump` locally BEFORE any destructive op** → `<repo>/db-backups/` (gitignored)
-2. **Never run `prisma db push` on prod from your laptop** — let Railway's Procfile do it on deploy
+2. **Never run `prisma db push` on prod from your laptop.** It also doesn't run on Railway — see "Schema changes" below.
 3. **Never use `--accept-data-loss` on prod**
 4. **Never run `pg_restore --clean` without a local pg_dump first** — if interrupted, constraints get dropped
 5. **Factory runs 24/7, no "safe window"** — treat every statement as if 50 trucks are at the gate
 6. Run bulk updates inside `BEGIN; ... COMMIT;` so you can `ROLLBACK` if counts look wrong
 7. **Ask user before any `UPDATE` touching > 100 rows**
 8. The GitHub backup workflow `.github/workflows/backup-db.yml` is sacred. Don't touch. Test restore quarterly.
+
+## Schema changes — SchemaDriftGuard, NOT prisma db push
+**Every** schema change (new column, new table, new index) requires TWO edits in the same PR:
+1. `backend/prisma/schema.prisma` — the source of truth (so Prisma Client types are right)
+2. `backend/src/services/schemaDriftGuard.ts` — register the column/table in `EXPECTED_COLUMNS` / `EXPECTED_TABLES` so Railway actually applies the change at server startup
+
+**Why both?** `prisma db push --skip-generate` silently skips changes in Railway's environment — happened on 2026-04-21 (Employee), 2026-05-02 (Farmer), 2026-05-04 (cost template). The team uses SchemaDriftGuard as the sole migration mechanism. Procfile no longer runs `prisma db push`. If you skip step 2, prod hits P2022/P2021 on the first request that touches the new field.
+
+ALTERs in SchemaDriftGuard must be **idempotent and additive only** — `ADD COLUMN IF NOT EXISTS` / `CREATE TABLE IF NOT EXISTS` / `CREATE INDEX IF NOT EXISTS`. Never `DROP`, `RENAME`, or change column types via the guard — those need a real migration with backup + downtime plan.
 
 ## Project Overview
 - **Company**: Mahakaushal Sugar & Power Industries Ltd (MSPIL)
