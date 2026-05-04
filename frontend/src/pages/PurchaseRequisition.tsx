@@ -293,9 +293,14 @@ export default function PurchaseRequisition() {
       if (savedLineCount === 0) {
         setLineRatesError(prev => ({
           ...prev,
-          [vrId]: extracted.confidence === 'LOW'
-            ? 'AI could not read the rates confidently — please enter them manually below.'
-            : 'AI did not find any rates in the reply / PDF — please enter them manually below.',
+          [vrId]: 'AI did not find any rates in the reply / PDF — please enter them manually below.',
+        }));
+      } else if (extracted.confidence === 'LOW') {
+        // We persisted them anyway (tagged EMAIL_AUTO_LOW) so the buyer sees a
+        // draft. Award is gated server-side until the buyer edits or acknowledges.
+        setLineRatesError(prev => ({
+          ...prev,
+          [vrId]: `AI filled ${savedLineCount} item(s) but flagged the read as LOW confidence. Verify each rate, GST, HSN, and cost component below — edit any value to clear the flag, or you'll be asked to confirm at Award.`,
         }));
       } else if (savedLineCount < totalLines) {
         setLineRatesError(prev => ({
@@ -733,10 +738,22 @@ export default function PurchaseRequisition() {
 
   const handleAward = async (prId: string, quoteId: string) => {
     if (!confirm('Award this vendor? A DRAFT PO will be created. You can review it, then either Confirm (proceeds to GRN) or Cancel (returns the indent for re-quoting).')) return;
+    const tryAward = async (acknowledgeLowConfidence = false) => api.post<{
+      autoPO?: { created: boolean; poId?: string; poNo?: number; grandTotal?: number; reason?: string };
+    }>(`/purchase-requisition/${prId}/vendors/${quoteId}/award`, { acknowledgeLowConfidence });
     try {
-      const res = await api.post<{
-        autoPO?: { created: boolean; poId?: string; poNo?: number; grandTotal?: number; reason?: string };
-      }>(`/purchase-requisition/${prId}/vendors/${quoteId}/award`);
+      let res;
+      try {
+        res = await tryAward();
+      } catch (e: unknown) {
+        const err = e as { response?: { status?: number; data?: { error?: string; code?: string } } };
+        if (err.response?.data?.code === 'LOW_CONFIDENCE_AWARD') {
+          if (!confirm(`${err.response.data.error}\n\nProceed with award anyway?`)) return;
+          res = await tryAward(true);
+        } else {
+          throw e;
+        }
+      }
       const { autoPO } = res.data;
       load();
       if (autoPO?.created && autoPO.poNo) {
@@ -1465,9 +1482,12 @@ export default function PurchaseRequisition() {
                                     const src = q.quoteSource;
                                     if (!src) return <span className="italic">—</span>;
                                     const label: Record<string, string> = {
-                                      EMAIL_AUTO: 'AI', EMAIL_PARTIAL: 'AI (partial)',
+                                      EMAIL_AUTO: 'AI', EMAIL_PARTIAL: 'AI (partial)', EMAIL_AUTO_LOW: 'AI · LOW',
                                       MANUAL: 'MANUAL', MIXED: 'MIXED', PHONE: 'PHONE', WHATSAPP: 'WHATSAPP',
                                     };
+                                    if (src === 'EMAIL_AUTO_LOW') {
+                                      return <span title="AI extracted these but flagged the read as LOW confidence — verify before award" className="inline-block text-[9px] font-bold uppercase tracking-wide px-1.5 py-0.5 border border-amber-500 bg-amber-50 text-amber-800">AI · LOW</span>;
+                                    }
                                     return <span className="font-bold text-slate-700">{label[src] || src}</span>;
                                   })()}
                                   {q.quoteRemarks && <div className="text-[9px] italic truncate max-w-[120px]" title={q.quoteRemarks}>{q.quoteRemarks}</div>}
@@ -1739,6 +1759,8 @@ export default function PurchaseRequisition() {
                                                   <td className="px-3 py-1.5 text-center">
                                                     {li.source === 'EMAIL_AUTO' ? (
                                                       <span className="inline-block text-[9px] font-bold uppercase tracking-wide px-1.5 py-0.5 border border-purple-500 bg-purple-50 text-purple-700">AI</span>
+                                                    ) : li.source === 'EMAIL_AUTO_LOW' ? (
+                                                      <span title="AI flagged this read as LOW confidence — verify before award" className="inline-block text-[9px] font-bold uppercase tracking-wide px-1.5 py-0.5 border border-amber-500 bg-amber-50 text-amber-800">AI · LOW</span>
                                                     ) : li.source === 'MANUAL' ? (
                                                       <span className="inline-block text-[9px] font-bold uppercase tracking-wide px-1.5 py-0.5 border border-slate-400 bg-slate-50 text-slate-600">MANUAL</span>
                                                     ) : (

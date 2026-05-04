@@ -392,6 +392,28 @@ router.post('/:id/vendors/:vrId/award', asyncHandler(async (req: AuthRequest, re
     if (!row || row.requisitionId !== req.params.id) return res.status(404).json({ error: 'Quote row not found' });
     if (row.vendorRate == null || row.vendorRate <= 0) return res.status(400).json({ error: 'Cannot award — enter a rate first' });
 
+    // Guardrail: AI extracted these rates with LOW self-reported confidence.
+    // We persisted them so the buyer can see/edit (instead of silently dropping
+    // them like before), but they must explicitly acknowledge before award —
+    // a stray click shouldn't push uncertain numbers into a real PO.
+    if (req.body?.acknowledgeLowConfidence !== true) {
+      if (row.quoteSource === 'EMAIL_AUTO_LOW') {
+        return res.status(400).json({
+          error: 'AI flagged this quote as LOW confidence. Open the item-wise rates panel, verify each line + cost component, then either (a) edit any rate to clear the flag or (b) confirm award with acknowledgeLowConfidence=true.',
+          code: 'LOW_CONFIDENCE_AWARD',
+        });
+      }
+      const hasLowLine = await prisma.purchaseRequisitionVendorLine.count({
+        where: { vendorQuoteId: req.params.vrId, source: 'EMAIL_AUTO_LOW' },
+      }).catch(() => 0);
+      if (hasLowLine > 0) {
+        return res.status(400).json({
+          error: `${hasLowLine} item rate(s) on this quote came from a LOW-confidence AI read. Verify them in the item-wise rates panel, then re-save or confirm with acknowledgeLowConfidence=true.`,
+          code: 'LOW_CONFIDENCE_AWARD',
+        });
+      }
+    }
+
     const [, , pr] = await prisma.$transaction([
       prisma.purchaseRequisitionVendor.updateMany({ where: { requisitionId: req.params.id }, data: { isAwarded: false } }),
       prisma.purchaseRequisitionVendor.update({ where: { id: req.params.vrId }, data: { isAwarded: true } }),
@@ -931,7 +953,12 @@ router.post('/:id/vendors/:vrId/extract-quote', asyncHandler(async (req: AuthReq
     let savedLineCount = 0;
     let savedHeaderRate: number | null = null;
     let lineTableMissing = false;
-    if (req.body.autoApply && extracted.confidence !== 'LOW' && indentLines.length > 0) {
+    // Persist what the AI gave us regardless of confidence — silently dropping
+    // LOW results was the policy bug behind 4 failed prompt patches. We tag
+    // LOW lines as EMAIL_AUTO_LOW so the UI can warn the buyer and the Award
+    // handler can block/confirm before pushing them into a PO.
+    if (req.body.autoApply && indentLines.length > 0) {
+      const aiSource = extracted.confidence === 'LOW' ? 'EMAIL_AUTO_LOW' : 'EMAIL_AUTO';
       const byLineNo = new Map(indentLines.map(l => [l.lineNo, l]));
       const byNameLC = new Map(indentLines.map(l => [l.itemName.toLowerCase().trim(), l]));
       try {
@@ -943,8 +970,8 @@ router.post('/:id/vendors/:vrId/extract-quote', asyncHandler(async (req: AuthReq
           const discountPercent = effectiveLineDiscount(lr, extracted.overallDiscountPercent);
           await prisma.purchaseRequisitionVendorLine.upsert({
             where: { vendorQuoteId_requisitionLineId: { vendorQuoteId: req.params.vrId, requisitionLineId: target.id } },
-            update: { unitRate: lr.unitRate, gstPercent: lr.gstPercent ?? null, hsnCode: lr.hsnCode || null, discountPercent, remarks: lr.remarks || null, source: 'EMAIL_AUTO' },
-            create: { vendorQuoteId: req.params.vrId, requisitionLineId: target.id, unitRate: lr.unitRate, gstPercent: lr.gstPercent ?? null, hsnCode: lr.hsnCode || null, discountPercent, remarks: lr.remarks || null, source: 'EMAIL_AUTO' },
+            update: { unitRate: lr.unitRate, gstPercent: lr.gstPercent ?? null, hsnCode: lr.hsnCode || null, discountPercent, remarks: lr.remarks || null, source: aiSource },
+            create: { vendorQuoteId: req.params.vrId, requisitionLineId: target.id, unitRate: lr.unitRate, gstPercent: lr.gstPercent ?? null, hsnCode: lr.hsnCode || null, discountPercent, remarks: lr.remarks || null, source: aiSource },
           });
           savedLineCount++;
         }

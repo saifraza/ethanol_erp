@@ -97,9 +97,11 @@ export async function autoExtractIfWaiting(vrId: string): Promise<AutoExtractRes
     data: { aiExtractedJson: extracted as unknown as object, aiExtractedAt: new Date(), aiConfidence: extracted.confidence },
   });
 
-  if (extracted.confidence === 'LOW') {
-    return { ran: true, savedLineCount: 0, totalLines: indentLines.length, confidence: 'LOW' };
-  }
+  // Persist what AI gave us regardless of confidence — LOW results are tagged
+  // EMAIL_AUTO_LOW so the buyer can see/edit them in the panel and the Award
+  // handler refuses them until acknowledged. Silent-discard was the bug we
+  // patched 4 times (2026-05-04).
+  const aiSource = extracted.confidence === 'LOW' ? 'EMAIL_AUTO_LOW' : 'EMAIL_AUTO';
 
   // Save per-line rates (with try/catch fallback to header-only)
   let savedLineCount = 0;
@@ -116,8 +118,8 @@ export async function autoExtractIfWaiting(vrId: string): Promise<AutoExtractRes
         const discountPercent = effectiveLineDiscount(lr, extracted.overallDiscountPercent);
         await prisma.purchaseRequisitionVendorLine.upsert({
           where: { vendorQuoteId_requisitionLineId: { vendorQuoteId: vrId, requisitionLineId: target.id } },
-          update: { unitRate: lr.unitRate, gstPercent: lr.gstPercent ?? null, hsnCode: lr.hsnCode || null, discountPercent, remarks: lr.remarks || null, source: 'EMAIL_AUTO' },
-          create: { vendorQuoteId: vrId, requisitionLineId: target.id, unitRate: lr.unitRate, gstPercent: lr.gstPercent ?? null, hsnCode: lr.hsnCode || null, discountPercent, remarks: lr.remarks || null, source: 'EMAIL_AUTO' },
+          update: { unitRate: lr.unitRate, gstPercent: lr.gstPercent ?? null, hsnCode: lr.hsnCode || null, discountPercent, remarks: lr.remarks || null, source: aiSource },
+          create: { vendorQuoteId: vrId, requisitionLineId: target.id, unitRate: lr.unitRate, gstPercent: lr.gstPercent ?? null, hsnCode: lr.hsnCode || null, discountPercent, remarks: lr.remarks || null, source: aiSource },
         });
         savedLineCount++;
       }
@@ -148,7 +150,7 @@ export async function autoExtractIfWaiting(vrId: string): Promise<AutoExtractRes
   if (savedLineCount > 0) {
     headerRate = await recomputeHeaderRate(vrId);
   } else if (lineTableMissing) {
-    headerRate = await applyHeaderOnlyFallback(vrId, vr.requisition.id, extracted, vr.requisition.quantity);
+    headerRate = await applyHeaderOnlyFallback(vrId, vr.requisition.id, extracted, vr.requisition.quantity, aiSource);
   }
 
   // Mirror to VendorItem master so item history surfaces this vendor's rate
@@ -227,6 +229,7 @@ async function applyHeaderOnlyFallback(
   vrId: string, _prId: string,
   extracted: { lineRates: Array<{ unitRate?: number }>; extractedTotal?: number },
   totalQty: number,
+  aiSource: string = 'EMAIL_AUTO',
 ): Promise<number | null> {
   const firstLine = extracted.lineRates.find(l => typeof l.unitRate === 'number' && l.unitRate > 0);
   const rate = firstLine?.unitRate
@@ -236,7 +239,7 @@ async function applyHeaderOnlyFallback(
   if (!rate) return null;
   await prisma.purchaseRequisitionVendor.update({
     where: { id: vrId },
-    data: { vendorRate: rate, quotedAt: new Date(), quoteSource: 'EMAIL_AUTO' },
+    data: { vendorRate: rate, quotedAt: new Date(), quoteSource: aiSource },
   });
   return rate;
 }
