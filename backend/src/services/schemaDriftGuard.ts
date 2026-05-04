@@ -43,6 +43,21 @@ const EXPECTED_COLUMNS: ColumnCheck[] = [
   { table: 'PayrollLine', column: 'bankPaidAt', sql: `ALTER TABLE "PayrollLine" ADD COLUMN IF NOT EXISTS "bankPaidAt" TIMESTAMP(3)` },
   // 2026-05-02 — Farmer master FK on DirectPurchase
   { table: 'DirectPurchase', column: 'farmerId', sql: `ALTER TABLE "DirectPurchase" ADD COLUMN IF NOT EXISTS "farmerId" TEXT` },
+  // 2026-05-04 — RFQ discount extraction (PR #4)
+  { table: 'PurchaseRequisitionVendorLine', column: 'discountPercent', sql: `ALTER TABLE "PurchaseRequisitionVendorLine" ADD COLUMN IF NOT EXISTS "discountPercent" DOUBLE PRECISION NOT NULL DEFAULT 0` },
+  // 2026-05-04 — Quote Cost Template (PR #6) — packing/freight/insurance/etc flow to PO header
+  { table: 'PurchaseRequisitionVendor', column: 'packingPercent',       sql: `ALTER TABLE "PurchaseRequisitionVendor" ADD COLUMN IF NOT EXISTS "packingPercent" DOUBLE PRECISION NOT NULL DEFAULT 0` },
+  { table: 'PurchaseRequisitionVendor', column: 'packingAmount',        sql: `ALTER TABLE "PurchaseRequisitionVendor" ADD COLUMN IF NOT EXISTS "packingAmount" DOUBLE PRECISION NOT NULL DEFAULT 0` },
+  { table: 'PurchaseRequisitionVendor', column: 'freightPercent',       sql: `ALTER TABLE "PurchaseRequisitionVendor" ADD COLUMN IF NOT EXISTS "freightPercent" DOUBLE PRECISION NOT NULL DEFAULT 0` },
+  { table: 'PurchaseRequisitionVendor', column: 'freightAmount',        sql: `ALTER TABLE "PurchaseRequisitionVendor" ADD COLUMN IF NOT EXISTS "freightAmount" DOUBLE PRECISION NOT NULL DEFAULT 0` },
+  { table: 'PurchaseRequisitionVendor', column: 'insurancePercent',     sql: `ALTER TABLE "PurchaseRequisitionVendor" ADD COLUMN IF NOT EXISTS "insurancePercent" DOUBLE PRECISION NOT NULL DEFAULT 0` },
+  { table: 'PurchaseRequisitionVendor', column: 'insuranceAmount',      sql: `ALTER TABLE "PurchaseRequisitionVendor" ADD COLUMN IF NOT EXISTS "insuranceAmount" DOUBLE PRECISION NOT NULL DEFAULT 0` },
+  { table: 'PurchaseRequisitionVendor', column: 'loadingPercent',       sql: `ALTER TABLE "PurchaseRequisitionVendor" ADD COLUMN IF NOT EXISTS "loadingPercent" DOUBLE PRECISION NOT NULL DEFAULT 0` },
+  { table: 'PurchaseRequisitionVendor', column: 'loadingAmount',        sql: `ALTER TABLE "PurchaseRequisitionVendor" ADD COLUMN IF NOT EXISTS "loadingAmount" DOUBLE PRECISION NOT NULL DEFAULT 0` },
+  { table: 'PurchaseRequisitionVendor', column: 'isRateInclusiveOfGst', sql: `ALTER TABLE "PurchaseRequisitionVendor" ADD COLUMN IF NOT EXISTS "isRateInclusiveOfGst" BOOLEAN NOT NULL DEFAULT false` },
+  { table: 'PurchaseRequisitionVendor', column: 'tcsPercent',           sql: `ALTER TABLE "PurchaseRequisitionVendor" ADD COLUMN IF NOT EXISTS "tcsPercent" DOUBLE PRECISION NOT NULL DEFAULT 0` },
+  { table: 'PurchaseRequisitionVendor', column: 'deliveryBasis',        sql: `ALTER TABLE "PurchaseRequisitionVendor" ADD COLUMN IF NOT EXISTS "deliveryBasis" TEXT` },
+  { table: 'PurchaseRequisitionVendor', column: 'additionalCharges',    sql: `ALTER TABLE "PurchaseRequisitionVendor" ADD COLUMN IF NOT EXISTS "additionalCharges" JSONB NOT NULL DEFAULT '[]'::jsonb` },
 ];
 
 const EXPECTED_TABLES: TableCheck[] = [
