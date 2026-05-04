@@ -1707,6 +1707,10 @@ model PurchaseRequisitionVendorLine {
   unitRate          Float?
   gstPercent        Float?
   hsnCode           String?
+  // Footer/per-line discount captured from vendor quote (e.g. Gajanan's
+  // "Discount - 31%"). Footer-level discounts are flattened to every line at
+  // extract time so the award→PO handoff carries one value per line.
+  discountPercent   Float                     @default(0)
   remarks           String?
   source            String?                   // MANUAL | EMAIL_AUTO
   createdAt         DateTime                  @default(now())

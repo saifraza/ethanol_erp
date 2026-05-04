@@ -86,6 +86,7 @@ interface LineRateInput {
   unitRate: string;   // string while editing
   gstPercent: string;
   hsnCode: string;
+  discountPercent: string;
   remarks: string;
   source: string | null;
 }
@@ -201,7 +202,7 @@ export default function PurchaseRequisition() {
       const res = await api.get<{ lines: Array<{
         lineId: string; lineNo: number; itemName: string; itemCode: string | null;
         quantity: number; unit: string; estimatedCost: number;
-        unitRate: number | null; gstPercent: number | null; hsnCode: string | null; remarks: string | null; source: string | null;
+        unitRate: number | null; gstPercent: number | null; hsnCode: string | null; discountPercent: number; remarks: string | null; source: string | null;
       }> }>(`/purchase-requisition/${prId}/vendors/${vrId}/line-rates`);
       setLineRateInputs(prev => ({
         ...prev,
@@ -210,7 +211,9 @@ export default function PurchaseRequisition() {
           quantity: l.quantity, unit: l.unit, estimatedCost: l.estimatedCost,
           unitRate: l.unitRate != null ? String(l.unitRate) : '',
           gstPercent: l.gstPercent != null ? String(l.gstPercent) : '',
-          hsnCode: l.hsnCode || '', remarks: l.remarks || '', source: l.source,
+          hsnCode: l.hsnCode || '',
+          discountPercent: l.discountPercent > 0 ? String(l.discountPercent) : '',
+          remarks: l.remarks || '', source: l.source,
         })),
       }));
     } catch (e: unknown) {
@@ -237,6 +240,7 @@ export default function PurchaseRequisition() {
           unitRate: l.unitRate.trim() === '' ? null : parseFloat(l.unitRate),
           gstPercent: l.gstPercent.trim() === '' ? null : parseFloat(l.gstPercent),
           hsnCode: l.hsnCode || null,
+          discountPercent: l.discountPercent.trim() === '' ? 0 : parseFloat(l.discountPercent),
           remarks: l.remarks || null,
         })),
         source: 'MANUAL',
@@ -289,6 +293,43 @@ export default function PurchaseRequisition() {
       setLineRatesPanelFor(vrId);
       if (!lineRateInputs[vrId]) loadLineRates(prId, vrId);
     }
+  };
+
+  // Bulk-apply an overall discount % to every line in the rate-entry panel.
+  // Buyers use this to override the AI-extracted footer discount in one click
+  // (e.g. negotiated up from 31% to 35% over the phone) without editing each
+  // line individually. Pure local state — Save Rates persists.
+  const [bulkDiscountInput, setBulkDiscountInput] = useState<Record<string, string>>({});
+  const applyBulkDiscount = (vrId: string) => {
+    const raw = (bulkDiscountInput[vrId] || '').trim();
+    if (raw === '') return;
+    const pct = parseFloat(raw);
+    if (isNaN(pct) || pct < 0 || pct > 100) {
+      setLineRatesError(prev => ({ ...prev, [vrId]: 'Discount must be 0–100%.' }));
+      return;
+    }
+    setLineRateInputs(prev => ({
+      ...prev,
+      [vrId]: (prev[vrId] || []).map(l => ({ ...l, discountPercent: pct === 0 ? '' : String(pct) })),
+    }));
+    setLineRatesError(prev => ({ ...prev, [vrId]: null }));
+  };
+
+  // Inline-edit vendor terms (paymentTerms / delivery / freight come in as a
+  // single quoteRemarks string from AI extraction). Save calls existing
+  // PUT /:id/vendors/:vrId so we don't need a new endpoint.
+  const [remarksDraft, setRemarksDraft] = useState<Record<string, string>>({});
+  const [remarksSaving, setRemarksSaving] = useState<Record<string, boolean>>({});
+  const saveQuoteRemarks = async (prId: string, vrId: string) => {
+    const draft = remarksDraft[vrId] ?? '';
+    setRemarksSaving(prev => ({ ...prev, [vrId]: true }));
+    try {
+      await api.put(`/purchase-requisition/${prId}/vendors/${vrId}`, { quoteRemarks: draft });
+      load();
+    } catch (e: unknown) {
+      setLineRatesError(prev => ({ ...prev, [vrId]: (e as { response?: { data?: { error?: string } } }).response?.data?.error || 'Failed to save terms' }));
+    }
+    setRemarksSaving(prev => ({ ...prev, [vrId]: false }));
   };
 
   const load = useCallback(async () => {
@@ -438,7 +479,8 @@ export default function PurchaseRequisition() {
   };
   type ExtractedQuote = {
     overallRateNote?: string;
-    lineRates: Array<{ lineNo?: number; itemName?: string; unitRate?: number; gstPercent?: number; hsnCode?: string; remarks?: string }>;
+    overallDiscountPercent?: number;
+    lineRates: Array<{ lineNo?: number; itemName?: string; unitRate?: number; gstPercent?: number; hsnCode?: string; discountPercent?: number; remarks?: string }>;
     deliveryDays?: number; paymentTerms?: string; quoteValidityDays?: number;
     freightTerms?: string; currency?: string; extractedTotal?: number; notes?: string;
     confidence: 'HIGH' | 'MEDIUM' | 'LOW';
@@ -1382,17 +1424,44 @@ export default function PurchaseRequisition() {
                                           </button>
                                         </div>
                                       </div>
+                                      {/* Bulk-apply overall discount — for footer-level discounts (e.g. "Discount - 31%" on Gajanan-style quotes). */}
+                                      <div className="bg-emerald-50/60 border-b border-emerald-200 px-3 py-2 flex items-center gap-2 flex-wrap">
+                                        <span className="text-[10px] font-bold text-emerald-800 uppercase tracking-widest">Overall Discount</span>
+                                        <input type="number" step="any" inputMode="decimal" placeholder="e.g. 31" min="0" max="100"
+                                          value={bulkDiscountInput[q.id] || ''}
+                                          onChange={e => setBulkDiscountInput(prev => ({ ...prev, [q.id]: e.target.value }))}
+                                          className="border border-slate-300 px-2 py-1 text-xs w-20 font-mono tabular-nums text-right focus:outline-none focus:ring-1 focus:ring-emerald-500" />
+                                        <span className="text-[11px] text-slate-600">%</span>
+                                        <button onClick={() => applyBulkDiscount(q.id)}
+                                          disabled={!(bulkDiscountInput[q.id] || '').trim()}
+                                          title="Set this discount % on every line below. You can still edit individual lines after."
+                                          className="px-2 py-1 bg-emerald-600 text-white text-[10px] font-bold uppercase tracking-wide hover:bg-emerald-700 disabled:bg-slate-300 disabled:text-slate-500">
+                                          Apply to all lines
+                                        </button>
+                                        <span className="text-[10px] text-slate-500 ml-1">Use this for footer-level / negotiated discounts before sending to PO. Click Save Rates to persist.</span>
+                                      </div>
                                       {lineRatesError[q.id] && (
                                         <div className="bg-amber-50 border-b border-amber-200 px-3 py-2 text-[11px] text-amber-800 flex items-start gap-1.5">
                                           <AlertCircle size={12} className="mt-0.5 shrink-0" /> {lineRatesError[q.id]}
                                         </div>
                                       )}
-                                      {q.quoteRemarks && (
-                                        <div className="bg-blue-50 border-b border-blue-200 px-3 py-2">
-                                          <div className="text-[9px] font-bold text-blue-700 uppercase tracking-widest mb-1">Vendor Terms (from email)</div>
-                                          <div className="text-[12px] text-slate-800 whitespace-pre-wrap">{q.quoteRemarks}</div>
+                                      {/* Editable vendor terms (payment / delivery / freight) — was read-only before. */}
+                                      <div className="bg-blue-50 border-b border-blue-200 px-3 py-2">
+                                        <div className="text-[9px] font-bold text-blue-700 uppercase tracking-widest mb-1 flex items-center justify-between">
+                                          <span>Vendor Terms — payment, delivery, freight (edit before award)</span>
+                                          <button onClick={() => saveQuoteRemarks(pr.id, q.id)}
+                                            disabled={remarksSaving[q.id] || (remarksDraft[q.id] === undefined)}
+                                            className="px-2 py-0.5 bg-blue-600 text-white text-[9px] font-bold uppercase tracking-wide hover:bg-blue-700 disabled:bg-slate-300 disabled:text-slate-500">
+                                            {remarksSaving[q.id] ? 'Saving…' : 'Save Terms'}
+                                          </button>
                                         </div>
-                                      )}
+                                        <textarea
+                                          value={remarksDraft[q.id] ?? q.quoteRemarks ?? ''}
+                                          onChange={e => setRemarksDraft(prev => ({ ...prev, [q.id]: e.target.value }))}
+                                          placeholder="e.g. Payment: 50% advance, 50% on delivery · Delivery: 7 days · Freight: FOR site"
+                                          rows={2}
+                                          className="w-full border border-blue-200 bg-white px-2 py-1 text-[12px] text-slate-800 focus:outline-none focus:ring-1 focus:ring-blue-500" />
+                                      </div>
                                       {lineRatesLoading[q.id] && inputs.length === 0 ? (
                                         <div className="px-3 py-6 text-center text-[11px] text-slate-400">Loading items…</div>
                                       ) : (
@@ -1403,6 +1472,7 @@ export default function PurchaseRequisition() {
                                               <th className="text-left px-3 py-1.5">Item</th>
                                               <th className="text-right px-3 py-1.5 w-24">Qty × Unit</th>
                                               <th className="text-right px-3 py-1.5 w-32">Rate (₹/{inputs[0]?.unit || 'unit'}) *</th>
+                                              <th className="text-right px-3 py-1.5 w-20">Disc %</th>
                                               <th className="text-right px-3 py-1.5 w-20">GST %</th>
                                               <th className="text-right px-3 py-1.5 w-32">Line Total (₹)</th>
                                               <th className="text-left px-3 py-1.5 w-56">Remarks (per item)</th>
@@ -1411,11 +1481,12 @@ export default function PurchaseRequisition() {
                                           </thead>
                                           <tbody>
                                             {inputs.length === 0 && (
-                                              <tr><td colSpan={8} className="px-3 py-4 text-center text-[11px] text-slate-400 italic">No items on this indent.</td></tr>
+                                              <tr><td colSpan={9} className="px-3 py-4 text-center text-[11px] text-slate-400 italic">No items on this indent.</td></tr>
                                             )}
                                             {inputs.map(li => {
                                               const rate = parseFloat(li.unitRate) || 0;
-                                              const lineTotal = rate * li.quantity;
+                                              const disc = parseFloat(li.discountPercent) || 0;
+                                              const lineTotal = rate * li.quantity * (1 - disc / 100);
                                               return (
                                                 <tr key={li.lineId} className="border-b border-slate-100 last:border-b-0">
                                                   <td className="px-3 py-1.5 text-slate-500 font-mono">{li.lineNo}</td>
@@ -1431,6 +1502,12 @@ export default function PurchaseRequisition() {
                                                       value={li.unitRate}
                                                       onChange={e => updateLineInput(q.id, li.lineId, 'unitRate', e.target.value)}
                                                       className="border border-slate-300 px-2 py-1 text-xs w-28 font-mono tabular-nums text-right focus:outline-none focus:ring-1 focus:ring-blue-500" />
+                                                  </td>
+                                                  <td className="px-3 py-1.5 text-right">
+                                                    <input type="number" step="any" inputMode="decimal" placeholder="0" min="0" max="100"
+                                                      value={li.discountPercent}
+                                                      onChange={e => updateLineInput(q.id, li.lineId, 'discountPercent', e.target.value)}
+                                                      className="border border-slate-300 px-2 py-1 text-xs w-16 font-mono tabular-nums text-right focus:outline-none focus:ring-1 focus:ring-blue-500" />
                                                   </td>
                                                   <td className="px-3 py-1.5 text-right">
                                                     <input type="number" step="any" inputMode="decimal" placeholder="—"
@@ -1463,12 +1540,13 @@ export default function PurchaseRequisition() {
                                           {inputs.length > 0 && (() => {
                                             const grandTotal = inputs.reduce((sum, li) => {
                                               const r = parseFloat(li.unitRate) || 0;
-                                              return sum + r * li.quantity;
+                                              const d = parseFloat(li.discountPercent) || 0;
+                                              return sum + r * li.quantity * (1 - d / 100);
                                             }, 0);
                                             return (
                                               <tfoot className="bg-slate-50 border-t border-slate-300">
                                                 <tr>
-                                                  <td colSpan={5} className="px-3 py-1.5 text-right text-[10px] font-bold uppercase tracking-widest text-slate-600">Sub-total (excl. GST)</td>
+                                                  <td colSpan={6} className="px-3 py-1.5 text-right text-[10px] font-bold uppercase tracking-widest text-slate-600">Sub-total (post-discount, excl. GST)</td>
                                                   <td className="px-3 py-1.5 text-right font-mono tabular-nums font-bold text-slate-800">
                                                     {grandTotal > 0 ? grandTotal.toLocaleString('en-IN', { maximumFractionDigits: 2 }) : '—'}
                                                   </td>
@@ -1675,25 +1753,36 @@ export default function PurchaseRequisition() {
                         <div className="border border-purple-200 bg-purple-50/40 p-3 space-y-1">
                           <div className="text-[10px] font-bold text-purple-800 uppercase tracking-widest flex items-center gap-1">
                             <Sparkles size={10} /> AI-Extracted Quote (confidence: {extracted[q.id].confidence})
+                            {extracted[q.id].overallDiscountPercent ? (
+                              <span className="ml-2 inline-block text-[9px] font-bold uppercase tracking-wide px-1.5 py-0.5 border border-emerald-500 bg-emerald-50 text-emerald-700">
+                                Footer discount: {extracted[q.id].overallDiscountPercent}% (applied to all lines)
+                              </span>
+                            ) : null}
                           </div>
                           {extracted[q.id].overallRateNote && <div className="text-[11px] text-slate-700">{extracted[q.id].overallRateNote}</div>}
                           {extracted[q.id].lineRates.length > 0 && (
                             <table className="w-full text-[10px]">
                               <thead><tr className="text-slate-500 border-b border-slate-200">
                                 <th className="text-left py-1">Line</th><th className="text-left py-1">Item (as quoted)</th>
-                                <th className="text-right py-1">Rate</th><th className="text-right py-1">GST%</th>
+                                <th className="text-right py-1">Rate</th><th className="text-right py-1">Disc%</th><th className="text-right py-1">GST%</th>
                                 <th className="text-left py-1">Remarks</th>
                               </tr></thead>
                               <tbody>
-                                {extracted[q.id].lineRates.map((l, li) => (
-                                  <tr key={li} className="border-b border-slate-100">
-                                    <td className="py-1 font-mono">{l.lineNo ?? '—'}</td>
-                                    <td className="py-1">{l.itemName || '—'}</td>
-                                    <td className="py-1 text-right font-mono tabular-nums font-bold">{l.unitRate != null ? `Rs.${l.unitRate.toLocaleString('en-IN')}` : '—'}</td>
-                                    <td className="py-1 text-right font-mono tabular-nums">{l.gstPercent ?? '—'}</td>
-                                    <td className="py-1 text-slate-500">{l.remarks || '—'}</td>
-                                  </tr>
-                                ))}
+                                {extracted[q.id].lineRates.map((l, li) => {
+                                  const effectiveDisc = (l.discountPercent && l.discountPercent > 0)
+                                    ? l.discountPercent
+                                    : (extracted[q.id].overallDiscountPercent || 0);
+                                  return (
+                                    <tr key={li} className="border-b border-slate-100">
+                                      <td className="py-1 font-mono">{l.lineNo ?? '—'}</td>
+                                      <td className="py-1">{l.itemName || '—'}</td>
+                                      <td className="py-1 text-right font-mono tabular-nums font-bold">{l.unitRate != null ? `Rs.${l.unitRate.toLocaleString('en-IN')}` : '—'}</td>
+                                      <td className="py-1 text-right font-mono tabular-nums text-emerald-700">{effectiveDisc > 0 ? `${effectiveDisc}%` : '—'}</td>
+                                      <td className="py-1 text-right font-mono tabular-nums">{l.gstPercent ?? '—'}</td>
+                                      <td className="py-1 text-slate-500">{l.remarks || '—'}</td>
+                                    </tr>
+                                  );
+                                })}
                               </tbody>
                             </table>
                           )}

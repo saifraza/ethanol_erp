@@ -6,7 +6,7 @@ import { createPurchaseOrder } from '../services/purchaseOrderService';
 import { COMPANY } from '../shared/config/company';
 import { renderDocumentPdf } from '../services/documentRenderer';
 import { sendThreadEmail, syncAndListReplies, latestThreadFor } from '../services/emailService';
-import { extractQuoteFromReply } from '../services/rfqQuoteExtractor';
+import { extractQuoteFromReply, effectiveLineDiscount } from '../services/rfqQuoteExtractor';
 import { notifyOnNewRfqReply } from '../services/rfqReplyPoller';
 import { autoExtractIfWaiting } from '../services/rfqAutoExtract';
 import { nextDocNo } from '../utils/docSequence';
@@ -234,12 +234,12 @@ router.get('/:id/vendors/:vrId/line-rates', asyncHandler(async (req: AuthRequest
 
     // Fetch line quotes separately so we can fail-soft if the new table isn't
     // yet deployed (Railway prisma db push has been unreliable for new tables).
-    let lineQuotes: Array<{ requisitionLineId: string; unitRate: number | null; gstPercent: number | null; hsnCode: string | null; remarks: string | null; source: string | null }> = [];
+    let lineQuotes: Array<{ requisitionLineId: string; unitRate: number | null; gstPercent: number | null; hsnCode: string | null; discountPercent: number; remarks: string | null; source: string | null }> = [];
     try {
       lineQuotes = await prisma.purchaseRequisitionVendorLine.findMany({
         where: { vendorQuoteId: req.params.vrId },
-        select: { requisitionLineId: true, unitRate: true, gstPercent: true, hsnCode: true, remarks: true, source: true },
-      
+        select: { requisitionLineId: true, unitRate: true, gstPercent: true, hsnCode: true, discountPercent: true, remarks: true, source: true },
+
     take: 500,
   });
     } catch (err) {
@@ -264,6 +264,7 @@ router.get('/:id/vendors/:vrId/line-rates', asyncHandler(async (req: AuthRequest
         unitRate: lq?.unitRate ?? null,
         gstPercent: lq?.gstPercent ?? null,
         hsnCode: lq?.hsnCode ?? null,
+        discountPercent: lq?.discountPercent ?? 0,
         remarks: lq?.remarks ?? null,
         source: lq?.source ?? null,
       };
@@ -275,7 +276,7 @@ router.get('/:id/vendors/:vrId/line-rates', asyncHandler(async (req: AuthRequest
 // Body: { lines: [{ lineId, unitRate, gstPercent?, hsnCode?, remarks? }], source?: 'MANUAL'|'EMAIL_AUTO' }
 router.put('/:id/vendors/:vrId/line-rates', asyncHandler(async (req: AuthRequest, res: Response) => {
     const body = req.body as {
-      lines?: Array<{ lineId: string; unitRate?: number | string | null; gstPercent?: number | string | null; hsnCode?: string | null; remarks?: string | null }>;
+      lines?: Array<{ lineId: string; unitRate?: number | string | null; gstPercent?: number | string | null; hsnCode?: string | null; discountPercent?: number | string | null; remarks?: string | null }>;
       source?: string;
     };
     if (!Array.isArray(body.lines)) return res.status(400).json({ error: 'lines[] required' });
@@ -296,8 +297,10 @@ router.put('/:id/vendors/:vrId/line-rates', asyncHandler(async (req: AuthRequest
         if (rate != null && (isNaN(rate) || rate < 0)) return res.status(400).json({ error: `Invalid rate on line ${l.lineId}` });
         const gst = l.gstPercent == null || l.gstPercent === '' ? null : Number(l.gstPercent);
         if (gst != null && (isNaN(gst) || gst < 0)) return res.status(400).json({ error: `Invalid GST on line ${l.lineId}` });
+        const discount = l.discountPercent == null || l.discountPercent === '' ? 0 : Number(l.discountPercent);
+        if (isNaN(discount) || discount < 0 || discount > 100) return res.status(400).json({ error: `Invalid discount on line ${l.lineId} (must be 0-100)` });
 
-        if (rate == null && gst == null && !l.hsnCode && !l.remarks) {
+        if (rate == null && gst == null && !l.hsnCode && !l.remarks && discount === 0) {
           await prisma.purchaseRequisitionVendorLine.deleteMany({
             where: { vendorQuoteId: req.params.vrId, requisitionLineId: l.lineId },
           });
@@ -313,13 +316,14 @@ router.put('/:id/vendors/:vrId/line-rates', asyncHandler(async (req: AuthRequest
           || existing.unitRate !== rate
           || existing.gstPercent !== gst
           || (existing.hsnCode || null) !== (l.hsnCode || null)
+          || existing.discountPercent !== discount
           || (existing.remarks || null) !== (l.remarks || null);
         const finalSource = valueChanged ? source : (existing?.source || source);
 
         await prisma.purchaseRequisitionVendorLine.upsert({
           where: { vendorQuoteId_requisitionLineId: { vendorQuoteId: req.params.vrId, requisitionLineId: l.lineId } },
-          update: { unitRate: rate, gstPercent: gst, hsnCode: l.hsnCode || null, remarks: l.remarks || null, source: finalSource },
-          create: { vendorQuoteId: req.params.vrId, requisitionLineId: l.lineId, unitRate: rate, gstPercent: gst, hsnCode: l.hsnCode || null, remarks: l.remarks || null, source: finalSource },
+          update: { unitRate: rate, gstPercent: gst, hsnCode: l.hsnCode || null, discountPercent: discount, remarks: l.remarks || null, source: finalSource },
+          create: { vendorQuoteId: req.params.vrId, requisitionLineId: l.lineId, unitRate: rate, gstPercent: gst, hsnCode: l.hsnCode || null, discountPercent: discount, remarks: l.remarks || null, source: finalSource },
         });
       }
     } catch (err) {
@@ -410,16 +414,18 @@ router.post('/:id/vendors/:vrId/award', asyncHandler(async (req: AuthRequest, re
         let lineRateMap = new Map<string, number>();
         let lineGstMap = new Map<string, number>();
         let lineHsnMap = new Map<string, string>();
+        let lineDiscountMap = new Map<string, number>();
         try {
           const rates = await prisma.purchaseRequisitionVendorLine.findMany({
             where: { vendorQuoteId: req.params.vrId },
-            select: { requisitionLineId: true, unitRate: true, gstPercent: true, hsnCode: true },
-          
+            select: { requisitionLineId: true, unitRate: true, gstPercent: true, hsnCode: true, discountPercent: true },
+
     take: 500,
   });
           lineRateMap = new Map(rates.filter(r => r.unitRate != null && r.unitRate > 0).map(r => [r.requisitionLineId, r.unitRate as number]));
           lineGstMap = new Map(rates.filter(r => r.gstPercent != null).map(r => [r.requisitionLineId, r.gstPercent as number]));
           lineHsnMap = new Map(rates.filter(r => r.hsnCode && r.hsnCode.trim()).map(r => [r.requisitionLineId, (r.hsnCode as string).trim()]));
+          lineDiscountMap = new Map(rates.filter(r => r.discountPercent > 0).map(r => [r.requisitionLineId, r.discountPercent]));
         } catch { /* per-line table missing — fall back to header rate for every line */ }
 
         // Build PO lines from indent lines. Free-text items without an
@@ -430,6 +436,7 @@ router.post('/:id/vendors/:vrId/award', asyncHandler(async (req: AuthRequest, re
             const rate = lineRateMap.get(l.id) ?? row.vendorRate ?? 0;
             const gst = lineGstMap.get(l.id) ?? l.inventoryItem?.gstPercent ?? 18;
             const hsn = lineHsnMap.get(l.id) ?? l.inventoryItem?.hsnCode ?? undefined;
+            const discountPercent = lineDiscountMap.get(l.id) ?? 0;
             return rate > 0 ? {
               inventoryItemId: l.inventoryItemId,
               description: l.itemName,
@@ -438,6 +445,7 @@ router.post('/:id/vendors/:vrId/award', asyncHandler(async (req: AuthRequest, re
               unit: l.inventoryItem?.unit || l.unit,
               rate,
               gstPercent: gst,
+              discountPercent,
             } : null;
           })
           .filter((x): x is NonNullable<typeof x> => x !== null);
@@ -894,10 +902,11 @@ router.post('/:id/vendors/:vrId/extract-quote', asyncHandler(async (req: AuthReq
           let target = lr.lineNo ? byLineNo.get(lr.lineNo) : undefined;
           if (!target && lr.itemName) target = byNameLC.get(lr.itemName.toLowerCase().trim());
           if (!target) continue;
+          const discountPercent = effectiveLineDiscount(lr, extracted.overallDiscountPercent);
           await prisma.purchaseRequisitionVendorLine.upsert({
             where: { vendorQuoteId_requisitionLineId: { vendorQuoteId: req.params.vrId, requisitionLineId: target.id } },
-            update: { unitRate: lr.unitRate, gstPercent: lr.gstPercent ?? null, hsnCode: lr.hsnCode || null, remarks: lr.remarks || null, source: 'EMAIL_AUTO' },
-            create: { vendorQuoteId: req.params.vrId, requisitionLineId: target.id, unitRate: lr.unitRate, gstPercent: lr.gstPercent ?? null, hsnCode: lr.hsnCode || null, remarks: lr.remarks || null, source: 'EMAIL_AUTO' },
+            update: { unitRate: lr.unitRate, gstPercent: lr.gstPercent ?? null, hsnCode: lr.hsnCode || null, discountPercent, remarks: lr.remarks || null, source: 'EMAIL_AUTO' },
+            create: { vendorQuoteId: req.params.vrId, requisitionLineId: target.id, unitRate: lr.unitRate, gstPercent: lr.gstPercent ?? null, hsnCode: lr.hsnCode || null, discountPercent, remarks: lr.remarks || null, source: 'EMAIL_AUTO' },
           });
           savedLineCount++;
         }

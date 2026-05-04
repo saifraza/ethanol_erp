@@ -99,8 +99,13 @@ export async function createPurchaseOrder(input: CreatePOInput) {
     };
   });
 
-  // Calculate header totals
-  const subtotal = processedLines.reduce((sum, line) => sum + line.amount, 0);
+  // Calculate header totals.
+  // subtotal = sum of TAXABLE amounts (post-discount). This matches the manual
+  // PO route at routes/purchaseOrders.ts and keeps grandTotal arithmetic
+  // consistent: grandTotal = subtotal + totalGst. Using gross `amount` here
+  // would inflate grandTotal by the discount amount on every discount-bearing
+  // PO created via this service (e.g. auto-PO from indent award).
+  const subtotal = processedLines.reduce((sum, line) => sum + line.taxableAmount, 0);
   const totalCgst = processedLines.reduce((sum, line) => sum + line.cgstAmount, 0);
   const totalSgst = processedLines.reduce((sum, line) => sum + line.sgstAmount, 0);
   const totalIgst = processedLines.reduce((sum, line) => sum + line.igstAmount, 0);

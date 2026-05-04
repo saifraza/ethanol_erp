@@ -13,12 +13,17 @@ import axios from 'axios';
 
 export interface ExtractedQuote {
   overallRateNote?: string;                    // free-text e.g. "Rs.120/kg FOR basis"
+  // Footer-level discount applied across all lines (e.g. "Discount - 31%" at
+  // the bottom of a Gajanan-style quote). When present, callers should flatten
+  // this onto every lineRate that doesn't carry its own discountPercent.
+  overallDiscountPercent?: number;
   lineRates: Array<{
     lineNo?: number;
     itemName?: string;
     unitRate?: number;
     gstPercent?: number;
     hsnCode?: string;
+    discountPercent?: number;                  // per-line discount, if vendor itemized it
     remarks?: string;
   }>;
   deliveryDays?: number;
@@ -38,7 +43,10 @@ interface Line {
   unit: string;
 }
 
-const MODEL = 'gemini-2.5-flash';
+// Gemini 3 Flash (preview) — same price tier as 2.5 Flash but stronger at
+// long-context document parsing (catches footer terms like "Discount - 31%"
+// that 2.5 Flash often missed when they sat below a long line table).
+const MODEL = 'gemini-3-flash-preview';
 
 export async function extractQuoteFromReply(opts: {
   replyBody: string;
@@ -61,13 +69,15 @@ Read the email body and any attached PDF/image below. Return a JSON object with 
 
 {
   "overallRateNote": "optional one-line summary if the vendor gave a single rate/total",
+  "overallDiscountPercent": 31,       // footer / commercial-terms discount applied to ALL lines (see Discount section below)
   "lineRates": [
     {
       "lineNo": 1,                    // line number from RFQ if you can match
       "itemName": "item name as the vendor wrote it",
-      "unitRate": 120.50,             // rupees per unit — numeric only, no currency
+      "unitRate": 120.50,             // rupees per unit — numeric only, no currency, ALWAYS the gross/list rate (do NOT pre-apply the discount)
       "gstPercent": 18,               // numeric GST rate
       "hsnCode": "73089090",          // if mentioned
+      "discountPercent": 10,          // per-line discount, only if the vendor itemized one for THIS line
       "remarks": "brand, origin, etc."
     }
   ],
@@ -81,7 +91,15 @@ Read the email body and any attached PDF/image below. Return a JSON object with 
   "confidence": "HIGH"                // HIGH if you parsed clear numeric rates, MEDIUM if you inferred, LOW if unsure
 }
 
-Rules:
+Discount extraction (CRITICAL — vendors often hide this):
+- Scan the ENTIRE document, including footer / commercial terms / "Terms & Conditions" / handwritten notes / email signature.
+- Look for phrases like "Discount", "Disc", "Less", "Rebate", followed by a percentage or amount.
+- If a SINGLE discount applies to all items (e.g. "Discount - 31%" at the bottom of a quotation), put it in "overallDiscountPercent" — do NOT silently apply it to each line's unitRate.
+- If the vendor lists a per-line discount column or note, put it in that line's "discountPercent" and leave overallDiscountPercent empty (unless BOTH are present, in which case keep both).
+- Discount is a percentage (numeric, no % sign). If the vendor only gave a discount amount in rupees, convert: discountPercent = round(amount / lineSubtotal × 100, 2).
+- "unitRate" must always be the GROSS / pre-discount rate as the vendor printed it. The system will apply the discount downstream.
+
+Other rules:
 - Return STRICT JSON only — no markdown, no explanation outside the JSON.
 - If a field is not mentioned, omit it (don't include empty strings/nulls).
 - "unitRate" must be a number. Strip currency symbols, commas.
@@ -127,4 +145,18 @@ ${opts.replyBody.slice(0, 8000)}
     console.error('[rfq-ai] Gemini call failed:', err instanceof Error ? err.message : err);
     return null;
   }
+}
+
+/**
+ * Resolve the effective per-line discount %. Per-line wins; falls back to the
+ * overall (footer) discount. Use this everywhere a line is persisted so the
+ * award→PO handoff doesn't drop the footer discount.
+ */
+export function effectiveLineDiscount(
+  line: { discountPercent?: number },
+  overall: number | undefined,
+): number {
+  const perLine = typeof line.discountPercent === 'number' && line.discountPercent > 0 ? line.discountPercent : 0;
+  if (perLine > 0) return perLine;
+  return typeof overall === 'number' && overall > 0 ? overall : 0;
 }
