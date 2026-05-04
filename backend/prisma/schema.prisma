@@ -1684,6 +1684,22 @@ model PurchaseRequisitionVendor {
   quotedAt            DateTime?
   quoteSource         String?             // MANUAL | EMAIL_AUTO | EMAIL_PARTIAL | PHONE | WHATSAPP
   quoteRemarks        String?
+  // ── Quote Cost Template — structured cost components extracted from the
+  // vendor quote (or edited by the buyer before award). These flow to the PO
+  // header on award (freight → freightCharge, rest → otherCharges). Per-line
+  // discount lives on PurchaseRequisitionVendorLine.discountPercent.
+  packingPercent      Float               @default(0)
+  packingAmount       Float               @default(0)
+  freightPercent      Float               @default(0)
+  freightAmount       Float               @default(0)
+  insurancePercent    Float               @default(0)
+  insuranceAmount     Float               @default(0)
+  loadingPercent      Float               @default(0)
+  loadingAmount       Float               @default(0)
+  isRateInclusiveOfGst Boolean            @default(false)
+  tcsPercent          Float               @default(0)
+  deliveryBasis       String?             // EX_WORKS | FOR_DESTINATION | CIF | FOB | OTHER
+  additionalCharges   Json                @default("[]")  // [{name, percent?, amount?, basis?}]
   isAwarded           Boolean             @default(false)
   lineQuotes          PurchaseRequisitionVendorLine[]
   createdAt           DateTime            @default(now())

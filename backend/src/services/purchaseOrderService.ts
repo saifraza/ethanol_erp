@@ -28,6 +28,12 @@ interface CreatePOInput {
   creditDays?: number;
   deliveryDate?: Date;
   dealType?: string;
+  // Header-level cost components — sum already computed by caller.
+  // freightCharge → PO.freightCharge; otherCharges captures everything else
+  // (packing + insurance + loading + additionalCharges sum). Both default to 0
+  // and feed into grandTotal.
+  freightCharge?: number;
+  otherCharges?: number;
 }
 
 export async function createPurchaseOrder(input: CreatePOInput) {
@@ -100,17 +106,17 @@ export async function createPurchaseOrder(input: CreatePOInput) {
   });
 
   // Calculate header totals.
-  // subtotal = sum of TAXABLE amounts (post-discount). This matches the manual
-  // PO route at routes/purchaseOrders.ts and keeps grandTotal arithmetic
-  // consistent: grandTotal = subtotal + totalGst. Using gross `amount` here
-  // would inflate grandTotal by the discount amount on every discount-bearing
-  // PO created via this service (e.g. auto-PO from indent award).
+  // subtotal = sum of TAXABLE amounts (post-discount), matching the manual
+  // PO route at routes/purchaseOrders.ts. grandTotal includes freight + other
+  // header charges so the auto-PO path matches what an operator would type.
   const subtotal = processedLines.reduce((sum, line) => sum + line.taxableAmount, 0);
   const totalCgst = processedLines.reduce((sum, line) => sum + line.cgstAmount, 0);
   const totalSgst = processedLines.reduce((sum, line) => sum + line.sgstAmount, 0);
   const totalIgst = processedLines.reduce((sum, line) => sum + line.igstAmount, 0);
   const totalGst = totalCgst + totalSgst + totalIgst;
-  const grandTotal = subtotal + totalGst;
+  const freightCharge = input.freightCharge ?? 0;
+  const otherCharges = input.otherCharges ?? 0;
+  const grandTotal = subtotal + totalGst + freightCharge + otherCharges;
 
   // Get vendor for TDS check
   const vendor = await prisma.vendor.findUnique({
@@ -141,8 +147,8 @@ export async function createPurchaseOrder(input: CreatePOInput) {
       totalSgst,
       totalIgst,
       totalGst,
-      freightCharge: 0,
-      otherCharges: 0,
+      freightCharge,
+      otherCharges,
       roundOff: 0,
       grandTotal,
       tdsAmount,

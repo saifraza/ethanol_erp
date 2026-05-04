@@ -57,6 +57,13 @@ interface LineQuote {
   source: string | null;
 }
 
+interface AdditionalCharge {
+  name: string;
+  percent?: number;
+  amount?: number;
+  basis?: string;
+}
+
 interface Quote {
   id: string;
   vendorId: string;
@@ -69,6 +76,19 @@ interface Quote {
   quotedAt: string | null;
   quoteSource: string | null;
   quoteRemarks: string | null;
+  // Cost-template fields (extracted by AI or edited by buyer before award)
+  packingPercent?: number;
+  packingAmount?: number;
+  freightPercent?: number;
+  freightAmount?: number;
+  insurancePercent?: number;
+  insuranceAmount?: number;
+  loadingPercent?: number;
+  loadingAmount?: number;
+  isRateInclusiveOfGst?: boolean;
+  tcsPercent?: number;
+  deliveryBasis?: string | null;
+  additionalCharges?: AdditionalCharge[];
   isAwarded: boolean;
   pricedLineCount?: number;
   createdAt: string;
@@ -332,6 +352,68 @@ export default function PurchaseRequisition() {
     setRemarksSaving(prev => ({ ...prev, [vrId]: false }));
   };
 
+  // Cost-template editor state (per vendor row). Each field is a string draft
+  // so empty inputs don't get coerced to "0". Save POSTs to the same vendor
+  // PUT route as remarks — no new endpoint needed.
+  type CostDraft = {
+    packingPercent: string; packingAmount: string;
+    freightPercent: string; freightAmount: string;
+    insurancePercent: string; insuranceAmount: string;
+    loadingPercent: string; loadingAmount: string;
+    isRateInclusiveOfGst: boolean;
+    tcsPercent: string;
+    deliveryBasis: string;
+    additionalChargesJson: string;
+  };
+  const [costDraft, setCostDraft] = useState<Record<string, CostDraft>>({});
+  const [costSaving, setCostSaving] = useState<Record<string, boolean>>({});
+  const numStr = (n: number | undefined | null) => (n != null && n !== 0 ? String(n) : '');
+  const ensureCostDraft = (q: Quote): CostDraft => costDraft[q.id] ?? {
+    packingPercent: numStr(q.packingPercent), packingAmount: numStr(q.packingAmount),
+    freightPercent: numStr(q.freightPercent), freightAmount: numStr(q.freightAmount),
+    insurancePercent: numStr(q.insurancePercent), insuranceAmount: numStr(q.insuranceAmount),
+    loadingPercent: numStr(q.loadingPercent), loadingAmount: numStr(q.loadingAmount),
+    isRateInclusiveOfGst: !!q.isRateInclusiveOfGst,
+    tcsPercent: numStr(q.tcsPercent),
+    deliveryBasis: q.deliveryBasis ?? '',
+    additionalChargesJson: q.additionalCharges && q.additionalCharges.length ? JSON.stringify(q.additionalCharges, null, 2) : '',
+  };
+  const updateCostDraft = (q: Quote, patch: Partial<CostDraft>) => {
+    setCostDraft(prev => ({ ...prev, [q.id]: { ...ensureCostDraft(q), ...patch } }));
+  };
+  const saveCostComponents = async (prId: string, q: Quote) => {
+    const d = ensureCostDraft(q);
+    const num = (s: string) => (s.trim() === '' ? 0 : parseFloat(s) || 0);
+    let additionalCharges: AdditionalCharge[] = [];
+    if (d.additionalChargesJson.trim()) {
+      try {
+        const parsed = JSON.parse(d.additionalChargesJson);
+        if (!Array.isArray(parsed)) throw new Error('must be an array');
+        additionalCharges = parsed;
+      } catch (err) {
+        setLineRatesError(prev => ({ ...prev, [q.id]: `Additional charges JSON invalid: ${(err as Error).message}` }));
+        return;
+      }
+    }
+    setCostSaving(prev => ({ ...prev, [q.id]: true }));
+    try {
+      await api.put(`/purchase-requisition/${prId}/vendors/${q.id}`, {
+        packingPercent: num(d.packingPercent), packingAmount: num(d.packingAmount),
+        freightPercent: num(d.freightPercent), freightAmount: num(d.freightAmount),
+        insurancePercent: num(d.insurancePercent), insuranceAmount: num(d.insuranceAmount),
+        loadingPercent: num(d.loadingPercent), loadingAmount: num(d.loadingAmount),
+        isRateInclusiveOfGst: d.isRateInclusiveOfGst,
+        tcsPercent: num(d.tcsPercent),
+        deliveryBasis: d.deliveryBasis || null,
+        additionalCharges,
+      });
+      load();
+    } catch (e: unknown) {
+      setLineRatesError(prev => ({ ...prev, [q.id]: (e as { response?: { data?: { error?: string } } }).response?.data?.error || 'Failed to save cost components' }));
+    }
+    setCostSaving(prev => ({ ...prev, [q.id]: false }));
+  };
+
   const load = useCallback(async () => {
     try {
       const params = filterStatus !== 'ALL' ? `?status=${filterStatus}` : '';
@@ -480,6 +562,14 @@ export default function PurchaseRequisition() {
   type ExtractedQuote = {
     overallRateNote?: string;
     overallDiscountPercent?: number;
+    packingPercent?: number; packingAmount?: number;
+    freightPercent?: number; freightAmount?: number;
+    insurancePercent?: number; insuranceAmount?: number;
+    loadingPercent?: number; loadingAmount?: number;
+    additionalCharges?: AdditionalCharge[];
+    isRateInclusiveOfGst?: boolean;
+    tcsPercent?: number;
+    deliveryBasis?: string;
     lineRates: Array<{ lineNo?: number; itemName?: string; unitRate?: number; gstPercent?: number; hsnCode?: string; discountPercent?: number; remarks?: string }>;
     deliveryDays?: number; paymentTerms?: string; quoteValidityDays?: number;
     freightTerms?: string; currency?: string; extractedTotal?: number; notes?: string;
@@ -1462,6 +1552,84 @@ export default function PurchaseRequisition() {
                                           rows={2}
                                           className="w-full border border-blue-200 bg-white px-2 py-1 text-[12px] text-slate-800 focus:outline-none focus:ring-1 focus:ring-blue-500" />
                                       </div>
+                                      {/* Cost components — structured promotions of the cost-affecting numbers */}
+                                      {(() => {
+                                        const d = ensureCostDraft(q);
+                                        const chargeRow = (label: string, pctKey: keyof CostDraft, amtKey: keyof CostDraft) => (
+                                          <div className="flex items-center gap-2 text-[11px]">
+                                            <span className="text-slate-600 w-20">{label}</span>
+                                            <input type="number" step="any" inputMode="decimal" placeholder="%"
+                                              value={d[pctKey] as string}
+                                              onChange={e => updateCostDraft(q, { [pctKey]: e.target.value } as Partial<CostDraft>)}
+                                              className="border border-slate-300 px-1.5 py-1 w-16 font-mono tabular-nums text-right focus:outline-none focus:ring-1 focus:ring-amber-500" />
+                                            <span className="text-slate-400 text-[10px]">%</span>
+                                            <span className="text-slate-400 text-[10px]">or</span>
+                                            <input type="number" step="any" inputMode="decimal" placeholder="₹"
+                                              value={d[amtKey] as string}
+                                              onChange={e => updateCostDraft(q, { [amtKey]: e.target.value } as Partial<CostDraft>)}
+                                              className="border border-slate-300 px-1.5 py-1 w-24 font-mono tabular-nums text-right focus:outline-none focus:ring-1 focus:ring-amber-500" />
+                                          </div>
+                                        );
+                                        return (
+                                          <div className="bg-amber-50/60 border-b border-amber-200 px-3 py-2">
+                                            <div className="text-[9px] font-bold text-amber-800 uppercase tracking-widest mb-2 flex items-center justify-between">
+                                              <span>Cost Components — flow to PO header on award</span>
+                                              <button onClick={() => saveCostComponents(pr.id, q)}
+                                                disabled={costSaving[q.id]}
+                                                className="px-2 py-0.5 bg-amber-600 text-white text-[9px] font-bold uppercase tracking-wide hover:bg-amber-700 disabled:bg-slate-300 disabled:text-slate-500">
+                                                {costSaving[q.id] ? 'Saving…' : 'Save Cost'}
+                                              </button>
+                                            </div>
+                                            <div className="grid grid-cols-1 md:grid-cols-2 gap-x-4 gap-y-1.5">
+                                              {chargeRow('Packing', 'packingPercent', 'packingAmount')}
+                                              {chargeRow('Freight', 'freightPercent', 'freightAmount')}
+                                              {chargeRow('Insurance', 'insurancePercent', 'insuranceAmount')}
+                                              {chargeRow('Loading', 'loadingPercent', 'loadingAmount')}
+                                            </div>
+                                            <div className="grid grid-cols-1 md:grid-cols-3 gap-x-4 gap-y-1.5 mt-2 pt-2 border-t border-amber-200/70 text-[11px]">
+                                              <label className="flex items-center gap-2">
+                                                <input type="checkbox"
+                                                  checked={d.isRateInclusiveOfGst}
+                                                  onChange={e => updateCostDraft(q, { isRateInclusiveOfGst: e.target.checked })} />
+                                                <span className="text-slate-700">Rate is GST-inclusive</span>
+                                              </label>
+                                              <div className="flex items-center gap-2">
+                                                <span className="text-slate-600 w-20">TCS</span>
+                                                <input type="number" step="any" inputMode="decimal" placeholder="%"
+                                                  value={d.tcsPercent}
+                                                  onChange={e => updateCostDraft(q, { tcsPercent: e.target.value })}
+                                                  className="border border-slate-300 px-1.5 py-1 w-16 font-mono tabular-nums text-right focus:outline-none focus:ring-1 focus:ring-amber-500" />
+                                                <span className="text-slate-400 text-[10px]">%</span>
+                                              </div>
+                                              <div className="flex items-center gap-2">
+                                                <span className="text-slate-600 w-20">Delivery</span>
+                                                <select
+                                                  value={d.deliveryBasis}
+                                                  onChange={e => updateCostDraft(q, { deliveryBasis: e.target.value })}
+                                                  className="border border-slate-300 px-1.5 py-1 text-[11px] focus:outline-none focus:ring-1 focus:ring-amber-500">
+                                                  <option value="">—</option>
+                                                  <option value="EX_WORKS">Ex Works</option>
+                                                  <option value="FOR_DESTINATION">FOR Destination</option>
+                                                  <option value="CIF">CIF</option>
+                                                  <option value="FOB">FOB</option>
+                                                  <option value="OTHER">Other</option>
+                                                </select>
+                                              </div>
+                                            </div>
+                                            <div className="mt-2 pt-2 border-t border-amber-200/70">
+                                              <div className="text-[9px] font-bold text-slate-600 uppercase tracking-widest mb-1">
+                                                Additional charges (JSON array — one entry per charge)
+                                              </div>
+                                              <textarea
+                                                value={d.additionalChargesJson}
+                                                onChange={e => updateCostDraft(q, { additionalChargesJson: e.target.value })}
+                                                placeholder='e.g. [{"name":"Documentation","amount":150},{"name":"Handling","percent":0.5}]'
+                                                rows={2}
+                                                className="w-full border border-amber-200 bg-white px-2 py-1 text-[11px] font-mono text-slate-800 focus:outline-none focus:ring-1 focus:ring-amber-500" />
+                                            </div>
+                                          </div>
+                                        );
+                                      })()}
                                       {lineRatesLoading[q.id] && inputs.length === 0 ? (
                                         <div className="px-3 py-6 text-center text-[11px] text-slate-400">Loading items…</div>
                                       ) : (
@@ -1792,7 +1960,40 @@ export default function PurchaseRequisition() {
                             {extracted[q.id].freightTerms && <div><span className="text-slate-500">Freight:</span> <b>{extracted[q.id].freightTerms}</b></div>}
                             {extracted[q.id].quoteValidityDays && <div><span className="text-slate-500">Valid:</span> <b>{extracted[q.id].quoteValidityDays} days</b></div>}
                             {extracted[q.id].extractedTotal && <div><span className="text-slate-500">Total:</span> <b>Rs.{extracted[q.id].extractedTotal!.toLocaleString('en-IN')}</b></div>}
+                            {extracted[q.id].deliveryBasis && <div><span className="text-slate-500">Basis:</span> <b>{extracted[q.id].deliveryBasis}</b></div>}
                           </div>
+                          {/* Structured cost components extracted from the quote */}
+                          {(() => {
+                            const e = extracted[q.id];
+                            const charges: Array<{ label: string; pct?: number; amt?: number }> = [
+                              { label: 'Packing', pct: e.packingPercent, amt: e.packingAmount },
+                              { label: 'Freight', pct: e.freightPercent, amt: e.freightAmount },
+                              { label: 'Insurance', pct: e.insurancePercent, amt: e.insuranceAmount },
+                              { label: 'Loading', pct: e.loadingPercent, amt: e.loadingAmount },
+                            ].filter(c => (c.pct && c.pct > 0) || (c.amt && c.amt > 0));
+                            const extra = e.additionalCharges || [];
+                            const hasAny = charges.length > 0 || extra.length > 0 || e.isRateInclusiveOfGst || (e.tcsPercent && e.tcsPercent > 0);
+                            if (!hasAny) return null;
+                            return (
+                              <div className="mt-1 pt-1 border-t border-purple-200/70 flex flex-wrap gap-x-3 gap-y-1 text-[10px]">
+                                <span className="text-purple-700 font-bold uppercase tracking-wider text-[9px]">Cost components extracted:</span>
+                                {charges.map(c => (
+                                  <span key={c.label}>
+                                    <span className="text-slate-500">{c.label}:</span>{' '}
+                                    <b>{c.pct ? `${c.pct}%` : `Rs.${c.amt?.toLocaleString('en-IN')}`}</b>
+                                  </span>
+                                ))}
+                                {extra.map((c, i) => (
+                                  <span key={i}>
+                                    <span className="text-slate-500">{c.name}:</span>{' '}
+                                    <b>{c.percent ? `${c.percent}%` : `Rs.${c.amount?.toLocaleString('en-IN')}`}</b>
+                                  </span>
+                                ))}
+                                {e.tcsPercent && e.tcsPercent > 0 && <span><span className="text-slate-500">TCS:</span> <b>{e.tcsPercent}%</b></span>}
+                                {e.isRateInclusiveOfGst && <span className="text-amber-700 font-bold">⚠ Rate is GST-inclusive</span>}
+                              </div>
+                            );
+                          })()}
                         </div>
                       )}
                     </div>
