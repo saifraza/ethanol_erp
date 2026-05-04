@@ -13,7 +13,7 @@
  */
 
 import prisma from '../config/prisma';
-import { extractQuoteFromReply } from './rfqQuoteExtractor';
+import { extractQuoteFromReply, effectiveLineDiscount } from './rfqQuoteExtractor';
 
 const TERMINAL_STATUSES = ['REJECTED', 'COMPLETED'];
 
@@ -111,10 +111,11 @@ export async function autoExtractIfWaiting(vrId: string): Promise<AutoExtractRes
         let target = lr.lineNo ? byLineNo.get(lr.lineNo) : undefined;
         if (!target && lr.itemName) target = byNameLC.get(lr.itemName.toLowerCase().trim());
         if (!target) continue;
+        const discountPercent = effectiveLineDiscount(lr, extracted.overallDiscountPercent);
         await prisma.purchaseRequisitionVendorLine.upsert({
           where: { vendorQuoteId_requisitionLineId: { vendorQuoteId: vrId, requisitionLineId: target.id } },
-          update: { unitRate: lr.unitRate, gstPercent: lr.gstPercent ?? null, hsnCode: lr.hsnCode || null, remarks: lr.remarks || null, source: 'EMAIL_AUTO' },
-          create: { vendorQuoteId: vrId, requisitionLineId: target.id, unitRate: lr.unitRate, gstPercent: lr.gstPercent ?? null, hsnCode: lr.hsnCode || null, remarks: lr.remarks || null, source: 'EMAIL_AUTO' },
+          update: { unitRate: lr.unitRate, gstPercent: lr.gstPercent ?? null, hsnCode: lr.hsnCode || null, discountPercent, remarks: lr.remarks || null, source: 'EMAIL_AUTO' },
+          create: { vendorQuoteId: vrId, requisitionLineId: target.id, unitRate: lr.unitRate, gstPercent: lr.gstPercent ?? null, hsnCode: lr.hsnCode || null, discountPercent, remarks: lr.remarks || null, source: 'EMAIL_AUTO' },
         });
         savedLineCount++;
       }
