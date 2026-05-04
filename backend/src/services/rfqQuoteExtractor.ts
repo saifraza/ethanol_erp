@@ -83,15 +83,20 @@ interface Line {
 }
 
 // Model selection — accuracy beats cost for procurement extraction (a missed
-// discount or wrong rate goes straight to a real PO). Default is Gemini 3
-// Flash (preview): Pro-level accuracy at Flash pricing, stronger long-context
-// than 2.5 Flash for footer terms below long line tables.
+// discount or wrong rate goes straight to a real PO).
 //
-// Override per-env without a deploy via GEMINI_MODEL.
-//   GEMINI_MODEL=gemini-3-flash-preview  (default — current best price/accuracy)
-//   GEMINI_MODEL=gemini-2.5-pro          (proven fallback if 3-flash misbehaves)
+// 2026-05-04: Switched default from gemini-3-flash-preview to gemini-2.5-pro.
+// gemini-3-flash-preview hit a degenerate trailing-zero loop on the Gajanan
+// PDF — emitted "620.0000000000…" until the output budget was exhausted,
+// producing a truncated mid-number response. Verified with the local test
+// harness: gemini-2.5-pro extracts everything (discount, packing, delivery
+// basis, all 5 line items) with HIGH confidence on the same PDF.
+//
+// Override per-env via GEMINI_MODEL when a newer model passes the same test:
+//   GEMINI_MODEL=gemini-2.5-pro          (default — proven on real procurement PDFs)
 //   GEMINI_MODEL=gemini-3-pro            (when GA — top accuracy)
-const MODEL = process.env.GEMINI_MODEL || 'gemini-3-flash-preview';
+//   GEMINI_MODEL=gemini-3-flash-preview  (cheaper but currently buggy — do not use)
+const MODEL = process.env.GEMINI_MODEL || 'gemini-2.5-pro';
 
 let cachedClient: GoogleGenAI | undefined;
 function getClient(): GoogleGenAI | null {
@@ -310,9 +315,9 @@ ${opts.replyBody.slice(0, 8000)}
       success = true;
       confidence = parsed.confidence;
       return parsed;
-    } catch {
-      console.error('[rfq-ai] Non-JSON response from', MODEL, ':', text.slice(0, 300));
-      errorMessage = 'non-JSON response from model';
+    } catch (e) {
+      console.error(`[rfq-ai] Non-JSON response from ${MODEL}:`, text.slice(0, 300));
+      errorMessage = `non-JSON response: ${(e as Error).message}`;
       confidence = 'LOW';
       return { lineRates: [], confidence, notes: `AI response was not valid JSON (model: ${MODEL})` };
     }
@@ -367,6 +372,77 @@ export function effectiveLineDiscount(
  * Returns only the cost-template subset — caller decides what else to write
  * (vendorRate, quoteRemarks, etc.).
  */
+/**
+ * Match an AI-extracted line rate to one of the indent's lines.
+ *
+ * Strict equality (the original strategy) fails constantly because vendor PDFs
+ * write item names slightly differently from how they're stored on the indent
+ * ("Sulphuric Acid 98%" vs "Sulphuric acid (98%)" vs "H2SO4 - 98%"). This
+ * function tries 4 strategies in order, stopping at the first success:
+ *
+ *   1. lineNo equality (rare — AI usually doesn't fill this)
+ *   2. case-insensitive exact name equality (the old behavior)
+ *   3. normalized name equality (lowercased, alphanumeric only)
+ *   4. token-overlap (Jaccard ≥ 0.5 on words ≥ 3 chars, ignoring stop-words)
+ *
+ * Caller should also try positional fallback (when extracted.length === indent.length)
+ * separately — that needs the full arrays, not single-line context.
+ */
+const STOPWORDS = new Set(['the', 'and', 'for', 'with', 'per', 'kgs', 'kg', 'ltr', 'liter', 'litre', 'no', 'mt', 'tonne', 'ton', 'bag', 'bags', 'piece', 'pieces', 'pcs', 'unit', 'units', 'each', 'item', 'items']);
+
+function normalize(s: string): string {
+  return (s || '').toLowerCase().replace(/[^a-z0-9]+/g, '');
+}
+
+function tokens(s: string): Set<string> {
+  return new Set(
+    (s || '').toLowerCase().split(/[^a-z0-9]+/i).filter(t => t.length >= 3 && !STOPWORDS.has(t))
+  );
+}
+
+function jaccard(a: Set<string>, b: Set<string>): number {
+  if (a.size === 0 || b.size === 0) return 0;
+  let intersect = 0;
+  for (const x of a) if (b.has(x)) intersect++;
+  const union = a.size + b.size - intersect;
+  return intersect / union;
+}
+
+export interface IndentLineLite { id: string; lineNo: number; itemName: string }
+
+export function matchExtractedToIndentLine(
+  lr: { lineNo?: number; itemName?: string },
+  indentLines: IndentLineLite[],
+): { line: IndentLineLite; strategy: 'lineNo' | 'exact' | 'normalized' | 'tokens' } | null {
+  if (lr.lineNo) {
+    const byLineNo = indentLines.find(l => l.lineNo === lr.lineNo);
+    if (byLineNo) return { line: byLineNo, strategy: 'lineNo' };
+  }
+  if (!lr.itemName) return null;
+
+  const lcExtracted = lr.itemName.toLowerCase().trim();
+  const exact = indentLines.find(l => l.itemName.toLowerCase().trim() === lcExtracted);
+  if (exact) return { line: exact, strategy: 'exact' };
+
+  const normExtracted = normalize(lr.itemName);
+  if (normExtracted) {
+    const norm = indentLines.find(l => normalize(l.itemName) === normExtracted);
+    if (norm) return { line: norm, strategy: 'normalized' };
+  }
+
+  const tokExtracted = tokens(lr.itemName);
+  if (tokExtracted.size > 0) {
+    let best: { line: IndentLineLite; score: number } | null = null;
+    for (const il of indentLines) {
+      const score = jaccard(tokExtracted, tokens(il.itemName));
+      if (score >= 0.5 && (!best || score > best.score)) best = { line: il, score };
+    }
+    if (best) return { line: best.line, strategy: 'tokens' };
+  }
+
+  return null;
+}
+
 export function quoteCostFieldsForDb(extracted: ExtractedQuote) {
   return {
     packingPercent: extracted.packingPercent ?? 0,

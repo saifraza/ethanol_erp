@@ -13,7 +13,7 @@
  */
 
 import prisma from '../config/prisma';
-import { extractQuoteFromReply, effectiveLineDiscount, quoteCostFieldsForDb } from './rfqQuoteExtractor';
+import { extractQuoteFromReply, effectiveLineDiscount, quoteCostFieldsForDb, matchExtractedToIndentLine } from './rfqQuoteExtractor';
 
 const TERMINAL_STATUSES = ['REJECTED', 'COMPLETED'];
 
@@ -107,13 +107,20 @@ export async function autoExtractIfWaiting(vrId: string): Promise<AutoExtractRes
   let savedLineCount = 0;
   let lineTableMissing = false;
   if (indentLines.length > 0) {
-    const byLineNo = new Map(indentLines.map(l => [l.lineNo, l]));
-    const byNameLC = new Map(indentLines.map(l => [l.itemName.toLowerCase().trim(), l]));
+    const usableExtracted = extracted.lineRates.filter(lr => typeof lr.unitRate === 'number' && lr.unitRate > 0);
+    const indentLinesLite = indentLines.map(l => ({ id: l.id, lineNo: l.lineNo ?? 1, itemName: l.itemName }));
+    const positionalFallback = usableExtracted.length === indentLines.length;
     try {
       for (const lr of extracted.lineRates) {
         if (!lr.unitRate || lr.unitRate <= 0) continue;
-        let target = lr.lineNo ? byLineNo.get(lr.lineNo) : undefined;
-        if (!target && lr.itemName) target = byNameLC.get(lr.itemName.toLowerCase().trim());
+        const match = matchExtractedToIndentLine(lr, indentLinesLite);
+        let target: typeof indentLines[number] | undefined;
+        if (match) {
+          target = indentLines.find(l => l.id === match.line.id);
+        } else if (positionalFallback) {
+          const idxInUsable = usableExtracted.indexOf(lr);
+          if (idxInUsable >= 0 && idxInUsable < indentLines.length) target = indentLines[idxInUsable];
+        }
         if (!target) continue;
         const discountPercent = effectiveLineDiscount(lr, extracted.overallDiscountPercent);
         await prisma.purchaseRequisitionVendorLine.upsert({

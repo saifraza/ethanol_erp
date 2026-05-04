@@ -15,7 +15,7 @@
 import 'dotenv/config';
 import { readFileSync } from 'fs';
 import { resolve } from 'path';
-import { extractQuoteFromReply } from '../src/services/rfqQuoteExtractor';
+import { extractQuoteFromReply, matchExtractedToIndentLine } from '../src/services/rfqQuoteExtractor';
 
 const DEFAULT_PDF = '/Users/saifraza/Downloads/14ed0c49-411d-444f-a820-0b75d05794d6.pdf';
 
@@ -86,6 +86,38 @@ async function main() {
   if (result.overallDiscountPercent !== 31) missing.push('discount 31%');
   if (result.packingPercent !== 2) missing.push('packing 2%');
   if (missing.length) console.log(`⚠️  Missing: ${missing.join(', ')}`);
+
+  // Now exercise the matcher against the real AI output — this is what
+  // PR #13 fixes. Show which extracted lines map to which indent lines and
+  // by what strategy.
+  console.log('\n=== MATCHER OUTPUT (PR #13 fuzzy matching) ===');
+  const indentLite = GAJANAN_EXPECTED_LINES.map((l, i) => ({ id: `idx-${i}`, lineNo: l.lineNo, itemName: l.itemName }));
+  let matched = 0;
+  let unmatched = 0;
+  const usable = result.lineRates.filter(lr => typeof lr.unitRate === 'number' && lr.unitRate > 0);
+  const positional = usable.length === GAJANAN_EXPECTED_LINES.length;
+  console.log(`  Indent lines: ${GAJANAN_EXPECTED_LINES.length}, AI usable rates: ${usable.length}, positional fallback: ${positional}`);
+  for (const lr of result.lineRates) {
+    if (!lr.unitRate || lr.unitRate <= 0) continue;
+    const m = matchExtractedToIndentLine(lr, indentLite);
+    if (m) {
+      matched++;
+      console.log(`  ✓ "${lr.itemName ?? '(no name)'}" → "${m.line.itemName}" via ${m.strategy} (₹${lr.unitRate})`);
+    } else if (positional) {
+      const idx = usable.indexOf(lr);
+      if (idx >= 0 && idx < GAJANAN_EXPECTED_LINES.length) {
+        matched++;
+        console.log(`  ↪ "${lr.itemName ?? '(no name)'}" → "${GAJANAN_EXPECTED_LINES[idx].itemName}" via positional[${idx}] (₹${lr.unitRate})`);
+      } else {
+        unmatched++;
+        console.log(`  ✗ "${lr.itemName ?? '(no name)'}" → NO MATCH (₹${lr.unitRate})`);
+      }
+    } else {
+      unmatched++;
+      console.log(`  ✗ "${lr.itemName ?? '(no name)'}" → NO MATCH (₹${lr.unitRate})`);
+    }
+  }
+  console.log(`\n  Matched: ${matched}/${matched + unmatched}${unmatched > 0 ? ` — ${unmatched} would need manual mapping in the diagnostics panel` : ''}`);
 }
 
 main().catch(err => {

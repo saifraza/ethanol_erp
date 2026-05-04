@@ -214,6 +214,15 @@ export default function PurchaseRequisition() {
   const [lineRatesSaving, setLineRatesSaving] = useState<Record<string, boolean>>({});
   const [lineRatesExtracting, setLineRatesExtracting] = useState<Record<string, boolean>>({});
   const [lineRatesError, setLineRatesError] = useState<Record<string, string | null>>({});
+  type AiDiagnostics = {
+    confidence: string;
+    matched: Array<{ aiName: string | null; aiUnitRate: number | null; matched: string | null; strategy: string | null }>;
+    indentLineNames: string[];
+    overallRateNote?: string | null;
+    extractedTotal?: number | null;
+    notes?: string | null;
+  };
+  const [aiDiagnostics, setAiDiagnostics] = useState<Record<string, AiDiagnostics | null>>({});
 
   const loadLineRates = useCallback(async (prId: string, vrId: string) => {
     setLineRatesLoading(prev => ({ ...prev, [vrId]: true }));
@@ -279,8 +288,15 @@ export default function PurchaseRequisition() {
     if (!confirmOverwriteIfNeeded(q)) return;
     setLineRatesExtracting(prev => ({ ...prev, [vrId]: true }));
     setLineRatesError(prev => ({ ...prev, [vrId]: null }));
+    setAiDiagnostics(prev => ({ ...prev, [vrId]: null }));
     try {
-      const res = await api.post<{ savedLineCount: number; totalLines: number; extracted: { confidence: string } }>(
+      const res = await api.post<{
+        savedLineCount: number;
+        totalLines: number;
+        extracted: { confidence: string; lineRates: Array<{ itemName?: string; unitRate?: number }>; overallRateNote?: string; extractedTotal?: number; notes?: string };
+        matchDiagnostics?: Array<{ aiName: string | null; aiUnitRate: number | null; matched: string | null; strategy: string | null }>;
+        indentLineNames?: string[];
+      }>(
         `/purchase-requisition/${prId}/vendors/${vrId}/extract-quote`,
         { autoApply: true },
         // Gemini PDF extraction takes 15-40s; the global 10s axios timeout
@@ -289,11 +305,25 @@ export default function PurchaseRequisition() {
       );
       await loadLineRates(prId, vrId);
       load();
-      const { savedLineCount, totalLines, extracted } = res.data;
+      const { savedLineCount, totalLines, extracted, matchDiagnostics, indentLineNames } = res.data;
+      setAiDiagnostics(prev => ({
+        ...prev,
+        [vrId]: {
+          confidence: extracted.confidence,
+          matched: matchDiagnostics || [],
+          indentLineNames: indentLineNames || [],
+          overallRateNote: extracted.overallRateNote ?? null,
+          extractedTotal: extracted.extractedTotal ?? null,
+          notes: extracted.notes ?? null,
+        },
+      }));
       if (savedLineCount === 0) {
+        const aiHadRates = (matchDiagnostics || []).filter(m => m.aiUnitRate && m.aiUnitRate > 0).length;
         setLineRatesError(prev => ({
           ...prev,
-          [vrId]: 'AI did not find any rates in the reply / PDF — please enter them manually below.',
+          [vrId]: aiHadRates > 0
+            ? `AI found ${aiHadRates} rate(s) in the reply but none matched your indent line names — see the diagnostics below to map them manually.`
+            : 'AI did not find any rates in the reply / PDF — see what AI saw below, then enter rates manually.',
         }));
       } else if (extracted.confidence === 'LOW') {
         // We persisted them anyway (tagged EMAIL_AUTO_LOW) so the buyer sees a
@@ -1597,6 +1627,50 @@ export default function PurchaseRequisition() {
                                       {lineRatesError[q.id] && (
                                         <div className="bg-amber-50 border-b border-amber-200 px-3 py-2 text-[11px] text-amber-800 flex items-start gap-1.5">
                                           <AlertCircle size={12} className="mt-0.5 shrink-0" /> {lineRatesError[q.id]}
+                                        </div>
+                                      )}
+                                      {aiDiagnostics[q.id] && (
+                                        <div className="bg-purple-50/60 border-b border-purple-200 px-3 py-2 text-[11px]">
+                                          <div className="text-[10px] font-bold text-purple-800 uppercase tracking-widest mb-1.5 flex items-center gap-1">
+                                            <Sparkles size={10} /> What AI saw (confidence: {aiDiagnostics[q.id]!.confidence})
+                                          </div>
+                                          {aiDiagnostics[q.id]!.overallRateNote && (
+                                            <div className="text-slate-700 mb-1"><span className="font-bold">Overall:</span> {aiDiagnostics[q.id]!.overallRateNote}</div>
+                                          )}
+                                          {aiDiagnostics[q.id]!.extractedTotal != null && aiDiagnostics[q.id]!.extractedTotal! > 0 && (
+                                            <div className="text-slate-700 mb-1"><span className="font-bold">Extracted total:</span> ₹{aiDiagnostics[q.id]!.extractedTotal!.toLocaleString('en-IN')}</div>
+                                          )}
+                                          {aiDiagnostics[q.id]!.matched.length === 0 ? (
+                                            <div className="text-slate-600 italic">AI returned no line items.{aiDiagnostics[q.id]!.notes ? ` Notes: ${aiDiagnostics[q.id]!.notes}` : ''}</div>
+                                          ) : (
+                                            <div className="overflow-x-auto">
+                                              <table className="w-full text-[10px] border border-purple-200">
+                                                <thead className="bg-purple-100/60">
+                                                  <tr>
+                                                    <th className="px-2 py-1 text-left font-bold text-slate-700">AI item name</th>
+                                                    <th className="px-2 py-1 text-right font-bold text-slate-700">AI rate</th>
+                                                    <th className="px-2 py-1 text-left font-bold text-slate-700">Matched indent line</th>
+                                                    <th className="px-2 py-1 text-left font-bold text-slate-700">Match by</th>
+                                                  </tr>
+                                                </thead>
+                                                <tbody>
+                                                  {aiDiagnostics[q.id]!.matched.map((m, mi) => (
+                                                    <tr key={mi} className="border-t border-purple-100">
+                                                      <td className="px-2 py-1 text-slate-800">{m.aiName || <span className="text-slate-400 italic">(no name)</span>}</td>
+                                                      <td className="px-2 py-1 text-right font-mono tabular-nums text-slate-800">{m.aiUnitRate ? `₹${m.aiUnitRate.toLocaleString('en-IN')}` : '—'}</td>
+                                                      <td className="px-2 py-1 text-slate-700">{m.matched || <span className="text-red-600 font-bold">no match</span>}</td>
+                                                      <td className="px-2 py-1 text-slate-500">{m.strategy || <span className="text-red-500">—</span>}</td>
+                                                    </tr>
+                                                  ))}
+                                                </tbody>
+                                              </table>
+                                            </div>
+                                          )}
+                                          {aiDiagnostics[q.id]!.indentLineNames.length > 0 && (
+                                            <div className="text-[10px] text-slate-600 mt-1.5">
+                                              <span className="font-bold">Your indent lines:</span> {aiDiagnostics[q.id]!.indentLineNames.join(' · ')}
+                                            </div>
+                                          )}
                                         </div>
                                       )}
                                       {/* Editable vendor terms (payment / delivery / freight) — was read-only before. */}

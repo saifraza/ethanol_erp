@@ -6,7 +6,7 @@ import { createPurchaseOrder } from '../services/purchaseOrderService';
 import { COMPANY } from '../shared/config/company';
 import { renderDocumentPdf } from '../services/documentRenderer';
 import { sendThreadEmail, syncAndListReplies, latestThreadFor } from '../services/emailService';
-import { extractQuoteFromReply, effectiveLineDiscount, quoteCostFieldsForDb } from '../services/rfqQuoteExtractor';
+import { extractQuoteFromReply, effectiveLineDiscount, quoteCostFieldsForDb, matchExtractedToIndentLine } from '../services/rfqQuoteExtractor';
 import { notifyOnNewRfqReply } from '../services/rfqReplyPoller';
 import { autoExtractIfWaiting } from '../services/rfqAutoExtract';
 import { nextDocNo } from '../utils/docSequence';
@@ -957,16 +957,44 @@ router.post('/:id/vendors/:vrId/extract-quote', asyncHandler(async (req: AuthReq
     // LOW results was the policy bug behind 4 failed prompt patches. We tag
     // LOW lines as EMAIL_AUTO_LOW so the UI can warn the buyer and the Award
     // handler can block/confirm before pushing them into a PO.
+    const matchDiagnostics: Array<{ aiName: string | null; aiUnitRate: number | null; matched: string | null; strategy: string | null }> = [];
     if (req.body.autoApply && indentLines.length > 0) {
       const aiSource = extracted.confidence === 'LOW' ? 'EMAIL_AUTO_LOW' : 'EMAIL_AUTO';
-      const byLineNo = new Map(indentLines.map(l => [l.lineNo, l]));
-      const byNameLC = new Map(indentLines.map(l => [l.itemName.toLowerCase().trim(), l]));
+
+      // Positional fallback: when AI returned exactly one rate per indent line
+      // and we couldn't match by name, fall back to array order. Vendors often
+      // re-letter or reword item names but keep the table order intact.
+      const usableExtracted = extracted.lineRates.filter(lr => typeof lr.unitRate === 'number' && lr.unitRate > 0);
+      const indentLinesLite = indentLines.map(l => ({ id: l.id, lineNo: l.lineNo ?? 1, itemName: l.itemName }));
+      const positionalFallback = usableExtracted.length === indentLines.length;
+
       try {
-        for (const lr of extracted.lineRates) {
+        for (let i = 0; i < extracted.lineRates.length; i++) {
+          const lr = extracted.lineRates[i];
           if (!lr.unitRate || lr.unitRate <= 0) continue;
-          let target = lr.lineNo ? byLineNo.get(lr.lineNo) : undefined;
-          if (!target && lr.itemName) target = byNameLC.get(lr.itemName.toLowerCase().trim());
+
+          const match = matchExtractedToIndentLine(lr, indentLinesLite);
+          let target: typeof indentLines[number] | undefined;
+          let strategy: string | null = null;
+          if (match) {
+            target = indentLines.find(l => l.id === match.line.id);
+            strategy = match.strategy;
+          } else if (positionalFallback) {
+            const idxInUsable = usableExtracted.indexOf(lr);
+            if (idxInUsable >= 0 && idxInUsable < indentLines.length) {
+              target = indentLines[idxInUsable];
+              strategy = 'positional';
+            }
+          }
+
+          matchDiagnostics.push({
+            aiName: lr.itemName ?? null,
+            aiUnitRate: lr.unitRate ?? null,
+            matched: target ? target.itemName : null,
+            strategy,
+          });
           if (!target) continue;
+
           const discountPercent = effectiveLineDiscount(lr, extracted.overallDiscountPercent);
           await prisma.purchaseRequisitionVendorLine.upsert({
             where: { vendorQuoteId_requisitionLineId: { vendorQuoteId: req.params.vrId, requisitionLineId: target.id } },
@@ -1026,6 +1054,8 @@ router.post('/:id/vendors/:vrId/extract-quote', asyncHandler(async (req: AuthReq
             savedRate: null,
             savedLineCount,
             totalLines: indentLines.length,
+            matchDiagnostics,
+            indentLineNames: indentLines.map(l => l.itemName),
             warning: `Cost components could not be saved: ${err instanceof Error ? err.message : String(err)}`,
             reply: { from: latestReply.fromEmail, subject: latestReply.subject, date: latestReply.receivedAt },
           });
@@ -1066,6 +1096,8 @@ router.post('/:id/vendors/:vrId/extract-quote', asyncHandler(async (req: AuthReq
       savedRate: savedHeaderRate,
       savedLineCount,
       totalLines: indentLines.length,
+      matchDiagnostics,
+      indentLineNames: indentLines.map(l => l.itemName),
       reply: { from: latestReply.fromEmail, subject: latestReply.subject, date: latestReply.receivedAt },
     });
 }));
