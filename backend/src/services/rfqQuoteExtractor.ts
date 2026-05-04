@@ -14,7 +14,7 @@
  * the SDK abstracts that.
  */
 
-import { GoogleGenAI } from '@google/genai';
+import { GoogleGenAI, Type } from '@google/genai';
 
 // One additional charge line (handling, documentation, courier, etc.) — used
 // when the vendor lists a charge that doesn't fit the named buckets below.
@@ -204,11 +204,73 @@ ${opts.replyBody.slice(0, 8000)}
   }
   parts.push({ text: prompt });
 
+  // Without a responseSchema, Gemini 3 Flash sometimes interleaves top-level
+  // keys with nested array element keys, producing invalid JSON. Anvil's
+  // gemini provider hit the same problem and fixed it with a schema; same
+  // pattern here. Optional fields are NOT marked required so the model can
+  // legitimately omit them.
+  const responseSchema = {
+    type: Type.OBJECT,
+    properties: {
+      overallRateNote: { type: Type.STRING },
+      overallDiscountPercent: { type: Type.NUMBER },
+      packingPercent: { type: Type.NUMBER },
+      packingAmount: { type: Type.NUMBER },
+      freightPercent: { type: Type.NUMBER },
+      freightAmount: { type: Type.NUMBER },
+      insurancePercent: { type: Type.NUMBER },
+      insuranceAmount: { type: Type.NUMBER },
+      loadingPercent: { type: Type.NUMBER },
+      loadingAmount: { type: Type.NUMBER },
+      isRateInclusiveOfGst: { type: Type.BOOLEAN },
+      tcsPercent: { type: Type.NUMBER },
+      deliveryBasis: { type: Type.STRING, enum: ['EX_WORKS', 'FOR_DESTINATION', 'CIF', 'FOB', 'OTHER'] },
+      additionalCharges: {
+        type: Type.ARRAY,
+        items: {
+          type: Type.OBJECT,
+          properties: {
+            name: { type: Type.STRING },
+            percent: { type: Type.NUMBER },
+            amount: { type: Type.NUMBER },
+            basis: { type: Type.STRING },
+          },
+          required: ['name'],
+        },
+      },
+      lineRates: {
+        type: Type.ARRAY,
+        items: {
+          type: Type.OBJECT,
+          properties: {
+            lineNo: { type: Type.INTEGER },
+            itemName: { type: Type.STRING },
+            unitRate: { type: Type.NUMBER },
+            gstPercent: { type: Type.NUMBER },
+            hsnCode: { type: Type.STRING },
+            discountPercent: { type: Type.NUMBER },
+            remarks: { type: Type.STRING },
+          },
+        },
+      },
+      deliveryDays: { type: Type.NUMBER },
+      paymentTerms: { type: Type.STRING },
+      quoteValidityDays: { type: Type.NUMBER },
+      freightTerms: { type: Type.STRING },
+      currency: { type: Type.STRING },
+      extractedTotal: { type: Type.NUMBER },
+      notes: { type: Type.STRING },
+      confidence: { type: Type.STRING, enum: ['HIGH', 'MEDIUM', 'LOW'] },
+    },
+    required: ['lineRates', 'confidence'],
+  };
+
   try {
     const result = await client.models.generateContent({
       model: MODEL,
       config: {
         responseMimeType: 'application/json',
+        responseSchema,
         temperature: 0.1,
         maxOutputTokens: 8000,
       },
