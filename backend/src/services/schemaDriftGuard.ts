@@ -101,6 +101,36 @@ const EXPECTED_TABLES: TableCheck[] = [
       CREATE INDEX IF NOT EXISTS "Farmer_isActive_idx" ON "Farmer"("isActive");
     `,
   },
+  // 2026-05-04 — AiCallLog (audit trail for every AI provider call)
+  {
+    table: 'AiCallLog',
+    sql: `
+      CREATE TABLE IF NOT EXISTS "AiCallLog" (
+        "id" TEXT NOT NULL,
+        "feature" TEXT NOT NULL,
+        "provider" TEXT NOT NULL DEFAULT 'gemini',
+        "model" TEXT NOT NULL,
+        "userId" TEXT,
+        "contextRef" TEXT,
+        "inputTokens" INTEGER NOT NULL DEFAULT 0,
+        "outputTokens" INTEGER NOT NULL DEFAULT 0,
+        "totalTokens" INTEGER NOT NULL DEFAULT 0,
+        "estimatedCostUsd" DOUBLE PRECISION NOT NULL DEFAULT 0,
+        "estimatedCostInr" DOUBLE PRECISION NOT NULL DEFAULT 0,
+        "durationMs" INTEGER NOT NULL DEFAULT 0,
+        "success" BOOLEAN NOT NULL,
+        "errorMessage" TEXT,
+        "metadata" JSONB NOT NULL DEFAULT '{}'::jsonb,
+        "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        CONSTRAINT "AiCallLog_pkey" PRIMARY KEY ("id")
+      );
+      CREATE INDEX IF NOT EXISTS "AiCallLog_feature_createdAt_idx" ON "AiCallLog"("feature", "createdAt");
+      CREATE INDEX IF NOT EXISTS "AiCallLog_model_idx" ON "AiCallLog"("model");
+      CREATE INDEX IF NOT EXISTS "AiCallLog_userId_idx" ON "AiCallLog"("userId");
+      CREATE INDEX IF NOT EXISTS "AiCallLog_success_idx" ON "AiCallLog"("success");
+      CREATE INDEX IF NOT EXISTS "AiCallLog_createdAt_idx" ON "AiCallLog"("createdAt");
+    `,
+  },
   // 2026-05-02 — FarmerPayment (separate ledger from VendorPayment)
   {
     table: 'FarmerPayment',
