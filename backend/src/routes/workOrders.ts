@@ -1,4 +1,5 @@
 import { Router, Response } from 'express';
+import { Prisma } from '@prisma/client';
 import prisma from '../config/prisma';
 import { authenticate, AuthRequest, authorize, getCompanyFilter, getActiveCompanyId } from '../middleware/auth';
 import { asyncHandler, validate } from '../shared/middleware';
@@ -23,10 +24,25 @@ const lineSchema = z.object({
   discountPercent: z.number().min(0).max(100).default(0),
   gstPercent: z.number().min(0).max(40).default(18),
   remarks: z.string().nullable().optional(),
+  // Manpower supply lines — optional fields, only set when lineKind = 'MANPOWER'
+  lineKind: z.enum(['GENERAL', 'MANPOWER']).default('GENERAL'),
+  skillCategory: z.string().nullable().optional(),
+  shiftHours: z.number().int().refine((v) => v === 8 || v === 12, { message: 'shiftHours must be 8 or 12' }).nullable().optional(),
+  personCount: z.number().int().positive().nullable().optional(),
+  shiftCount: z.number().int().positive().nullable().optional(),
+});
+
+const rateCardEntrySchema = z.object({
+  category: z.string().min(1), // SKILLED | SEMI_SKILLED | UNSKILLED | SUPERVISOR (or free text)
+  label: z.string().min(1), // human label e.g. "Skilled — Welder"
+  rate8h: z.number().min(0),
+  rate12h: z.number().min(0),
 });
 
 const createSchema = z.object({
   contractorId: z.string().min(1),
+  contractType: z.enum(['GENERAL', 'MANPOWER_SUPPLY']).default('GENERAL'),
+  manpowerRateCard: z.array(rateCardEntrySchema).nullable().optional(),
   title: z.string().min(1),
   description: z.string().nullable().optional(),
   startDate: z.string().nullable().optional(),
@@ -81,6 +97,11 @@ interface ComputedLine {
   totalGst: number;
   lineTotal: number;
   remarks: string | null;
+  lineKind: 'GENERAL' | 'MANPOWER';
+  skillCategory: string | null;
+  shiftHours: number | null;
+  personCount: number | null;
+  shiftCount: number | null;
 }
 
 function computeLine(l: LineInput, supplyType: 'INTRA_STATE' | 'INTER_STATE'): ComputedLine {
@@ -121,6 +142,11 @@ function computeLine(l: LineInput, supplyType: 'INTRA_STATE' | 'INTER_STATE'): C
     totalGst,
     lineTotal,
     remarks: l.remarks ?? null,
+    lineKind: l.lineKind ?? 'GENERAL',
+    skillCategory: l.skillCategory ?? null,
+    shiftHours: l.shiftHours ?? null,
+    personCount: l.personCount ?? null,
+    shiftCount: l.shiftCount ?? null,
   };
 }
 
@@ -175,10 +201,12 @@ router.get('/', asyncHandler(async (req: AuthRequest, res: Response) => {
   const skip = parseInt(req.query.offset as string) || 0;
   const { contractorId, status, dateFrom, dateTo, division } = req.query as Record<string, string | undefined>;
 
+  const { contractType } = req.query as Record<string, string | undefined>;
   const where: Record<string, unknown> = { ...getCompanyFilter(req) };
   if (contractorId) where.contractorId = contractorId;
   if (status && status !== 'ALL') where.status = status;
   if (division) where.division = division;
+  if (contractType && contractType !== 'ALL') where.contractType = contractType;
   if (dateFrom || dateTo) {
     where.startDate = {
       ...(dateFrom ? { gte: new Date(dateFrom) } : {}),
@@ -196,6 +224,7 @@ router.get('/', asyncHandler(async (req: AuthRequest, res: Response) => {
         id: true,
         woNo: true,
         title: true,
+        contractType: true,
         contractorId: true,
         contractor: { select: { id: true, name: true, contractorCode: true } },
         startDate: true,
@@ -295,6 +324,10 @@ router.post('/', authorize(...WRITE_ROLES), validate(createSchema), asyncHandler
       siteLocation: body.siteLocation ?? null,
       supplyType: body.supplyType,
       placeOfSupply: body.placeOfSupply ?? null,
+      contractType: body.contractType,
+      manpowerRateCard: body.contractType === 'MANPOWER_SUPPLY'
+        ? (body.manpowerRateCard ?? [])
+        : Prisma.JsonNull,
       subtotal: header.subtotal,
       discountAmount: header.discountAmount,
       taxableAmount: header.taxableAmount,
@@ -360,6 +393,12 @@ router.put('/:id', authorize(...WRITE_ROLES), validate(updateSchema), asyncHandl
         siteLocation: req.body.siteLocation !== undefined ? req.body.siteLocation : existing.siteLocation,
         supplyType,
         placeOfSupply: req.body.placeOfSupply !== undefined ? req.body.placeOfSupply : existing.placeOfSupply,
+        contractType: req.body.contractType ?? existing.contractType,
+        manpowerRateCard: req.body.contractType === 'MANPOWER_SUPPLY'
+          ? (req.body.manpowerRateCard ?? (existing.manpowerRateCard as Prisma.InputJsonValue) ?? [])
+          : (req.body.contractType === 'GENERAL'
+            ? Prisma.JsonNull
+            : (existing.manpowerRateCard as Prisma.InputJsonValue ?? Prisma.JsonNull)),
         subtotal: header.subtotal,
         discountAmount: header.discountAmount,
         taxableAmount: header.taxableAmount,
