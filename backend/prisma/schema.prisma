@@ -3168,6 +3168,11 @@ model WorkOrder {
   // GST supply type (mirrors PurchaseOrder)
   supplyType      String     @default("INTRA_STATE") // INTRA_STATE (CGST+SGST) | INTER_STATE (IGST)
   placeOfSupply   String? // state code
+  // Contract type — drives form layout / list tab
+  contractType    String     @default("GENERAL") // GENERAL | MANPOWER_SUPPLY
+  // Manpower supply contract — header-level rate card snapshot (JSON array of skill categories with 8h / 12h rates).
+  // Only populated when contractType = 'MANPOWER_SUPPLY'. Used to render the rate card on print / re-edit.
+  manpowerRateCard Json?
   // Header totals (denormalised from lines)
   subtotal        Float      @default(0) // sum of (qty × rate)
   discountAmount  Float      @default(0)
@@ -3220,6 +3225,7 @@ model WorkOrder {
   @@index([startDate])
   @@index([division])
   @@index([companyId])
+  @@index([contractType])
 }
 
 model WorkOrderLine {
@@ -3249,6 +3255,12 @@ model WorkOrderLine {
   // Progress against this line
   completedQty    Float     @default(0)
   remarks         String?
+  // Manpower supply lines — populated when lineKind = 'MANPOWER'
+  lineKind        String    @default("GENERAL") // GENERAL | MANPOWER
+  skillCategory   String? // SKILLED | SEMI_SKILLED | UNSKILLED | SUPERVISOR | (free-text override)
+  shiftHours      Int? // 8 or 12
+  personCount     Int? // people supplied per day
+  shiftCount      Int? // number of shifts (days) in the contract period
   createdAt       DateTime  @default(now())
 
   @@index([woId])

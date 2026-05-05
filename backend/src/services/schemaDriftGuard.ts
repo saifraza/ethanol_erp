@@ -60,6 +60,15 @@ const EXPECTED_COLUMNS: ColumnCheck[] = [
   { table: 'PurchaseRequisitionVendor', column: 'additionalCharges',    sql: `ALTER TABLE "PurchaseRequisitionVendor" ADD COLUMN IF NOT EXISTS "additionalCharges" JSONB NOT NULL DEFAULT '[]'::jsonb` },
   // 2026-05-04 — Contractor Work Orders — link existing ContractorBill back to a WO
   { table: 'ContractorBill', column: 'workOrderId', sql: `ALTER TABLE "ContractorBill" ADD COLUMN IF NOT EXISTS "workOrderId" TEXT` },
+
+  // 2026-05-06 — Manpower supply contracts (new tab on Work Orders page)
+  { table: 'WorkOrder',     column: 'contractType',     sql: `ALTER TABLE "WorkOrder" ADD COLUMN IF NOT EXISTS "contractType" TEXT NOT NULL DEFAULT 'GENERAL'` },
+  { table: 'WorkOrder',     column: 'manpowerRateCard', sql: `ALTER TABLE "WorkOrder" ADD COLUMN IF NOT EXISTS "manpowerRateCard" JSONB` },
+  { table: 'WorkOrderLine', column: 'lineKind',         sql: `ALTER TABLE "WorkOrderLine" ADD COLUMN IF NOT EXISTS "lineKind" TEXT NOT NULL DEFAULT 'GENERAL'` },
+  { table: 'WorkOrderLine', column: 'skillCategory',    sql: `ALTER TABLE "WorkOrderLine" ADD COLUMN IF NOT EXISTS "skillCategory" TEXT` },
+  { table: 'WorkOrderLine', column: 'shiftHours',       sql: `ALTER TABLE "WorkOrderLine" ADD COLUMN IF NOT EXISTS "shiftHours" INTEGER` },
+  { table: 'WorkOrderLine', column: 'personCount',      sql: `ALTER TABLE "WorkOrderLine" ADD COLUMN IF NOT EXISTS "personCount" INTEGER` },
+  { table: 'WorkOrderLine', column: 'shiftCount',       sql: `ALTER TABLE "WorkOrderLine" ADD COLUMN IF NOT EXISTS "shiftCount" INTEGER` },
 ];
 
 const EXPECTED_TABLES: TableCheck[] = [
@@ -325,6 +334,8 @@ export async function runSchemaDriftGuard(): Promise<void> {
     await prisma.$executeRawUnsafe(`CREATE INDEX IF NOT EXISTS "DirectPurchase_farmerId_idx" ON "DirectPurchase"("farmerId")`);
     // 2026-05-04 — index for ContractorBill ↔ WorkOrder linkage
     await prisma.$executeRawUnsafe(`CREATE INDEX IF NOT EXISTS "ContractorBill_workOrderId_idx" ON "ContractorBill"("workOrderId")`);
+    // 2026-05-06 — index for WorkOrder.contractType (Manpower vs General tab filter)
+    await prisma.$executeRawUnsafe(`CREATE INDEX IF NOT EXISTS "WorkOrder_contractType_idx" ON "WorkOrder"("contractType")`);
     console.log('[SchemaDriftGuard] OK — all expected columns + tables present');
   } catch (err: unknown) {
     console.error('[SchemaDriftGuard] check failed:', (err instanceof Error ? err.message : String(err)));
