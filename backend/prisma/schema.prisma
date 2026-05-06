@@ -5613,6 +5613,11 @@ model BiometricDevice {
   lastSyncStatus  String? // OK | ERROR | NEVER
   lastSyncError   String?
   lastPunchSyncAt DateTime? // last successful punch-pull
+  // Auto-sync intervals (0 = disabled)
+  autoPullMinutes Int       @default(0) // pull-punches interval; 0 = manual only
+  autoPushMinutes Int       @default(0) // sync-employees interval; 0 = manual only
+  lastAutoPullAt  DateTime? // last automatic pull-punches run
+  lastAutoPushAt  DateTime? // last automatic sync-employees run
   notes           String?
   createdAt       DateTime  @default(now())
   updatedAt       DateTime  @updatedAt

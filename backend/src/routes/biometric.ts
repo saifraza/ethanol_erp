@@ -70,6 +70,8 @@ const deviceSchema = z.object({
   password: z.number().int().min(0).max(99_999_999).default(0),
   active: z.boolean().default(true),
   notes: z.string().optional(),
+  autoPullMinutes: z.number().int().min(0).max(1440).default(0),
+  autoPushMinutes: z.number().int().min(0).max(1440).default(0),
 });
 
 router.get('/devices', asyncHandler(async (req: AuthRequest, res: Response) => {

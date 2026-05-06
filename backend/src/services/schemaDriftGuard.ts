@@ -75,6 +75,11 @@ const EXPECTED_COLUMNS: ColumnCheck[] = [
   // 2026-05-06 — Biometric Devices (HR Phase A)
   { table: 'Employee', column: 'deviceUserId', sql: `ALTER TABLE "Employee" ADD COLUMN IF NOT EXISTS "deviceUserId" TEXT` },
   { table: 'Employee', column: 'cardNumber',   sql: `ALTER TABLE "Employee" ADD COLUMN IF NOT EXISTS "cardNumber" TEXT` },
+  // 2026-05-06 — Auto-sync intervals
+  { table: 'BiometricDevice', column: 'autoPullMinutes', sql: `ALTER TABLE "BiometricDevice" ADD COLUMN IF NOT EXISTS "autoPullMinutes" INTEGER NOT NULL DEFAULT 0` },
+  { table: 'BiometricDevice', column: 'autoPushMinutes', sql: `ALTER TABLE "BiometricDevice" ADD COLUMN IF NOT EXISTS "autoPushMinutes" INTEGER NOT NULL DEFAULT 0` },
+  { table: 'BiometricDevice', column: 'lastAutoPullAt',  sql: `ALTER TABLE "BiometricDevice" ADD COLUMN IF NOT EXISTS "lastAutoPullAt" TIMESTAMP(3)` },
+  { table: 'BiometricDevice', column: 'lastAutoPushAt',  sql: `ALTER TABLE "BiometricDevice" ADD COLUMN IF NOT EXISTS "lastAutoPushAt" TIMESTAMP(3)` },
 ];
 
 const EXPECTED_TABLES: TableCheck[] = [
