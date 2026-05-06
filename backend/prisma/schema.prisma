@@ -92,6 +92,10 @@ model Company {
   projectPurchases      ProjectPurchase[]
   farmers               Farmer[]
   farmerPayments        FarmerPayment[]
+  shifts                Shift[]
+  attendancePunches     AttendancePunch[]
+  attendanceDays        AttendanceDay[]
+  leaveApplications     LeaveApplication[]
 }
 
 model User {
@@ -1202,6 +1206,7 @@ model LabSample {
   createdAt      DateTime     @default(now())
   updatedAt      DateTime     @updatedAt
   grainTrucks    GrainTruck[]
+
   @@index([date])
   @@index([result])
   @@index([userId])
@@ -1226,45 +1231,45 @@ model AuditLog {
 // INVENTORY & STORE
 // ═══════════════════════════════════════════════
 model InventoryItem {
-  id                      String                   @id @default(uuid())
+  id                      String                    @id @default(uuid())
   name                    String
-  code                    String                   @unique // SKU / part code
-  category                String                   @default("RAW_MATERIAL") // RAW_MATERIAL, SPARE_PART, CONSUMABLE, CHEMICAL, FINISHED_GOOD, OTHER
-  unit                    String                   @default("kg") // kg, ltr, nos, mtr, set
-  currentStock            Float                    @default(0)
-  minStock                Float                    @default(0) // reorder point
+  code                    String                    @unique // SKU / part code
+  category                String                    @default("RAW_MATERIAL") // RAW_MATERIAL, SPARE_PART, CONSUMABLE, CHEMICAL, FINISHED_GOOD, OTHER
+  unit                    String                    @default("kg") // kg, ltr, nos, mtr, set
+  currentStock            Float                     @default(0)
+  minStock                Float                     @default(0) // reorder point
   maxStock                Float? // max storage
-  costPerUnit             Float                    @default(0)
+  costPerUnit             Float                     @default(0)
   location                String? // bin/rack location
   supplier                String?
   leadTimeDays            Int?
-  isActive                Boolean                  @default(true)
+  isActive                Boolean                   @default(true)
   remarks                 String?
   // SAP-style fields
   hsnCode                 String? // legacy — kept for backfill fallback; new code reads hsnCodeRef
-  gstPercent              Float                    @default(18) // legacy cache — authoritative rate lives on GstRate via hsnCodeRef
+  gstPercent              Float                     @default(18) // legacy cache — authoritative rate lives on GstRate via hsnCodeRef
   // Phase-A tax unification (2026-04-14): link to HsnCode + GstRate master
   hsnCodeId               String?
-  hsnCodeRef              HsnCode?                 @relation(fields: [hsnCodeId], references: [id])
+  hsnCodeRef              HsnCode?                  @relation(fields: [hsnCodeId], references: [id])
   gstOverridePercent      Float? // rare: per-item statutory override (e.g. Notification 2/2017 unbranded)
   gstOverrideReason       String? // required when gstOverridePercent is set
-  valuationMethod         String                   @default("WEIGHTED_AVG") // WEIGHTED_AVG, FIFO, STANDARD
-  avgCost                 Float                    @default(0) // weighted average cost
-  totalValue              Float                    @default(0) // currentStock × avgCost
-  batchTracked            Boolean                  @default(false)
+  valuationMethod         String                    @default("WEIGHTED_AVG") // WEIGHTED_AVG, FIFO, STANDARD
+  avgCost                 Float                     @default(0) // weighted average cost
+  totalValue              Float                     @default(0) // currentStock × avgCost
+  batchTracked            Boolean                   @default(false)
   // Procurement fields (merged from Material)
   subCategory             String? // e.g., ENZYME, YEAST, ACID
-  defaultRate             Float                    @default(0) // last/standard purchase rate
+  defaultRate             Float                     @default(0) // last/standard purchase rate
   // Fuel-specific fields (only used when category = 'FUEL')
   steamRate               Float? // tons of steam per ton of fuel (e.g., 3.0 for rice husk)
   calorificValue          Float? // kcal/kg (optional reference)
   // Multi-division routing (Stage 2): drives factory gate-entry dropdown + cloud detectHandler
-  aliases                 String[]                 @default([]) // alternate names operators may type ("DI", "ductile iron", "ms", "iron scrap")
+  aliases                 String[]                  @default([]) // alternate names operators may type ("DI", "ductile iron", "ms", "iron scrap")
   handlerKey              String? // optional override for cloud detectHandler — null = route by category/division
-  isContractBased         Boolean                  @default(false) // if true, gate entry must pick a contract
-  needsLabTest            Boolean                  @default(false) // if true, factory blocks gross weighment until lab passes
-  createdAt               DateTime                 @default(now())
-  updatedAt               DateTime                 @updatedAt
+  isContractBased         Boolean                   @default(false) // if true, gate entry must pick a contract
+  needsLabTest            Boolean                   @default(false) // if true, factory blocks gross weighment until lab passes
+  createdAt               DateTime                  @default(now())
+  updatedAt               DateTime                  @updatedAt
   transactions            InventoryTransaction[]
   batches                 Batch[]
   stockLevels             StockLevel[]
@@ -1352,11 +1357,11 @@ model RawMaterialConsumption {
 // belongs to one division. Helps scope indents, reports, and P&L per division.
 model BusinessDivision {
   id          String       @id @default(cuid())
-  name        String       // "Ethanol", "Sugar", "Power", "Co-Gen", "Bio-CNG"
-  code        String?      // Short code: ETH, SUG, PWR, COG, CBG
+  name        String // "Ethanol", "Sugar", "Power", "Co-Gen", "Bio-CNG"
+  code        String? // Short code: ETH, SUG, PWR, COG, CBG
   description String?
   isActive    Boolean      @default(true)
-  companyId   String?      // FK → Company (null = MSPIL default)
+  companyId   String? // FK → Company (null = MSPIL default)
   company     Company?     @relation(fields: [companyId], references: [id])
   departments Department[]
   createdAt   DateTime     @default(now())
@@ -1640,23 +1645,23 @@ model PurchaseRequisition {
   updatedAt         DateTime  @updatedAt
 
   // ── Quote / Vendor Tracking (one vendor per indent) ──
-  vendorId              String? // FK → Vendor for the quote / PO
-  vendor                Vendor?   @relation("VendorIndents", fields: [vendorId], references: [id])
-  quoteRequestedAt      DateTime? // when we emailed / asked vendor for quote
-  quoteRequestedBy      String?   // user name who triggered the quote request
-  quoteEmailSubject     String?   // subject line used in the quote request email
-  quoteEmailThreadId    String?   // Gmail thread id — used to match replies
-  quoteEmailMessageId   String?   // Gmail message id of the sent request
-  vendorRate            Float?    // rate quoted by the vendor (manual or AI-extracted)
-  vendorQuotedAt        DateTime? // when rate was entered / extracted
-  quoteSource           String?   // MANUAL | EMAIL_AUTO | PHONE | WHATSAPP
-  quoteRemarks          String?   // free-text notes on the quote
+  vendorId            String? // FK → Vendor for the quote / PO
+  vendor              Vendor?   @relation("VendorIndents", fields: [vendorId], references: [id])
+  quoteRequestedAt    DateTime? // when we emailed / asked vendor for quote
+  quoteRequestedBy    String? // user name who triggered the quote request
+  quoteEmailSubject   String? // subject line used in the quote request email
+  quoteEmailThreadId  String? // Gmail thread id — used to match replies
+  quoteEmailMessageId String? // Gmail message id of the sent request
+  vendorRate          Float? // rate quoted by the vendor (manual or AI-extracted)
+  vendorQuotedAt      DateTime? // when rate was entered / extracted
+  quoteSource         String? // MANUAL | EMAIL_AUTO | PHONE | WHATSAPP
+  quoteRemarks        String? // free-text notes on the quote
 
   purchaseOrders PurchaseOrder[] // auto-generated POs from this indent
   quotes         PurchaseRequisitionVendor[] // one row per vendor we're asking for a quote from
   lines          PurchaseRequisitionLine[] // multi-item indents — 1+ items in the same request
   companyId      String? // FK → Company (null = MSPIL default)
-  company        Company?        @relation(fields: [companyId], references: [id])
+  company        Company?                    @relation(fields: [companyId], references: [id])
 
   @@index([status])
   @@index([urgency])
@@ -1671,40 +1676,40 @@ model PurchaseRequisition {
 // Each indent can have many of these — one per vendor we're asking for a quote.
 // When one is awarded, PurchaseRequisition.vendorId points at the winner.
 model PurchaseRequisitionVendor {
-  id                  String              @id @default(cuid())
-  requisitionId       String
-  requisition         PurchaseRequisition @relation(fields: [requisitionId], references: [id], onDelete: Cascade)
-  vendorId            String
-  vendor              Vendor              @relation("VendorIndentQuotes", fields: [vendorId], references: [id])
-  quoteRequestedAt    DateTime?
-  quoteRequestedBy    String?
-  quoteEmailSubject   String?
-  quoteEmailThreadId  String?             // gmail thread id (match replies)
-  quoteEmailMessageId String?
-  vendorRate          Float?              // header-level rate (sum of line totals / total qty) — kept for back-compat
-  quotedAt            DateTime?
-  quoteSource         String?             // MANUAL | EMAIL_AUTO | EMAIL_PARTIAL | PHONE | WHATSAPP
-  quoteRemarks        String?
+  id                   String                          @id @default(cuid())
+  requisitionId        String
+  requisition          PurchaseRequisition             @relation(fields: [requisitionId], references: [id], onDelete: Cascade)
+  vendorId             String
+  vendor               Vendor                          @relation("VendorIndentQuotes", fields: [vendorId], references: [id])
+  quoteRequestedAt     DateTime?
+  quoteRequestedBy     String?
+  quoteEmailSubject    String?
+  quoteEmailThreadId   String? // gmail thread id (match replies)
+  quoteEmailMessageId  String?
+  vendorRate           Float? // header-level rate (sum of line totals / total qty) — kept for back-compat
+  quotedAt             DateTime?
+  quoteSource          String? // MANUAL | EMAIL_AUTO | EMAIL_PARTIAL | PHONE | WHATSAPP
+  quoteRemarks         String?
   // ── Quote Cost Template — structured cost components extracted from the
   // vendor quote (or edited by the buyer before award). These flow to the PO
   // header on award (freight → freightCharge, rest → otherCharges). Per-line
   // discount lives on PurchaseRequisitionVendorLine.discountPercent.
-  packingPercent      Float               @default(0)
-  packingAmount       Float               @default(0)
-  freightPercent      Float               @default(0)
-  freightAmount       Float               @default(0)
-  insurancePercent    Float               @default(0)
-  insuranceAmount     Float               @default(0)
-  loadingPercent      Float               @default(0)
-  loadingAmount       Float               @default(0)
-  isRateInclusiveOfGst Boolean            @default(false)
-  tcsPercent          Float               @default(0)
-  deliveryBasis       String?             // EX_WORKS | FOR_DESTINATION | CIF | FOB | OTHER
-  additionalCharges   Json                @default("[]")  // [{name, percent?, amount?, basis?}]
-  isAwarded           Boolean             @default(false)
-  lineQuotes          PurchaseRequisitionVendorLine[]
-  createdAt           DateTime            @default(now())
-  updatedAt           DateTime            @updatedAt
+  packingPercent       Float                           @default(0)
+  packingAmount        Float                           @default(0)
+  freightPercent       Float                           @default(0)
+  freightAmount        Float                           @default(0)
+  insurancePercent     Float                           @default(0)
+  insuranceAmount      Float                           @default(0)
+  loadingPercent       Float                           @default(0)
+  loadingAmount        Float                           @default(0)
+  isRateInclusiveOfGst Boolean                         @default(false)
+  tcsPercent           Float                           @default(0)
+  deliveryBasis        String? // EX_WORKS | FOR_DESTINATION | CIF | FOB | OTHER
+  additionalCharges    Json                            @default("[]") // [{name, percent?, amount?, basis?}]
+  isAwarded            Boolean                         @default(false)
+  lineQuotes           PurchaseRequisitionVendorLine[]
+  createdAt            DateTime                        @default(now())
+  updatedAt            DateTime                        @updatedAt
 
   @@unique([requisitionId, vendorId])
   @@index([requisitionId])
@@ -1729,7 +1734,7 @@ model PurchaseRequisitionVendorLine {
   // extract time so the award→PO handoff carries one value per line.
   discountPercent   Float                     @default(0)
   remarks           String?
-  source            String?                   // MANUAL | EMAIL_AUTO
+  source            String? // MANUAL | EMAIL_AUTO
   createdAt         DateTime                  @default(now())
   updatedAt         DateTime                  @updatedAt
 
@@ -1753,38 +1758,38 @@ model PurchaseRequisitionVendorLine {
 //   PAYMENT_CONFIRMATION → VendorPayment.id
 //   etc.
 model EmailThread {
-  id             String    @id @default(cuid())
-  entityType     String    // see comment above
+  id             String       @id @default(cuid())
+  entityType     String // see comment above
   entityId       String
   // vendorId allows a vendor-centric view — "show every email I ever sent to
   // Vendor X across all POs/indents/invoices". Nullable because some emails
   // aren't vendor-related (internal notifications, customer emails, etc.)
   vendorId       String?
-  vendor         Vendor?   @relation("VendorEmailThreads", fields: [vendorId], references: [id])
-  customerId     String?   // symmetric — customer-centric view for sales emails
-  customer       Customer? @relation("CustomerEmailThreads", fields: [customerId], references: [id])
+  vendor         Vendor?      @relation("VendorEmailThreads", fields: [vendorId], references: [id])
+  customerId     String? // symmetric — customer-centric view for sales emails
+  customer       Customer?    @relation("CustomerEmailThreads", fields: [customerId], references: [id])
   subject        String
   fromEmail      String
   fromName       String?
-  toEmail        String    // comma-separated allowed
+  toEmail        String // comma-separated allowed
   ccEmail        String?
   bccEmail       String?
   bodyText       String
   bodyHtml       String?
-  messageId      String?   // RFC 5322 Message-ID of the SENT message, used to match replies
-  threadId       String?   // provider thread id (Gmail X-GM-THRID if we can get it)
-  sentAt         DateTime  @default(now())
-  sentBy         String    // user name / email who triggered send
-  status         String    @default("SENT") // SENT | FAILED | BOUNCED | QUEUED
+  messageId      String? // RFC 5322 Message-ID of the SENT message, used to match replies
+  threadId       String? // provider thread id (Gmail X-GM-THRID if we can get it)
+  sentAt         DateTime     @default(now())
+  sentBy         String // user name / email who triggered send
+  status         String       @default("SENT") // SENT | FAILED | BOUNCED | QUEUED
   errorMessage   String?
   attachments    Json? // [{filename, size, contentType, storagePath?}]
   lastCheckedAt  DateTime? // last time we pulled replies via IMAP
-  replyCount     Int       @default(0)
-  hasUnreadReply Boolean   @default(false)
+  replyCount     Int          @default(0)
+  hasUnreadReply Boolean      @default(false)
   companyId      String?
-  company        Company?  @relation(fields: [companyId], references: [id])
-  createdAt      DateTime  @default(now())
-  updatedAt      DateTime  @updatedAt
+  company        Company?     @relation(fields: [companyId], references: [id])
+  createdAt      DateTime     @default(now())
+  updatedAt      DateTime     @updatedAt
   replies        EmailReply[]
 
   @@index([entityType, entityId])
@@ -1798,26 +1803,26 @@ model EmailThread {
 // A reply to one of our EmailThreads, fetched from IMAP and persisted.
 // Persisting means the user can see the full history without re-polling.
 model EmailReply {
-  id               String       @id @default(cuid())
-  threadId         String
-  thread           EmailThread  @relation(fields: [threadId], references: [id], onDelete: Cascade)
-  providerMessageId String      // RFC 5322 Message-ID of the reply
-  fromEmail        String
-  fromName         String?
-  toEmail          String?
-  subject          String?
-  bodyText         String
-  bodyHtml         String?
-  inReplyTo        String?
-  refsHeaders      String?      // References header, space-separated
-  receivedAt       DateTime
-  attachments      Json?        // [{filename, size, contentType, contentBase64}]
-  aiExtractedJson  Json?        // structured AI extraction result if run
-  aiExtractedAt    DateTime?
-  aiConfidence     String?      // HIGH | MEDIUM | LOW
-  seenAt           DateTime?    // when user first opened it in the drawer
-  createdAt        DateTime     @default(now())
-  updatedAt        DateTime     @updatedAt
+  id                String      @id @default(cuid())
+  threadId          String
+  thread            EmailThread @relation(fields: [threadId], references: [id], onDelete: Cascade)
+  providerMessageId String // RFC 5322 Message-ID of the reply
+  fromEmail         String
+  fromName          String?
+  toEmail           String?
+  subject           String?
+  bodyText          String
+  bodyHtml          String?
+  inReplyTo         String?
+  refsHeaders       String? // References header, space-separated
+  receivedAt        DateTime
+  attachments       Json? // [{filename, size, contentType, contentBase64}]
+  aiExtractedJson   Json? // structured AI extraction result if run
+  aiExtractedAt     DateTime?
+  aiConfidence      String? // HIGH | MEDIUM | LOW
+  seenAt            DateTime? // when user first opened it in the drawer
+  createdAt         DateTime    @default(now())
+  updatedAt         DateTime    @updatedAt
 
   @@unique([threadId, providerMessageId])
   @@index([threadId])
@@ -1829,20 +1834,20 @@ model EmailReply {
 // itemName/quantity/unit populated with the first line's values for
 // backward-compat (existing code + reports).
 model PurchaseRequisitionLine {
-  id              String              @id @default(cuid())
+  id              String                          @id @default(cuid())
   requisitionId   String
-  requisition     PurchaseRequisition @relation(fields: [requisitionId], references: [id], onDelete: Cascade)
-  lineNo          Int                 @default(1)
+  requisition     PurchaseRequisition             @relation(fields: [requisitionId], references: [id], onDelete: Cascade)
+  lineNo          Int                             @default(1)
   itemName        String
   inventoryItemId String?
-  inventoryItem   InventoryItem?      @relation(fields: [inventoryItemId], references: [id])
-  quantity        Float               @default(1)
-  unit            String              @default("nos")
-  estimatedCost   Float               @default(0) // per unit
+  inventoryItem   InventoryItem?                  @relation(fields: [inventoryItemId], references: [id])
+  quantity        Float                           @default(1)
+  unit            String                          @default("nos")
+  estimatedCost   Float                           @default(0) // per unit
   remarks         String?
   vendorQuotes    PurchaseRequisitionVendorLine[]
-  createdAt       DateTime            @default(now())
-  updatedAt       DateTime            @updatedAt
+  createdAt       DateTime                        @default(now())
+  updatedAt       DateTime                        @updatedAt
 
   @@index([requisitionId])
   @@index([inventoryItemId])
@@ -2261,6 +2266,7 @@ model TransporterPayment {
 
   companyId String? // FK → Company (null = MSPIL default)
   company   Company? @relation(fields: [companyId], references: [id])
+
   @@index([shipmentId])
   @@index([status])
 }
@@ -2450,9 +2456,9 @@ model Vendor {
   updatedAt               DateTime    @updatedAt
 
   purchaseOrders    PurchaseOrder[]
-  indents           PurchaseRequisition[] @relation("VendorIndents")
+  indents           PurchaseRequisition[]       @relation("VendorIndents")
   indentQuotes      PurchaseRequisitionVendor[] @relation("VendorIndentQuotes")
-  emailThreads      EmailThread[] @relation("VendorEmailThreads")
+  emailThreads      EmailThread[]               @relation("VendorEmailThreads")
   grns              GoodsReceipt[]
   vendorInvoices    VendorInvoice[]
   vendorPayments    VendorPayment[]
@@ -2741,34 +2747,34 @@ model GoodsReceipt {
 
 // ── GRN Line Item ──
 model GRNLine {
-  id              String         @id @default(uuid())
-  grnId           String
-  grn             GoodsReceipt   @relation(fields: [grnId], references: [id], onDelete: Cascade)
-  poLineId        String?
-  poLine          POLine?        @relation(fields: [poLineId], references: [id])
-  materialId      String? // DEPRECATED — use inventoryItemId
-  material        Material?      @relation(fields: [materialId], references: [id])
-  inventoryItemId String?
-  inventoryItem   InventoryItem? @relation(fields: [inventoryItemId], references: [id])
-  description     String
-  receivedQty     Float
-  acceptedQty     Float          @default(0) // after quality check
-  rejectedQty     Float          @default(0)
-  unit            String         @default("KG")
-  rate            Float          @default(0) // from PO
-  amount          Float          @default(0) // acceptedQty × rate
-  storageLocation String? // legacy
-  warehouseCode   String? // warehouse code (e.g. CHEM, MAIN, SPARE)
-  batchNo         String?
-  expiryDate      DateTime?
-  remarks         String?
+  id                 String         @id @default(uuid())
+  grnId              String
+  grn                GoodsReceipt   @relation(fields: [grnId], references: [id], onDelete: Cascade)
+  poLineId           String?
+  poLine             POLine?        @relation(fields: [poLineId], references: [id])
+  materialId         String? // DEPRECATED — use inventoryItemId
+  material           Material?      @relation(fields: [materialId], references: [id])
+  inventoryItemId    String?
+  inventoryItem      InventoryItem? @relation(fields: [inventoryItemId], references: [id])
+  description        String
+  receivedQty        Float
+  acceptedQty        Float          @default(0) // after quality check
+  rejectedQty        Float          @default(0)
+  unit               String         @default("KG")
+  rate               Float          @default(0) // from PO
+  amount             Float          @default(0) // acceptedQty × rate
+  storageLocation    String? // legacy
+  warehouseCode      String? // warehouse code (e.g. CHEM, MAIN, SPARE)
+  batchNo            String?
+  expiryDate         DateTime?
+  remarks            String?
   // Routing decision at GRN approval (Saif 2026-04-30): split accepted qty
   // between store warehouse and direct-to-factory. Sum should equal acceptedQty
   // (validated at approve time). routedAt is set when the user clicks Approve.
-  routedToStoreQty   Float?    @default(0)
-  routedToFactoryQty Float?    @default(0)
+  routedToStoreQty   Float?         @default(0)
+  routedToFactoryQty Float?         @default(0)
   routedAt           DateTime?
-  createdAt       DateTime       @default(now())
+  createdAt          DateTime       @default(now())
 
   @@index([inventoryItemId])
   @@index([grnId])
@@ -2868,25 +2874,25 @@ model VendorInvoice {
 // Header-level VendorInvoice.grnId still mirrors the FIRST line's grnId for back-compat
 // with 3-way match + ITC code that reads single grn today.
 model VendorInvoiceLine {
-  id              String         @id @default(uuid())
-  invoiceId       String
-  invoice         VendorInvoice  @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
-  grnId           String?
-  grn             GoodsReceipt?  @relation(fields: [grnId], references: [id])
-  lineNo          Int            @default(1)
-  productName     String
-  hsnCode         String?
-  quantity        Float          @default(0)
-  unit            String         @default("KG")
-  rate            Float          @default(0)
-  taxableAmount   Float          @default(0) // qty × rate, before GST
-  gstPercent      Float          @default(0)
-  cgstAmount      Float          @default(0)
-  sgstAmount      Float          @default(0)
-  igstAmount      Float          @default(0)
-  totalAmount     Float          @default(0) // taxable + GST
-  remarks         String?
-  createdAt       DateTime       @default(now())
+  id            String        @id @default(uuid())
+  invoiceId     String
+  invoice       VendorInvoice @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
+  grnId         String?
+  grn           GoodsReceipt? @relation(fields: [grnId], references: [id])
+  lineNo        Int           @default(1)
+  productName   String
+  hsnCode       String?
+  quantity      Float         @default(0)
+  unit          String        @default("KG")
+  rate          Float         @default(0)
+  taxableAmount Float         @default(0) // qty × rate, before GST
+  gstPercent    Float         @default(0)
+  cgstAmount    Float         @default(0)
+  sgstAmount    Float         @default(0)
+  igstAmount    Float         @default(0)
+  totalAmount   Float         @default(0) // taxable + GST
+  remarks       String?
+  createdAt     DateTime      @default(now())
 
   @@index([invoiceId])
   @@index([grnId])
@@ -3155,62 +3161,62 @@ model ContractorStoreIssueLine {
 // ══════════════════════════════════════════════════════════════
 
 model WorkOrder {
-  id              String     @id @default(uuid())
-  woNo            Int        @default(autoincrement())
-  contractorId    String
-  contractor      Contractor @relation(fields: [contractorId], references: [id])
+  id               String     @id @default(uuid())
+  woNo             Int        @default(autoincrement())
+  contractorId     String
+  contractor       Contractor @relation(fields: [contractorId], references: [id])
   // Scope
-  title           String // short title — "Boiler shed roofing"
-  description     String? // detailed scope of work
-  startDate       DateTime?
-  endDate         DateTime? // expected completion
-  siteLocation    String? // "Distillery Plant — bay 4"
+  title            String // short title — "Boiler shed roofing"
+  description      String? // detailed scope of work
+  startDate        DateTime?
+  endDate          DateTime? // expected completion
+  siteLocation     String? // "Distillery Plant — bay 4"
   // GST supply type (mirrors PurchaseOrder)
-  supplyType      String     @default("INTRA_STATE") // INTRA_STATE (CGST+SGST) | INTER_STATE (IGST)
-  placeOfSupply   String? // state code
+  supplyType       String     @default("INTRA_STATE") // INTRA_STATE (CGST+SGST) | INTER_STATE (IGST)
+  placeOfSupply    String? // state code
   // Contract type — drives form layout / list tab
-  contractType    String     @default("GENERAL") // GENERAL | MANPOWER_SUPPLY
+  contractType     String     @default("GENERAL") // GENERAL | MANPOWER_SUPPLY
   // Manpower supply contract — header-level rate card snapshot (JSON array of skill categories with 8h / 12h rates).
   // Only populated when contractType = 'MANPOWER_SUPPLY'. Used to render the rate card on print / re-edit.
   manpowerRateCard Json?
   // Header totals (denormalised from lines)
-  subtotal        Float      @default(0) // sum of (qty × rate)
-  discountAmount  Float      @default(0)
-  taxableAmount   Float      @default(0) // subtotal - discount
-  totalCgst       Float      @default(0)
-  totalSgst       Float      @default(0)
-  totalIgst       Float      @default(0)
-  totalGst        Float      @default(0)
-  grandTotal      Float      @default(0) // taxable + GST
+  subtotal         Float      @default(0) // sum of (qty × rate)
+  discountAmount   Float      @default(0)
+  taxableAmount    Float      @default(0) // subtotal - discount
+  totalCgst        Float      @default(0)
+  totalSgst        Float      @default(0)
+  totalIgst        Float      @default(0)
+  totalGst         Float      @default(0)
+  grandTotal       Float      @default(0) // taxable + GST
   // Retention (held back from each bill until close-out)
-  retentionPercent Float     @default(0)
-  retentionAmount  Float     @default(0)
+  retentionPercent Float      @default(0)
+  retentionAmount  Float      @default(0)
   // TDS
-  tdsSection      String     @default("194C") // snapshot from contractor master
-  tdsPercent      Float      @default(0)
-  tdsAmount       Float      @default(0) // tdsPercent × taxableAmount (estimated)
+  tdsSection       String     @default("194C") // snapshot from contractor master
+  tdsPercent       Float      @default(0)
+  tdsAmount        Float      @default(0) // tdsPercent × taxableAmount (estimated)
   // Settlement (rolled up from confirmed ContractorBills)
-  billedAmount    Float      @default(0) // sum of confirmed bill subtotals against this WO
-  paidAmount      Float      @default(0) // sum of payments through linked bills
-  balanceAmount   Float      @default(0) // grandTotal - billed (positive = unbilled scope left)
-  progressPercent Float      @default(0) // last reported % completion
+  billedAmount     Float      @default(0) // sum of confirmed bill subtotals against this WO
+  paidAmount       Float      @default(0) // sum of payments through linked bills
+  balanceAmount    Float      @default(0) // grandTotal - billed (positive = unbilled scope left)
+  progressPercent  Float      @default(0) // last reported % completion
   // Lifecycle
-  status          String     @default("DRAFT") // DRAFT | APPROVED | IN_PROGRESS | COMPLETED | CLOSED | CANCELLED
-  approvedBy      String?
-  approvedAt      DateTime?
-  startedAt       DateTime?
-  completedAt     DateTime?
-  closedAt        DateTime?
-  cancelledAt     DateTime?
-  cancelReason    String?
+  status           String     @default("DRAFT") // DRAFT | APPROVED | IN_PROGRESS | COMPLETED | CLOSED | CANCELLED
+  approvedBy       String?
+  approvedAt       DateTime?
+  startedAt        DateTime?
+  completedAt      DateTime?
+  closedAt         DateTime?
+  cancelledAt      DateTime?
+  cancelReason     String?
   // Payment terms
-  paymentTerms    String? // free text — "30% advance, 60% on completion, 10% retention release after 90 days"
-  creditDays      Int        @default(30)
+  paymentTerms     String? // free text — "30% advance, 60% on completion, 10% retention release after 90 days"
+  creditDays       Int        @default(30)
   // Refs
-  remarks         String?
-  userId          String // created by
-  createdAt       DateTime   @default(now())
-  updatedAt       DateTime   @updatedAt
+  remarks          String?
+  userId           String // created by
+  createdAt        DateTime   @default(now())
+  updatedAt        DateTime   @updatedAt
 
   lines    WorkOrderLine[]
   progress WorkOrderProgress[]
@@ -3267,15 +3273,15 @@ model WorkOrderLine {
 }
 
 model WorkOrderProgress {
-  id          String    @id @default(uuid())
-  woId        String
-  workOrder   WorkOrder @relation(fields: [woId], references: [id], onDelete: Cascade)
-  reportedAt  DateTime  @default(now())
-  percent     Float     @default(0) // running % completion (0-100)
-  workDone    String // narrative — "RCC slab cured day 7"
-  photoUrl    String?
-  reportedBy  String // userId
-  remarks     String?
+  id         String    @id @default(uuid())
+  woId       String
+  workOrder  WorkOrder @relation(fields: [woId], references: [id], onDelete: Cascade)
+  reportedAt DateTime  @default(now())
+  percent    Float     @default(0) // running % completion (0-100)
+  workDone   String // narrative — "RCC slab cured day 7"
+  photoUrl   String?
+  reportedBy String // userId
+  remarks    String?
 
   @@index([woId])
   @@index([reportedAt])
@@ -3326,8 +3332,8 @@ model DirectPurchase {
 
   // Farmer master link — added 2026-05-02. Nullable so legacy rows don't break.
   // Backfilled by /farmers/backfill admin endpoint that groups by sellerPhone.
-  farmerId  String?
-  farmer    Farmer?  @relation(fields: [farmerId], references: [id])
+  farmerId String?
+  farmer   Farmer? @relation(fields: [farmerId], references: [id])
 
   @@index([date])
   @@index([isPaid])
@@ -3345,35 +3351,35 @@ model DirectPurchase {
 // ══════════════════════════════════════════════════════════════
 
 model Farmer {
-  id        String   @id @default(uuid())
-  code      String?  @unique // auto-generated F-0001 etc.
-  name      String
+  id               String  @id @default(uuid())
+  code             String? @unique // auto-generated F-0001 etc.
+  name             String
   // Identifiers — phone is primary match key, aadhaar fallback
-  phone     String? // 10-digit, no country code
-  aadhaar   String? // 12-digit
+  phone            String? // 10-digit, no country code
+  aadhaar          String? // 12-digit
   // Mandatory for grain procurement under MP/UP mandi rules
-  maanNumber String?
+  maanNumber       String?
   // Address
-  village   String?
-  tehsil    String?
-  district  String?
-  state     String?
-  pincode   String?
+  village          String?
+  tehsil           String?
+  district         String?
+  state            String?
+  pincode          String?
   // Bank details for UPI/NEFT payouts
-  bankName    String?
-  bankAccount String?
-  bankIfsc    String?
-  upiId       String?
+  bankName         String?
+  bankAccount      String?
+  bankIfsc         String?
+  upiId            String?
   // What this farmer typically supplies — comma-separated for multi-material support
   // e.g. "CORN,BROKEN_RICE". Used for filtering at gate but not enforced.
   rawMaterialTypes String?
   // KYC
-  kycStatus String  @default("PENDING") // PENDING, VERIFIED, REJECTED
-  kycNotes  String?
+  kycStatus        String  @default("PENDING") // PENDING, VERIFIED, REJECTED
+  kycNotes         String?
   // RCM — most farmers are unregistered for GST → reverse charge applies
-  isRCM     Boolean  @default(true)
-  isActive  Boolean  @default(true)
-  remarks   String?
+  isRCM            Boolean @default(true)
+  isActive         Boolean @default(true)
+  remarks          String?
 
   division  String?  @default("ETHANOL")
   companyId String? // null = MSPIL default
@@ -4920,14 +4926,14 @@ model Employee {
   rentPaidMonthly Float @default(0)
 
   // Salary sheet category (matches MSPIL Excel structure: SENIOR/PF/NPF/DIRECTOR/etc.)
-  payCategory   String? // SENIOR | PF | NPF | DIRECTOR | SEASONAL | CONTRACT
-  defaultPayMode String @default("BANK") // CASH | BANK — main payout channel
+  payCategory    String? // SENIOR | PF | NPF | DIRECTOR | SEASONAL | CONTRACT
+  defaultPayMode String  @default("BANK") // CASH | BANK — main payout channel
 
   // Seasonal employment status (sugar industry — crushing-season vs year-round)
   seasonalStatus String? // SEASONAL | OFF_SEASONAL
 
   // Reference to original Excel section/department string (for migration trace)
-  excelSection String?
+  excelSection    String?
   excelSourceFile String?
 
   // Status
@@ -4938,10 +4944,15 @@ model Employee {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  salaryComponents EmployeeSalaryComponent[]
-  payrollLines     PayrollLine[]
-  companyId        String? // FK → Company (null = MSPIL default)
-  company          Company?                  @relation(fields: [companyId], references: [id])
+  salaryComponents  EmployeeSalaryComponent[]
+  payrollLines      PayrollLine[]
+  attendancePunches AttendancePunch[]
+  attendanceDays    AttendanceDay[]
+  leaveApplications LeaveApplication[]
+  defaultShiftId    String?
+  defaultShift      Shift?                    @relation(fields: [defaultShiftId], references: [id])
+  companyId         String? // FK → Company (null = MSPIL default)
+  company           Company?                  @relation(fields: [companyId], references: [id])
 
   @@index([departmentId])
   @@index([designationId])
@@ -4952,6 +4963,7 @@ model Employee {
   @@index([division])
   @@index([employmentType])
   @@index([isActive])
+  @@index([defaultShiftId])
 }
 
 model SalaryComponent {
@@ -5115,34 +5127,34 @@ model PayrollLineComponent {
 // Each row = one ITNS-281 challan deposit covering payroll TDS for a month/quarter.
 // Forms the link between monthly TDS deducted and quarterly Form 24Q filing.
 model TdsChallan {
-  id              String    @id @default(cuid())
-  fyCode          String // "2026-27"
-  quarter         Int // 1=Apr-Jun, 2=Jul-Sep, 3=Oct-Dec, 4=Jan-Mar
-  month           Int // 1-12 calendar month for which TDS was deducted
-  year            Int
-  section         String    @default("192") // 192 (salary), 192A, 194, etc.
-  challanNo       String // BSR receipt no (CIN)
-  bsrCode         String // 7-digit BSR code of bank branch
-  depositDate     DateTime
-  amount          Float // tax + interest + others
-  taxAmount       Float     @default(0)
-  surcharge       Float     @default(0)
-  cess            Float     @default(0)
-  interest        Float     @default(0)
-  penalty         Float     @default(0)
-  others          Float     @default(0)
-  paymentMode     String    @default("ONLINE") // ONLINE | OTC_CHEQUE | OTC_CASH
-  bankName        String?
-  remarks         String?
-  filedInForm24Q  Boolean   @default(false)
-  filedQuarter    Int? // which Form 24Q quarter this challan was reported in
-  filedFy         String?
-  filedAt         DateTime?
-  createdAt       DateTime  @default(now())
-  updatedAt       DateTime  @updatedAt
-  userId          String?
-  companyId       String? // FK → Company (null = MSPIL default)
-  company         Company?  @relation(fields: [companyId], references: [id])
+  id             String    @id @default(cuid())
+  fyCode         String // "2026-27"
+  quarter        Int // 1=Apr-Jun, 2=Jul-Sep, 3=Oct-Dec, 4=Jan-Mar
+  month          Int // 1-12 calendar month for which TDS was deducted
+  year           Int
+  section        String    @default("192") // 192 (salary), 192A, 194, etc.
+  challanNo      String // BSR receipt no (CIN)
+  bsrCode        String // 7-digit BSR code of bank branch
+  depositDate    DateTime
+  amount         Float // tax + interest + others
+  taxAmount      Float     @default(0)
+  surcharge      Float     @default(0)
+  cess           Float     @default(0)
+  interest       Float     @default(0)
+  penalty        Float     @default(0)
+  others         Float     @default(0)
+  paymentMode    String    @default("ONLINE") // ONLINE | OTC_CHEQUE | OTC_CASH
+  bankName       String?
+  remarks        String?
+  filedInForm24Q Boolean   @default(false)
+  filedQuarter   Int? // which Form 24Q quarter this challan was reported in
+  filedFy        String?
+  filedAt        DateTime?
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+  userId         String?
+  companyId      String? // FK → Company (null = MSPIL default)
+  company        Company?  @relation(fields: [companyId], references: [id])
 
   @@unique([challanNo, bsrCode, depositDate])
   @@index([fyCode, quarter])
@@ -5288,37 +5300,37 @@ model WeighmentAuditEvent {
 // award winner → auto-generate PO. Keeps regular PO flow simple.
 // ─────────────────────────────────────────────────────────────────────────
 model ProjectPurchase {
-  id                 String            @id @default(uuid())
-  projectNo          Int               @default(autoincrement())
-  name               String // e.g. "Coal Crusher 20 TPH"
-  description        String?
-  category           String? // MECHANICAL | CIVIL | ELECTRICAL | INSTRUMENTATION | IT | OTHER
-  scopeOfWork        String? // free-text scope / RFQ text
-  budgetAmount       Float             @default(0)
-  currency           String            @default("INR")
-  targetDate         DateTime? // desired completion / delivery date
-  status             String            @default("DRAFT") // DRAFT | COLLECTING_QUOTES | UNDER_EVALUATION | AWARDED | PO_RAISED | COMPLETED | CANCELLED
-  awardedQuotationId String?           @unique
-  awardedQuotation   ProjectQuotation? @relation("AwardedQuote", fields: [awardedQuotationId], references: [id])
-  awardedAt          DateTime?
-  awardedBy          String? // user.id
-  awardReason        String? // why this quote was picked
+  id                      String            @id @default(uuid())
+  projectNo               Int               @default(autoincrement())
+  name                    String // e.g. "Coal Crusher 20 TPH"
+  description             String?
+  category                String? // MECHANICAL | CIVIL | ELECTRICAL | INSTRUMENTATION | IT | OTHER
+  scopeOfWork             String? // free-text scope / RFQ text
+  budgetAmount            Float             @default(0)
+  currency                String            @default("INR")
+  targetDate              DateTime? // desired completion / delivery date
+  status                  String            @default("DRAFT") // DRAFT | COLLECTING_QUOTES | UNDER_EVALUATION | AWARDED | PO_RAISED | COMPLETED | CANCELLED
+  awardedQuotationId      String?           @unique
+  awardedQuotation        ProjectQuotation? @relation("AwardedQuote", fields: [awardedQuotationId], references: [id])
+  awardedAt               DateTime?
+  awardedBy               String? // user.id
+  awardReason             String? // why this quote was picked
   // Post-award negotiation (oral discussions before PO is raised)
-  negotiatedTotal    Float? // final negotiated amount user agreed with vendor
-  negotiationNotes   String? // what was negotiated (discount, extras, etc.)
+  negotiatedTotal         Float? // final negotiated amount user agreed with vendor
+  negotiationNotes        String? // what was negotiated (discount, extras, etc.)
   // What does the negotiated amount include? (drives PO breakdown)
-  negotiationInclGst       Boolean @default(true)
-  negotiationInclFreight   Boolean @default(true)
-  negotiationInclErection  Boolean @default(true)
-  aiAnalysis         Json? // cached AI comparison summary (criteria, ranking, pros/cons)
-  aiAnalysisAt       DateTime?
-  remarks            String?
-  division           String?           @default("ETHANOL")
-  companyId          String?
-  company            Company?          @relation(fields: [companyId], references: [id])
-  userId             String
-  createdAt          DateTime          @default(now())
-  updatedAt          DateTime          @updatedAt
+  negotiationInclGst      Boolean           @default(true)
+  negotiationInclFreight  Boolean           @default(true)
+  negotiationInclErection Boolean           @default(true)
+  aiAnalysis              Json? // cached AI comparison summary (criteria, ranking, pros/cons)
+  aiAnalysisAt            DateTime?
+  remarks                 String?
+  division                String?           @default("ETHANOL")
+  companyId               String?
+  company                 Company?          @relation(fields: [companyId], references: [id])
+  userId                  String
+  createdAt               DateTime          @default(now())
+  updatedAt               DateTime          @updatedAt
 
   quotations ProjectQuotation[] @relation("ProjectQuotes")
   po         PurchaseOrder?
@@ -5401,11 +5413,11 @@ model ProjectQuotationLine {
 // what the running cost is. Append-only.
 model AiCallLog {
   id               String   @id @default(cuid())
-  feature          String   // "rfq-extraction" | "telegram-image" | "ai-chat" | etc
+  feature          String // "rfq-extraction" | "telegram-image" | "ai-chat" | etc
   provider         String   @default("gemini") // gemini | openai | anthropic
-  model            String   // e.g. "gemini-3-flash-preview"
-  userId           String?  // Who triggered (if user-facing); null for background pollers
-  contextRef       String?  // Free-form key for the entity this call relates to (vrId, indentId, chatId, etc)
+  model            String // e.g. "gemini-3-flash-preview"
+  userId           String? // Who triggered (if user-facing); null for background pollers
+  contextRef       String? // Free-form key for the entity this call relates to (vrId, indentId, chatId, etc)
   inputTokens      Int      @default(0)
   outputTokens     Int      @default(0)
   totalTokens      Int      @default(0)
@@ -5414,7 +5426,7 @@ model AiCallLog {
   durationMs       Int      @default(0)
   success          Boolean
   errorMessage     String?
-  metadata         Json     @default("{}")  // feature-specific extras (filename, confidence, etc)
+  metadata         Json     @default("{}") // feature-specific extras (filename, confidence, etc)
   createdAt        DateTime @default(now())
 
   @@index([feature, createdAt])
@@ -5422,4 +5434,143 @@ model AiCallLog {
   @@index([userId])
   @@index([success])
   @@index([createdAt])
+}
+
+// ══════════════════════════════════════════════════════════════
+// ATTENDANCE & LEAVE — added 2026-05-06
+// Plant attendance via biometric device (eSSL X990) push or manual
+// entry. AttendancePunch = raw events. AttendanceDay = derived per-day
+// status, overrideable. Leave plugs into the generic Approval framework
+// (type=LEAVE_APPLICATION) for the bell-badge / approve UI.
+// ══════════════════════════════════════════════════════════════
+
+model Shift {
+  id              String   @id @default(cuid())
+  code            String   @unique // A, B, C, GEN
+  name            String // "Shift A (Morning)"
+  startTime       String // "06:00" 24h HH:MM
+  endTime         String // "14:00"
+  graceMinutes    Int      @default(15) // late = first IN > start + grace
+  earlyOutMinutes Int      @default(15) // early = last OUT < end - earlyOutMinutes
+  hours           Float    @default(8) // nominal shift length, used for halfday compare
+  active          Boolean  @default(true)
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  companyId String?
+  company   Company? @relation(fields: [companyId], references: [id])
+
+  employeesDefault Employee[]
+  attendanceDays   AttendanceDay[]
+
+  @@index([active])
+  @@index([companyId])
+}
+
+model AttendancePunch {
+  id         String   @id @default(cuid())
+  employeeId String
+  employee   Employee @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+  punchAt    DateTime // UTC instant of the punch (device emits IST string, server parses to UTC)
+  direction  String   @default("AUTO") // IN | OUT | AUTO (eSSL devices often don't distinguish — first of day = IN, last = OUT)
+  source     String   @default("DEVICE") // DEVICE | MANUAL | IMPORT
+  deviceId   String? // eSSL serial / location identifier
+  rawEmpCode String? // empCode at time of punch (audit trail in case empCode changes)
+  notes      String?
+  createdBy  String? // userId for manual entries
+  createdAt  DateTime @default(now())
+
+  companyId String?
+  company   Company? @relation(fields: [companyId], references: [id])
+
+  @@index([employeeId, punchAt])
+  @@index([punchAt])
+  @@index([deviceId, punchAt])
+  @@index([source])
+  @@index([companyId])
+}
+
+model AttendanceDay {
+  id                 String            @id @default(cuid())
+  employeeId         String
+  employee           Employee          @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+  date               DateTime          @db.Date
+  shiftId            String?
+  shift              Shift?            @relation(fields: [shiftId], references: [id])
+  status             String // PRESENT | ABSENT | HALF_DAY | LATE | EARLY_OUT | LEAVE | WEEKLY_OFF | HOLIDAY
+  firstPunchAt       DateTime?
+  lastPunchAt        DateTime?
+  hoursWorked        Float?
+  lateMinutes        Int?
+  earlyOutMinutes    Int?
+  // If status = LEAVE, link to the approved application (paid/unpaid resolved via leaveType)
+  leaveApplicationId String?
+  leaveApplication   LeaveApplication? @relation(fields: [leaveApplicationId], references: [id])
+  // Manual override metadata
+  manualOverride     Boolean           @default(false)
+  overrideReason     String?
+  overrideBy         String?
+  overrideAt         DateTime?
+  createdAt          DateTime          @default(now())
+  updatedAt          DateTime          @updatedAt
+
+  companyId String?
+  company   Company? @relation(fields: [companyId], references: [id])
+
+  @@unique([employeeId, date])
+  @@index([date])
+  @@index([status])
+  @@index([shiftId])
+  @@index([leaveApplicationId])
+  @@index([companyId])
+}
+
+model LeaveType {
+  id                       String   @id @default(cuid())
+  code                     String   @unique // CL, SL, EL, ML, COMP_OFF, LWP
+  name                     String
+  paid                     Boolean  @default(true) // false = LWP (loss of pay)
+  defaultAnnualEntitlement Float    @default(0) // days/year (informational; balance ledger comes later)
+  active                   Boolean  @default(true)
+  sortOrder                Int      @default(0)
+  createdAt                DateTime @default(now())
+  updatedAt                DateTime @updatedAt
+
+  applications LeaveApplication[]
+
+  @@index([active])
+}
+
+model LeaveApplication {
+  id            String    @id @default(cuid())
+  appNo         Int       @unique @default(autoincrement())
+  employeeId    String
+  employee      Employee  @relation(fields: [employeeId], references: [id])
+  leaveTypeId   String
+  leaveType     LeaveType @relation(fields: [leaveTypeId], references: [id])
+  fromDate      DateTime  @db.Date
+  toDate        DateTime  @db.Date
+  days          Float // half-day support (0.5)
+  isHalfDay     Boolean   @default(false)
+  reason        String
+  status        String    @default("PENDING") // PENDING | APPROVED | REJECTED | CANCELLED
+  attachmentUrl String?
+
+  // Approval audit (set when generic Approval is reviewed)
+  appliedAt  DateTime  @default(now())
+  appliedBy  String // userId of applicant (usually employee's user account)
+  reviewedBy String?
+  reviewedAt DateTime?
+  reviewNote String?
+
+  // Back-link: AttendanceDay rows generated when approved
+  attendanceDays AttendanceDay[]
+
+  companyId String?
+  company   Company? @relation(fields: [companyId], references: [id])
+
+  @@index([employeeId, status])
+  @@index([fromDate, toDate])
+  @@index([status])
+  @@index([companyId])
 }
