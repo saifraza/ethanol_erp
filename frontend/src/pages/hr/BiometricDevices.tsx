@@ -215,26 +215,42 @@ function DevicesView({ devices, loading, reload, edit }: { devices: BiometricDev
   );
 }
 
+/** Derive a Code from a Name: uppercase, non-alphanum → underscore, dedupe & trim. */
+function deriveCode(name: string): string {
+  return (name || '')
+    .toUpperCase()
+    .replace(/[^A-Z0-9]+/g, '_')
+    .replace(/_+/g, '_')
+    .replace(/^_+|_+$/g, '')
+    .slice(0, 40);
+}
+
 function DeviceFormModal({ initial, onClose }: { initial: Partial<BiometricDevice>; onClose: () => void }) {
   const [d, setD] = useState<Partial<BiometricDevice>>(initial);
+  const [codeManual, setCodeManual] = useState<boolean>(!!initial.id); // existing devices keep their code
   const [saving, setSaving] = useState(false);
   const [err, setErr] = useState<string | null>(null);
 
   async function save() {
     setErr(null);
-    if (!d.code || !d.name || !d.ip) { setErr('Code, name, IP required'); return; }
+    const finalCode = (d.code && d.code.trim()) || deriveCode(d.name || '');
+    if (!finalCode || !d.name || !d.ip) { setErr('Name and IP required'); return; }
     setSaving(true);
     try {
+      const body = { ...d, code: finalCode };
       if (d.id) {
-        await api.put(`/biometric/devices/${d.id}`, d);
+        await api.put(`/biometric/devices/${d.id}`, body);
       } else {
-        await api.post('/biometric/devices', d);
+        await api.post('/biometric/devices', body);
       }
       onClose();
     } catch (e: any) {
       setErr(e?.response?.data?.error || 'Failed');
     } finally { setSaving(false); }
   }
+
+  // Live preview of the auto-derived code (shown when user hasn't typed one)
+  const codePreview = !codeManual ? deriveCode(d.name || '') : '';
 
   return (
     <div className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-4">
@@ -244,8 +260,23 @@ function DeviceFormModal({ initial, onClose }: { initial: Partial<BiometricDevic
           <button onClick={onClose}><X className="w-4 h-4" /></button>
         </div>
         <div className="p-4 grid grid-cols-2 gap-3">
-          <Field label="Code (A-Z, 0-9, _)"><input value={d.code || ''} onChange={e => setD({ ...d, code: e.target.value.toUpperCase().replace(/[^A-Z0-9_]/g, '') })} placeholder="GATE_MAIN" className="w-full border border-slate-300 px-2.5 py-1.5 text-xs font-mono" /></Field>
-          <Field label="Name"><input value={d.name || ''} onChange={e => setD({ ...d, name: e.target.value })} placeholder="Main Gate" className="w-full border border-slate-300 px-2.5 py-1.5 text-xs" /></Field>
+          <Field label="Name">
+            <input
+              value={d.name || ''}
+              onChange={e => setD({ ...d, name: e.target.value })}
+              placeholder="Main Gate"
+              className="w-full border border-slate-300 px-2.5 py-1.5 text-xs"
+              autoFocus
+            />
+          </Field>
+          <Field label={codeManual ? 'Code (A-Z, 0-9, _)' : 'Code (auto)'}>
+            <input
+              value={codeManual ? (d.code || '') : codePreview}
+              onChange={e => { setCodeManual(true); setD({ ...d, code: e.target.value.toUpperCase().replace(/[^A-Z0-9_]/g, '') }); }}
+              placeholder={codePreview || 'auto-generated from Name'}
+              className={`w-full border border-slate-300 px-2.5 py-1.5 text-xs font-mono ${codeManual ? '' : 'bg-slate-50 text-slate-500'}`}
+            />
+          </Field>
           <Field label="Location"><input value={d.location || ''} onChange={e => setD({ ...d, location: e.target.value })} placeholder="Plant front entrance" className="w-full border border-slate-300 px-2.5 py-1.5 text-xs" /></Field>
           <Field label="Active">
             <select value={d.active ? '1' : '0'} onChange={e => setD({ ...d, active: e.target.value === '1' })} className="w-full border border-slate-300 px-2.5 py-1.5 text-xs">
