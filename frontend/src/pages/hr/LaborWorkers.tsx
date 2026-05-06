@@ -60,10 +60,14 @@ export default function LaborWorkers() {
   useEffect(() => { load(); }, [load]);
 
   useEffect(() => {
-    api.get('/contractors').then(r => setContractors(r.data?.contractors || r.data || []));
+    api.get('/contractors').then(r => {
+      const list = Array.isArray(r.data) ? r.data : (r.data?.contractors ?? []);
+      setContractors(Array.isArray(list) ? list : []);
+    }).catch(() => setContractors([]));
     api.get('/work-orders?contractType=MANPOWER_SUPPLY').then(r => {
-      const wos = r.data?.workOrders || r.data || [];
-      setWorkOrders(wos);
+      // /api/work-orders returns { orders, total, stats } — not { workOrders }
+      const list = Array.isArray(r.data) ? r.data : (r.data?.orders ?? r.data?.workOrders ?? []);
+      setWorkOrders(Array.isArray(list) ? list : []);
     }).catch(() => setWorkOrders([]));
   }, []);
 
