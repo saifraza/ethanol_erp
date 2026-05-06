@@ -119,6 +119,8 @@ import employeeSalaryRoutes from './routes/employeeSalary';
 import payrollRoutes from './routes/payroll';
 import hrTdsRoutes from './routes/hrTds';
 import payrollImportRoutes from './routes/payrollImport';
+import attendanceRoutes from './routes/attendance';
+import leaveApplicationRoutes from './routes/leaveApplications';
 // Logistics (Gate Entry)
 import gateEntryRoutes from './routes/gateEntry';
 // Cash Vouchers & Bank Loans
@@ -239,6 +241,8 @@ app.use('/api/employee-salary', employeeSalaryRoutes);
 app.use('/api/payroll', payrollRoutes);
 app.use('/api/hr/tds', hrTdsRoutes);
 app.use('/api/hr/import-salary', payrollImportRoutes);
+app.use('/api/attendance', attendanceRoutes);
+app.use('/api/leave', leaveApplicationRoutes);
 
 app.use('/api/issues', issueRoutes);
 app.use('/api/purchase-requisition', purchaseRequisitionRoutes);

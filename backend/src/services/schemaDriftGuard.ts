@@ -69,6 +69,9 @@ const EXPECTED_COLUMNS: ColumnCheck[] = [
   { table: 'WorkOrderLine', column: 'shiftHours',       sql: `ALTER TABLE "WorkOrderLine" ADD COLUMN IF NOT EXISTS "shiftHours" INTEGER` },
   { table: 'WorkOrderLine', column: 'personCount',      sql: `ALTER TABLE "WorkOrderLine" ADD COLUMN IF NOT EXISTS "personCount" INTEGER` },
   { table: 'WorkOrderLine', column: 'shiftCount',       sql: `ALTER TABLE "WorkOrderLine" ADD COLUMN IF NOT EXISTS "shiftCount" INTEGER` },
+
+  // 2026-05-06 — Attendance & Leave (HR module)
+  { table: 'Employee', column: 'defaultShiftId', sql: `ALTER TABLE "Employee" ADD COLUMN IF NOT EXISTS "defaultShiftId" TEXT` },
 ];
 
 const EXPECTED_TABLES: TableCheck[] = [
@@ -275,6 +278,135 @@ const EXPECTED_TABLES: TableCheck[] = [
       CREATE INDEX IF NOT EXISTS "WorkOrderProgress_reportedAt_idx" ON "WorkOrderProgress"("reportedAt");
     `,
   },
+  // 2026-05-06 — Attendance & Leave (HR module)
+  {
+    table: 'Shift',
+    sql: `
+      CREATE TABLE IF NOT EXISTS "Shift" (
+        "id" TEXT NOT NULL,
+        "code" TEXT NOT NULL,
+        "name" TEXT NOT NULL,
+        "startTime" TEXT NOT NULL,
+        "endTime" TEXT NOT NULL,
+        "graceMinutes" INTEGER NOT NULL DEFAULT 15,
+        "earlyOutMinutes" INTEGER NOT NULL DEFAULT 15,
+        "hours" DOUBLE PRECISION NOT NULL DEFAULT 8,
+        "active" BOOLEAN NOT NULL DEFAULT true,
+        "companyId" TEXT,
+        "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        "updatedAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        CONSTRAINT "Shift_pkey" PRIMARY KEY ("id")
+      );
+      CREATE UNIQUE INDEX IF NOT EXISTS "Shift_code_key" ON "Shift"("code");
+      CREATE INDEX IF NOT EXISTS "Shift_active_idx" ON "Shift"("active");
+      CREATE INDEX IF NOT EXISTS "Shift_companyId_idx" ON "Shift"("companyId");
+    `,
+  },
+  {
+    table: 'AttendancePunch',
+    sql: `
+      CREATE TABLE IF NOT EXISTS "AttendancePunch" (
+        "id" TEXT NOT NULL,
+        "employeeId" TEXT NOT NULL,
+        "punchAt" TIMESTAMP(3) NOT NULL,
+        "direction" TEXT NOT NULL DEFAULT 'AUTO',
+        "source" TEXT NOT NULL DEFAULT 'DEVICE',
+        "deviceId" TEXT,
+        "rawEmpCode" TEXT,
+        "notes" TEXT,
+        "createdBy" TEXT,
+        "companyId" TEXT,
+        "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        CONSTRAINT "AttendancePunch_pkey" PRIMARY KEY ("id")
+      );
+      CREATE INDEX IF NOT EXISTS "AttendancePunch_employeeId_punchAt_idx" ON "AttendancePunch"("employeeId", "punchAt");
+      CREATE INDEX IF NOT EXISTS "AttendancePunch_punchAt_idx" ON "AttendancePunch"("punchAt");
+      CREATE INDEX IF NOT EXISTS "AttendancePunch_deviceId_punchAt_idx" ON "AttendancePunch"("deviceId", "punchAt");
+      CREATE INDEX IF NOT EXISTS "AttendancePunch_source_idx" ON "AttendancePunch"("source");
+      CREATE INDEX IF NOT EXISTS "AttendancePunch_companyId_idx" ON "AttendancePunch"("companyId");
+    `,
+  },
+  {
+    table: 'AttendanceDay',
+    sql: `
+      CREATE TABLE IF NOT EXISTS "AttendanceDay" (
+        "id" TEXT NOT NULL,
+        "employeeId" TEXT NOT NULL,
+        "date" DATE NOT NULL,
+        "shiftId" TEXT,
+        "status" TEXT NOT NULL,
+        "firstPunchAt" TIMESTAMP(3),
+        "lastPunchAt" TIMESTAMP(3),
+        "hoursWorked" DOUBLE PRECISION,
+        "lateMinutes" INTEGER,
+        "earlyOutMinutes" INTEGER,
+        "leaveApplicationId" TEXT,
+        "manualOverride" BOOLEAN NOT NULL DEFAULT false,
+        "overrideReason" TEXT,
+        "overrideBy" TEXT,
+        "overrideAt" TIMESTAMP(3),
+        "companyId" TEXT,
+        "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        "updatedAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        CONSTRAINT "AttendanceDay_pkey" PRIMARY KEY ("id")
+      );
+      CREATE UNIQUE INDEX IF NOT EXISTS "AttendanceDay_employeeId_date_key" ON "AttendanceDay"("employeeId", "date");
+      CREATE INDEX IF NOT EXISTS "AttendanceDay_date_idx" ON "AttendanceDay"("date");
+      CREATE INDEX IF NOT EXISTS "AttendanceDay_status_idx" ON "AttendanceDay"("status");
+      CREATE INDEX IF NOT EXISTS "AttendanceDay_shiftId_idx" ON "AttendanceDay"("shiftId");
+      CREATE INDEX IF NOT EXISTS "AttendanceDay_leaveApplicationId_idx" ON "AttendanceDay"("leaveApplicationId");
+      CREATE INDEX IF NOT EXISTS "AttendanceDay_companyId_idx" ON "AttendanceDay"("companyId");
+    `,
+  },
+  {
+    table: 'LeaveType',
+    sql: `
+      CREATE TABLE IF NOT EXISTS "LeaveType" (
+        "id" TEXT NOT NULL,
+        "code" TEXT NOT NULL,
+        "name" TEXT NOT NULL,
+        "paid" BOOLEAN NOT NULL DEFAULT true,
+        "defaultAnnualEntitlement" DOUBLE PRECISION NOT NULL DEFAULT 0,
+        "active" BOOLEAN NOT NULL DEFAULT true,
+        "sortOrder" INTEGER NOT NULL DEFAULT 0,
+        "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        "updatedAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        CONSTRAINT "LeaveType_pkey" PRIMARY KEY ("id")
+      );
+      CREATE UNIQUE INDEX IF NOT EXISTS "LeaveType_code_key" ON "LeaveType"("code");
+      CREATE INDEX IF NOT EXISTS "LeaveType_active_idx" ON "LeaveType"("active");
+    `,
+  },
+  {
+    table: 'LeaveApplication',
+    sql: `
+      CREATE TABLE IF NOT EXISTS "LeaveApplication" (
+        "id" TEXT NOT NULL,
+        "appNo" SERIAL NOT NULL,
+        "employeeId" TEXT NOT NULL,
+        "leaveTypeId" TEXT NOT NULL,
+        "fromDate" DATE NOT NULL,
+        "toDate" DATE NOT NULL,
+        "days" DOUBLE PRECISION NOT NULL,
+        "isHalfDay" BOOLEAN NOT NULL DEFAULT false,
+        "reason" TEXT NOT NULL,
+        "status" TEXT NOT NULL DEFAULT 'PENDING',
+        "attachmentUrl" TEXT,
+        "appliedAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        "appliedBy" TEXT NOT NULL,
+        "reviewedBy" TEXT,
+        "reviewedAt" TIMESTAMP(3),
+        "reviewNote" TEXT,
+        "companyId" TEXT,
+        CONSTRAINT "LeaveApplication_pkey" PRIMARY KEY ("id")
+      );
+      CREATE UNIQUE INDEX IF NOT EXISTS "LeaveApplication_appNo_key" ON "LeaveApplication"("appNo");
+      CREATE INDEX IF NOT EXISTS "LeaveApplication_employeeId_status_idx" ON "LeaveApplication"("employeeId", "status");
+      CREATE INDEX IF NOT EXISTS "LeaveApplication_fromDate_toDate_idx" ON "LeaveApplication"("fromDate", "toDate");
+      CREATE INDEX IF NOT EXISTS "LeaveApplication_status_idx" ON "LeaveApplication"("status");
+      CREATE INDEX IF NOT EXISTS "LeaveApplication_companyId_idx" ON "LeaveApplication"("companyId");
+    `,
+  },
 ];
 
 async function checkAndCreateTables(): Promise<void> {
@@ -336,6 +468,8 @@ export async function runSchemaDriftGuard(): Promise<void> {
     await prisma.$executeRawUnsafe(`CREATE INDEX IF NOT EXISTS "ContractorBill_workOrderId_idx" ON "ContractorBill"("workOrderId")`);
     // 2026-05-06 — index for WorkOrder.contractType (Manpower vs General tab filter)
     await prisma.$executeRawUnsafe(`CREATE INDEX IF NOT EXISTS "WorkOrder_contractType_idx" ON "WorkOrder"("contractType")`);
+    // 2026-05-06 — index for Employee.defaultShiftId (HR attendance)
+    await prisma.$executeRawUnsafe(`CREATE INDEX IF NOT EXISTS "Employee_defaultShiftId_idx" ON "Employee"("defaultShiftId")`);
     console.log('[SchemaDriftGuard] OK — all expected columns + tables present');
   } catch (err: unknown) {
     console.error('[SchemaDriftGuard] check failed:', (err instanceof Error ? err.message : String(err)));

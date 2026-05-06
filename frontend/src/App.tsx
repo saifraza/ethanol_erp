@@ -94,6 +94,8 @@ const HrTdsReport = React.lazy(() => import('./pages/hr/TdsReport'));
 const HrForm16 = React.lazy(() => import('./pages/hr/Form16'));
 const HrImportSalary = React.lazy(() => import('./pages/hr/ImportSalary'));
 const HrPayrollHub = React.lazy(() => import('./pages/hr/PayrollHub'));
+const HrAttendance = React.lazy(() => import('./pages/hr/Attendance'));
+const HrLeave = React.lazy(() => import('./pages/hr/Leave'));
 
 const PurchaseRequisition = React.lazy(() => import('./pages/PurchaseRequisition'));
 // Sales & Distribution
@@ -261,6 +263,8 @@ export default function App() {
         <Route path="hr/employees" element={<HrEmployees />} />
         <Route path="hr/designations" element={<HrDesignations />} />
         <Route path="hr/org-chart" element={<HrOrgChart />} />
+        <Route path="hr/attendance" element={<HrAttendance />} />
+        <Route path="hr/leave" element={<HrLeave />} />
         <Route path="hr/salary-structure" element={<HrSalaryStructure />} />
         <Route path="hr/payroll" element={<HrPayrollHub />}>
           <Route index element={<HrPayroll />} />

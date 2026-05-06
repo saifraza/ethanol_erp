@@ -3,6 +3,7 @@ import prisma from '../config/prisma';
 import { authenticate, AuthRequest, authorize, getCompanyFilter, getActiveCompanyId } from '../middleware/auth';
 import { asyncHandler } from '../shared/middleware';
 import { resolveNotifications } from '../services/notify';
+import { applyLeaveDecision } from './leaveApplications';
 
 const router = Router();
 router.use(authenticate);
@@ -67,6 +68,16 @@ router.put('/:id', authorize('ADMIN'), asyncHandler(async (req: AuthRequest, res
   // Resolve any linked notification (bell badge clears immediately)
   if (updated) {
     await resolveNotifications('Approval', updated.id);
+
+    // Entity-specific side effects
+    if (updated.entityType === 'LeaveApplication') {
+      await applyLeaveDecision(
+        updated.entityId,
+        status as 'APPROVED' | 'REJECTED',
+        req.user!.id,
+        reviewNote || null,
+      );
+    }
   }
   res.json(updated);
 }));
