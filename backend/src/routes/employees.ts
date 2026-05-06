@@ -2,6 +2,7 @@ import { Router, Response } from 'express';
 import prisma from '../config/prisma';
 import { authenticate, AuthRequest, getCompanyFilter, getActiveCompanyId } from '../middleware/auth';
 import { asyncHandler } from '../shared/middleware';
+import { fireSyncEmployeeToDevices } from '../services/employeeDeviceSync';
 
 const router = Router();
 router.use(authenticate);
@@ -176,6 +177,7 @@ router.post('/', asyncHandler(async (req: AuthRequest, res: Response) => {
       companyId: getActiveCompanyId(req),
     },
   });
+  fireSyncEmployeeToDevices(employee.id, 'UPSERT');
   res.status(201).json({ employee });
 }));
 
@@ -213,12 +215,14 @@ router.put('/:id', asyncHandler(async (req: AuthRequest, res: Response) => {
   }
 
   const employee = await prisma.employee.update({ where: { id: req.params.id }, data });
+  fireSyncEmployeeToDevices(employee.id, 'UPSERT');
   res.json({ employee });
 }));
 
 // DELETE /:id — soft delete
 router.delete('/:id', asyncHandler(async (req: AuthRequest, res: Response) => {
   await prisma.employee.update({ where: { id: req.params.id }, data: { isActive: false, status: 'RELIEVED' } });
+  fireSyncEmployeeToDevices(req.params.id, 'DELETE');
   res.json({ ok: true });
 }));
 

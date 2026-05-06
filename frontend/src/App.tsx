@@ -96,6 +96,7 @@ const HrImportSalary = React.lazy(() => import('./pages/hr/ImportSalary'));
 const HrPayrollHub = React.lazy(() => import('./pages/hr/PayrollHub'));
 const HrAttendance = React.lazy(() => import('./pages/hr/Attendance'));
 const HrLeave = React.lazy(() => import('./pages/hr/Leave'));
+const HrBiometricDevices = React.lazy(() => import('./pages/hr/BiometricDevices'));
 
 const PurchaseRequisition = React.lazy(() => import('./pages/PurchaseRequisition'));
 // Sales & Distribution
@@ -265,6 +266,7 @@ export default function App() {
         <Route path="hr/org-chart" element={<HrOrgChart />} />
         <Route path="hr/attendance" element={<HrAttendance />} />
         <Route path="hr/leave" element={<HrLeave />} />
+        <Route path="hr/biometric-devices" element={<HrBiometricDevices />} />
         <Route path="hr/salary-structure" element={<HrSalaryStructure />} />
         <Route path="hr/payroll" element={<HrPayrollHub />}>
           <Route index element={<HrPayroll />} />

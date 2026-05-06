@@ -72,6 +72,8 @@ const EXPECTED_COLUMNS: ColumnCheck[] = [
 
   // 2026-05-06 — Attendance & Leave (HR module)
   { table: 'Employee', column: 'defaultShiftId', sql: `ALTER TABLE "Employee" ADD COLUMN IF NOT EXISTS "defaultShiftId" TEXT` },
+  // 2026-05-06 — Biometric Devices (HR Phase A)
+  { table: 'Employee', column: 'deviceUserId', sql: `ALTER TABLE "Employee" ADD COLUMN IF NOT EXISTS "deviceUserId" TEXT` },
 ];
 
 const EXPECTED_TABLES: TableCheck[] = [
@@ -407,6 +409,37 @@ const EXPECTED_TABLES: TableCheck[] = [
       CREATE INDEX IF NOT EXISTS "LeaveApplication_companyId_idx" ON "LeaveApplication"("companyId");
     `,
   },
+  // 2026-05-06 — Biometric Devices (HR Phase A)
+  {
+    table: 'BiometricDevice',
+    sql: `
+      CREATE TABLE IF NOT EXISTS "BiometricDevice" (
+        "id" TEXT NOT NULL,
+        "code" TEXT NOT NULL,
+        "name" TEXT NOT NULL,
+        "location" TEXT,
+        "ip" TEXT NOT NULL,
+        "port" INTEGER NOT NULL DEFAULT 4370,
+        "password" INTEGER NOT NULL DEFAULT 0,
+        "serialNumber" TEXT,
+        "firmware" TEXT,
+        "platform" TEXT,
+        "active" BOOLEAN NOT NULL DEFAULT true,
+        "lastSyncAt" TIMESTAMP(3),
+        "lastSyncStatus" TEXT,
+        "lastSyncError" TEXT,
+        "lastPunchSyncAt" TIMESTAMP(3),
+        "notes" TEXT,
+        "companyId" TEXT,
+        "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        "updatedAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        CONSTRAINT "BiometricDevice_pkey" PRIMARY KEY ("id")
+      );
+      CREATE UNIQUE INDEX IF NOT EXISTS "BiometricDevice_code_key" ON "BiometricDevice"("code");
+      CREATE INDEX IF NOT EXISTS "BiometricDevice_active_idx" ON "BiometricDevice"("active");
+      CREATE INDEX IF NOT EXISTS "BiometricDevice_companyId_idx" ON "BiometricDevice"("companyId");
+    `,
+  },
 ];
 
 async function checkAndCreateTables(): Promise<void> {
@@ -470,6 +503,8 @@ export async function runSchemaDriftGuard(): Promise<void> {
     await prisma.$executeRawUnsafe(`CREATE INDEX IF NOT EXISTS "WorkOrder_contractType_idx" ON "WorkOrder"("contractType")`);
     // 2026-05-06 — index for Employee.defaultShiftId (HR attendance)
     await prisma.$executeRawUnsafe(`CREATE INDEX IF NOT EXISTS "Employee_defaultShiftId_idx" ON "Employee"("defaultShiftId")`);
+    // 2026-05-06 — index for Employee.deviceUserId (biometric mapping)
+    await prisma.$executeRawUnsafe(`CREATE INDEX IF NOT EXISTS "Employee_deviceUserId_idx" ON "Employee"("deviceUserId")`);
     console.log('[SchemaDriftGuard] OK — all expected columns + tables present');
   } catch (err: unknown) {
     console.error('[SchemaDriftGuard] check failed:', (err instanceof Error ? err.message : String(err)));

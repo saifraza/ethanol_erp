@@ -96,6 +96,7 @@ model Company {
   attendancePunches     AttendancePunch[]
   attendanceDays        AttendanceDay[]
   leaveApplications     LeaveApplication[]
+  biometricDevices      BiometricDevice[]
 }
 
 model User {
@@ -4951,6 +4952,10 @@ model Employee {
   leaveApplications LeaveApplication[]
   defaultShiftId    String?
   defaultShift      Shift?                    @relation(fields: [defaultShiftId], references: [id])
+  // Biometric device user_id — same value across all configured devices.
+  // For new employees, defaults to empNo at creation time. For legacy
+  // enrollments, set via the HR > Biometric Devices mapping UI.
+  deviceUserId      String?
   companyId         String? // FK → Company (null = MSPIL default)
   company           Company?                  @relation(fields: [companyId], references: [id])
 
@@ -4964,6 +4969,7 @@ model Employee {
   @@index([employmentType])
   @@index([isActive])
   @@index([defaultShiftId])
+  @@index([deviceUserId])
 }
 
 model SalaryComponent {
@@ -5572,5 +5578,42 @@ model LeaveApplication {
   @@index([employeeId, status])
   @@index([fromDate, toDate])
   @@index([status])
+  @@index([companyId])
+}
+
+// ══════════════════════════════════════════════════════════════
+// BIOMETRIC DEVICES — added 2026-05-06 (Phase A)
+// One row per physical device on plant LAN (eSSL X990, ZKTeco, etc.).
+// Cloud backend never talks to devices directly; it talks to a
+// biometric-bridge HTTP service running on factory-server (or this Mac
+// during dev), which uses pyzk to reach devices on TCP port 4370.
+// ══════════════════════════════════════════════════════════════
+
+model BiometricDevice {
+  id              String    @id @default(cuid())
+  code            String    @unique // GATE_MAIN, DISTILLERY_GATE, etc.
+  name            String
+  location        String?
+  ip              String
+  port            Int       @default(4370)
+  password        Int       @default(0) // device comm password if set on device
+  // Auto-captured on first connect
+  serialNumber    String?
+  firmware        String?
+  platform        String?
+  // Sync state
+  active          Boolean   @default(true)
+  lastSyncAt      DateTime? // last successful user-list sync
+  lastSyncStatus  String? // OK | ERROR | NEVER
+  lastSyncError   String?
+  lastPunchSyncAt DateTime? // last successful punch-pull
+  notes           String?
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+
+  companyId String?
+  company   Company? @relation(fields: [companyId], references: [id])
+
+  @@index([active])
   @@index([companyId])
 }
