@@ -135,6 +135,23 @@ router.post('/devices/:id/sync-time', authorize('ADMIN'), asyncHandler(async (re
   res.json(result);
 }));
 
+// Destructive: wipe ALL attendance logs from the device. Used at go-live.
+router.post('/devices/:id/clear-logs', authorize('ADMIN'), asyncHandler(async (req: AuthRequest, res: Response) => {
+  const { confirm } = (req.body || {}) as { confirm?: string };
+  if (confirm !== 'WIPE') {
+    return res.status(400).json({ error: "Pass {confirm: 'WIPE'} to proceed. This deletes ALL attendance logs from the device." });
+  }
+  const d = await prisma.biometricDevice.findUnique({ where: { id: req.params.id } });
+  if (!d) throw new NotFoundError('BiometricDevice', req.params.id);
+  const result = await bridge.clearPunches(toBridgeDevice(d));
+  // Reset our cursor too — next pull starts fresh
+  await prisma.biometricDevice.update({
+    where: { id: d.id },
+    data: { lastPunchSyncAt: null, lastSyncStatus: result.ok ? 'OK' : 'ERROR' },
+  });
+  res.json(result);
+}));
+
 // ════════════════════════════════════════════════════════════════
 // user list + mapping (the killer feature)
 //

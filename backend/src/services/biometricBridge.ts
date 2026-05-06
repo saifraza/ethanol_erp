@@ -115,6 +115,9 @@ export const bridge = {
   async syncTime(device: DeviceRef, set_to?: string): Promise<{ ok: boolean; set_to: string; device_time: string | null }> {
     return call('/devices/time/sync', { device, set_to });
   },
+  async clearPunches(device: DeviceRef): Promise<{ ok: boolean; error?: string }> {
+    return call('/devices/punches/clear', { device }, 30_000);
+  },
   async copyTemplate(src: DeviceRef, dst: DeviceRef, user_id: string, finger_ids?: number[]): Promise<{ ok: boolean; copied_fingers?: number[]; reason?: string }> {
     return call('/devices/templates/copy', { src_device: src, dst_device: dst, user_id, finger_ids }, 60_000);
   },
