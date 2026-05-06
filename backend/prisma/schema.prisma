@@ -4860,6 +4860,12 @@ model Employee {
   pan        String?
   passportNo String?
 
+  // RFID card number — pushed to biometric devices alongside fingerprint
+  // for employees who authenticate via card. Stored as string to allow
+  // leading zeros and printed-card-format compatibility; converted to int
+  // when relayed to the device (which expects a 32-bit unsigned).
+  cardNumber String?
+
   // EPF / PF
   uan                   String? // 12-digit Universal Account Number
   pfMemberNo            String? // Establishment-specific: AA/BBB/CCCCCCC
