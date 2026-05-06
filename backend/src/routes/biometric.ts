@@ -221,6 +221,84 @@ router.post('/devices/:id/pull-users', authorize('ADMIN'), asyncHandler(async (r
 }));
 
 // ════════════════════════════════════════════════════════════════
+// create-from-unmatched: bulk-create ERP Employees from device users
+// that have no ERP record. Useful when migrating from a legacy biometric
+// system — the device knows the worker's name + card, ERP doesn't yet.
+// POST /devices/:id/create-employees
+//   body: { entries: [{ deviceUserId, name, card? }] }
+// ════════════════════════════════════════════════════════════════
+
+const createEntriesSchema = z.object({
+  entries: z.array(z.object({
+    deviceUserId: z.string().min(1).max(40),
+    name: z.string().min(1).max(120),
+    card: z.number().int().optional(),
+  })).min(1).max(500),
+});
+
+/** Split "Saiyad Gajanfer Ali" → ["Saiyad", "Gajanfer Ali"]. Single-token names
+ *  go entirely into firstName. Empty/whitespace → ["?", ""]. */
+function splitName(raw: string): { first: string; last: string } {
+  const parts = raw.trim().split(/\s+/).filter(Boolean);
+  if (parts.length === 0) return { first: '?', last: '' };
+  if (parts.length === 1) return { first: parts[0], last: '' };
+  return { first: parts[0], last: parts.slice(1).join(' ') };
+}
+
+router.post('/devices/:id/create-employees', authorize('ADMIN'), validate(createEntriesSchema), asyncHandler(async (req: AuthRequest, res: Response) => {
+  const d = await prisma.biometricDevice.findUnique({ where: { id: req.params.id } });
+  if (!d) throw new NotFoundError('BiometricDevice', req.params.id);
+  const { entries } = req.body as z.infer<typeof createEntriesSchema>;
+  const companyId = getActiveCompanyId(req) ?? d.companyId;
+
+  const created: Array<{ employeeId: string; empCode: string; deviceUserId: string }> = [];
+  const skipped: Array<{ deviceUserId: string; reason: string }> = [];
+
+  for (const e of entries) {
+    // Skip if deviceUserId is already mapped to another active Employee
+    const taken = await prisma.employee.findFirst({
+      where: { deviceUserId: e.deviceUserId },
+      select: { id: true, empCode: true, firstName: true, lastName: true },
+    });
+    if (taken) {
+      skipped.push({ deviceUserId: e.deviceUserId, reason: `already mapped to ${taken.empCode}` });
+      continue;
+    }
+
+    const { first, last } = splitName(e.name);
+
+    // Auto-generate empCode like the existing employees.ts POST does
+    const lastEmp = await prisma.employee.findFirst({ orderBy: { empNo: 'desc' }, select: { empNo: true } });
+    const nextNo = lastEmp ? lastEmp.empNo + 1 : 1;
+    const empCode = `MSPIL-${String(nextNo).padStart(3, '0')}`;
+
+    try {
+      const emp = await prisma.employee.create({
+        data: {
+          empCode,
+          firstName: first,
+          lastName: last,
+          dateOfJoining: new Date(), // placeholder; admin can edit on Employees page
+          isActive: true,
+          status: 'ACTIVE',
+          deviceUserId: e.deviceUserId,
+          cardNumber: e.card && e.card > 0 ? String(e.card) : null,
+          companyId,
+          // Note: imported from biometric — leave Aadhaar/PAN/bank/salary blank
+          remarks: `Imported from biometric device ${d.code}`,
+        },
+        select: { id: true, empCode: true, deviceUserId: true },
+      });
+      created.push({ employeeId: emp.id, empCode: emp.empCode, deviceUserId: emp.deviceUserId! });
+    } catch (err: unknown) {
+      skipped.push({ deviceUserId: e.deviceUserId, reason: err instanceof Error ? err.message : 'create failed' });
+    }
+  }
+
+  res.status(201).json({ created: created.length, skipped: skipped.length, createdEntries: created, skippedEntries: skipped });
+}));
+
+// ════════════════════════════════════════════════════════════════
 // confirm a single mapping: PUT /mapping/:employeeId  body: { deviceUserId }
 // ════════════════════════════════════════════════════════════════
 

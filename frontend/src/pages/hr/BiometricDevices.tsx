@@ -359,6 +359,24 @@ function MappingView({ devices }: { devices: BiometricDevice[] }) {
     pull();
   }
 
+  /** Create new ERP Employees from a list of unmatched device users. */
+  async function createEmployees(rows: UnmatchedRow[]) {
+    if (!data || !deviceId || rows.length === 0) return;
+    const entries = rows.map(r => ({
+      deviceUserId: r.deviceUser.user_id,
+      name: r.deviceUser.name,
+      card: r.deviceUser.card || undefined,
+    }));
+    if (!confirm(`Create ${entries.length} new ERP Employee(s) from device data?\n\nEach will get a fresh empCode (MSPIL-NNN), today's joining date, and the device user_id mapping. Aadhaar/PAN/salary stay blank — fill later in HR > Employees.`)) return;
+    try {
+      const r = await api.post(`/biometric/devices/${deviceId}/create-employees`, { entries });
+      alert(`✓ Created ${r.data.created} employees${r.data.skipped ? `, skipped ${r.data.skipped}` : ''}`);
+      pull();
+    } catch (e: any) {
+      alert(e?.response?.data?.error || 'Create failed');
+    }
+  }
+
   return (
     <div>
       <div className="bg-slate-100 border-x border-b border-slate-300 px-4 py-2 -mx-3 md:-mx-6 flex items-center gap-3 flex-wrap">
@@ -442,9 +460,22 @@ function MappingView({ devices }: { devices: BiometricDevice[] }) {
       {/* Unmatched */}
       {data && data.unmatched.length > 0 && (
         <Section title="UNMATCHED — pick employee or create new" tone="rose">
+          <div className="px-3 py-2 bg-rose-50 border-b border-rose-200 flex items-center gap-3">
+            <span className="text-[10px] text-slate-600">
+              {data.unmatched.length} device user(s) have no matching ERP employee.
+              Either map them to an existing employee, or create new ERP records in bulk.
+            </span>
+            <div className="flex-1" />
+            <button
+              onClick={() => createEmployees(data.unmatched)}
+              className="px-3 py-1 bg-rose-600 text-white text-[11px] font-bold uppercase tracking-widest hover:bg-rose-700 inline-flex items-center gap-1"
+            >
+              <Plus className="w-3 h-3" /> Create All as New Employees ({data.unmatched.length})
+            </button>
+          </div>
           <table className="w-full text-xs">
             <thead className="bg-slate-200 border-b border-slate-300">
-              <tr><Th>Device User ID</Th><Th>Device Name</Th><Th>Card</Th><Th>Map to ERP Employee</Th></tr>
+              <tr><Th>Device User ID</Th><Th>Device Name</Th><Th>Card</Th><Th>Map to ERP Employee</Th><Th>Or</Th></tr>
             </thead>
             <tbody>
               {data.unmatched.map(u => {
@@ -456,9 +487,17 @@ function MappingView({ devices }: { devices: BiometricDevice[] }) {
                     <Td mono>{u.deviceUser.card || '--'}</Td>
                     <Td>
                       <select onChange={e => e.target.value && setMapping(e.target.value, u.deviceUser.user_id)} className="border border-slate-300 px-2 py-1 text-xs" defaultValue="">
-                        <option value="">— Pick employee —</option>
+                        <option value="">— Pick existing —</option>
                         {free.map(c => <option key={c.id} value={c.id}>{c.empCode} — {c.firstName} {c.lastName}</option>)}
                       </select>
+                    </Td>
+                    <Td>
+                      <button
+                        onClick={() => createEmployees([u])}
+                        className="px-2 py-0.5 text-[10px] font-bold uppercase tracking-widest border border-rose-300 text-rose-600 hover:bg-rose-50 inline-flex items-center gap-1"
+                      >
+                        <Plus className="w-3 h-3" /> Create New
+                      </button>
                     </Td>
                   </tr>
                 );
