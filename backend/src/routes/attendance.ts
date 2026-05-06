@@ -345,16 +345,34 @@ router.post('/recompute', authorize('ADMIN'), asyncHandler(async (req: AuthReque
   }
 
   // Build the upsert ops list — every (employee, day) pair in scope.
-  // Future dates are skipped: they haven't happened yet, so marking them
-  // ABSENT/WEEKLY_OFF is wrong (would show as absences for May 7-31 when
-  // recomputing in early May). Days are pre-filtered to today and earlier.
+  //
+  // We skip:
+  //  - Future dates (haven't happened — marking ABSENT is wrong)
+  //  - Dates with NO org-wide activity (no punch from anyone, no leave covering)
+  //    — these are "system wasn't running yet" days; auto-marking everyone
+  //    ABSENT for pre-launch dates would falsely accuse the workforce
+  //  - Cells with manual override (admin's word wins)
   const todayIST = istDateStr(nowIST());
+
+  // Collect the set of dates with ANY org-wide activity (punch or approved leave)
+  const activeDates = new Set<string>();
+  for (const p of allPunches) activeDates.add(istDateStr(p.punchAt));
+  for (const la of approvedLeaves) {
+    const fromMs = la.fromDate.getTime();
+    const toMs = la.toDate.getTime();
+    for (let t = fromMs; t <= toMs; t += 24 * 60 * 60 * 1000) {
+      const d = new Date(t);
+      activeDates.add(`${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, '0')}-${String(d.getUTCDate()).padStart(2, '0')}`);
+    }
+  }
+
   type Upsert = { employeeId: string; date: Date; payload: any };
   const ops: Upsert[] = [];
 
   for (const emp of employees) {
     for (const dateStr of days) {
-      if (dateStr > todayIST) continue; // skip future dates
+      if (dateStr > todayIST) continue;        // skip future dates
+      if (!activeDates.has(dateStr)) continue; // skip days with no system activity (pre-launch)
       const key = `${emp.id}|${dateStr}`;
       if (overrideSet.has(key)) continue; // never clobber manual overrides
 

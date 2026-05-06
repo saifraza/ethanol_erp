@@ -628,20 +628,6 @@ function OpsView({ devices, reload }: { devices: BiometricDevice[]; reload: () =
           loading={running === 'sync-time'}
           onClick={() => deviceId && run('sync-time', () => api.post(`/biometric/devices/${deviceId}/sync-time`))}
         />
-        <OpButton
-          label="Clear Device Punch Logs (DESTRUCTIVE)"
-          icon={<X className="w-3.5 h-3.5" />}
-          desc="Delete ALL attendance logs stored on the device. Used at go-live to wipe historical/test punches before production tracking begins."
-          tone="rose"
-          disabled={!deviceId || running !== null}
-          loading={running === 'clear-logs'}
-          onClick={() => {
-            if (!deviceId) return;
-            const t = prompt('Type WIPE to delete ALL punch logs from the device. Cannot be undone.');
-            if (t !== 'WIPE') return;
-            run('clear-logs', () => api.post(`/biometric/devices/${deviceId}/clear-logs`, { confirm: 'WIPE' }, { timeout: 60_000 }));
-          }}
-        />
       </div>
 
       {log && (
