@@ -323,7 +323,7 @@ function MonthlyView({ departments }: { departments: DepartmentRef[] }) {
     const to = `${year}-${String(month).padStart(2, '0')}-${String(data.daysInMonth).padStart(2, '0')}`;
     setLoading(true);
     try {
-      await api.post('/attendance/recompute', { from, to });
+      await api.post('/attendance/recompute', { from, to }, { timeout: 120_000 });
       await load();
     } finally { setLoading(false); }
   }
@@ -450,7 +450,7 @@ function OverrideModal({ target, onClose }: { target: { rowEmp: MonthlyRow['empl
       if (!target.cell) {
         // No row exists yet — create via recompute first, then override. Simpler: ask backend to upsert via override path
         // We'll call recompute for that single day, then try the override.
-        await api.post('/attendance/recompute', { from: target.date, to: target.date, employeeIds: [target.rowEmp.id] });
+        await api.post('/attendance/recompute', { from: target.date, to: target.date, employeeIds: [target.rowEmp.id] }, { timeout: 60_000 });
         // Fetch the new day id
         const r = await api.get(`/attendance/days?employeeId=${target.rowEmp.id}&from=${target.date}&to=${target.date}`);
         const newCell = (r.data || [])[0];
