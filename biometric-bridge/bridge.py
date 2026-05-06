@@ -356,6 +356,23 @@ def pull_punches(body: PullPunchesReq, x_bridge_key: Optional[str] = Header(None
         return {"count": len(out), "punches": out}
 
 
+# ───────────────────────── clear all logs (destructive) ─────────────────────────
+
+class ClearLogsReq(BaseModel):
+    device: DeviceRef
+
+
+@app.post("/devices/punches/clear")
+def clear_punches(body: ClearLogsReq, x_bridge_key: Optional[str] = Header(None)):
+    _check_key(x_bridge_key)
+    with _Conn(body.device) as conn:
+        try:
+            conn.clear_attendance()
+            return {"ok": True}
+        except Exception as e:
+            return {"ok": False, "error": f"{type(e).__name__}: {e}"}
+
+
 # ───────────────────────── time sync ─────────────────────────
 
 class TimeSyncReq(BaseModel):

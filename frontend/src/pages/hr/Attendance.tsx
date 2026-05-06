@@ -358,6 +358,21 @@ function MonthlyView({ departments }: { departments: DepartmentRef[] }) {
         <button onClick={recompute} disabled={loading} className="px-3 py-1 bg-amber-600 text-white text-[11px] font-medium hover:bg-amber-700 disabled:opacity-50">
           Recompute Days
         </button>
+        <button
+          onClick={async () => {
+            const t = prompt('Type WIPE to delete ALL attendance punches and day records (cloud-side). This is destructive and cannot be undone.');
+            if (t !== 'WIPE') return;
+            try {
+              const r = await api.post('/attendance/reset', { confirm: 'WIPE' }, { timeout: 60_000 });
+              alert(`✓ Cleared ${r.data.punchesDeleted} punches and ${r.data.daysDeleted} day records`);
+              load();
+            } catch (e: any) { alert(e?.response?.data?.error || 'Reset failed'); }
+          }}
+          className="px-3 py-1 bg-rose-600 text-white text-[11px] font-medium hover:bg-rose-700"
+          title="Wipe all attendance data — pre-launch cleanup"
+        >
+          Reset Data
+        </button>
       </div>
 
       {/* Legend */}

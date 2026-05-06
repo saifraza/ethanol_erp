@@ -344,12 +344,17 @@ router.post('/recompute', authorize('ADMIN'), asyncHandler(async (req: AuthReque
     if (d.manualOverride) overrideSet.add(`${d.employeeId}|${d.date.toISOString().slice(0, 10)}`);
   }
 
-  // Build the upsert ops list — every (employee, day) pair in scope
+  // Build the upsert ops list — every (employee, day) pair in scope.
+  // Future dates are skipped: they haven't happened yet, so marking them
+  // ABSENT/WEEKLY_OFF is wrong (would show as absences for May 7-31 when
+  // recomputing in early May). Days are pre-filtered to today and earlier.
+  const todayIST = istDateStr(nowIST());
   type Upsert = { employeeId: string; date: Date; payload: any };
   const ops: Upsert[] = [];
 
   for (const emp of employees) {
     for (const dateStr of days) {
+      if (dateStr > todayIST) continue; // skip future dates
       const key = `${emp.id}|${dateStr}`;
       if (overrideSet.has(key)) continue; // never clobber manual overrides
 
@@ -639,6 +644,43 @@ router.post('/device-push', validate(devicePushSchema), asyncHandler(async (req:
   }
 
   res.status(201).json({ created, skipped, affectedDays: affectedDays.size });
+}));
+
+// ════════════════════════════════════════════════════════════════
+// RESET — wipe all attendance data (cloud-side). Destructive! Admin only.
+// Used at go-live to clear pre-launch test punches and historical imports
+// so the production tracking starts on day 1 with a clean slate.
+//
+// POST /api/attendance/reset  body: { confirm: 'WIPE', before?: 'YYYY-MM-DD' }
+// If `before` is set, only deletes data prior to that date.
+// ════════════════════════════════════════════════════════════════
+
+router.post('/reset', authorize('ADMIN'), asyncHandler(async (req: AuthRequest, res: Response) => {
+  const { confirm, before } = (req.body || {}) as { confirm?: string; before?: string };
+  if (confirm !== 'WIPE') {
+    return res.status(400).json({ error: "Pass {confirm: 'WIPE'} to proceed. Destructive action — this deletes attendance data." });
+  }
+
+  const punchWhere: any = { ...getCompanyFilter(req) };
+  const dayWhere: any = { ...getCompanyFilter(req) };
+  if (before) {
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(before)) return res.status(400).json({ error: 'before must be YYYY-MM-DD' });
+    const cutoff = new Date(before);
+    punchWhere.punchAt = { lt: cutoff };
+    dayWhere.date = { lt: cutoff };
+  }
+
+  const punches = await prisma.attendancePunch.deleteMany({ where: punchWhere });
+  const days = await prisma.attendanceDay.deleteMany({ where: dayWhere });
+
+  // Reset device sync cursors so the next pull starts fresh (only on full wipe)
+  if (!before) {
+    await prisma.biometricDevice.updateMany({
+      data: { lastPunchSyncAt: null, lastSyncAt: null, lastSyncStatus: null, lastSyncError: null },
+    });
+  }
+
+  res.json({ punchesDeleted: punches.count, daysDeleted: days.count, before: before ?? null });
 }));
 
 export default router;

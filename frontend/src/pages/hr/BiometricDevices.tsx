@@ -628,6 +628,20 @@ function OpsView({ devices, reload }: { devices: BiometricDevice[]; reload: () =
           loading={running === 'sync-time'}
           onClick={() => deviceId && run('sync-time', () => api.post(`/biometric/devices/${deviceId}/sync-time`))}
         />
+        <OpButton
+          label="Clear Device Punch Logs (DESTRUCTIVE)"
+          icon={<X className="w-3.5 h-3.5" />}
+          desc="Delete ALL attendance logs stored on the device. Used at go-live to wipe historical/test punches before production tracking begins."
+          tone="rose"
+          disabled={!deviceId || running !== null}
+          loading={running === 'clear-logs'}
+          onClick={() => {
+            if (!deviceId) return;
+            const t = prompt('Type WIPE to delete ALL punch logs from the device. Cannot be undone.');
+            if (t !== 'WIPE') return;
+            run('clear-logs', () => api.post(`/biometric/devices/${deviceId}/clear-logs`, { confirm: 'WIPE' }, { timeout: 60_000 }));
+          }}
+        />
       </div>
 
       {log && (
@@ -639,11 +653,12 @@ function OpsView({ devices, reload }: { devices: BiometricDevice[]; reload: () =
   );
 }
 
-function OpButton({ label, desc, icon, tone = 'blue', disabled, loading, onClick }: { label: string; desc: string; icon: React.ReactNode; tone?: 'blue' | 'amber' | 'indigo'; disabled?: boolean; loading?: boolean; onClick: () => void }) {
+function OpButton({ label, desc, icon, tone = 'blue', disabled, loading, onClick }: { label: string; desc: string; icon: React.ReactNode; tone?: 'blue' | 'amber' | 'indigo' | 'rose'; disabled?: boolean; loading?: boolean; onClick: () => void }) {
   const colors: Record<string, string> = {
     blue: 'bg-blue-600 hover:bg-blue-700 border-l-blue-500',
     amber: 'bg-amber-600 hover:bg-amber-700 border-l-amber-500',
     indigo: 'bg-indigo-600 hover:bg-indigo-700 border-l-indigo-500',
+    rose: 'bg-rose-600 hover:bg-rose-700 border-l-rose-500',
   };
   return (
     <div className={`flex items-center gap-3 border border-slate-200 border-l-4 ${colors[tone].split(' ')[2]} bg-white px-4 py-3`}>
