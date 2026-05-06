@@ -97,6 +97,7 @@ model Company {
   attendanceDays        AttendanceDay[]
   leaveApplications     LeaveApplication[]
   biometricDevices      BiometricDevice[]
+  laborWorkers          LaborWorker[]
 }
 
 model User {
@@ -2989,6 +2990,7 @@ model Contractor {
   workOrders     WorkOrder[]
   employees      Employee[]
   purchaseOrders PurchaseOrder[]
+  laborWorkers   LaborWorker[]
 
   divisions String[] @default([]) // empty = available to all divisions
   companyId String? // FK → Company (null = MSPIL default)
@@ -3219,9 +3221,10 @@ model WorkOrder {
   createdAt        DateTime   @default(now())
   updatedAt        DateTime   @updatedAt
 
-  lines    WorkOrderLine[]
-  progress WorkOrderProgress[]
-  bills    ContractorBill[]
+  lines        WorkOrderLine[]
+  progress     WorkOrderProgress[]
+  bills        ContractorBill[]
+  laborWorkers LaborWorker[]
 
   division  String?  @default("ETHANOL") // SUGAR | POWER | ETHANOL | COMMON
   companyId String? // FK → Company (null = MSPIL default)
@@ -5480,22 +5483,27 @@ model Shift {
 }
 
 model AttendancePunch {
-  id         String   @id @default(cuid())
-  employeeId String
-  employee   Employee @relation(fields: [employeeId], references: [id], onDelete: Cascade)
-  punchAt    DateTime // UTC instant of the punch (device emits IST string, server parses to UTC)
-  direction  String   @default("AUTO") // IN | OUT | AUTO (eSSL devices often don't distinguish — first of day = IN, last = OUT)
-  source     String   @default("DEVICE") // DEVICE | MANUAL | IMPORT
-  deviceId   String? // eSSL serial / location identifier
-  rawEmpCode String? // empCode at time of punch (audit trail in case empCode changes)
-  notes      String?
-  createdBy  String? // userId for manual entries
-  createdAt  DateTime @default(now())
+  id            String       @id @default(cuid())
+  // Polymorphic subject — exactly one of employeeId or laborWorkerId is set.
+  // Enforced at write-time in the route handler (pull-punches / device-push).
+  employeeId    String?
+  employee      Employee?    @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+  laborWorkerId String?
+  laborWorker   LaborWorker? @relation(fields: [laborWorkerId], references: [id], onDelete: Cascade)
+  punchAt       DateTime // UTC instant of the punch (device emits IST string, server parses to UTC)
+  direction     String       @default("AUTO") // IN | OUT | AUTO (eSSL devices often don't distinguish — first of day = IN, last = OUT)
+  source        String       @default("DEVICE") // DEVICE | MANUAL | IMPORT
+  deviceId      String? // eSSL serial / location identifier
+  rawEmpCode    String? // empCode/workerCode at time of punch (audit trail)
+  notes         String?
+  createdBy     String? // userId for manual entries
+  createdAt     DateTime     @default(now())
 
   companyId String?
   company   Company? @relation(fields: [companyId], references: [id])
 
   @@index([employeeId, punchAt])
+  @@index([laborWorkerId, punchAt])
   @@index([punchAt])
   @@index([deviceId, punchAt])
   @@index([source])
@@ -5627,4 +5635,61 @@ model BiometricDevice {
 
   @@index([active])
   @@index([companyId])
+}
+
+// ══════════════════════════════════════════════════════════════
+// LABOR WORKERS — added 2026-05-06 (Phase 2)
+//
+// Distinct from Employee (different lifecycle: turnover, paid via
+// contractor, no salary structure, no payroll line). Belongs to a
+// Contractor (labor supplier) and optionally to a manpower-supply
+// WorkOrder. Same biometric mapping pattern as Employee — deviceUserId
+// on this row routes punches to AttendancePunch.laborWorkerId.
+// ══════════════════════════════════════════════════════════════
+
+model LaborWorker {
+  id         String @id @default(cuid())
+  workerCode String @unique // e.g., LW-001
+  workerNo   Int    @unique @default(autoincrement())
+
+  firstName  String
+  lastName   String?
+  fatherName String?
+  phone      String?
+  aadhaar    String?
+
+  // Belongs to a contractor (labor supplier) — required
+  contractorId String
+  contractor   Contractor @relation(fields: [contractorId], references: [id])
+
+  // Optionally tied to a specific manpower-supply Work Order
+  workOrderId String?
+  workOrder   WorkOrder? @relation(fields: [workOrderId], references: [id])
+
+  skillCategory String? // UNSKILLED | SEMI_SKILLED | SKILLED — matches WO rate-card
+  dailyRate     Float? // ₹ per day, snapshot from WO rate-card
+
+  // Biometric mapping — same field as Employee.deviceUserId, same value space
+  // across all configured devices.
+  deviceUserId String?
+  cardNumber   String?
+
+  isActive Boolean  @default(true)
+  joinedAt DateTime @default(now())
+  remarks  String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  companyId String?
+  company   Company? @relation(fields: [companyId], references: [id])
+
+  attendancePunches AttendancePunch[]
+
+  @@index([contractorId])
+  @@index([workOrderId])
+  @@index([deviceUserId])
+  @@index([isActive])
+  @@index([companyId])
+  @@index([skillCategory])
 }

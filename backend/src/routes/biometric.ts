@@ -409,49 +409,61 @@ router.post('/devices/:id/pull-punches', authorize('ADMIN'), asyncHandler(async 
     throw err;
   }
 
-  // Resolve device.user_id → Employee.id via Employee.deviceUserId
+  // Resolve device.user_id → Employee OR LaborWorker via deviceUserId
   const userIds = [...new Set(pulled.punches.map(p => p.user_id))];
-  const employees = await prisma.employee.findMany({
-    where: { deviceUserId: { in: userIds } },
-    select: { id: true, deviceUserId: true, empCode: true, companyId: true },
-  });
-  const byDevId = new Map(employees.map(e => [e.deviceUserId!, e]));
+  const [employees, laborWorkers] = await Promise.all([
+    prisma.employee.findMany({
+      where: { deviceUserId: { in: userIds } },
+      select: { id: true, deviceUserId: true, empCode: true, companyId: true },
+    }),
+    prisma.laborWorker.findMany({
+      where: { deviceUserId: { in: userIds } },
+      select: { id: true, deviceUserId: true, workerCode: true, companyId: true },
+    }),
+  ]);
+  const empByDev = new Map(employees.map(e => [e.deviceUserId!, e]));
+  const lwByDev = new Map(laborWorkers.map(l => [l.deviceUserId!, l]));
 
   let inserted = 0;
   let unmapped: string[] = [];
-  const affectedDays = new Set<string>(); // empId|YYYY-MM-DD IST
+  const affectedDays = new Set<string>(); // empId|YYYY-MM-DD IST (employees only)
 
   for (const p of pulled.punches) {
-    const emp = byDevId.get(p.user_id);
-    if (!emp) {
+    const emp = empByDev.get(p.user_id);
+    const lw = lwByDev.get(p.user_id);
+    if (!emp && !lw) {
       if (!unmapped.includes(p.user_id)) unmapped.push(p.user_id);
       continue;
     }
-    // Idempotency: avoid duplicating a punch we already have. We dedupe on
-    // (employeeId, punchAt, deviceId) — same device + same instant = same punch.
+    // Idempotency: dedupe on (subject, punchAt, deviceId)
     const existing = await prisma.attendancePunch.findFirst({
-      where: { employeeId: emp.id, punchAt: new Date(p.punch_at), deviceId: d.code },
+      where: emp
+        ? { employeeId: emp.id, punchAt: new Date(p.punch_at), deviceId: d.code }
+        : { laborWorkerId: lw!.id, punchAt: new Date(p.punch_at), deviceId: d.code },
       select: { id: true },
     });
     if (existing) continue;
 
     await prisma.attendancePunch.create({
       data: {
-        employeeId: emp.id,
+        employeeId: emp?.id ?? null,
+        laborWorkerId: lw?.id ?? null,
         punchAt: new Date(p.punch_at),
         direction: p.punch === 0 ? 'IN' : p.punch === 1 ? 'OUT' : 'AUTO',
         source: 'DEVICE',
         deviceId: d.code,
         rawEmpCode: p.user_id,
-        companyId: emp.companyId ?? d.companyId,
+        companyId: (emp?.companyId ?? lw?.companyId) ?? d.companyId,
       },
     });
     inserted++;
 
-    // Track day for recompute
-    const ist = new Date(new Date(p.punch_at).getTime() + 5.5 * 60 * 60 * 1000);
-    const dateStr = `${ist.getUTCFullYear()}-${String(ist.getUTCMonth() + 1).padStart(2, '0')}-${String(ist.getUTCDate()).padStart(2, '0')}`;
-    affectedDays.add(`${emp.id}|${dateStr}`);
+    // Track day for recompute (only for employees — labor uses different aggregation)
+    if (emp) {
+      const ist = new Date(new Date(p.punch_at).getTime() + 5.5 * 60 * 60 * 1000);
+      const dateStr = `${ist.getUTCFullYear()}-${String(ist.getUTCMonth() + 1).padStart(2, '0')}-${String(ist.getUTCDate()).padStart(2, '0')}`;
+      affectedDays.add(`${emp.id}|${dateStr}`);
+    }
   }
 
   // Update device sync state
@@ -481,34 +493,57 @@ router.post('/devices/:id/sync-employees', authorize('ADMIN'), asyncHandler(asyn
   const d = await prisma.biometricDevice.findUnique({ where: { id: req.params.id } });
   if (!d) throw new NotFoundError('BiometricDevice', req.params.id);
 
-  const employees = await prisma.employee.findMany({
-    where: { isActive: true, ...getCompanyFilter(req) },
-    select: { id: true, empCode: true, empNo: true, firstName: true, lastName: true, deviceUserId: true, cardNumber: true },
-    take: 5000,
-  });
+  const [employees, laborWorkers] = await Promise.all([
+    prisma.employee.findMany({
+      where: { isActive: true, ...getCompanyFilter(req) },
+      select: { id: true, empCode: true, empNo: true, firstName: true, lastName: true, deviceUserId: true, cardNumber: true },
+      take: 5000,
+    }),
+    prisma.laborWorker.findMany({
+      where: { isActive: true, ...getCompanyFilter(req) },
+      select: { id: true, workerCode: true, workerNo: true, firstName: true, lastName: true, deviceUserId: true, cardNumber: true },
+      take: 5000,
+    }),
+  ]);
 
   // For employees without deviceUserId, auto-assign = empNo (numeric string)
   const toAutoAssign = employees.filter(e => !e.deviceUserId);
   for (const e of toAutoAssign) {
     const candidate = String(e.empNo);
-    // Skip if collision
     const taken = await prisma.employee.findFirst({ where: { deviceUserId: candidate, NOT: { id: e.id } }, select: { id: true } });
     if (!taken) {
       await prisma.employee.update({ where: { id: e.id }, data: { deviceUserId: candidate } });
       e.deviceUserId = candidate;
     }
   }
+  // For labor workers without deviceUserId, auto-assign 'L<workerNo>' to avoid collision with Employee
+  for (const l of laborWorkers.filter(w => !w.deviceUserId)) {
+    const candidate = `L${l.workerNo}`;
+    const empCol = await prisma.employee.findFirst({ where: { deviceUserId: candidate }, select: { id: true } });
+    const lwCol = await prisma.laborWorker.findFirst({ where: { deviceUserId: candidate, NOT: { id: l.id } }, select: { id: true } });
+    if (!empCol && !lwCol) {
+      await prisma.laborWorker.update({ where: { id: l.id }, data: { deviceUserId: candidate } });
+      l.deviceUserId = candidate;
+    }
+  }
 
-  // Build bulk payload — only employees with a deviceUserId
-  const payload = employees
-    .filter(e => !!e.deviceUserId)
-    .map(e => ({
+  // Build bulk payload — both employees AND labor workers
+  const payload: Array<{ user_id: string; name: string; privilege: number; card: number; empCode: string }> = [
+    ...employees.filter(e => !!e.deviceUserId).map(e => ({
       user_id: e.deviceUserId!,
       name: `${e.firstName} ${e.lastName}`.trim(),
       privilege: 0,
       card: parseCardNumber(e.cardNumber),
-      empCode: e.empCode, // keep around for error reporting
-    }));
+      empCode: e.empCode,
+    })),
+    ...laborWorkers.filter(l => !!l.deviceUserId).map(l => ({
+      user_id: l.deviceUserId!,
+      name: `${l.firstName} ${l.lastName ?? ''}`.trim(),
+      privilege: 0,
+      card: parseCardNumber(l.cardNumber),
+      empCode: l.workerCode,
+    })),
+  ];
 
   let pushed = 0;
   let failed = 0;

@@ -80,6 +80,8 @@ const EXPECTED_COLUMNS: ColumnCheck[] = [
   { table: 'BiometricDevice', column: 'autoPushMinutes', sql: `ALTER TABLE "BiometricDevice" ADD COLUMN IF NOT EXISTS "autoPushMinutes" INTEGER NOT NULL DEFAULT 0` },
   { table: 'BiometricDevice', column: 'lastAutoPullAt',  sql: `ALTER TABLE "BiometricDevice" ADD COLUMN IF NOT EXISTS "lastAutoPullAt" TIMESTAMP(3)` },
   { table: 'BiometricDevice', column: 'lastAutoPushAt',  sql: `ALTER TABLE "BiometricDevice" ADD COLUMN IF NOT EXISTS "lastAutoPushAt" TIMESTAMP(3)` },
+  // 2026-05-06 — LaborWorker support: AttendancePunch.employeeId becomes nullable, new laborWorkerId column
+  { table: 'AttendancePunch', column: 'laborWorkerId', sql: `ALTER TABLE "AttendancePunch" ADD COLUMN IF NOT EXISTS "laborWorkerId" TEXT` },
 ];
 
 const EXPECTED_TABLES: TableCheck[] = [
@@ -446,6 +448,43 @@ const EXPECTED_TABLES: TableCheck[] = [
       CREATE INDEX IF NOT EXISTS "BiometricDevice_companyId_idx" ON "BiometricDevice"("companyId");
     `,
   },
+  // 2026-05-06 — LaborWorker (Phase 2 — labor supplier workers, separate from Employee)
+  {
+    table: 'LaborWorker',
+    sql: `
+      CREATE TABLE IF NOT EXISTS "LaborWorker" (
+        "id" TEXT NOT NULL,
+        "workerCode" TEXT NOT NULL,
+        "workerNo" SERIAL NOT NULL,
+        "firstName" TEXT NOT NULL,
+        "lastName" TEXT,
+        "fatherName" TEXT,
+        "phone" TEXT,
+        "aadhaar" TEXT,
+        "contractorId" TEXT NOT NULL,
+        "workOrderId" TEXT,
+        "skillCategory" TEXT,
+        "dailyRate" DOUBLE PRECISION,
+        "deviceUserId" TEXT,
+        "cardNumber" TEXT,
+        "isActive" BOOLEAN NOT NULL DEFAULT true,
+        "joinedAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        "remarks" TEXT,
+        "companyId" TEXT,
+        "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        "updatedAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        CONSTRAINT "LaborWorker_pkey" PRIMARY KEY ("id")
+      );
+      CREATE UNIQUE INDEX IF NOT EXISTS "LaborWorker_workerCode_key" ON "LaborWorker"("workerCode");
+      CREATE UNIQUE INDEX IF NOT EXISTS "LaborWorker_workerNo_key" ON "LaborWorker"("workerNo");
+      CREATE INDEX IF NOT EXISTS "LaborWorker_contractorId_idx" ON "LaborWorker"("contractorId");
+      CREATE INDEX IF NOT EXISTS "LaborWorker_workOrderId_idx" ON "LaborWorker"("workOrderId");
+      CREATE INDEX IF NOT EXISTS "LaborWorker_deviceUserId_idx" ON "LaborWorker"("deviceUserId");
+      CREATE INDEX IF NOT EXISTS "LaborWorker_isActive_idx" ON "LaborWorker"("isActive");
+      CREATE INDEX IF NOT EXISTS "LaborWorker_companyId_idx" ON "LaborWorker"("companyId");
+      CREATE INDEX IF NOT EXISTS "LaborWorker_skillCategory_idx" ON "LaborWorker"("skillCategory");
+    `,
+  },
 ];
 
 async function checkAndCreateTables(): Promise<void> {
@@ -511,6 +550,9 @@ export async function runSchemaDriftGuard(): Promise<void> {
     await prisma.$executeRawUnsafe(`CREATE INDEX IF NOT EXISTS "Employee_defaultShiftId_idx" ON "Employee"("defaultShiftId")`);
     // 2026-05-06 — index for Employee.deviceUserId (biometric mapping)
     await prisma.$executeRawUnsafe(`CREATE INDEX IF NOT EXISTS "Employee_deviceUserId_idx" ON "Employee"("deviceUserId")`);
+    // 2026-05-06 — AttendancePunch.employeeId becomes nullable (LaborWorker support)
+    await prisma.$executeRawUnsafe(`ALTER TABLE "AttendancePunch" ALTER COLUMN "employeeId" DROP NOT NULL`);
+    await prisma.$executeRawUnsafe(`CREATE INDEX IF NOT EXISTS "AttendancePunch_laborWorkerId_punchAt_idx" ON "AttendancePunch"("laborWorkerId", "punchAt")`);
     console.log('[SchemaDriftGuard] OK — all expected columns + tables present');
   } catch (err: unknown) {
     console.error('[SchemaDriftGuard] check failed:', (err instanceof Error ? err.message : String(err)));
