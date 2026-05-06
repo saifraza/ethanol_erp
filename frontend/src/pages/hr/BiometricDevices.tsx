@@ -359,6 +359,21 @@ function MappingView({ devices }: { devices: BiometricDevice[] }) {
     pull();
   }
 
+  /** Move a device user_id from one Employee to another in two atomic steps. */
+  async function remap(currentEmployeeId: string, newEmployeeId: string, deviceUserId: string) {
+    if (currentEmployeeId === newEmployeeId) return;
+    try {
+      // 1) Clear the current employee's deviceUserId so the new mapping doesn't collide
+      await api.put(`/biometric/mapping/${currentEmployeeId}`, { deviceUserId: null });
+      // 2) Set on new employee
+      await api.put(`/biometric/mapping/${newEmployeeId}`, { deviceUserId });
+      pull();
+    } catch (e: any) {
+      alert(e?.response?.data?.error || 'Remap failed');
+      pull();
+    }
+  }
+
   /** Create new ERP Employees from a list of unmatched device users. */
   async function createEmployees(rows: UnmatchedRow[]) {
     if (!data || !deviceId || rows.length === 0) return;
@@ -410,23 +425,37 @@ function MappingView({ devices }: { devices: BiometricDevice[] }) {
             <thead className="bg-slate-200 border-b border-slate-300">
               <tr>
                 <Th>Device User ID</Th><Th>Device Name</Th><Th>→</Th>
-                <Th>ERP Emp Code</Th><Th>ERP Name</Th><Th>Match Kind</Th><Th>Action</Th>
+                <Th>ERP Emp Code</Th><Th>ERP Name</Th><Th>Match Kind</Th><Th>Reassign To...</Th><Th>Action</Th>
               </tr>
             </thead>
             <tbody>
-              {data.matched.map(m => (
-                <tr key={m.deviceUser.uid} className="border-b border-slate-100 even:bg-slate-50/70">
-                  <Td mono>{m.deviceUser.user_id}</Td>
-                  <Td>{m.deviceUser.name}</Td>
-                  <Td className="text-emerald-600">→</Td>
-                  <Td mono>{m.employee.empCode}</Td>
-                  <Td>{m.employee.firstName} {m.employee.lastName}</Td>
-                  <Td>
-                    <span className={`text-[9px] font-bold uppercase px-1.5 py-0.5 border ${m.matchKind === 'EXISTING' ? 'border-emerald-500 text-emerald-700 bg-emerald-50' : 'border-blue-500 text-blue-700 bg-blue-50'}`}>{m.matchKind}</span>
-                  </Td>
-                  <Td><button onClick={() => clearMapping(m.employee.id)} className="text-[11px] text-rose-600 hover:underline">Clear</button></Td>
-                </tr>
-              ))}
+              {data.matched.map(m => {
+                const free = allEmployees.filter(e => !e.deviceUserId && e.id !== m.employee.id);
+                return (
+                  <tr key={m.deviceUser.uid} className="border-b border-slate-100 even:bg-slate-50/70">
+                    <Td mono>{m.deviceUser.user_id}</Td>
+                    <Td>{m.deviceUser.name}</Td>
+                    <Td className="text-emerald-600">→</Td>
+                    <Td mono>{m.employee.empCode}</Td>
+                    <Td>{m.employee.firstName} {m.employee.lastName}</Td>
+                    <Td>
+                      <span className={`text-[9px] font-bold uppercase px-1.5 py-0.5 border ${m.matchKind === 'EXISTING' ? 'border-emerald-500 text-emerald-700 bg-emerald-50' : 'border-blue-500 text-blue-700 bg-blue-50'}`}>{m.matchKind}</span>
+                    </Td>
+                    <Td>
+                      <select
+                        onChange={e => e.target.value && remap(m.employee.id, e.target.value, m.deviceUser.user_id)}
+                        defaultValue=""
+                        className="border border-slate-300 px-2 py-0.5 text-[11px] max-w-[200px]"
+                        title="Move this device user to a different ERP employee"
+                      >
+                        <option value="">— pick another —</option>
+                        {free.map(c => <option key={c.id} value={c.id}>{c.empCode} — {c.firstName} {c.lastName}</option>)}
+                      </select>
+                    </Td>
+                    <Td><button onClick={() => clearMapping(m.employee.id)} className="text-[11px] text-rose-600 hover:underline">Clear</button></Td>
+                  </tr>
+                );
+              })}
             </tbody>
           </table>
         </Section>
