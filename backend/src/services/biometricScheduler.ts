@@ -109,34 +109,39 @@ async function autoPull(d: DeviceRow): Promise<void> {
     return;
   }
 
-  // Resolve user_id → Employee
+  // Resolve user_id → Employee OR LaborWorker
   const userIds = [...new Set(pulled.punches.map(p => p.user_id))];
-  const employees = userIds.length > 0
-    ? await prisma.employee.findMany({
-        where: { deviceUserId: { in: userIds } },
-        select: { id: true, deviceUserId: true, companyId: true },
-      })
-    : [];
-  const byDevId = new Map(employees.map(e => [e.deviceUserId!, e]));
+  const [employees, laborWorkers] = userIds.length > 0
+    ? await Promise.all([
+        prisma.employee.findMany({ where: { deviceUserId: { in: userIds } }, select: { id: true, deviceUserId: true, companyId: true } }),
+        prisma.laborWorker.findMany({ where: { deviceUserId: { in: userIds } }, select: { id: true, deviceUserId: true, companyId: true } }),
+      ])
+    : [[], []];
+  const empByDev = new Map(employees.map(e => [e.deviceUserId!, e]));
+  const lwByDev = new Map(laborWorkers.map(l => [l.deviceUserId!, l]));
 
   let inserted = 0;
   for (const p of pulled.punches) {
-    const emp = byDevId.get(p.user_id);
-    if (!emp) continue;
+    const emp = empByDev.get(p.user_id);
+    const lw = lwByDev.get(p.user_id);
+    if (!emp && !lw) continue;
     const existing = await prisma.attendancePunch.findFirst({
-      where: { employeeId: emp.id, punchAt: new Date(p.punch_at), deviceId: d.code },
+      where: emp
+        ? { employeeId: emp.id, punchAt: new Date(p.punch_at), deviceId: d.code }
+        : { laborWorkerId: lw!.id, punchAt: new Date(p.punch_at), deviceId: d.code },
       select: { id: true },
     });
     if (existing) continue;
     await prisma.attendancePunch.create({
       data: {
-        employeeId: emp.id,
+        employeeId: emp?.id ?? null,
+        laborWorkerId: lw?.id ?? null,
         punchAt: new Date(p.punch_at),
         direction: p.punch === 0 ? 'IN' : p.punch === 1 ? 'OUT' : 'AUTO',
         source: 'DEVICE',
         deviceId: d.code,
         rawEmpCode: p.user_id,
-        companyId: emp.companyId ?? d.companyId,
+        companyId: (emp?.companyId ?? lw?.companyId) ?? d.companyId,
       },
     });
     inserted++;
@@ -158,13 +163,20 @@ async function autoPull(d: DeviceRow): Promise<void> {
 }
 
 async function autoPush(d: DeviceRow): Promise<void> {
-  const employees = await prisma.employee.findMany({
-    where: { isActive: true, ...(d.companyId ? { companyId: d.companyId } : {}) },
-    select: { id: true, empCode: true, empNo: true, firstName: true, lastName: true, deviceUserId: true, cardNumber: true },
-    take: 5000,
-  });
+  const [employees, laborWorkers] = await Promise.all([
+    prisma.employee.findMany({
+      where: { isActive: true, ...(d.companyId ? { companyId: d.companyId } : {}) },
+      select: { id: true, empCode: true, empNo: true, firstName: true, lastName: true, deviceUserId: true, cardNumber: true },
+      take: 5000,
+    }),
+    prisma.laborWorker.findMany({
+      where: { isActive: true, ...(d.companyId ? { companyId: d.companyId } : {}) },
+      select: { id: true, workerCode: true, workerNo: true, firstName: true, lastName: true, deviceUserId: true, cardNumber: true },
+      take: 5000,
+    }),
+  ]);
 
-  // Auto-assign deviceUserId for new employees
+  // Auto-assign deviceUserId for new records
   for (const e of employees) {
     if (!e.deviceUserId) {
       const candidate = String(e.empNo);
@@ -178,8 +190,31 @@ async function autoPush(d: DeviceRow): Promise<void> {
       }
     }
   }
+  for (const l of laborWorkers) {
+    if (!l.deviceUserId) {
+      const candidate = `L${l.workerNo}`;
+      const empCol = await prisma.employee.findFirst({ where: { deviceUserId: candidate }, select: { id: true } });
+      const lwCol = await prisma.laborWorker.findFirst({ where: { deviceUserId: candidate, NOT: { id: l.id } }, select: { id: true } });
+      if (!empCol && !lwCol) {
+        await prisma.laborWorker.update({ where: { id: l.id }, data: { deviceUserId: candidate } });
+        l.deviceUserId = candidate;
+      }
+    }
+  }
 
-  const usable = employees.filter(e => !!e.deviceUserId);
+  const usable: Array<{ user_id: string; name: string; card: number }> = [
+    ...employees.filter(e => !!e.deviceUserId).map(e => ({
+      user_id: e.deviceUserId!,
+      name: `${e.firstName} ${e.lastName}`.trim(),
+      card: parseCardNumber(e.cardNumber),
+    })),
+    ...laborWorkers.filter(l => !!l.deviceUserId).map(l => ({
+      user_id: l.deviceUserId!,
+      name: `${l.firstName} ${l.lastName ?? ''}`.trim(),
+      card: parseCardNumber(l.cardNumber),
+    })),
+  ];
+
   if (usable.length === 0) {
     await prisma.biometricDevice.update({ where: { id: d.id }, data: { lastAutoPushAt: new Date() } });
     return;
@@ -192,15 +227,9 @@ async function autoPush(d: DeviceRow): Promise<void> {
   for (let i = 0; i < usable.length; i += BATCH) {
     const slice = usable.slice(i, i + BATCH);
     try {
-      const r = await bridge.bulkUpsertUsers(
-        toRef(d),
-        slice.map(e => ({
-          user_id: e.deviceUserId!,
-          name: `${e.firstName} ${e.lastName}`.trim(),
-          privilege: 0,
-          card: parseCardNumber(e.cardNumber),
-        })),
-      );
+      const r = await bridge.bulkUpsertUsers(toRef(d), slice.map(u => ({
+        user_id: u.user_id, name: u.name, privilege: 0, card: u.card,
+      })));
       pushed += r.ok;
       failed += r.failed;
     } catch (err: unknown) {

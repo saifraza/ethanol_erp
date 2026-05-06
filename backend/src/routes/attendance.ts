@@ -152,7 +152,10 @@ router.delete('/punches/:id', authorize('ADMIN'), asyncHandler(async (req: AuthR
   const punch = await prisma.attendancePunch.findUnique({ where: { id: req.params.id } });
   if (!punch) throw new NotFoundError('Punch', req.params.id);
   await prisma.attendancePunch.delete({ where: { id: req.params.id } });
-  await recomputeDay(punch.employeeId, istDateStr(punch.punchAt), punch.companyId);
+  // Recompute the affected AttendanceDay only for employee punches; labor doesn't roll up to AttendanceDay
+  if (punch.employeeId) {
+    await recomputeDay(punch.employeeId, istDateStr(punch.punchAt), punch.companyId);
+  }
   res.json({ ok: true });
 }));
 
