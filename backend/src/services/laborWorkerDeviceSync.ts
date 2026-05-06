@@ -9,6 +9,7 @@
  */
 import prisma from '../config/prisma';
 import { bridge } from './biometricBridge';
+import { findAvailableDeviceUserId } from './deviceUserIdAllocator';
 
 type Op = 'UPSERT' | 'DELETE';
 
@@ -33,19 +34,16 @@ async function runSync(laborWorkerId: string, op: Op): Promise<void> {
   });
   if (!w) return;
 
-  // Auto-assign deviceUserId if missing — use 'L<workerNo>' so it doesn't
-  // collide with Employee.deviceUserId values which are plain numeric strings.
+  // Auto-assign deviceUserId — prefer 'L<workerNo>' (avoids collision with
+  // Employee numeric ids), with fallback to high-range numeric on collision.
   if (op === 'UPSERT' && !w.deviceUserId) {
-    const candidate = `L${w.workerNo}`;
-    const empCollision = await prisma.employee.findFirst({ where: { deviceUserId: candidate }, select: { id: true } });
-    const lwCollision = await prisma.laborWorker.findFirst({ where: { deviceUserId: candidate, NOT: { id: w.id } }, select: { id: true } });
-    if (!empCollision && !lwCollision) {
-      await prisma.laborWorker.update({ where: { id: w.id }, data: { deviceUserId: candidate } });
-      w.deviceUserId = candidate;
-    } else {
-      console.warn(`[laborWorkerDeviceSync] deviceUserId collision for ${w.workerCode}; skipping push`);
+    const allocated = await findAvailableDeviceUserId(`L${w.workerNo}`, 'LABOR', w.id);
+    if (!allocated) {
+      console.warn(`[laborWorkerDeviceSync] could not allocate deviceUserId for ${w.workerCode}`);
       return;
     }
+    await prisma.laborWorker.update({ where: { id: w.id }, data: { deviceUserId: allocated } });
+    w.deviceUserId = allocated;
   }
 
   if (!w.deviceUserId) return;

@@ -11,6 +11,7 @@
  */
 import prisma from '../config/prisma';
 import { bridge } from './biometricBridge';
+import { findAvailableDeviceUserId } from './deviceUserIdAllocator';
 
 type Op = 'UPSERT' | 'DELETE';
 
@@ -38,21 +39,16 @@ async function runSync(employeeId: string, op: Op): Promise<void> {
   });
   if (!employee) return;
 
-  // Auto-assign deviceUserId if missing (use empNo as a stable small int)
+  // Auto-assign deviceUserId if missing — try empNo first, fall back to a
+  // high-range slot if there's collision so we never silently skip pushing.
   if (op === 'UPSERT' && !employee.deviceUserId) {
-    const candidate = String(employee.empNo);
-    const taken = await prisma.employee.findFirst({
-      where: { deviceUserId: candidate, NOT: { id: employee.id } },
-      select: { id: true },
-    });
-    if (!taken) {
-      await prisma.employee.update({ where: { id: employee.id }, data: { deviceUserId: candidate } });
-      employee.deviceUserId = candidate;
-    } else {
-      // Collision — admin must resolve via mapping UI; skip device push
-      console.warn(`[employeeDeviceSync] deviceUserId collision for ${employee.empCode} (empNo=${employee.empNo}); skipping push`);
+    const allocated = await findAvailableDeviceUserId(String(employee.empNo), 'EMPLOYEE', employee.id);
+    if (!allocated) {
+      console.warn(`[employeeDeviceSync] could not allocate deviceUserId for ${employee.empCode}`);
       return;
     }
+    await prisma.employee.update({ where: { id: employee.id }, data: { deviceUserId: allocated } });
+    employee.deviceUserId = allocated;
   }
 
   if (!employee.deviceUserId) return;

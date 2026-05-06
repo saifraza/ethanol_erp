@@ -13,6 +13,7 @@
  */
 import prisma from '../config/prisma';
 import { bridge, DeviceRef } from './biometricBridge';
+import { findAvailableDeviceUserId } from './deviceUserIdAllocator';
 
 // Track running ops so a slow device doesn't get double-fired
 const inFlight = new Set<string>();
@@ -176,28 +177,23 @@ async function autoPush(d: DeviceRow): Promise<void> {
     }),
   ]);
 
-  // Auto-assign deviceUserId for new records
+  // Auto-assign deviceUserId for new records — never silently skip on
+  // collision. Preferred candidate first, high-range fallback otherwise.
   for (const e of employees) {
     if (!e.deviceUserId) {
-      const candidate = String(e.empNo);
-      const taken = await prisma.employee.findFirst({
-        where: { deviceUserId: candidate, NOT: { id: e.id } },
-        select: { id: true },
-      });
-      if (!taken) {
-        await prisma.employee.update({ where: { id: e.id }, data: { deviceUserId: candidate } });
-        e.deviceUserId = candidate;
+      const allocated = await findAvailableDeviceUserId(String(e.empNo), 'EMPLOYEE', e.id);
+      if (allocated) {
+        await prisma.employee.update({ where: { id: e.id }, data: { deviceUserId: allocated } });
+        e.deviceUserId = allocated;
       }
     }
   }
   for (const l of laborWorkers) {
     if (!l.deviceUserId) {
-      const candidate = `L${l.workerNo}`;
-      const empCol = await prisma.employee.findFirst({ where: { deviceUserId: candidate }, select: { id: true } });
-      const lwCol = await prisma.laborWorker.findFirst({ where: { deviceUserId: candidate, NOT: { id: l.id } }, select: { id: true } });
-      if (!empCol && !lwCol) {
-        await prisma.laborWorker.update({ where: { id: l.id }, data: { deviceUserId: candidate } });
-        l.deviceUserId = candidate;
+      const allocated = await findAvailableDeviceUserId(`L${l.workerNo}`, 'LABOR', l.id);
+      if (allocated) {
+        await prisma.laborWorker.update({ where: { id: l.id }, data: { deviceUserId: allocated } });
+        l.deviceUserId = allocated;
       }
     }
   }

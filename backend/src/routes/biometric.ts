@@ -5,6 +5,7 @@ import { authenticate, AuthRequest, authorize, getCompanyFilter, getActiveCompan
 import { asyncHandler, validate } from '../shared/middleware';
 import { NotFoundError } from '../shared/errors';
 import { bridge, bridgeHealth, DeviceRef } from '../services/biometricBridge';
+import { findAvailableDeviceUserId } from '../services/deviceUserIdAllocator';
 
 const router = Router();
 router.use(authenticate);
@@ -573,24 +574,21 @@ router.post('/devices/:id/sync-employees', authorize('ADMIN'), asyncHandler(asyn
     }),
   ]);
 
-  // For employees without deviceUserId, auto-assign = empNo (numeric string)
-  const toAutoAssign = employees.filter(e => !e.deviceUserId);
-  for (const e of toAutoAssign) {
-    const candidate = String(e.empNo);
-    const taken = await prisma.employee.findFirst({ where: { deviceUserId: candidate, NOT: { id: e.id } }, select: { id: true } });
-    if (!taken) {
-      await prisma.employee.update({ where: { id: e.id }, data: { deviceUserId: candidate } });
-      e.deviceUserId = candidate;
+  // For employees without deviceUserId, allocate one (preferred: empNo, with
+  // high-range fallback on collision so we never silently skip pushing).
+  for (const e of employees.filter(em => !em.deviceUserId)) {
+    const allocated = await findAvailableDeviceUserId(String(e.empNo), 'EMPLOYEE', e.id);
+    if (allocated) {
+      await prisma.employee.update({ where: { id: e.id }, data: { deviceUserId: allocated } });
+      e.deviceUserId = allocated;
     }
   }
-  // For labor workers without deviceUserId, auto-assign 'L<workerNo>' to avoid collision with Employee
+  // Same for labor workers (preferred 'L<workerNo>', falls back to high-range numeric)
   for (const l of laborWorkers.filter(w => !w.deviceUserId)) {
-    const candidate = `L${l.workerNo}`;
-    const empCol = await prisma.employee.findFirst({ where: { deviceUserId: candidate }, select: { id: true } });
-    const lwCol = await prisma.laborWorker.findFirst({ where: { deviceUserId: candidate, NOT: { id: l.id } }, select: { id: true } });
-    if (!empCol && !lwCol) {
-      await prisma.laborWorker.update({ where: { id: l.id }, data: { deviceUserId: candidate } });
-      l.deviceUserId = candidate;
+    const allocated = await findAvailableDeviceUserId(`L${l.workerNo}`, 'LABOR', l.id);
+    if (allocated) {
+      await prisma.laborWorker.update({ where: { id: l.id }, data: { deviceUserId: allocated } });
+      l.deviceUserId = allocated;
     }
   }
 
