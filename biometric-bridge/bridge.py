@@ -157,19 +157,46 @@ class UpsertUserReq(BaseModel):
     uid: Optional[int] = None  # internal slot; if omitted, library auto-assigns
 
 
-@app.post("/devices/users/upsert")
-def upsert_user(body: UpsertUserReq, x_bridge_key: Optional[str] = Header(None)):
-    _check_key(x_bridge_key)
-    with _Conn(body.device) as conn:
-        # If uid is None, the library finds a free slot. If we want stable uids
-        # per user_id, we resolve here.
-        uid = body.uid
-        if uid is None:
-            existing = next((u for u in (conn.get_users() or []) if str(u.user_id) == str(body.user_id)), None)
-            uid = existing.uid if existing else _next_free_uid(conn)
+def _safe_name(name: str) -> str:
+    """Strip non-Latin-1 characters and trim to 24 chars (device limit).
+
+    eSSL/ZKTeco devices store names in a fixed-width 24-byte buffer with
+    Latin-1 encoding. Non-encodable characters cause set_user() to fail with
+    "Can't set user". This silently drops them rather than failing the row.
+    """
+    if not name:
+        return ""
+    cleaned = name.encode('latin-1', errors='ignore').decode('latin-1')
+    return cleaned[:24]
+
+
+def _next_free_uid_from_set(used: set) -> int:
+    i = 1
+    while i in used:
+        i += 1
+    return i
+
+
+def _do_set_user(conn, body: UpsertUserReq, users_cache: Optional[list] = None) -> dict:
+    """Single user upsert. Caller can pass `users_cache` to avoid hitting
+    get_users() on every call during a bulk operation."""
+    if users_cache is None:
+        users_cache = conn.get_users() or []
+    uid = body.uid
+    if uid is None:
+        existing = next((u for u in users_cache if str(u.user_id) == str(body.user_id)), None)
+        if existing:
+            uid = existing.uid
+        else:
+            used = {u.uid for u in users_cache}
+            uid = _next_free_uid_from_set(used)
+    safe_name = _safe_name(body.name)
+    if not safe_name:
+        return {"ok": False, "user_id": body.user_id, "error": "name_empty_after_sanitize"}
+    try:
         conn.set_user(
             uid=uid,
-            name=body.name[:24],  # device limit
+            name=safe_name,
             privilege=body.privilege,
             password=body.password,
             group_id=body.group_id,
@@ -177,14 +204,60 @@ def upsert_user(body: UpsertUserReq, x_bridge_key: Optional[str] = Header(None))
             card=body.card,
         )
         return {"ok": True, "uid": uid, "user_id": body.user_id}
+    except Exception as e:
+        # Most common: ZKErrorResponse('Can't set user') — device buffer / packet
+        # rejected. Don't blow up the request — return ok=false so the cloud can
+        # tally failures and continue with the rest of the batch.
+        return {"ok": False, "user_id": body.user_id, "error": f"{type(e).__name__}: {e}"}
 
 
-def _next_free_uid(conn) -> int:
-    used = {u.uid for u in (conn.get_users() or [])}
-    i = 1
-    while i in used:
-        i += 1
-    return i
+@app.post("/devices/users/upsert")
+def upsert_user(body: UpsertUserReq, x_bridge_key: Optional[str] = Header(None)):
+    _check_key(x_bridge_key)
+    with _Conn(body.device) as conn:
+        return _do_set_user(conn, body)
+
+
+# ───────────────────────── bulk upsert ─────────────────────────
+# Single TCP connection, single get_users() call, then iterate with set_user.
+# Way faster + far more reliable than 300 separate connect/disconnect cycles
+# (the device gets unstable when hammered with rapid open/close).
+
+class BulkUpsertReq(BaseModel):
+    device: DeviceRef
+    users: list[UpsertUserReq]
+
+
+@app.post("/devices/users/bulk-upsert")
+def bulk_upsert(body: BulkUpsertReq, x_bridge_key: Optional[str] = Header(None)):
+    _check_key(x_bridge_key)
+    with _Conn(body.device) as conn:
+        # Cache the user list once — saves N round-trips.
+        users_cache = conn.get_users() or []
+        results = []
+        ok_count = 0
+        fail_count = 0
+        for u in body.users:
+            # Each `u` already has device set on the parent — bind it here too
+            # so the inner helper has the right shape.
+            u.device = body.device
+            r = _do_set_user(conn, u, users_cache)
+            results.append(r)
+            if r.get("ok"):
+                ok_count += 1
+                # Update cache so subsequent users see the new entry
+                # (avoids reusing the same uid for two different user_ids).
+                if not any(str(c.user_id) == str(u.user_id) for c in users_cache):
+                    # Synthesize a minimal placeholder so _next_free_uid skips this slot
+                    class _Stub:
+                        pass
+                    s = _Stub()
+                    s.uid = r["uid"]
+                    s.user_id = u.user_id
+                    users_cache.append(s)
+            else:
+                fail_count += 1
+        return {"total": len(body.users), "ok": ok_count, "failed": fail_count, "results": results}
 
 
 # ───────────────────────── delete user ─────────────────────────

@@ -92,8 +92,16 @@ export const bridge = {
   async listUsers(device: DeviceRef): Promise<{ count: number; users: BridgeUser[] }> {
     return call('/devices/users/list', { device }, 30_000);
   },
-  async upsertUser(device: DeviceRef, user: { user_id: string; name: string; privilege?: number; card?: number; uid?: number }): Promise<{ ok: boolean; uid: number; user_id: string }> {
+  async upsertUser(device: DeviceRef, user: { user_id: string; name: string; privilege?: number; card?: number; uid?: number }): Promise<{ ok: boolean; uid?: number; user_id: string; error?: string }> {
     return call('/devices/users/upsert', { device, ...user });
+  },
+  async bulkUpsertUsers(
+    device: DeviceRef,
+    users: Array<{ user_id: string; name: string; privilege?: number; card?: number }>,
+  ): Promise<{ total: number; ok: number; failed: number; results: Array<{ ok: boolean; user_id: string; uid?: number; error?: string }> }> {
+    // Re-shape: bridge expects each user to carry the device too (Pydantic schema).
+    const usersWithDevice = users.map(u => ({ device, ...u }));
+    return call('/devices/users/bulk-upsert', { device, users: usersWithDevice }, 120_000);
   },
   async deleteUser(device: DeviceRef, user_id: string): Promise<{ ok: boolean; deleted_uid?: number; skipped?: string }> {
     return call('/devices/users/delete', { device, user_id });
