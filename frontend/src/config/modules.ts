@@ -13,7 +13,7 @@ import {
   PackageSearch, ArrowRightLeft, ClipboardCheck, BarChart2, Banknote, PieChart, HardHat,
   FolderArchive, Search, ShieldCheck, ListChecks, BotMessageSquare,
   UserCheck as UserCheckIcon, Network, Wallet, CircleDollarSign, LayoutGrid, Sparkles, Plus,
-  Calendar as CalendarIcon, Clock as ClockIcon
+  Calendar as CalendarIcon, Clock as ClockIcon, Fingerprint
 } from 'lucide-react';
 
 export interface ModuleDef {
@@ -138,6 +138,7 @@ export const MODULE_DEFS: ModuleDef[] = [
   { key: 'org-chart', label: 'Org Chart', to: '/hr/org-chart', icon: Network, group: 'hr' },
   { key: 'attendance', label: 'Attendance', to: '/hr/attendance', icon: CalendarIcon, group: 'hr' },
   { key: 'leave', label: 'Leave', to: '/hr/leave', icon: ClockIcon, group: 'hr' },
+  { key: 'biometric-devices', label: 'Biometric Devices', to: '/hr/biometric-devices', icon: Fingerprint, group: 'hr', adminOnly: true },
   { key: 'salary-structure', label: 'Salary Structure', to: '/hr/salary-structure', icon: Wallet, group: 'hr' },
   { key: 'payroll', label: 'Payroll', to: '/hr/payroll', icon: CircleDollarSign, group: 'hr' },
 ];
