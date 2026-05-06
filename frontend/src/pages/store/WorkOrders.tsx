@@ -5,7 +5,7 @@ import api from '../../services/api';
 /*  Types                                                              */
 /* ------------------------------------------------------------------ */
 
-type SupplyType = 'INTRA_STATE' | 'INTER_STATE';
+type SupplyType = 'INTRA_STATE' | 'INTER_STATE' | 'NON_GST';
 type ContractType = 'GENERAL' | 'MANPOWER_SUPPLY';
 type SkillCategory = 'SKILLED' | 'SEMI_SKILLED' | 'UNSKILLED' | 'SUPERVISOR';
 type ShiftHours = 8 | 12;
@@ -338,11 +338,12 @@ export default function WorkOrders() {
   }, [formContractType, formRoster, formRateCard, formLines]);
 
   const formTotals = useMemo(() => {
+    const isNonGst = formSupplyType === 'NON_GST';
     const lines = effectiveLines.map((l) => {
       const amount = r2(l.quantity * l.rate);
       const discountAmount = r2(amount * (l.discountPercent / 100));
       const taxableAmount = r2(amount - discountAmount);
-      const totalGst = r2(taxableAmount * (l.gstPercent / 100));
+      const totalGst = isNonGst ? 0 : r2(taxableAmount * (l.gstPercent / 100));
       return { amount, discountAmount, taxableAmount, totalGst, lineTotal: r2(taxableAmount + totalGst) };
     });
     const subtotal = r2(lines.reduce((s, l) => s + l.amount, 0));
@@ -539,7 +540,7 @@ export default function WorkOrders() {
       setProgressNote('');
       setBillDescription(`Work bill — ${res.data.title}`);
       setBillAmount(Math.max(0, res.data.balanceAmount));
-      setBillGstPercent(res.data.lines?.[0]?.gstPercent ?? 18);
+      setBillGstPercent(res.data.supplyType === 'NON_GST' ? 0 : (res.data.lines?.[0]?.gstPercent ?? 18));
       setBillVendorRef('');
       setShowDetail(true);
     } catch (err) {
@@ -867,9 +868,17 @@ export default function WorkOrders() {
                 </div>
                 <div>
                   <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-0.5">Supply Type</label>
-                  <select value={formSupplyType} onChange={(e) => setFormSupplyType(e.target.value as SupplyType)} className="w-full border border-slate-300 px-2 py-1.5 text-xs">
+                  <select value={formSupplyType} onChange={(e) => {
+                    const v = e.target.value as SupplyType;
+                    setFormSupplyType(v);
+                    if (v === 'NON_GST') {
+                      setFormLines((prev) => prev.map((l) => ({ ...l, gstPercent: 0 })));
+                      setFormRoster((prev) => prev.map((r) => ({ ...r, gstPercent: 0 })));
+                    }
+                  }} className="w-full border border-slate-300 px-2 py-1.5 text-xs">
                     <option value="INTRA_STATE">Intra-state (CGST + SGST)</option>
                     <option value="INTER_STATE">Inter-state (IGST)</option>
+                    <option value="NON_GST">Non-GST (No tax)</option>
                   </select>
                 </div>
                 <div>
@@ -1153,7 +1162,9 @@ export default function WorkOrders() {
                   <div className="flex justify-between px-3 py-1.5 text-xs border-b border-slate-100"><span className="text-slate-500">Subtotal</span><span className="font-mono tabular-nums text-slate-800">{fmtCurrency(formTotals.subtotal)}</span></div>
                   <div className="flex justify-between px-3 py-1.5 text-xs border-b border-slate-100"><span className="text-slate-500">Discount</span><span className="font-mono tabular-nums text-slate-800">- {fmtCurrency(formTotals.discountAmount)}</span></div>
                   <div className="flex justify-between px-3 py-1.5 text-xs border-b border-slate-100"><span className="text-slate-500">Taxable</span><span className="font-mono tabular-nums text-slate-800">{fmtCurrency(formTotals.taxableAmount)}</span></div>
-                  {formSupplyType === 'INTRA_STATE' ? (
+                  {formSupplyType === 'NON_GST' ? (
+                    <div className="flex justify-between px-3 py-1.5 text-xs border-b border-slate-100"><span className="text-slate-500">GST</span><span className="font-mono tabular-nums text-slate-400">N/A — Non-GST</span></div>
+                  ) : formSupplyType === 'INTRA_STATE' ? (
                     <>
                       <div className="flex justify-between px-3 py-1.5 text-xs border-b border-slate-100"><span className="text-slate-500">CGST</span><span className="font-mono tabular-nums text-slate-800">{fmtCurrency(formTotals.totalCgst)}</span></div>
                       <div className="flex justify-between px-3 py-1.5 text-xs border-b border-slate-100"><span className="text-slate-500">SGST</span><span className="font-mono tabular-nums text-slate-800">{fmtCurrency(formTotals.totalSgst)}</span></div>

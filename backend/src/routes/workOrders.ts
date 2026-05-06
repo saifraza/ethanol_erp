@@ -1,4 +1,4 @@
-import { Router, Response } from 'express';
+import { Router, Response, NextFunction } from 'express';
 import { Prisma } from '@prisma/client';
 import prisma from '../config/prisma';
 import { authenticate, AuthRequest, authorize, getCompanyFilter, getActiveCompanyId } from '../middleware/auth';
@@ -10,6 +10,16 @@ const router = Router();
 router.use(authenticate);
 
 const WRITE_ROLES = ['ADMIN', 'SUPER_ADMIN', 'STORE_INCHARGE', 'SUPERVISOR', 'MANAGER'];
+
+const canWrite = (req: AuthRequest, res: Response, next: NextFunction) => {
+  if (!req.user) { res.status(403).json({ error: 'Insufficient permissions' }); return; }
+  if (WRITE_ROLES.includes(req.user.role) || req.user.role === 'SUPER_ADMIN') { next(); return; }
+  if (req.user.allowedModules) {
+    const modules = req.user.allowedModules.split(',').map((m) => m.trim());
+    if (modules.includes('work-orders')) { next(); return; }
+  }
+  res.status(403).json({ error: 'Insufficient permissions' });
+};
 
 // ────────────────────────────────────────────────────────────────
 // Schemas
@@ -48,7 +58,7 @@ const createSchema = z.object({
   startDate: z.string().nullable().optional(),
   endDate: z.string().nullable().optional(),
   siteLocation: z.string().nullable().optional(),
-  supplyType: z.enum(['INTRA_STATE', 'INTER_STATE']).default('INTRA_STATE'),
+  supplyType: z.enum(['INTRA_STATE', 'INTER_STATE', 'NON_GST']).default('INTRA_STATE'),
   placeOfSupply: z.string().nullable().optional(),
   retentionPercent: z.number().min(0).max(50).default(0),
   paymentTerms: z.string().nullable().optional(),
@@ -104,16 +114,17 @@ interface ComputedLine {
   shiftCount: number | null;
 }
 
-function computeLine(l: LineInput, supplyType: 'INTRA_STATE' | 'INTER_STATE'): ComputedLine {
+function computeLine(l: LineInput, supplyType: 'INTRA_STATE' | 'INTER_STATE' | 'NON_GST'): ComputedLine {
   const amount = r2(l.quantity * l.rate);
   const discountAmount = r2(amount * (l.discountPercent / 100));
   const taxableAmount = r2(amount - discountAmount);
-  const gst = r2(taxableAmount * (l.gstPercent / 100));
+  const effectiveGstPercent = supplyType === 'NON_GST' ? 0 : l.gstPercent;
+  const gst = r2(taxableAmount * (effectiveGstPercent / 100));
   const half = r2(gst / 2);
 
-  const cgstPercent = supplyType === 'INTRA_STATE' ? l.gstPercent / 2 : 0;
-  const sgstPercent = supplyType === 'INTRA_STATE' ? l.gstPercent / 2 : 0;
-  const igstPercent = supplyType === 'INTER_STATE' ? l.gstPercent : 0;
+  const cgstPercent = supplyType === 'INTRA_STATE' ? effectiveGstPercent / 2 : 0;
+  const sgstPercent = supplyType === 'INTRA_STATE' ? effectiveGstPercent / 2 : 0;
+  const igstPercent = supplyType === 'INTER_STATE' ? effectiveGstPercent : 0;
 
   const cgstAmount = supplyType === 'INTRA_STATE' ? half : 0;
   const sgstAmount = supplyType === 'INTRA_STATE' ? r2(gst - half) : 0;
@@ -305,7 +316,7 @@ router.get('/:id', asyncHandler(async (req: AuthRequest, res: Response) => {
 // POST / — create DRAFT
 // ────────────────────────────────────────────────────────────────
 
-router.post('/', authorize(...WRITE_ROLES), validate(createSchema), asyncHandler(async (req: AuthRequest, res: Response) => {
+router.post('/', canWrite, validate(createSchema), asyncHandler(async (req: AuthRequest, res: Response) => {
   const body = req.body as z.infer<typeof createSchema>;
 
   const contractor = await prisma.contractor.findUnique({ where: { id: body.contractorId } });
@@ -366,7 +377,7 @@ router.post('/', authorize(...WRITE_ROLES), validate(createSchema), asyncHandler
 // PUT /:id — update DRAFT only
 // ────────────────────────────────────────────────────────────────
 
-router.put('/:id', authorize(...WRITE_ROLES), validate(updateSchema), asyncHandler(async (req: AuthRequest, res: Response) => {
+router.put('/:id', canWrite, validate(updateSchema), asyncHandler(async (req: AuthRequest, res: Response) => {
   const existing = await prisma.workOrder.findUnique({ where: { id: req.params.id } });
   if (!existing) throw new NotFoundError('WorkOrder', req.params.id);
   if (existing.status !== 'DRAFT') throw new ValidationError('Only DRAFT work orders can be edited');
@@ -374,7 +385,7 @@ router.put('/:id', authorize(...WRITE_ROLES), validate(updateSchema), asyncHandl
   const contractor = await prisma.contractor.findUnique({ where: { id: req.body.contractorId ?? existing.contractorId } });
   if (!contractor) throw new NotFoundError('Contractor', req.body.contractorId ?? existing.contractorId);
 
-  const supplyType = (req.body.supplyType ?? existing.supplyType) as 'INTRA_STATE' | 'INTER_STATE';
+  const supplyType = (req.body.supplyType ?? existing.supplyType) as 'INTRA_STATE' | 'INTER_STATE' | 'NON_GST';
   const retentionPercent = req.body.retentionPercent ?? existing.retentionPercent;
 
   const computed = (req.body.lines as LineInput[]).map((l) => computeLine(l, supplyType));
@@ -456,7 +467,7 @@ async function transition(
   });
 }
 
-router.post('/:id/approve', authorize(...WRITE_ROLES), asyncHandler(async (req: AuthRequest, res: Response) => {
+router.post('/:id/approve', canWrite, asyncHandler(async (req: AuthRequest, res: Response) => {
   const wo = await transition(req.params.id, ['DRAFT'], 'APPROVED', {
     approvedBy: req.user!.id,
     approvedAt: new Date(),
@@ -464,14 +475,14 @@ router.post('/:id/approve', authorize(...WRITE_ROLES), asyncHandler(async (req: 
   res.json(wo);
 }));
 
-router.post('/:id/start', authorize(...WRITE_ROLES), asyncHandler(async (req: AuthRequest, res: Response) => {
+router.post('/:id/start', canWrite, asyncHandler(async (req: AuthRequest, res: Response) => {
   const wo = await transition(req.params.id, ['APPROVED'], 'IN_PROGRESS', {
     startedAt: new Date(),
   });
   res.json(wo);
 }));
 
-router.post('/:id/complete', authorize(...WRITE_ROLES), asyncHandler(async (req: AuthRequest, res: Response) => {
+router.post('/:id/complete', canWrite, asyncHandler(async (req: AuthRequest, res: Response) => {
   const wo = await transition(req.params.id, ['IN_PROGRESS'], 'COMPLETED', {
     completedAt: new Date(),
     progressPercent: 100,
@@ -479,7 +490,7 @@ router.post('/:id/complete', authorize(...WRITE_ROLES), asyncHandler(async (req:
   res.json(wo);
 }));
 
-router.post('/:id/close', authorize(...WRITE_ROLES), asyncHandler(async (req: AuthRequest, res: Response) => {
+router.post('/:id/close', canWrite, asyncHandler(async (req: AuthRequest, res: Response) => {
   const existing = await prisma.workOrder.findUnique({ where: { id: req.params.id } });
   if (!existing) throw new NotFoundError('WorkOrder', req.params.id);
   if (existing.balanceAmount > 0.01) {
@@ -489,7 +500,7 @@ router.post('/:id/close', authorize(...WRITE_ROLES), asyncHandler(async (req: Au
   res.json(wo);
 }));
 
-router.post('/:id/cancel', authorize(...WRITE_ROLES), asyncHandler(async (req: AuthRequest, res: Response) => {
+router.post('/:id/cancel', canWrite, asyncHandler(async (req: AuthRequest, res: Response) => {
   const existing = await prisma.workOrder.findUnique({
     where: { id: req.params.id },
     include: { _count: { select: { bills: true } } },
@@ -516,7 +527,7 @@ router.post('/:id/cancel', authorize(...WRITE_ROLES), asyncHandler(async (req: A
 // DELETE /:id — delete DRAFT only
 // ────────────────────────────────────────────────────────────────
 
-router.delete('/:id', authorize(...WRITE_ROLES), asyncHandler(async (req: AuthRequest, res: Response) => {
+router.delete('/:id', canWrite, asyncHandler(async (req: AuthRequest, res: Response) => {
   const existing = await prisma.workOrder.findUnique({
     where: { id: req.params.id },
     include: { _count: { select: { bills: true } } },
@@ -533,7 +544,7 @@ router.delete('/:id', authorize(...WRITE_ROLES), asyncHandler(async (req: AuthRe
 // POST /:id/progress — record progress entry
 // ────────────────────────────────────────────────────────────────
 
-router.post('/:id/progress', authorize(...WRITE_ROLES), validate(progressSchema), asyncHandler(async (req: AuthRequest, res: Response) => {
+router.post('/:id/progress', canWrite, validate(progressSchema), asyncHandler(async (req: AuthRequest, res: Response) => {
   const wo = await prisma.workOrder.findUnique({ where: { id: req.params.id } });
   if (!wo) throw new NotFoundError('WorkOrder', req.params.id);
   if (!['APPROVED', 'IN_PROGRESS', 'COMPLETED'].includes(wo.status)) {
@@ -596,7 +607,7 @@ export async function recomputeWorkOrderTotals(woId: string): Promise<void> {
   });
 }
 
-router.post('/:id/recompute', authorize(...WRITE_ROLES), asyncHandler(async (req: AuthRequest, res: Response) => {
+router.post('/:id/recompute', canWrite, asyncHandler(async (req: AuthRequest, res: Response) => {
   await recomputeWorkOrderTotals(req.params.id);
   const wo = await prisma.workOrder.findUnique({ where: { id: req.params.id } });
   if (!wo) throw new NotFoundError('WorkOrder', req.params.id);
