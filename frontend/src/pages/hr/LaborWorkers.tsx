@@ -1,4 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import { HardHat, Loader2, Plus, RefreshCw, Save, X, Search } from 'lucide-react';
 import api from '../../services/api';
 
@@ -31,12 +32,17 @@ interface LaborWorker {
 }
 
 export default function LaborWorkers() {
+  const [searchParams] = useSearchParams();
+  const wofromUrl = searchParams.get('workOrderId');
+  const contractorFromUrl = searchParams.get('contractorId');
+
   const [workers, setWorkers] = useState<LaborWorker[]>([]);
   const [contractors, setContractors] = useState<ContractorRef[]>([]);
   const [workOrders, setWorkOrders] = useState<WorkOrderRef[]>([]);
   const [loading, setLoading] = useState(false);
   const [search, setSearch] = useState('');
-  const [filterContractor, setFilterContractor] = useState('');
+  const [filterContractor, setFilterContractor] = useState(contractorFromUrl ?? '');
+  const [filterWorkOrder, setFilterWorkOrder] = useState(wofromUrl ?? '');
   const [editing, setEditing] = useState<Partial<LaborWorker> | null>(null);
 
   const load = useCallback(async () => {
@@ -45,10 +51,11 @@ export default function LaborWorkers() {
       const params = new URLSearchParams();
       if (search) params.set('search', search);
       if (filterContractor) params.set('contractorId', filterContractor);
+      if (filterWorkOrder) params.set('workOrderId', filterWorkOrder);
       const r = await api.get(`/labor-workers?${params}`);
       setWorkers(r.data?.workers || []);
     } finally { setLoading(false); }
-  }, [search, filterContractor]);
+  }, [search, filterContractor, filterWorkOrder]);
 
   useEffect(() => { load(); }, [load]);
 
@@ -67,6 +74,9 @@ export default function LaborWorkers() {
     unskilled: workers.filter(w => w.skillCategory === 'UNSKILLED').length,
   }), [workers]);
 
+  const activeContractor = contractors.find(c => c.id === filterContractor);
+  const activeWO = workOrders.find(w => w.id === filterWorkOrder);
+
   return (
     <div className="min-h-screen bg-slate-50">
       <div className="p-3 md:p-6 space-y-0">
@@ -76,6 +86,20 @@ export default function LaborWorkers() {
           <span className="text-[10px] text-slate-400">|</span>
           <span className="text-[10px] text-slate-400">Contractor-supplied workers — biometric attendance, separate from Employees</span>
         </div>
+
+        {/* Context banner — shown when navigated from a Work Order */}
+        {(activeContractor || activeWO) && (
+          <div className="bg-amber-50 border-x border-b border-amber-200 px-4 py-2 -mx-3 md:-mx-6 flex items-center gap-3">
+            <span className="text-[10px] font-bold text-amber-800 uppercase tracking-widest">Filtered by</span>
+            {activeWO && <span className="text-[11px] text-slate-700"><b className="font-mono">WO-{activeWO.woNo}</b> {activeWO.title}</span>}
+            {activeContractor && <span className="text-[11px] text-slate-700">·</span>}
+            {activeContractor && <span className="text-[11px] text-slate-700">{activeContractor.name}</span>}
+            <button
+              onClick={() => { setFilterContractor(''); setFilterWorkOrder(''); }}
+              className="ml-auto text-[10px] font-bold text-amber-700 hover:underline uppercase tracking-widest"
+            >Clear filter</button>
+          </div>
+        )}
 
         {/* Filters */}
         <div className="bg-slate-100 border-x border-b border-slate-300 px-4 py-2 -mx-3 md:-mx-6 flex items-center gap-3 flex-wrap">
@@ -92,7 +116,15 @@ export default function LaborWorkers() {
             <RefreshCw className="w-3 h-3" /> Refresh
           </button>
           <div className="flex-1" />
-          <button onClick={() => setEditing({ firstName: '', contractorId: contractors[0]?.id ?? '', skillCategory: 'UNSKILLED' })} className="px-3 py-1 bg-blue-600 text-white text-[11px] font-medium hover:bg-blue-700 inline-flex items-center gap-1">
+          <button
+            onClick={() => setEditing({
+              firstName: '',
+              contractorId: filterContractor || contractors[0]?.id || '',
+              workOrderId: filterWorkOrder || null,
+              skillCategory: 'UNSKILLED',
+            })}
+            className="px-3 py-1 bg-blue-600 text-white text-[11px] font-medium hover:bg-blue-700 inline-flex items-center gap-1"
+          >
             <Plus className="w-3 h-3" /> Add Labor Worker
           </button>
         </div>

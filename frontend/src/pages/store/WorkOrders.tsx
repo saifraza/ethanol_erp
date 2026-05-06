@@ -1,7 +1,8 @@
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
+import { useNavigate } from 'react-router-dom';
 import api from '../../services/api';
 import EmailThreadDrawer, { EmailThreadQuery } from '../../components/EmailThreadDrawer';
-import { FileText, Send, RefreshCw, Inbox, Mail, Paperclip } from 'lucide-react';
+import { FileText, Send, RefreshCw, Inbox, Mail, Paperclip, HardHat } from 'lucide-react';
 
 /* ------------------------------------------------------------------ */
 /*  Types                                                              */
@@ -250,6 +251,7 @@ const linesToRoster = (lines: WorkOrderLine[] | undefined): ManpowerRosterRow[] 
 /* ------------------------------------------------------------------ */
 
 export default function WorkOrders() {
+  const navigate = useNavigate();
   const [data, setData] = useState<WorkOrder[]>([]);
   const [stats, setStats] = useState<Stats>({ total: 0, draft: 0, approved: 0, inProgress: 0, completed: 0, closed: 0, totalValue: 0, totalBilled: 0, totalUnbilled: 0 });
   const [loading, setLoading] = useState(true);
@@ -909,9 +911,20 @@ export default function WorkOrders() {
                       </div>
                     </td>
                     <td className="px-3 py-1.5 text-center">
-                      <span className={`text-[9px] font-bold uppercase px-1.5 py-0.5 border ${statusColor[row.status] ?? statusColor.DRAFT}`}>
-                        {row.status.replace('_', ' ')}
-                      </span>
+                      <div className="flex items-center justify-center gap-1.5">
+                        <span className={`text-[9px] font-bold uppercase px-1.5 py-0.5 border ${statusColor[row.status] ?? statusColor.DRAFT}`}>
+                          {row.status.replace('_', ' ')}
+                        </span>
+                        {row.contractType === 'MANPOWER_SUPPLY' && (
+                          <button
+                            onClick={(e) => { e.stopPropagation(); navigate(`/hr/labor-workers?workOrderId=${row.id}&contractorId=${row.contractor?.id ?? ''}`); }}
+                            className="text-[9px] font-bold uppercase px-1.5 py-0.5 border border-amber-300 text-amber-700 bg-amber-50 hover:bg-amber-100 inline-flex items-center gap-1"
+                            title="Manage labor workers for this contract"
+                          >
+                            <HardHat className="w-2.5 h-2.5" /> Workers
+                          </button>
+                        )}
+                      </div>
                     </td>
                   </tr>
                 ))
@@ -1322,7 +1335,18 @@ export default function WorkOrders() {
                   {detail.status.replace('_', ' ')}
                 </span>
               </div>
-              <button onClick={() => setShowDetail(false)} className="text-slate-400 hover:text-white text-sm">X</button>
+              <div className="flex items-center gap-2">
+                {detail.contractType === 'MANPOWER_SUPPLY' && (
+                  <button
+                    onClick={() => navigate(`/hr/labor-workers?workOrderId=${detail.id}&contractorId=${detail.contractor.id}`)}
+                    className="px-3 py-1 bg-amber-600 hover:bg-amber-700 text-white text-[10px] font-bold uppercase tracking-widest inline-flex items-center gap-1"
+                    title="Add and manage labor workers under this manpower contract"
+                  >
+                    <HardHat className="w-3 h-3" /> Manage Labor Workers
+                  </button>
+                )}
+                <button onClick={() => setShowDetail(false)} className="text-slate-400 hover:text-white text-sm">X</button>
+              </div>
             </div>
 
             <div className="p-4 space-y-4">
