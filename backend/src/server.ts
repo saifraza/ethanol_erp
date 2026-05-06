@@ -7,6 +7,7 @@ import { initTelegramAutoCollect } from './services/telegramAutoCollect';
 import { initImageHandler } from './services/telegramImageHandler';
 import { initTelegramAiChat } from './services/telegramAiChat';
 import { runSchemaDriftGuard } from './services/schemaDriftGuard';
+import { startBiometricScheduler } from './services/biometricScheduler';
 import { startInventoryAlerts } from './services/inventoryAlerts';
 import { startComplianceAlerts } from './services/complianceAlerts';
 import { startWebhookProcessor } from './services/webhookDelivery';
@@ -98,6 +99,9 @@ const server = app.listen(PORT, HOST, async () => {
 
   // Schema drift guard — catches missed prisma db push on deploy
   await runSchemaDriftGuard();
+
+  // Biometric devices auto-sync (per-device pull/push intervals from BiometricDevice rows)
+  startBiometricScheduler();
 
   // Initialize Telegram Bot
   initTelegram().then(() => {

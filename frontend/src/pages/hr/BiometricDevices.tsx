@@ -19,6 +19,10 @@ interface BiometricDevice {
   lastSyncError: string | null;
   lastPunchSyncAt: string | null;
   notes: string | null;
+  autoPullMinutes: number;
+  autoPushMinutes: number;
+  lastAutoPullAt: string | null;
+  lastAutoPushAt: string | null;
 }
 
 interface DeviceUser {
@@ -178,13 +182,14 @@ function DevicesView({ devices, loading, reload, edit }: { devices: BiometricDev
                 <th className="px-3 py-2 font-semibold text-[10px] uppercase tracking-widest border-r border-slate-700">IP : Port</th>
                 <th className="px-3 py-2 font-semibold text-[10px] uppercase tracking-widest border-r border-slate-700">Firmware</th>
                 <th className="px-3 py-2 font-semibold text-[10px] uppercase tracking-widest border-r border-slate-700">Last Sync</th>
+                <th className="px-3 py-2 font-semibold text-[10px] uppercase tracking-widest border-r border-slate-700">Auto-Sync</th>
                 <th className="px-3 py-2 font-semibold text-[10px] uppercase tracking-widest border-r border-slate-700">Status</th>
                 <th className="px-3 py-2 font-semibold text-[10px] uppercase tracking-widest" />
               </tr>
             </thead>
             <tbody>
-              {loading && <tr><td colSpan={8} className="px-3 py-6 text-center text-xs text-slate-400 uppercase tracking-widest"><Loader2 className="w-4 h-4 inline animate-spin mr-2" />Loading...</td></tr>}
-              {!loading && devices.length === 0 && <tr><td colSpan={8} className="px-3 py-6 text-center text-xs text-slate-400 uppercase tracking-widest">No devices configured. Add one to start.</td></tr>}
+              {loading && <tr><td colSpan={9} className="px-3 py-6 text-center text-xs text-slate-400 uppercase tracking-widest"><Loader2 className="w-4 h-4 inline animate-spin mr-2" />Loading...</td></tr>}
+              {!loading && devices.length === 0 && <tr><td colSpan={9} className="px-3 py-6 text-center text-xs text-slate-400 uppercase tracking-widest">No devices configured. Add one to start.</td></tr>}
               {devices.map(d => (
                 <tr key={d.id} className="border-b border-slate-100 even:bg-slate-50/70">
                   <td className="px-3 py-1.5 border-r border-slate-100 font-mono">{d.code}</td>
@@ -193,6 +198,15 @@ function DevicesView({ devices, loading, reload, edit }: { devices: BiometricDev
                   <td className="px-3 py-1.5 border-r border-slate-100 font-mono text-center">{d.ip}:{d.port}</td>
                   <td className="px-3 py-1.5 border-r border-slate-100 text-[11px] text-slate-500">{d.firmware || '--'}</td>
                   <td className="px-3 py-1.5 border-r border-slate-100 text-[11px] text-slate-500 whitespace-nowrap">{fmtTime(d.lastSyncAt)}</td>
+                  <td className="px-3 py-1.5 border-r border-slate-100 text-[10px] text-slate-500 whitespace-nowrap text-center">
+                    {(d.autoPullMinutes > 0 || d.autoPushMinutes > 0) ? (
+                      <span>
+                        {d.autoPullMinutes > 0 && <span title="auto pull punches" className="font-mono">↓ {d.autoPullMinutes}m</span>}
+                        {d.autoPullMinutes > 0 && d.autoPushMinutes > 0 && <span> · </span>}
+                        {d.autoPushMinutes > 0 && <span title="auto push employees" className="font-mono">↑ {d.autoPushMinutes}m</span>}
+                      </span>
+                    ) : <span className="text-slate-400">manual</span>}
+                  </td>
                   <td className="px-3 py-1.5 border-r border-slate-100 text-center">
                     {d.lastSyncStatus === 'OK' ? <span className="text-[9px] font-bold uppercase px-1.5 py-0.5 border border-emerald-500 text-emerald-700 bg-emerald-50 inline-flex items-center gap-1"><Wifi className="w-2.5 h-2.5" /> OK</span>
                       : d.lastSyncStatus === 'ERROR' ? <span title={d.lastSyncError ?? ''} className="text-[9px] font-bold uppercase px-1.5 py-0.5 border border-rose-500 text-rose-700 bg-rose-50 inline-flex items-center gap-1"><WifiOff className="w-2.5 h-2.5" /> Error</span>
@@ -288,6 +302,39 @@ function DeviceFormModal({ initial, onClose }: { initial: Partial<BiometricDevic
           <Field label="Port"><input type="number" value={d.port ?? 4370} onChange={e => setD({ ...d, port: parseInt(e.target.value) || 4370 })} className="w-full border border-slate-300 px-2.5 py-1.5 text-xs font-mono" /></Field>
           <Field label="Comm Password (0 = none)"><input type="number" value={d.password ?? 0} onChange={e => setD({ ...d, password: parseInt(e.target.value) || 0 })} className="w-full border border-slate-300 px-2.5 py-1.5 text-xs font-mono" /></Field>
           <Field label="Notes"><input value={d.notes || ''} onChange={e => setD({ ...d, notes: e.target.value })} className="w-full border border-slate-300 px-2.5 py-1.5 text-xs" /></Field>
+          <div className="col-span-2 mt-2 pt-3 border-t border-slate-200">
+            <div className="text-[10px] font-bold text-slate-600 uppercase tracking-widest mb-2">Auto-Sync (minutes; 0 = manual only)</div>
+            <div className="grid grid-cols-2 gap-3">
+              <Field label="Auto Pull Punches">
+                <input
+                  type="number" min={0} max={1440}
+                  value={d.autoPullMinutes ?? 0}
+                  onChange={e => setD({ ...d, autoPullMinutes: parseInt(e.target.value) || 0 })}
+                  placeholder="5"
+                  className="w-full border border-slate-300 px-2.5 py-1.5 text-xs font-mono"
+                />
+              </Field>
+              <Field label="Auto Push Employees">
+                <input
+                  type="number" min={0} max={1440}
+                  value={d.autoPushMinutes ?? 0}
+                  onChange={e => setD({ ...d, autoPushMinutes: parseInt(e.target.value) || 0 })}
+                  placeholder="60"
+                  className="w-full border border-slate-300 px-2.5 py-1.5 text-xs font-mono"
+                />
+              </Field>
+            </div>
+            <div className="text-[10px] text-slate-500 mt-1">
+              Try <span className="font-mono">5</span> for testing,&nbsp;
+              <span className="font-mono">60</span> (1 hr) or <span className="font-mono">240</span> (4 hr) for production.
+            </div>
+            {(d.lastAutoPullAt || d.lastAutoPushAt) && (
+              <div className="text-[10px] text-slate-500 mt-2">
+                {d.lastAutoPullAt && <>Last auto-pull: <span className="font-mono">{new Date(d.lastAutoPullAt).toLocaleString('en-IN')}</span><br /></>}
+                {d.lastAutoPushAt && <>Last auto-push: <span className="font-mono">{new Date(d.lastAutoPushAt).toLocaleString('en-IN')}</span></>}
+              </div>
+            )}
+          </div>
           {(d.serialNumber || d.firmware) && (
             <div className="col-span-2 text-[10px] text-slate-500 border-t border-slate-200 pt-2">
               Captured: serial <span className="font-mono">{d.serialNumber || '--'}</span> · firmware <span className="font-mono">{d.firmware || '--'}</span>
