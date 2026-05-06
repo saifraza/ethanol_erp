@@ -327,7 +327,7 @@ function MappingView({ devices }: { devices: BiometricDevice[] }) {
   async function pull() {
     if (!deviceId) return;
     setLoading(true);
-    try { const r = await api.post<PullUsersResp>(`/biometric/devices/${deviceId}/pull-users`); setData(r.data); }
+    try { const r = await api.post<PullUsersResp>(`/biometric/devices/${deviceId}/pull-users`, undefined, { timeout: 60_000 }); setData(r.data); }
     catch (e: any) { alert(e?.response?.data?.error || 'Pull failed'); }
     finally { setLoading(false); }
   }
@@ -608,7 +608,7 @@ function OpsView({ devices, reload }: { devices: BiometricDevice[]; reload: () =
           desc="Fetch new attendance logs since last sync; write AttendancePunch rows"
           disabled={!deviceId || running !== null}
           loading={running === 'pull-punches'}
-          onClick={() => deviceId && run('pull-punches', () => api.post(`/biometric/devices/${deviceId}/pull-punches`))}
+          onClick={() => deviceId && run('pull-punches', () => api.post(`/biometric/devices/${deviceId}/pull-punches`, undefined, { timeout: 120_000 }))}
         />
         <OpButton
           label="Sync Employees → Device"
@@ -617,7 +617,7 @@ function OpsView({ devices, reload }: { devices: BiometricDevice[]; reload: () =
           tone="amber"
           disabled={!deviceId || running !== null}
           loading={running === 'sync-employees'}
-          onClick={() => deviceId && run('sync-employees', () => api.post(`/biometric/devices/${deviceId}/sync-employees`))}
+          onClick={() => deviceId && run('sync-employees', () => api.post(`/biometric/devices/${deviceId}/sync-employees`, undefined, { timeout: 180_000 }))}
         />
         <OpButton
           label="Sync Device Clock"

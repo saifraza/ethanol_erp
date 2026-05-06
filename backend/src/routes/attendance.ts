@@ -291,17 +291,156 @@ router.post('/recompute', authorize('ADMIN'), asyncHandler(async (req: AuthReque
   const days = [...iterDates(from, to)];
   if (days.length > 62) return res.status(400).json({ error: 'Range too large (max 62 days). Run in chunks.' });
 
-  const where: any = { ...getCompanyFilter(req), isActive: true };
-  if (employeeIds && employeeIds.length) where.id = { in: employeeIds };
-  const employees = await prisma.employee.findMany({ where, select: { id: true }, take: 5000 });
+  const empWhere: any = { ...getCompanyFilter(req), isActive: true };
+  if (employeeIds && employeeIds.length) empWhere.id = { in: employeeIds };
+  const employees = await prisma.employee.findMany({
+    where: empWhere,
+    select: {
+      id: true, defaultShiftId: true,
+      defaultShift: { select: { startTime: true, endTime: true, graceMinutes: true, earlyOutMinutes: true, hours: true } },
+      companyId: true,
+    },
+    take: 5000,
+  });
 
-  let updated = 0;
+  // ── Pre-fetch ALL data for the range in 3 queries (was 5 × N×D before) ──
+  const fromDay = days[0];
+  const toDay = days[days.length - 1];
+  const startUtc = istToUtc(fromDay, '00:00');
+  const endUtc = new Date(istToUtc(toDay, '00:00').getTime() + 24 * 60 * 60 * 1000);
+  const empIds = employees.map(e => e.id);
+
+  const [allPunches, approvedLeaves, existingDays] = await Promise.all([
+    prisma.attendancePunch.findMany({
+      where: { employeeId: { in: empIds }, punchAt: { gte: startUtc, lt: endUtc } },
+      select: { employeeId: true, punchAt: true },
+      orderBy: { punchAt: 'asc' },
+    }),
+    prisma.leaveApplication.findMany({
+      where: {
+        employeeId: { in: empIds },
+        status: 'APPROVED',
+        fromDate: { lte: new Date(toDay) },
+        toDate: { gte: new Date(fromDay) },
+      },
+      select: { id: true, employeeId: true, fromDate: true, toDate: true },
+    }),
+    prisma.attendanceDay.findMany({
+      where: { employeeId: { in: empIds }, date: { gte: new Date(fromDay), lte: new Date(toDay) } },
+      select: { id: true, employeeId: true, date: true, manualOverride: true },
+    }),
+  ]);
+
+  // Index for fast lookup
+  const punchesByEmpDate = new Map<string, Date[]>(); // key: empId|YYYY-MM-DD
+  for (const p of allPunches) {
+    const k = `${p.employeeId}|${istDateStr(p.punchAt)}`;
+    const arr = punchesByEmpDate.get(k);
+    if (arr) arr.push(p.punchAt); else punchesByEmpDate.set(k, [p.punchAt]);
+  }
+
+  const overrideSet = new Set<string>(); // empId|YYYY-MM-DD
+  for (const d of existingDays) {
+    if (d.manualOverride) overrideSet.add(`${d.employeeId}|${d.date.toISOString().slice(0, 10)}`);
+  }
+
+  // Build the upsert ops list — every (employee, day) pair in scope
+  type Upsert = { employeeId: string; date: Date; payload: any };
+  const ops: Upsert[] = [];
+
   for (const emp of employees) {
-    for (const d of days) {
-      await recomputeDay(emp.id, d, getActiveCompanyId(req));
-      updated++;
+    for (const dateStr of days) {
+      const key = `${emp.id}|${dateStr}`;
+      if (overrideSet.has(key)) continue; // never clobber manual overrides
+
+      const [dy, dm, dd] = dateStr.split('-').map(Number);
+      const dateOnly = new Date(Date.UTC(dy, dm - 1, dd));
+      const dow = dateOnly.getUTCDay();
+      const isSunday = dow === 0;
+
+      // Leave applies?
+      const leaveApp = approvedLeaves.find(la =>
+        la.employeeId === emp.id &&
+        la.fromDate.getTime() <= dateOnly.getTime() &&
+        la.toDate.getTime() >= dateOnly.getTime(),
+      );
+
+      const dayPunches = punchesByEmpDate.get(key) || [];
+      let status: string;
+      let firstPunchAt: Date | null = null, lastPunchAt: Date | null = null;
+      let hoursWorked: number | null = null;
+      let lateMinutes: number | null = null, earlyOutMinutes: number | null = null;
+
+      if (leaveApp) {
+        status = 'LEAVE';
+      } else if (dayPunches.length === 0) {
+        status = isSunday ? 'WEEKLY_OFF' : 'ABSENT';
+      } else {
+        firstPunchAt = dayPunches[0];
+        lastPunchAt = dayPunches[dayPunches.length - 1];
+        hoursWorked = dayPunches.length >= 2
+          ? Math.max(0, (lastPunchAt.getTime() - firstPunchAt.getTime()) / 3_600_000)
+          : 0;
+        const shift = emp.defaultShift;
+        if (shift && shift.startTime && shift.endTime) {
+          const overnight = shift.endTime <= shift.startTime;
+          if (overnight) {
+            status = 'PRESENT';
+          } else {
+            const shiftStartUtc = istToUtc(dateStr, shift.startTime);
+            const shiftEndUtc = istToUtc(dateStr, shift.endTime);
+            const lateMs = firstPunchAt.getTime() - shiftStartUtc.getTime() - shift.graceMinutes * 60_000;
+            const earlyMs = shiftEndUtc.getTime() - lastPunchAt.getTime() - shift.earlyOutMinutes * 60_000;
+            lateMinutes = lateMs > 0 ? Math.round(lateMs / 60_000) : 0;
+            earlyOutMinutes = earlyMs > 0 ? Math.round(earlyMs / 60_000) : 0;
+            if (hoursWorked < shift.hours / 2) status = 'HALF_DAY';
+            else if (lateMinutes > 0 && earlyOutMinutes > 0) status = 'HALF_DAY';
+            else if (lateMinutes > 0) status = 'LATE';
+            else if (earlyOutMinutes > 0) status = 'EARLY_OUT';
+            else status = 'PRESENT';
+          }
+        } else {
+          status = (hoursWorked !== null && hoursWorked > 0 && hoursWorked < 4) ? 'HALF_DAY' : 'PRESENT';
+        }
+      }
+
+      ops.push({
+        employeeId: emp.id,
+        date: dateOnly,
+        payload: {
+          shiftId: emp.defaultShiftId,
+          status,
+          firstPunchAt,
+          lastPunchAt,
+          hoursWorked,
+          lateMinutes,
+          earlyOutMinutes,
+          leaveApplicationId: leaveApp?.id ?? null,
+        },
+      });
     }
   }
+
+  // Execute upserts in batched transactions of 200 — much faster than serial
+  const BATCH = 200;
+  let updated = 0;
+  for (let i = 0; i < ops.length; i += BATCH) {
+    const chunk = ops.slice(i, i + BATCH);
+    await prisma.$transaction(
+      chunk.map(o => prisma.attendanceDay.upsert({
+        where: { employeeId_date: { employeeId: o.employeeId, date: o.date } },
+        create: {
+          employeeId: o.employeeId,
+          date: o.date,
+          ...o.payload,
+          companyId: getActiveCompanyId(req),
+        },
+        update: o.payload,
+      })),
+    );
+    updated += chunk.length;
+  }
+
   res.json({ ok: true, employees: employees.length, days: days.length, updated });
 }));
 
