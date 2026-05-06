@@ -1,5 +1,7 @@
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import api from '../../services/api';
+import EmailThreadDrawer, { EmailThreadQuery } from '../../components/EmailThreadDrawer';
+import { FileText, Send, RefreshCw, Inbox, Mail, Paperclip } from 'lucide-react';
 
 /* ------------------------------------------------------------------ */
 /*  Types                                                              */
@@ -85,7 +87,7 @@ interface WorkOrder {
   contractType?: ContractType;
   manpowerRateCard?: RateCardEntry[] | null;
   contractorId: string;
-  contractor: { id: string; name: string; contractorCode?: string; gstin?: string | null; tdsSection?: string; tdsPercent?: number };
+  contractor: { id: string; name: string; contractorCode?: string; gstin?: string | null; email?: string | null; phone?: string | null; tdsSection?: string; tdsPercent?: number };
   startDate?: string | null;
   endDate?: string | null;
   siteLocation?: string | null;
@@ -292,8 +294,20 @@ export default function WorkOrders() {
   const [billGstPercent, setBillGstPercent] = useState(18);
   const [billVendorRef, setBillVendorRef] = useState('');
 
-  // email state
-  const [emailLoading, setEmailLoading] = useState(false);
+  // email drawer state — RFQ-style flow
+  const [emailDrawer, setEmailDrawer] = useState<WorkOrder | null>(null);
+  const [emailExtraMessage, setEmailExtraMessage] = useState('');
+  const [emailCc, setEmailCc] = useState('');
+  const [emailSending, setEmailSending] = useState(false);
+  const [emailPdfUrl, setEmailPdfUrl] = useState<string | null>(null);
+  const [emailStatus, setEmailStatus] = useState<{ sent: boolean; sentAt?: string; sentTo?: string; sentBy?: string; replyCount?: number; threadId?: string } | null>(null);
+  const [emailReplies, setEmailReplies] = useState<Array<{ id: string; from: string; fromName?: string | null; date: string; bodyText: string; attachments: Array<{ filename: string; size: number; contentType: string }> }>>([]);
+  const [emailRepliesLoading, setEmailRepliesLoading] = useState(false);
+
+  // full thread drawer (gmail-style)
+  const [threadDrawerQuery, setThreadDrawerQuery] = useState<EmailThreadQuery | null>(null);
+  const [threadDrawerTitle, setThreadDrawerTitle] = useState('');
+  const [threadDrawerContext, setThreadDrawerContext] = useState('');
 
   /* ----- fetchers ----- */
 
@@ -661,20 +675,92 @@ export default function WorkOrders() {
     }
   };
 
-  const emailWO = async () => {
-    if (!detail) return;
-    if (!detail.contractor.gstin && !window.confirm('Contractor has no GSTIN. Send anyway?')) return;
-    const extraMessage = window.prompt('Additional message (optional):') ?? '';
-    setEmailLoading(true);
+  const fetchEmailPdfBlob = async (woId: string) => {
     try {
-      const res = await api.post(`/work-orders/${detail.id}/send-email`, { extraMessage });
-      alert(`Email sent to ${res.data.sentTo}`);
-    } catch (err: unknown) {
-      const e = err as { response?: { data?: { error?: string } } };
-      alert(e?.response?.data?.error || 'Failed to send email');
-    } finally {
-      setEmailLoading(false);
+      const res = await api.get(`/work-orders/${woId}/pdf`, { responseType: 'blob' });
+      const blob = new Blob([res.data as BlobPart], { type: 'application/pdf' });
+      setEmailPdfUrl(URL.createObjectURL(blob));
+    } catch {
+      setEmailPdfUrl(null);
     }
+  };
+
+  const loadEmailStatus = async (woId: string) => {
+    try {
+      const res = await api.get<{ sent: boolean; sentAt?: string; sentTo?: string; sentBy?: string; replyCount?: number; threadId?: string }>(`/work-orders/${woId}/email-status`);
+      setEmailStatus(res.data);
+      if (res.data.sent) loadEmailReplies(woId);
+    } catch {
+      setEmailStatus({ sent: false });
+    }
+  };
+
+  const loadEmailReplies = async (woId: string) => {
+    setEmailRepliesLoading(true);
+    try {
+      const res = await api.get<{ replies: Array<{ id: string; from: string; fromName?: string | null; date: string; bodyText: string; attachments: Array<{ filename: string; size: number; contentType: string }> }> }>(`/work-orders/${woId}/replies`);
+      setEmailReplies(res.data.replies || []);
+    } catch {
+      setEmailReplies([]);
+    } finally {
+      setEmailRepliesLoading(false);
+    }
+  };
+
+  const openEmailDrawer = (wo: WorkOrder) => {
+    setEmailDrawer(wo);
+    setEmailExtraMessage('');
+    setEmailCc('');
+    setEmailReplies([]);
+    setEmailStatus(null);
+    setEmailPdfUrl(null);
+    fetchEmailPdfBlob(wo.id);
+    loadEmailStatus(wo.id);
+  };
+
+  const closeEmailDrawer = () => {
+    if (emailPdfUrl) URL.revokeObjectURL(emailPdfUrl);
+    setEmailDrawer(null);
+    setEmailReplies([]);
+    setEmailStatus(null);
+    setEmailPdfUrl(null);
+  };
+
+  const handleSendEmail = async () => {
+    if (!emailDrawer) return;
+    if (!emailDrawer.contractor.email) {
+      alert('This contractor has no email on file. Add one in the contractor master.');
+      return;
+    }
+    setEmailSending(true);
+    try {
+      const res = await api.post<{ ok: boolean; sentTo: string }>(`/work-orders/${emailDrawer.id}/send-email`, {
+        extraMessage: emailExtraMessage || undefined,
+        cc: emailCc || undefined,
+      });
+      alert(`Email sent to ${res.data.sentTo}. Watch this drawer for replies.`);
+      setTimeout(() => loadEmailStatus(emailDrawer.id), 500);
+    } catch (e: unknown) {
+      alert((e as { response?: { data?: { error?: string } } }).response?.data?.error || 'Send failed — check SMTP_USER / SMTP_PASS env vars');
+    }
+    setEmailSending(false);
+  };
+
+  const openWoAttachment = async (woId: string, replyId: string, filename: string) => {
+    try {
+      const res = await api.get(`/work-orders/${woId}/replies/${replyId}/attachment/${encodeURIComponent(filename)}`, { responseType: 'blob' });
+      const url = URL.createObjectURL(res.data as Blob);
+      window.open(url, '_blank');
+      setTimeout(() => URL.revokeObjectURL(url), 60000);
+    } catch (e: unknown) {
+      alert((e as { response?: { data?: { error?: string } } }).response?.data?.error || 'Failed to load attachment');
+    }
+  };
+
+  const fmtEmailDate = (iso?: string | null) => {
+    if (!iso) return '--';
+    const dt = new Date(iso);
+    return dt.toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: '2-digit' }) + ' · ' + dt.toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', hour12: true });
   };
 
   /* ----- render ----- */
@@ -1416,8 +1502,8 @@ export default function WorkOrders() {
               {/* Lifecycle actions */}
               <div className="flex flex-wrap justify-end gap-2 pt-2 border-t border-slate-200">
                 <button onClick={downloadPdf} className="px-3 py-1 bg-white border border-slate-300 text-slate-600 text-[11px] font-medium hover:bg-slate-50">Print / PDF</button>
-                <button onClick={emailWO} disabled={emailLoading} className="px-3 py-1 bg-white border border-slate-300 text-slate-600 text-[11px] font-medium hover:bg-slate-50 disabled:opacity-50">
-                  {emailLoading ? 'Sending...' : 'Email to Contractor'}
+                <button onClick={() => openEmailDrawer(detail)} className="px-3 py-1 bg-blue-600 text-white text-[11px] font-medium hover:bg-blue-700 flex items-center gap-1">
+                  <Mail size={11} /> Email Contractor
                 </button>
                 {detail.status === 'DRAFT' && (
                   <>
@@ -1446,6 +1532,178 @@ export default function WorkOrders() {
             </div>
           </div>
         </div>
+      )}
+
+      {/* ===================== EMAIL DRAWER (RFQ-style) ===================== */}
+      {emailDrawer && (
+        <div className="fixed inset-0 bg-black/40 flex items-stretch justify-end z-50" onClick={closeEmailDrawer}>
+          <div className="bg-white shadow-2xl w-full max-w-4xl flex flex-col" onClick={(e) => e.stopPropagation()}>
+            <div className="bg-slate-800 text-white px-4 py-2.5 flex items-center justify-between shrink-0">
+              <div className="flex items-center gap-3">
+                <FileText size={16} />
+                <h2 className="text-xs font-bold uppercase tracking-widest">
+                  {emailDrawer.contractType === 'MANPOWER_SUPPLY' ? 'Manpower Contract' : 'Work Order'} WO-{emailDrawer.woNo} → {emailDrawer.contractor.name}
+                </h2>
+              </div>
+              <button onClick={closeEmailDrawer} className="text-slate-400 hover:text-white text-xs">✕</button>
+            </div>
+
+            <div className="flex-1 overflow-y-auto p-4 space-y-3">
+              {/* Status strip */}
+              <div className="grid grid-cols-3 gap-2 text-[11px]">
+                <div className="bg-slate-50 border border-slate-200 px-3 py-2">
+                  <div className="text-[9px] text-slate-500 uppercase tracking-widest">To</div>
+                  <div className="font-bold text-slate-800 truncate" title={emailDrawer.contractor.gstin || ''}>
+                    {emailDrawer.contractor.email || <span className="text-red-500 italic">no email on file</span>}
+                  </div>
+                </div>
+                <div className="bg-slate-50 border border-slate-200 px-3 py-2">
+                  <div className="text-[9px] text-slate-500 uppercase tracking-widest">Sent</div>
+                  <div className="font-bold text-slate-800">
+                    {emailStatus?.sent ? fmtEmailDate(emailStatus.sentAt) : <span className="text-slate-400 italic">not sent</span>}
+                  </div>
+                </div>
+                <div className="bg-slate-50 border border-slate-200 px-3 py-2">
+                  <div className="text-[9px] text-slate-500 uppercase tracking-widest">Replies</div>
+                  <div className={`font-bold ${(emailStatus?.replyCount ?? 0) > 0 ? 'text-green-700' : 'text-slate-400'}`}>
+                    {(emailStatus?.replyCount ?? 0) > 0 ? `${emailStatus?.replyCount} reply` : <span className="italic">awaiting</span>}
+                  </div>
+                </div>
+              </div>
+
+              {/* PDF Preview */}
+              <div className="border border-slate-300">
+                <div className="bg-slate-100 border-b border-slate-300 px-3 py-1.5 flex items-center justify-between">
+                  <div className="text-[10px] font-bold text-slate-700 uppercase tracking-widest flex items-center gap-1">
+                    <FileText size={12} /> Work Order Document Preview
+                  </div>
+                  {emailPdfUrl
+                    ? <a href={emailPdfUrl} target="_blank" rel="noopener noreferrer" className="text-[10px] text-blue-600 hover:text-blue-800 underline">Open in new tab</a>
+                    : <span className="text-[10px] text-slate-400">loading...</span>}
+                </div>
+                {emailPdfUrl
+                  ? <iframe src={emailPdfUrl} className="w-full h-[480px]" title="WO PDF" />
+                  : <div className="h-[480px] flex items-center justify-center text-xs text-slate-400">Generating PDF preview...</div>}
+              </div>
+
+              {/* Send form (only if not sent yet) */}
+              {!emailStatus?.sent && (
+                <div className="border border-slate-300 p-3 space-y-2">
+                  <div className="text-[10px] font-bold text-slate-700 uppercase tracking-widest">Send via Email</div>
+                  <div className="grid grid-cols-1 gap-2">
+                    <div>
+                      <label className="text-[9px] text-slate-500 uppercase tracking-widest">Additional Message (optional)</label>
+                      <textarea
+                        value={emailExtraMessage}
+                        onChange={(e) => setEmailExtraMessage(e.target.value)}
+                        rows={3}
+                        placeholder="e.g. 'Please confirm start date and provide list of supervisors before mobilisation.'"
+                        className="w-full border border-slate-300 px-2.5 py-1.5 text-xs outline-none resize-none"
+                      />
+                    </div>
+                    <div>
+                      <label className="text-[9px] text-slate-500 uppercase tracking-widest">CC (optional)</label>
+                      <input
+                        value={emailCc}
+                        onChange={(e) => setEmailCc(e.target.value)}
+                        placeholder="another@email.com"
+                        className="w-full border border-slate-300 px-2.5 py-1.5 text-xs outline-none"
+                      />
+                    </div>
+                  </div>
+                  <div className="flex items-center justify-between pt-1">
+                    <div className="text-[10px] text-slate-500">The PDF above is attached. Contractor is asked to reply on the same thread.</div>
+                    <button
+                      onClick={handleSendEmail}
+                      disabled={emailSending || !emailDrawer.contractor.email}
+                      className="px-4 py-1.5 bg-blue-600 text-white text-[11px] font-bold uppercase tracking-wide hover:bg-blue-700 disabled:bg-slate-400 flex items-center gap-1"
+                    >
+                      <Send size={12} /> {emailSending ? 'Sending...' : 'Send Email'}
+                    </button>
+                  </div>
+                </div>
+              )}
+
+              {/* Replies (after sent) */}
+              {emailStatus?.sent && (
+                <div className="border border-slate-300">
+                  <div className="bg-slate-100 border-b border-slate-300 px-3 py-1.5 flex items-center justify-between">
+                    <div className="text-[10px] font-bold text-slate-700 uppercase tracking-widest flex items-center gap-1">
+                      <Inbox size={12} /> Contractor Replies ({emailReplies.length})
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <button
+                        onClick={() => {
+                          if (!emailDrawer) return;
+                          setThreadDrawerQuery({ entityType: 'WORK_ORDER', entityId: emailDrawer.id });
+                          setThreadDrawerTitle(`Thread — ${emailDrawer.contractor.name}`);
+                          setThreadDrawerContext(`WO-${emailDrawer.woNo} · ${emailDrawer.contractor.email || ''}`);
+                          closeEmailDrawer();
+                        }}
+                        className="px-2 py-0.5 bg-blue-600 text-white text-[10px] font-medium hover:bg-blue-700 flex items-center gap-1"
+                      >
+                        <Mail size={10} /> Open Full Thread View
+                      </button>
+                      <button
+                        onClick={() => loadEmailReplies(emailDrawer.id)}
+                        disabled={emailRepliesLoading}
+                        className="px-2 py-0.5 bg-white border border-slate-400 text-slate-700 text-[10px] font-medium hover:bg-slate-100 disabled:opacity-50 flex items-center gap-1"
+                      >
+                        <RefreshCw size={10} className={emailRepliesLoading ? 'animate-spin' : ''} /> {emailRepliesLoading ? 'Checking...' : 'Check Replies'}
+                      </button>
+                    </div>
+                  </div>
+                  <div className="p-3 space-y-2">
+                    {!emailRepliesLoading && emailReplies.length === 0 && (
+                      <div className="text-[11px] text-slate-400 italic text-center py-4">
+                        No replies yet. Contractor hasn't responded — click "Check Replies" to refresh.
+                      </div>
+                    )}
+                    {emailReplies.map((r, i) => (
+                      <div key={i} className="border border-slate-200">
+                        <div className="bg-slate-50 border-b border-slate-200 px-3 py-1.5 flex items-center justify-between">
+                          <div className="text-[11px]">
+                            <span className="font-bold text-slate-800">{r.fromName || r.from}</span>
+                            <span className="text-slate-500 ml-2">&lt;{r.from}&gt;</span>
+                            <span className="text-slate-400 ml-2">· {fmtEmailDate(r.date)}</span>
+                          </div>
+                        </div>
+                        <div className="p-3 text-[11px] text-slate-700 whitespace-pre-wrap max-h-60 overflow-y-auto bg-white">
+                          {r.bodyText.slice(0, 2000) || '(no text body)'}
+                        </div>
+                        {r.attachments.length > 0 && (
+                          <div className="border-t border-slate-200 px-3 py-1.5 flex items-center gap-2 flex-wrap">
+                            <Paperclip size={10} className="text-slate-500" />
+                            {r.attachments.map((a, ai) => (
+                              <button
+                                key={ai}
+                                onClick={() => openWoAttachment(emailDrawer.id, r.id, a.filename)}
+                                className="text-[10px] text-blue-600 hover:text-blue-800 underline flex items-center gap-0.5 bg-transparent border-0 cursor-pointer p-0"
+                                title={`${(a.size / 1024).toFixed(1)} KB · ${a.contentType}`}
+                              >
+                                {a.filename}
+                              </button>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ===================== FULL THREAD DRAWER (Gmail-style) ===================== */}
+      {threadDrawerQuery && (
+        <EmailThreadDrawer
+          query={threadDrawerQuery}
+          title={threadDrawerTitle}
+          contextLabel={threadDrawerContext}
+          onClose={() => setThreadDrawerQuery(null)}
+        />
       )}
     </div>
   );

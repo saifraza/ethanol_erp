@@ -5,7 +5,7 @@ import { authenticate, AuthRequest, authorize, getCompanyFilter, getActiveCompan
 import { asyncHandler, validate } from '../shared/middleware';
 import { NotFoundError, ValidationError } from '../shared/errors';
 import { renderDocumentPdf } from '../services/documentRenderer';
-import { sendThreadEmail } from '../services/emailService';
+import { sendThreadEmail, syncAndListReplies, latestThreadFor } from '../services/emailService';
 import { z } from 'zod';
 
 const router = Router();
@@ -290,7 +290,7 @@ router.get('/:id', asyncHandler(async (req: AuthRequest, res: Response) => {
   const wo = await prisma.workOrder.findUnique({
     where: { id: req.params.id },
     include: {
-      contractor: { select: { id: true, name: true, contractorCode: true, gstin: true, phone: true, panType: true, tdsSection: true, tdsPercent: true } },
+      contractor: { select: { id: true, name: true, contractorCode: true, gstin: true, email: true, phone: true, panType: true, tdsSection: true, tdsPercent: true } },
       lines: { orderBy: { lineNo: 'asc' } },
       progress: { orderBy: { reportedAt: 'desc' } },
       bills: {
@@ -678,14 +678,89 @@ async function loadWoForPdf(id: string) {
 
 router.get('/:id/pdf', asyncHandler(async (req: AuthRequest, res: Response) => {
   const data = await loadWoForPdf(req.params.id);
+  const remarks = (req.query.remarks as string) || '';
+  const pdfData = remarks ? { ...data, remarks: data.remarks ? `${data.remarks}\n\n${remarks}` : remarks } : data;
   const pdf = await renderDocumentPdf({
     docType: 'WORK_ORDER',
-    data,
+    data: pdfData,
     verifyId: req.params.id,
   });
   res.setHeader('Content-Type', 'application/pdf');
   res.setHeader('Content-Disposition', `inline; filename="WO-${data.woNo}.pdf"`);
   res.send(pdf);
+}));
+
+// ────────────────────────────────────────────────────────────────
+// GET /:id/email-status — sent/not-sent + thread metadata
+// ────────────────────────────────────────────────────────────────
+
+router.get('/:id/email-status', asyncHandler(async (req: AuthRequest, res: Response) => {
+  const thread = await latestThreadFor('WORK_ORDER', req.params.id);
+  if (!thread) {
+    res.json({ sent: false });
+    return;
+  }
+  res.json({
+    sent: true,
+    threadId: thread.id,
+    sentAt: thread.sentAt,
+    sentTo: thread.toEmail,
+    sentBy: thread.sentBy,
+    replyCount: thread.replyCount,
+    hasUnreadReply: thread.hasUnreadReply,
+  });
+}));
+
+// ────────────────────────────────────────────────────────────────
+// GET /:id/replies — IMAP sync + return persisted replies
+// ────────────────────────────────────────────────────────────────
+
+router.get('/:id/replies', asyncHandler(async (req: AuthRequest, res: Response) => {
+  const thread = await latestThreadFor('WORK_ORDER', req.params.id);
+  if (!thread) {
+    res.json({ replies: [], threadDbId: null, error: 'Email not sent yet' });
+    return;
+  }
+
+  const result = await syncAndListReplies(thread.id);
+  res.json({
+    threadDbId: thread.id,
+    replies: result.replies.map((r) => ({
+      id: r.id,
+      messageId: r.providerMessageId,
+      from: r.fromEmail,
+      fromName: r.fromName,
+      subject: r.subject,
+      date: r.receivedAt,
+      bodyText: r.bodyText,
+      bodyHtml: r.bodyHtml,
+      attachments: Array.isArray(r.attachments)
+        ? (r.attachments as Array<{ filename: string; size: number; contentType: string }>).map((a) => ({
+            filename: a.filename, size: a.size, contentType: a.contentType,
+          }))
+        : [],
+    })),
+    newCount: result.newCount,
+    fetchError: result.fetchError,
+  });
+}));
+
+// ────────────────────────────────────────────────────────────────
+// GET /:id/replies/:replyId/attachment/:filename — download attachment
+// ────────────────────────────────────────────────────────────────
+
+router.get('/:id/replies/:replyId/attachment/:filename', asyncHandler(async (req: AuthRequest, res: Response) => {
+  const reply = await prisma.emailReply.findUnique({ where: { id: req.params.replyId } });
+  if (!reply) throw new NotFoundError('EmailReply', req.params.replyId);
+  const filename = decodeURIComponent(req.params.filename);
+  const att = Array.isArray(reply.attachments)
+    ? (reply.attachments as Array<{ filename: string; contentBase64?: string; contentType?: string }>).find((a) => a.filename === filename)
+    : null;
+  if (!att || !att.contentBase64) throw new NotFoundError('Attachment', filename);
+  const buf = Buffer.from(att.contentBase64, 'base64');
+  res.setHeader('Content-Type', att.contentType || 'application/octet-stream');
+  res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
+  res.send(buf);
 }));
 
 // ────────────────────────────────────────────────────────────────
@@ -702,7 +777,10 @@ router.post('/:id/send-email', canWrite, asyncHandler(async (req: AuthRequest, r
     return;
   }
 
-  const pdf = await renderDocumentPdf({ docType: 'WORK_ORDER', data, verifyId: req.params.id });
+  const pdfData = extraMessage
+    ? { ...data, remarks: data.remarks ? `${data.remarks}\n\n${extraMessage}` : extraMessage }
+    : data;
+  const pdf = await renderDocumentPdf({ docType: 'WORK_ORDER', data: pdfData, verifyId: req.params.id });
 
   const typeLabel = data.contractType === 'MANPOWER_SUPPLY' ? 'Manpower Supply Contract' : 'Work Order';
   const subject = `WO-${data.woNo} — ${typeLabel} from MSPIL`;
