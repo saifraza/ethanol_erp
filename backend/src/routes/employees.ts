@@ -130,6 +130,8 @@ router.post('/', asyncHandler(async (req: AuthRequest, res: Response) => {
       aadhaar: b.aadhaar || null,
       pan: b.pan || null,
       passportNo: b.passportNo || null,
+      cardNumber: b.cardNumber || null,
+      deviceUserId: b.deviceUserId || null,
       uan: b.uan || null,
       pfMemberNo: b.pfMemberNo || null,
       pfJoiningDate: b.pfJoiningDate ? new Date(b.pfJoiningDate) : null,
@@ -194,6 +196,7 @@ router.put('/:id', asyncHandler(async (req: AuthRequest, res: Response) => {
     'pfNomineeName', 'pfNomineeRelation', 'bankName', 'bankBranch', 'bankAccount', 'bankIfsc',
     'designationId', 'departmentId', 'reportingToId', 'contractorId', 'contractRefNo',
     'employmentType', 'skillCategory', 'shiftPattern', 'workLocation', 'seasonalStatus', 'taxRegime', 'status', 'remarks',
+    'deviceUserId', 'cardNumber',
   ];
   for (const f of stringFields) {
     if (b[f] !== undefined) data[f] = b[f] || null;

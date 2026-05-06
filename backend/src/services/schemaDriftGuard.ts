@@ -74,6 +74,7 @@ const EXPECTED_COLUMNS: ColumnCheck[] = [
   { table: 'Employee', column: 'defaultShiftId', sql: `ALTER TABLE "Employee" ADD COLUMN IF NOT EXISTS "defaultShiftId" TEXT` },
   // 2026-05-06 — Biometric Devices (HR Phase A)
   { table: 'Employee', column: 'deviceUserId', sql: `ALTER TABLE "Employee" ADD COLUMN IF NOT EXISTS "deviceUserId" TEXT` },
+  { table: 'Employee', column: 'cardNumber',   sql: `ALTER TABLE "Employee" ADD COLUMN IF NOT EXISTS "cardNumber" TEXT` },
 ];
 
 const EXPECTED_TABLES: TableCheck[] = [

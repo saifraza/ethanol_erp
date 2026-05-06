@@ -14,6 +14,16 @@ import { bridge } from './biometricBridge';
 
 type Op = 'UPSERT' | 'DELETE';
 
+/** Convert string card number to the unsigned 32-bit int the device expects.
+ *  Empty / invalid → 0 (no card). Strips non-digits in case of formatted input. */
+function parseCardNumber(s: string | null | undefined): number {
+  if (!s) return 0;
+  const digits = s.replace(/\D/g, '');
+  if (!digits) return 0;
+  const n = parseInt(digits, 10);
+  return Number.isFinite(n) && n > 0 && n <= 4_294_967_295 ? n : 0;
+}
+
 export function fireSyncEmployeeToDevices(employeeId: string, op: Op = 'UPSERT'): void {
   // Detached promise — never throw to the caller
   void runSync(employeeId, op).catch(err => {
@@ -24,7 +34,7 @@ export function fireSyncEmployeeToDevices(employeeId: string, op: Op = 'UPSERT')
 async function runSync(employeeId: string, op: Op): Promise<void> {
   const employee = await prisma.employee.findUnique({
     where: { id: employeeId },
-    select: { id: true, empCode: true, empNo: true, firstName: true, lastName: true, isActive: true, deviceUserId: true },
+    select: { id: true, empCode: true, empNo: true, firstName: true, lastName: true, isActive: true, deviceUserId: true, cardNumber: true },
   });
   if (!employee) return;
 
@@ -65,6 +75,7 @@ async function runSync(employeeId: string, op: Op): Promise<void> {
           user_id: employee.deviceUserId,
           name: fullName,
           privilege: 0,
+          card: parseCardNumber(employee.cardNumber),
         });
       }
     } catch (err: unknown) {

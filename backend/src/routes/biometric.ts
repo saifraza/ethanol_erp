@@ -17,6 +17,15 @@ function toBridgeDevice(d: { ip: string; port: number; password: number }): Devi
   return { ip: d.ip, port: d.port, password: d.password, timeout: 10 };
 }
 
+/** ERP card number string → device-side 32-bit unsigned int. 0 = no card. */
+function parseCardNumber(s: string | null | undefined): number {
+  if (!s) return 0;
+  const digits = s.replace(/\D/g, '');
+  if (!digits) return 0;
+  const n = parseInt(digits, 10);
+  return Number.isFinite(n) && n > 0 && n <= 4_294_967_295 ? n : 0;
+}
+
 /**
  * Normalize a name for fuzzy matching:
  *  - lowercase
@@ -373,7 +382,7 @@ router.post('/devices/:id/sync-employees', authorize('ADMIN'), asyncHandler(asyn
 
   const employees = await prisma.employee.findMany({
     where: { isActive: true, ...getCompanyFilter(req) },
-    select: { id: true, empCode: true, empNo: true, firstName: true, lastName: true, deviceUserId: true },
+    select: { id: true, empCode: true, empNo: true, firstName: true, lastName: true, deviceUserId: true, cardNumber: true },
     take: 5000,
   });
 
@@ -400,6 +409,7 @@ router.post('/devices/:id/sync-employees', authorize('ADMIN'), asyncHandler(asyn
         user_id: e.deviceUserId,
         name: `${e.firstName} ${e.lastName}`.trim(),
         privilege: 0,
+        card: parseCardNumber(e.cardNumber),
       });
       pushed++;
     } catch (err: unknown) {
