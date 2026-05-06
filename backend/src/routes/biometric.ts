@@ -61,15 +61,19 @@ router.get('/bridge-health', asyncHandler(async (_req: AuthRequest, res: Respons
 // device CRUD
 // ════════════════════════════════════════════════════════════════
 
+// Why .nullable() on optional strings: when editing an existing device, the
+// frontend sends back the full row (including nullable DB columns) and Zod's
+// .optional() alone rejects explicit null. Zod's default strip mode quietly
+// drops extra fields like lastSyncAt/serialNumber that the form re-sends.
 const deviceSchema = z.object({
   code: z.string().min(1).max(40).regex(/^[A-Z0-9_]+$/, 'A-Z 0-9 _ only'),
   name: z.string().min(1).max(80),
-  location: z.string().optional(),
+  location: z.string().nullable().optional(),
   ip: z.string().min(7).max(45),
   port: z.number().int().min(1).max(65535).default(4370),
   password: z.number().int().min(0).max(99_999_999).default(0),
   active: z.boolean().default(true),
-  notes: z.string().optional(),
+  notes: z.string().nullable().optional(),
   autoPullMinutes: z.number().int().min(0).max(1440).default(0),
   autoPushMinutes: z.number().int().min(0).max(1440).default(0),
 });
