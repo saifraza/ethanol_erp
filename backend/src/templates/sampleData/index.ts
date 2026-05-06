@@ -246,4 +246,5 @@ export const DOC_TYPE_TO_TEMPLATE: Record<string, string> = {
   ETHANOL_CHALLAN: 'ethanol-challan',
   ETHANOL_GATE_PASS: 'ethanol-gate-pass',
   RFQ: 'rfq',
+  WORK_ORDER: 'work-order',
 };

@@ -1,0 +1,124 @@
+<!DOCTYPE html>
+<html lang="en">
+<head><meta charset="UTF-8"><title>Work Order</title>{{> base-styles}}</head>
+<body>
+<div class="page">
+  {{> letterhead}}
+  <div class="doc-title">{{#if (eq contractType 'MANPOWER_SUPPLY')}}MANPOWER SUPPLY CONTRACT{{else}}WORK ORDER{{/if}}</div>
+
+  <div class="details-grid">
+    <div class="detail-row"><span class="detail-label">WO Number</span><span class="detail-value bold">WO-{{woNo}}</span></div>
+    <div class="detail-row"><span class="detail-label">Date</span><span class="detail-value">{{formatDate createdAt}}</span></div>
+    {{#if startDate}}<div class="detail-row"><span class="detail-label">Start Date</span><span class="detail-value">{{formatDate startDate}}</span></div>{{/if}}
+    {{#if endDate}}<div class="detail-row"><span class="detail-label">End Date</span><span class="detail-value">{{formatDate endDate}}</span></div>{{/if}}
+    <div class="detail-row"><span class="detail-label">Supply Type</span><span class="detail-value">{{#if (eq supplyType 'NON_GST')}}Non-GST{{else}}{{#if (eq supplyType 'INTER_STATE')}}Inter State{{else}}Intra State{{/if}}{{/if}}</span></div>
+    {{#if placeOfSupply}}<div class="detail-row"><span class="detail-label">Place of Supply</span><span class="detail-value">{{placeOfSupply}}</span></div>{{/if}}
+    {{#if siteLocation}}<div class="detail-row"><span class="detail-label">Site Location</span><span class="detail-value">{{siteLocation}}</span></div>{{/if}}
+    {{#if creditDays}}<div class="detail-row"><span class="detail-label">Credit Days</span><span class="detail-value">{{creditDays}}</span></div>{{/if}}
+    <div class="detail-row"><span class="detail-label">Status</span><span class="detail-value bold">{{status}}</span></div>
+  </div>
+
+  <div class="boxes">
+    <div class="box">
+      <div class="box-header">Contractor</div>
+      <div class="box-body">
+        <div class="name">{{contractor.name}}</div>
+        {{#if contractor.contractorCode}}<div class="trade">{{contractor.contractorCode}}</div>{{/if}}
+        {{#if contractor.address}}<div class="line">{{contractor.address}}</div>{{/if}}
+        {{#if contractor.gstin}}<div class="gstin">GSTIN: {{contractor.gstin}}</div>{{else}}<div class="line" style="color:#b00;font-weight:700;">Unregistered (Non-GST)</div>{{/if}}
+        {{#if contractor.phone}}<div class="line">Ph: {{contractor.phone}}</div>{{/if}}
+        <div class="line" style="margin-top:3px;">PAN Type: {{contractor.panType}} &bull; TDS {{tdsSection}} @ {{tdsPercent}}%</div>
+      </div>
+    </div>
+    <div class="box">
+      <div class="box-header">Work Location &amp; Terms</div>
+      <div class="box-body">
+        <div class="line">{{default siteLocation "Village Bachai, Tehsil Gadarwara, District Narsinghpur, MP - 487551"}}</div>
+        {{#if paymentTerms}}<div class="meta-row mt-4"><span class="meta-label">Payment:</span><span class="meta-val">{{paymentTerms}}</span></div>{{/if}}
+        {{#if retentionPercent}}<div class="meta-row"><span class="meta-label">Retention:</span><span class="meta-val">{{retentionPercent}}%</span></div>{{/if}}
+        <div class="meta-row"><span class="meta-label">Division:</span><span class="meta-val">{{default division "ETHANOL"}}</span></div>
+      </div>
+    </div>
+  </div>
+
+  {{#if description}}
+  <div class="remarks-section" style="margin-bottom:8px;"><div class="label">SCOPE OF WORK</div><div class="text">{{description}}</div></div>
+  {{/if}}
+
+  <table class="items-table">
+    <thead>
+      <tr>
+        <th style="width:22px">#</th>
+        <th class="left">Description</th>
+        <th style="width:50px">HSN/SAC</th>
+        <th style="width:38px">Qty</th>
+        <th style="width:30px">Unit</th>
+        <th class="right" style="width:58px">Rate (Rs.)</th>
+        <th class="right" style="width:62px">Taxable (Rs.)</th>
+        {{#unless (eq supplyType 'NON_GST')}}
+        <th style="width:32px">GST%</th>
+        <th class="right" style="width:62px">GST (Rs.)</th>
+        {{/unless}}
+        <th class="right" style="width:72px">Total (Rs.)</th>
+      </tr>
+    </thead>
+    <tbody>
+      {{#each lines}}
+      <tr>
+        <td class="center">{{inc @index}}</td>
+        <td>{{description}}</td>
+        <td class="center">{{hsnSac}}</td>
+        <td class="center">{{formatNum quantity}}</td>
+        <td class="center">{{unit}}</td>
+        <td class="right">{{formatNum rate}}</td>
+        <td class="right">{{formatNum taxableAmount}}</td>
+        {{#unless (eq ../supplyType 'NON_GST')}}
+        <td class="center">{{gstPercent}}%</td>
+        <td class="right">{{formatNum totalGst}}</td>
+        {{/unless}}
+        <td class="right">{{formatNum lineTotal}}</td>
+      </tr>
+      {{/each}}
+    </tbody>
+  </table>
+
+  <div class="totals-section">
+    <div class="totals-box">
+      <div class="total-row"><span class="label">Subtotal</span><span class="value">{{formatINR subtotal}}</span></div>
+      {{#if discountAmount}}<div class="total-row"><span class="label">Discount</span><span class="value">- {{formatINR discountAmount}}</span></div>{{/if}}
+      <div class="total-row"><span class="label">Taxable</span><span class="value">{{formatINR taxableAmount}}</span></div>
+      {{#if (eq supplyType 'NON_GST')}}
+      <div class="total-row"><span class="label">GST</span><span class="value">N/A</span></div>
+      {{else}}
+      {{#if (eq supplyType 'INTRA_STATE')}}
+      <div class="total-row"><span class="label">CGST</span><span class="value">{{formatINR totalCgst}}</span></div>
+      <div class="total-row"><span class="label">SGST</span><span class="value">{{formatINR totalSgst}}</span></div>
+      {{else}}
+      <div class="total-row"><span class="label">IGST</span><span class="value">{{formatINR totalIgst}}</span></div>
+      {{/if}}
+      {{/if}}
+      <div class="total-row grand"><span class="label">GRAND TOTAL</span><span class="value">{{formatINR grandTotal}}</span></div>
+      {{#if retentionPercent}}<div class="total-row"><span class="label">Retention ({{retentionPercent}}%)</span><span class="value">- {{formatINR retentionAmount}}</span></div>{{/if}}
+      <div class="total-row"><span class="label">TDS {{tdsSection}} ({{tdsPercent}}%)</span><span class="value">- {{formatINR tdsAmount}}</span></div>
+    </div>
+  </div>
+
+  <div class="amount-words">
+    <div class="label">Amount in Words:</div>
+    <div class="text">{{numberToWords grandTotal}}</div>
+  </div>
+
+  {{#if remarks}}
+  <div class="remarks-section"><div class="label">Remarks:</div><div class="text">{{remarks}}</div></div>
+  {{/if}}
+
+  {{> terms-footer}}
+  {{> signatures sigCount=3 sigLabels=(list "Prepared By" "Approved By" "Authorized Signatory") sigNames=(list preparedBy "" "")}}
+
+  <div class="footer-area">
+    {{#if qrDataUrl}}<div class="qr-block"><img src="{{qrDataUrl}}" alt="QR"><div class="qr-text">Scan to verify this document</div></div>{{/if}}
+    <div class="footer-text">{{footer}}</div>
+  </div>
+</div>
+</body>
+</html>

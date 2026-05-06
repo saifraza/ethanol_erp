@@ -292,6 +292,9 @@ export default function WorkOrders() {
   const [billGstPercent, setBillGstPercent] = useState(18);
   const [billVendorRef, setBillVendorRef] = useState('');
 
+  // email state
+  const [emailLoading, setEmailLoading] = useState(false);
+
   /* ----- fetchers ----- */
 
   const fetchData = useCallback(async () => {
@@ -640,6 +643,37 @@ export default function WorkOrders() {
       alert(e?.response?.data?.error || 'Bill creation failed');
     } finally {
       setActionLoading(false);
+    }
+  };
+
+  const downloadPdf = async () => {
+    if (!detail) return;
+    try {
+      const res = await api.get(`/work-orders/${detail.id}/pdf`, { responseType: 'blob' });
+      const url = URL.createObjectURL(new Blob([res.data], { type: 'application/pdf' }));
+      const a = document.createElement('a');
+      a.href = url;
+      a.target = '_blank';
+      a.click();
+      URL.revokeObjectURL(url);
+    } catch (err) {
+      alert('Failed to generate PDF');
+    }
+  };
+
+  const emailWO = async () => {
+    if (!detail) return;
+    if (!detail.contractor.gstin && !window.confirm('Contractor has no GSTIN. Send anyway?')) return;
+    const extraMessage = window.prompt('Additional message (optional):') ?? '';
+    setEmailLoading(true);
+    try {
+      const res = await api.post(`/work-orders/${detail.id}/send-email`, { extraMessage });
+      alert(`Email sent to ${res.data.sentTo}`);
+    } catch (err: unknown) {
+      const e = err as { response?: { data?: { error?: string } } };
+      alert(e?.response?.data?.error || 'Failed to send email');
+    } finally {
+      setEmailLoading(false);
     }
   };
 
@@ -1381,6 +1415,10 @@ export default function WorkOrders() {
 
               {/* Lifecycle actions */}
               <div className="flex flex-wrap justify-end gap-2 pt-2 border-t border-slate-200">
+                <button onClick={downloadPdf} className="px-3 py-1 bg-white border border-slate-300 text-slate-600 text-[11px] font-medium hover:bg-slate-50">Print / PDF</button>
+                <button onClick={emailWO} disabled={emailLoading} className="px-3 py-1 bg-white border border-slate-300 text-slate-600 text-[11px] font-medium hover:bg-slate-50 disabled:opacity-50">
+                  {emailLoading ? 'Sending...' : 'Email to Contractor'}
+                </button>
                 {detail.status === 'DRAFT' && (
                   <>
                     <button onClick={deleteWO} disabled={actionLoading} className="px-3 py-1 bg-white border border-red-300 text-red-600 text-[11px] font-medium hover:bg-red-50 disabled:opacity-50">Delete</button>

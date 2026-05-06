@@ -4,6 +4,8 @@ import prisma from '../config/prisma';
 import { authenticate, AuthRequest, authorize, getCompanyFilter, getActiveCompanyId } from '../middleware/auth';
 import { asyncHandler, validate } from '../shared/middleware';
 import { NotFoundError, ValidationError } from '../shared/errors';
+import { renderDocumentPdf } from '../services/documentRenderer';
+import { sendThreadEmail } from '../services/emailService';
 import { z } from 'zod';
 
 const router = Router();
@@ -612,6 +614,153 @@ router.post('/:id/recompute', canWrite, asyncHandler(async (req: AuthRequest, re
   const wo = await prisma.workOrder.findUnique({ where: { id: req.params.id } });
   if (!wo) throw new NotFoundError('WorkOrder', req.params.id);
   res.json(wo);
+}));
+
+// ────────────────────────────────────────────────────────────────
+// GET /:id/pdf — render Work Order PDF
+// ────────────────────────────────────────────────────────────────
+
+async function loadWoForPdf(id: string) {
+  const wo = await prisma.workOrder.findUnique({
+    where: { id },
+    include: {
+      contractor: {
+        select: {
+          id: true, name: true, contractorCode: true, gstin: true,
+          phone: true, email: true, address: true, panType: true,
+          tdsSection: true, tdsPercent: true,
+        },
+      },
+      lines: { orderBy: { lineNo: 'asc' } },
+    },
+  });
+  if (!wo) throw new NotFoundError('WorkOrder', id);
+
+  const creator = wo.userId
+    ? await prisma.user.findUnique({ where: { id: wo.userId }, select: { name: true, email: true } })
+    : null;
+
+  return {
+    woNo: wo.woNo,
+    title: wo.title,
+    description: wo.description,
+    contractType: wo.contractType,
+    createdAt: wo.createdAt,
+    startDate: wo.startDate,
+    endDate: wo.endDate,
+    siteLocation: wo.siteLocation,
+    supplyType: wo.supplyType,
+    placeOfSupply: wo.placeOfSupply,
+    status: wo.status,
+    division: wo.division,
+    creditDays: wo.creditDays,
+    paymentTerms: wo.paymentTerms,
+    retentionPercent: wo.retentionPercent,
+    retentionAmount: wo.retentionAmount,
+    tdsSection: wo.tdsSection,
+    tdsPercent: wo.tdsPercent,
+    tdsAmount: wo.tdsAmount,
+    subtotal: wo.subtotal,
+    discountAmount: wo.discountAmount,
+    taxableAmount: wo.taxableAmount,
+    totalCgst: wo.totalCgst,
+    totalSgst: wo.totalSgst,
+    totalIgst: wo.totalIgst,
+    totalGst: wo.totalGst,
+    grandTotal: wo.grandTotal,
+    remarks: wo.remarks,
+    contractor: wo.contractor,
+    lines: wo.lines,
+    preparedBy: creator?.name || creator?.email || '',
+    _raw: wo,
+  };
+}
+
+router.get('/:id/pdf', asyncHandler(async (req: AuthRequest, res: Response) => {
+  const data = await loadWoForPdf(req.params.id);
+  const pdf = await renderDocumentPdf({
+    docType: 'WORK_ORDER',
+    data,
+    verifyId: req.params.id,
+  });
+  res.setHeader('Content-Type', 'application/pdf');
+  res.setHeader('Content-Disposition', `inline; filename="WO-${data.woNo}.pdf"`);
+  res.send(pdf);
+}));
+
+// ────────────────────────────────────────────────────────────────
+// POST /:id/send-email — generate PDF + email contractor
+// Body: { extraMessage?: string, cc?: string }
+// ────────────────────────────────────────────────────────────────
+
+router.post('/:id/send-email', canWrite, asyncHandler(async (req: AuthRequest, res: Response) => {
+  const { extraMessage, cc } = req.body as { extraMessage?: string; cc?: string };
+  const data = await loadWoForPdf(req.params.id);
+
+  if (!data.contractor.email) {
+    res.status(400).json({ error: 'Contractor has no email on file' });
+    return;
+  }
+
+  const pdf = await renderDocumentPdf({ docType: 'WORK_ORDER', data, verifyId: req.params.id });
+
+  const typeLabel = data.contractType === 'MANPOWER_SUPPLY' ? 'Manpower Supply Contract' : 'Work Order';
+  const subject = `WO-${data.woNo} — ${typeLabel} from MSPIL`;
+  const linesSummary = data.lines.map((l: { lineNo: number; description: string; quantity: number; unit: string }) =>
+    `  ${l.lineNo}. ${l.description} — ${l.quantity} ${l.unit}`
+  ).join('\n');
+
+  const text = `Dear ${data.contractor.name},
+
+Please find attached ${typeLabel} WO-${data.woNo}.
+
+Title: ${data.title}
+${data.siteLocation ? `Site: ${data.siteLocation}\n` : ''}
+Scope items:
+${linesSummary}
+
+Grand Total: Rs. ${data.grandTotal.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+${extraMessage ? `\n${extraMessage}\n` : ''}
+Regards,
+${req.user!.name || req.user!.email}
+Mahakaushal Sugar and Power Industries Ltd (MSPIL)
+`;
+
+  const html = `<p>Dear ${data.contractor.name},</p>
+<p>Please find attached <b>${typeLabel} WO-${data.woNo}</b>.</p>
+<p><b>Title:</b> ${data.title}</p>
+${data.siteLocation ? `<p><b>Site:</b> ${data.siteLocation}</p>` : ''}
+<p><b>Scope items:</b></p>
+<ol>${data.lines.map((l: { description: string; quantity: number; unit: string }) =>
+    `<li>${l.description} — ${l.quantity} ${l.unit}</li>`).join('')}</ol>
+<p><b>Grand Total:</b> Rs. ${data.grandTotal.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</p>
+${extraMessage ? `<p>${extraMessage}</p>` : ''}
+<p>Regards,<br>${req.user!.name || req.user!.email}<br>Mahakaushal Sugar and Power Industries Ltd (MSPIL)</p>`;
+
+  const result = await sendThreadEmail({
+    entityType: 'WORK_ORDER',
+    entityId: req.params.id,
+    vendorId: null,
+    subject,
+    to: data.contractor.email,
+    cc: cc || undefined,
+    bodyText: text,
+    bodyHtml: html,
+    attachments: [{
+      filename: `WO-${data.woNo}.pdf`,
+      content: pdf,
+      contentType: 'application/pdf',
+    }],
+    sentBy: req.user!.name || req.user!.email,
+    companyId: data._raw.companyId,
+  });
+
+  if (!result.success) {
+    res.status(502).json({ error: result.error || 'Failed to send email' });
+    return;
+  }
+
+  res.json({ ok: true, messageId: result.messageId, sentTo: data.contractor.email });
 }));
 
 export default router;
