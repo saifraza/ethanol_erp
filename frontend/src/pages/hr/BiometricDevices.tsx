@@ -439,6 +439,9 @@ function MappingView({ devices }: { devices: BiometricDevice[] }) {
     }
   }
 
+  /** Create LaborWorker rows from unmatched device users — opens modal to pick contractor + skill. */
+  const [createLaborTarget, setCreateLaborTarget] = useState<UnmatchedRow[] | null>(null);
+
   return (
     <div>
       <div className="bg-slate-100 border-x border-b border-slate-300 px-4 py-2 -mx-3 md:-mx-6 flex items-center gap-3 flex-wrap">
@@ -535,23 +538,29 @@ function MappingView({ devices }: { devices: BiometricDevice[] }) {
 
       {/* Unmatched */}
       {data && data.unmatched.length > 0 && (
-        <Section title="UNMATCHED — pick employee or create new" tone="rose">
-          <div className="px-3 py-2 bg-rose-50 border-b border-rose-200 flex items-center gap-3">
+        <Section title="UNMATCHED — pick employee, create employee, or create as labor" tone="rose">
+          <div className="px-3 py-2 bg-rose-50 border-b border-rose-200 flex items-center gap-3 flex-wrap">
             <span className="text-[10px] text-slate-600">
-              {data.unmatched.length} device user(s) have no matching ERP employee.
-              Either map them to an existing employee, or create new ERP records in bulk.
+              {data.unmatched.length} device user(s) have no matching ERP record.
+              Map to an existing employee, OR bulk-create as new employees, OR create as contractor labor.
             </span>
             <div className="flex-1" />
             <button
               onClick={() => createEmployees(data.unmatched)}
               className="px-3 py-1 bg-rose-600 text-white text-[11px] font-bold uppercase tracking-widest hover:bg-rose-700 inline-flex items-center gap-1"
             >
-              <Plus className="w-3 h-3" /> Create All as New Employees ({data.unmatched.length})
+              <Plus className="w-3 h-3" /> Create All as Employees ({data.unmatched.length})
+            </button>
+            <button
+              onClick={() => setCreateLaborTarget(data.unmatched)}
+              className="px-3 py-1 bg-amber-600 text-white text-[11px] font-bold uppercase tracking-widest hover:bg-amber-700 inline-flex items-center gap-1"
+            >
+              <Plus className="w-3 h-3" /> Create All as Labor ({data.unmatched.length})
             </button>
           </div>
           <table className="w-full text-xs">
             <thead className="bg-slate-200 border-b border-slate-300">
-              <tr><Th>Device User ID</Th><Th>Device Name</Th><Th>Card</Th><Th>Map to ERP Employee</Th><Th>Or</Th></tr>
+              <tr><Th>Device User ID</Th><Th>Device Name</Th><Th>Card</Th><Th>Map to ERP Employee</Th><Th>Or Create</Th></tr>
             </thead>
             <tbody>
               {data.unmatched.map(u => {
@@ -567,12 +576,18 @@ function MappingView({ devices }: { devices: BiometricDevice[] }) {
                         {free.map(c => <option key={c.id} value={c.id}>{c.empCode} — {c.firstName} {c.lastName}</option>)}
                       </select>
                     </Td>
-                    <Td>
+                    <Td className="whitespace-nowrap">
                       <button
                         onClick={() => createEmployees([u])}
-                        className="px-2 py-0.5 text-[10px] font-bold uppercase tracking-widest border border-rose-300 text-rose-600 hover:bg-rose-50 inline-flex items-center gap-1"
+                        className="px-2 py-0.5 text-[10px] font-bold uppercase tracking-widest border border-rose-300 text-rose-600 hover:bg-rose-50 inline-flex items-center gap-1 mr-1"
                       >
-                        <Plus className="w-3 h-3" /> Create New
+                        <Plus className="w-3 h-3" /> Employee
+                      </button>
+                      <button
+                        onClick={() => setCreateLaborTarget([u])}
+                        className="px-2 py-0.5 text-[10px] font-bold uppercase tracking-widest border border-amber-300 text-amber-700 hover:bg-amber-50 inline-flex items-center gap-1"
+                      >
+                        <Plus className="w-3 h-3" /> Labor
                       </button>
                     </Td>
                   </tr>
@@ -583,11 +598,106 @@ function MappingView({ devices }: { devices: BiometricDevice[] }) {
         </Section>
       )}
 
+      {createLaborTarget && (
+        <CreateLaborModal
+          rows={createLaborTarget}
+          deviceId={deviceId}
+          onClose={(created) => {
+            setCreateLaborTarget(null);
+            if (created) pull();
+          }}
+        />
+      )}
+
       {!data && !loading && (
         <div className="-mx-3 md:-mx-6 border-x border-b border-slate-300 bg-white px-4 py-12 text-center text-xs text-slate-400 uppercase tracking-widest">
           Pick a device and click Pull Users
         </div>
       )}
+    </div>
+  );
+}
+
+function CreateLaborModal({ rows, deviceId, onClose }: { rows: UnmatchedRow[]; deviceId: string; onClose: (created: boolean) => void }) {
+  const [contractors, setContractors] = useState<Array<{ id: string; name: string }>>([]);
+  const [contractorId, setContractorId] = useState('');
+  const [skillCategory, setSkillCategory] = useState<string>('UNSKILLED');
+  const [dailyRate, setDailyRate] = useState<string>('');
+  const [saving, setSaving] = useState(false);
+  const [err, setErr] = useState<string | null>(null);
+
+  useEffect(() => {
+    api.get('/contractors').then(r => {
+      const list = r.data?.contractors || r.data || [];
+      setContractors(list);
+      if (list.length > 0) setContractorId(list[0].id);
+    });
+  }, []);
+
+  async function save() {
+    setErr(null);
+    if (!contractorId) { setErr('Select a contractor'); return; }
+    setSaving(true);
+    try {
+      const entries = rows.map(r => ({
+        deviceUserId: r.deviceUser.user_id,
+        name: r.deviceUser.name,
+        card: r.deviceUser.card || undefined,
+      }));
+      const r = await api.post(`/biometric/devices/${deviceId}/create-labor-workers`, {
+        contractorId,
+        skillCategory: skillCategory || null,
+        dailyRate: dailyRate ? parseFloat(dailyRate) : null,
+        entries,
+      });
+      alert(`✓ Created ${r.data.created} labor worker(s)${r.data.skipped ? `, skipped ${r.data.skipped}` : ''}`);
+      onClose(true);
+    } catch (e: any) {
+      setErr(e?.response?.data?.error || 'Failed');
+    } finally { setSaving(false); }
+  }
+
+  return (
+    <div className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-4">
+      <div className="bg-white shadow-2xl w-full max-w-md">
+        <div className="bg-slate-800 text-white px-4 py-2.5 flex items-center justify-between">
+          <span className="text-xs font-bold uppercase tracking-widest">Create as Labor — {rows.length} worker(s)</span>
+          <button onClick={() => onClose(false)}><X className="w-4 h-4" /></button>
+        </div>
+        <div className="p-4 space-y-3">
+          <div className="text-[11px] text-slate-600">
+            All {rows.length} unmatched device user(s) will be created as <b>LaborWorker</b> rows under
+            the chosen contractor with the chosen skill + rate. Names/cards come from the device.
+          </div>
+          <label className="block">
+            <span className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-0.5 block">Contractor (labor supplier) *</span>
+            <select value={contractorId} onChange={e => setContractorId(e.target.value)} className="w-full border border-slate-300 px-2.5 py-1.5 text-xs">
+              <option value="">— Select —</option>
+              {contractors.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+            </select>
+          </label>
+          <label className="block">
+            <span className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-0.5 block">Skill Category (default for all)</span>
+            <select value={skillCategory} onChange={e => setSkillCategory(e.target.value)} className="w-full border border-slate-300 px-2.5 py-1.5 text-xs">
+              <option value="">— None —</option>
+              <option value="UNSKILLED">UNSKILLED</option>
+              <option value="SEMI_SKILLED">SEMI_SKILLED</option>
+              <option value="SKILLED">SKILLED</option>
+            </select>
+          </label>
+          <label className="block">
+            <span className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-0.5 block">Daily Rate (₹) — optional</span>
+            <input type="number" step="0.01" value={dailyRate} onChange={e => setDailyRate(e.target.value)} placeholder="350" className="w-full border border-slate-300 px-2.5 py-1.5 text-xs font-mono" />
+          </label>
+          {err && <div className="text-[11px] text-rose-600 border border-rose-200 bg-rose-50 px-2 py-1">{err}</div>}
+        </div>
+        <div className="px-4 py-3 bg-slate-50 border-t border-slate-200 flex justify-end gap-2">
+          <button onClick={() => onClose(false)} className="px-3 py-1 bg-white border border-slate-300 text-slate-600 text-[11px] font-medium hover:bg-slate-50">Cancel</button>
+          <button onClick={save} disabled={saving} className="px-3 py-1 bg-amber-600 text-white text-[11px] font-medium hover:bg-amber-700 disabled:opacity-50 inline-flex items-center gap-1">
+            {saving ? <Loader2 className="w-3 h-3 animate-spin" /> : <Plus className="w-3 h-3" />} Create {rows.length} Labor
+          </button>
+        </div>
+      </div>
     </div>
   );
 }

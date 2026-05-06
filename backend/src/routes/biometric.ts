@@ -268,6 +268,73 @@ function splitName(raw: string): { first: string; last: string } {
   return { first: parts[0], last: parts.slice(1).join(' ') };
 }
 
+// Same shape as create-employees but creates LaborWorker rows. Body needs
+// contractorId (the labor supplier these device users belong to) and an
+// optional default skillCategory + workOrderId applied to all entries.
+const createLaborEntriesSchema = z.object({
+  contractorId: z.string().min(1),
+  workOrderId: z.string().nullable().optional(),
+  skillCategory: z.string().nullable().optional(),
+  dailyRate: z.number().min(0).nullable().optional(),
+  entries: z.array(z.object({
+    deviceUserId: z.string().min(1).max(40),
+    name: z.string().min(1).max(120),
+    card: z.number().int().optional(),
+  })).min(1).max(500),
+});
+
+router.post('/devices/:id/create-labor-workers', authorize('ADMIN'), validate(createLaborEntriesSchema), asyncHandler(async (req: AuthRequest, res: Response) => {
+  const d = await prisma.biometricDevice.findUnique({ where: { id: req.params.id } });
+  if (!d) throw new NotFoundError('BiometricDevice', req.params.id);
+  const { contractorId, workOrderId, skillCategory, dailyRate, entries } = req.body as z.infer<typeof createLaborEntriesSchema>;
+  const companyId = getActiveCompanyId(req) ?? d.companyId;
+
+  // Verify contractor exists
+  const contractor = await prisma.contractor.findUnique({ where: { id: contractorId }, select: { id: true } });
+  if (!contractor) return res.status(400).json({ error: 'Contractor not found' });
+
+  const created: Array<{ id: string; workerCode: string; deviceUserId: string }> = [];
+  const skipped: Array<{ deviceUserId: string; reason: string }> = [];
+
+  for (const e of entries) {
+    // Skip if deviceUserId already mapped (Employee or LaborWorker)
+    const empCol = await prisma.employee.findFirst({ where: { deviceUserId: e.deviceUserId }, select: { id: true, empCode: true } });
+    if (empCol) { skipped.push({ deviceUserId: e.deviceUserId, reason: `mapped to employee ${empCol.empCode}` }); continue; }
+    const lwCol = await prisma.laborWorker.findFirst({ where: { deviceUserId: e.deviceUserId }, select: { id: true, workerCode: true } });
+    if (lwCol) { skipped.push({ deviceUserId: e.deviceUserId, reason: `mapped to labor ${lwCol.workerCode}` }); continue; }
+
+    const { first, last } = splitName(e.name);
+    const last_w = await prisma.laborWorker.findFirst({ orderBy: { workerNo: 'desc' }, select: { workerNo: true } });
+    const nextNo = last_w ? last_w.workerNo + 1 : 1;
+    const workerCode = `LW-${String(nextNo).padStart(3, '0')}`;
+
+    try {
+      const w = await prisma.laborWorker.create({
+        data: {
+          workerCode,
+          firstName: first,
+          lastName: last || null,
+          contractorId,
+          workOrderId: workOrderId ?? null,
+          skillCategory: skillCategory ?? null,
+          dailyRate: dailyRate ?? null,
+          deviceUserId: e.deviceUserId,
+          cardNumber: e.card && e.card > 0 ? String(e.card) : null,
+          isActive: true,
+          companyId,
+          remarks: `Imported from biometric device ${d.code}`,
+        },
+        select: { id: true, workerCode: true, deviceUserId: true },
+      });
+      created.push({ id: w.id, workerCode: w.workerCode, deviceUserId: w.deviceUserId! });
+    } catch (err: unknown) {
+      skipped.push({ deviceUserId: e.deviceUserId, reason: err instanceof Error ? err.message : 'create failed' });
+    }
+  }
+
+  res.status(201).json({ created: created.length, skipped: skipped.length, createdEntries: created, skippedEntries: skipped });
+}));
+
 router.post('/devices/:id/create-employees', authorize('ADMIN'), validate(createEntriesSchema), asyncHandler(async (req: AuthRequest, res: Response) => {
   const d = await prisma.biometricDevice.findUnique({ where: { id: req.params.id } });
   if (!d) throw new NotFoundError('BiometricDevice', req.params.id);
