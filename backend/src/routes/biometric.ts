@@ -476,24 +476,46 @@ router.post('/devices/:id/sync-employees', authorize('ADMIN'), asyncHandler(asyn
     }
   }
 
+  // Build bulk payload — only employees with a deviceUserId
+  const payload = employees
+    .filter(e => !!e.deviceUserId)
+    .map(e => ({
+      user_id: e.deviceUserId!,
+      name: `${e.firstName} ${e.lastName}`.trim(),
+      privilege: 0,
+      card: parseCardNumber(e.cardNumber),
+      empCode: e.empCode, // keep around for error reporting
+    }));
+
   let pushed = 0;
   let failed = 0;
   const errors: string[] = [];
 
-  for (const e of employees) {
-    if (!e.deviceUserId) continue;
+  // Chunk into batches so a single huge request doesn't time out the proxy.
+  // The bridge keeps one persistent device connection per request, so each
+  // batch is much faster than per-user calls.
+  const BATCH = 100;
+  for (let i = 0; i < payload.length; i += BATCH) {
+    const slice = payload.slice(i, i + BATCH);
     try {
-      await bridge.upsertUser(toBridgeDevice(d), {
-        user_id: e.deviceUserId,
-        name: `${e.firstName} ${e.lastName}`.trim(),
-        privilege: 0,
-        card: parseCardNumber(e.cardNumber),
-      });
-      pushed++;
+      const r = await bridge.bulkUpsertUsers(
+        toBridgeDevice(d),
+        slice.map(({ empCode, ...u }) => u),
+      );
+      pushed += r.ok;
+      failed += r.failed;
+      // Surface up to 10 of the per-user errors back to the UI
+      for (const res of r.results) {
+        if (!res.ok && errors.length < 10) {
+          const ec = slice.find(p => p.user_id === res.user_id)?.empCode ?? res.user_id;
+          errors.push(`${ec}: ${(res.error ?? 'unknown').slice(0, 200)}`);
+        }
+      }
     } catch (err: unknown) {
-      failed++;
+      // Whole batch failed (bridge unreachable or 5xx). Count all as failed.
+      failed += slice.length;
       const msg = err instanceof Error ? err.message : String(err);
-      if (errors.length < 10) errors.push(`${e.empCode}: ${msg.slice(0, 200)}`);
+      if (errors.length < 10) errors.push(`batch ${i / BATCH + 1}: ${msg.slice(0, 200)}`);
     }
   }
 
