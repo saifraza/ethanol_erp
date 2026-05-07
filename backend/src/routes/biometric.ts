@@ -161,11 +161,87 @@ router.get('/jobs/:id', authorize('ADMIN'), asyncHandler(async (req: AuthRequest
     },
   });
   if (!job) throw new NotFoundError('BiometricJob', req.params.id);
-  // Parse the JSON result string back into structured data so the
-  // frontend doesn't have to.
-  const parsedResult = job.result ? safeJsonParse(job.result) : null;
+
+  let parsedResult: unknown = job.result ? safeJsonParse(job.result) : null;
+
+  // PULL_USERS enrichment — factory returns the raw device user list,
+  // cloud matches each against active Employees and buckets into
+  // matched/ambiguous/unmatched. Same shape the frontend already renders
+  // for cloud-led pull-users responses.
+  if (
+    job.status === 'DONE' &&
+    job.type === 'PULL_USERS' &&
+    parsedResult && typeof parsedResult === 'object' &&
+    'users' in (parsedResult as Record<string, unknown>)
+  ) {
+    parsedResult = await enrichPullUsersResult(
+      job.deviceId,
+      (parsedResult as { users: Array<{ user_id: string | number; name: string; card?: number; uid?: number }> }).users,
+      req,
+    );
+  }
+
   res.json({ ...job, result: parsedResult });
 }));
+
+async function enrichPullUsersResult(
+  deviceId: string,
+  deviceUsers: Array<{ user_id: string | number; name: string; card?: number; uid?: number }>,
+  req: AuthRequest,
+) {
+  const employees = await prisma.employee.findMany({
+    where: { isActive: true, ...getCompanyFilter(req) },
+    select: { id: true, empCode: true, empNo: true, firstName: true, lastName: true, deviceUserId: true },
+    take: 5000,
+  });
+
+  const byDeviceUserId = new Map<string, typeof employees[number]>();
+  for (const e of employees) {
+    if (e.deviceUserId) byDeviceUserId.set(e.deviceUserId, e);
+  }
+  const byNormName = new Map<string, typeof employees>();
+  for (const e of employees) {
+    const k = normName(`${e.firstName} ${e.lastName}`);
+    if (!k) continue;
+    const list = byNormName.get(k) ?? [];
+    list.push(e);
+    byNormName.set(k, list);
+  }
+
+  const matched: any[] = [];
+  const ambiguous: any[] = [];
+  const unmatched: any[] = [];
+  for (const u of deviceUsers) {
+    const key = String(u.user_id);
+    const direct = byDeviceUserId.get(key);
+    if (direct) {
+      matched.push({ deviceUser: u, employee: direct, matchKind: 'EXISTING' });
+      continue;
+    }
+    const k = normName(u.name);
+    const candidates = k ? (byNormName.get(k) ?? []) : [];
+    const free = candidates.filter(e => !e.deviceUserId);
+    if (free.length === 1) {
+      matched.push({ deviceUser: u, employee: free[0], matchKind: 'NAME' });
+    } else if (free.length > 1) {
+      ambiguous.push({ deviceUser: u, candidates: free });
+    } else {
+      unmatched.push({ deviceUser: u });
+    }
+  }
+
+  // Stamp lastSyncAt so the device list reflects this read.
+  await prisma.biometricDevice.update({
+    where: { id: deviceId },
+    data: { lastSyncAt: new Date(), lastSyncStatus: 'OK', lastSyncError: null },
+  }).catch(() => {});
+
+  return {
+    deviceCount: deviceUsers.length,
+    matched, ambiguous, unmatched,
+    summary: { matched: matched.length, ambiguous: ambiguous.length, unmatched: unmatched.length },
+  };
+}
 
 function safeJsonParse(s: string): unknown {
   try { return JSON.parse(s); } catch { return s; }
@@ -214,6 +290,16 @@ router.post('/devices/:id/clear-logs', authorize('ADMIN'), asyncHandler(async (r
 router.post('/devices/:id/pull-users', authorize('ADMIN'), asyncHandler(async (req: AuthRequest, res: Response) => {
   const d = await prisma.biometricDevice.findUnique({ where: { id: req.params.id } });
   if (!d) throw new NotFoundError('BiometricDevice', req.params.id);
+
+  // Factory-led: enqueue. The job's raw result (a user list) is enriched
+  // with cloud-side employee matching when frontend GETs /jobs/:id below.
+  if (d.factoryManaged) {
+    const job = await prisma.biometricJob.create({
+      data: { type: 'PULL_USERS', deviceId: d.id, requestedBy: req.user?.id ?? null },
+    });
+    res.status(202).json({ ok: true, jobId: job.id, mode: 'factory' });
+    return;
+  }
 
   const { users: deviceUsers } = await bridge.listUsers(toBridgeDevice(d));
 
@@ -499,6 +585,23 @@ router.post('/devices/:id/pull-punches', authorize('ADMIN'), asyncHandler(async 
   const d = await prisma.biometricDevice.findUnique({ where: { id: req.params.id } });
   if (!d) throw new NotFoundError('BiometricDevice', req.params.id);
 
+  // Factory-managed devices have a 60s autoPull tick already; this manual
+  // button is rarely useful in factory mode (data flows automatically), but
+  // keep the button live by enqueuing a job for parity. The job runner
+  // returns punch list; the cloud writes them directly into AttendancePunch
+  // via the normal factory-led punches/push pipeline anyway, so we just
+  // surface a count.
+  if (d.factoryManaged) {
+    const job = await prisma.biometricJob.create({
+      data: {
+        type: 'PULL_PUNCHES', deviceId: d.id, requestedBy: req.user?.id ?? null,
+        payload: req.body?.since ? JSON.stringify({ since: req.body.since }) : null,
+      },
+    });
+    res.status(202).json({ ok: true, jobId: job.id, mode: 'factory' });
+    return;
+  }
+
   // Default: since lastPunchSyncAt minus 30s overlap (to catch races); on first pull, ALL punches.
   let since: string | undefined = req.body?.since;
   if (!since && d.lastPunchSyncAt) {
@@ -600,6 +703,55 @@ router.post('/devices/:id/pull-punches', authorize('ADMIN'), asyncHandler(async 
 router.post('/devices/:id/sync-employees', authorize('ADMIN'), asyncHandler(async (req: AuthRequest, res: Response) => {
   const d = await prisma.biometricDevice.findUnique({ where: { id: req.params.id } });
   if (!d) throw new NotFoundError('BiometricDevice', req.params.id);
+
+  // Factory-managed: enqueue. Factory will pick up the latest cached
+  // employees + labor and bulk-upsert to the device. Mirrors the
+  // automatic autoPush tick — admin can use this button to trigger
+  // immediately instead of waiting up to autoPushMinutes.
+  if (d.factoryManaged) {
+    // Build the full employee + labor list NOW so the job carries a
+    // snapshot. The runner just dispatches to bridge.bulkUpsertUsers.
+    const [emps, labs] = await Promise.all([
+      prisma.employee.findMany({
+        where: {
+          isActive: true,
+          deviceUserId: { not: null },
+          ...getCompanyFilter(req),
+        },
+        select: { firstName: true, lastName: true, deviceUserId: true, cardNumber: true },
+      }),
+      prisma.laborWorker.findMany({
+        where: {
+          isActive: true,
+          deviceUserId: { not: null },
+          ...getCompanyFilter(req),
+        },
+        select: { firstName: true, lastName: true, deviceUserId: true, cardNumber: true },
+      }),
+    ]);
+    const users = [
+      ...emps.map(e => ({
+        user_id: e.deviceUserId!,
+        name: `${e.firstName} ${e.lastName ?? ''}`.trim(),
+        privilege: 0,
+        card: parseCardNumber(e.cardNumber),
+      })),
+      ...labs.map(l => ({
+        user_id: l.deviceUserId!,
+        name: `${l.firstName} ${l.lastName ?? ''}`.trim(),
+        privilege: 0,
+        card: parseCardNumber(l.cardNumber),
+      })),
+    ];
+    const job = await prisma.biometricJob.create({
+      data: {
+        type: 'SYNC_EMPLOYEES', deviceId: d.id, requestedBy: req.user?.id ?? null,
+        payload: JSON.stringify({ users }),
+      },
+    });
+    res.status(202).json({ ok: true, jobId: job.id, mode: 'factory', userCount: users.length });
+    return;
+  }
 
   const [employees, laborWorkers] = await Promise.all([
     prisma.employee.findMany({

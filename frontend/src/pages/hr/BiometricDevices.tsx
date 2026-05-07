@@ -68,6 +68,26 @@ interface PullUsersResp {
 
 interface BridgeHealth { reachable: boolean; service?: string; key_set?: boolean; error?: string; }
 
+/**
+ * Poll a queued BiometricJob until it reaches DONE/FAILED, max `maxMs`.
+ * Returns the final job state (with .result already parsed by the cloud).
+ * Used by Test, Pull Users, etc. when the cloud responds 202 (factory-led).
+ */
+async function pollBiometricJob(
+  jobId: string,
+  maxMs: number = 30_000,
+): Promise<{ status: string; result?: any; error?: string | null }> {
+  const start = Date.now();
+  while (Date.now() - start < maxMs) {
+    try {
+      const r = await api.get(`/biometric/jobs/${jobId}`);
+      if (r.data.status === 'DONE' || r.data.status === 'FAILED') return r.data;
+    } catch { /* keep polling */ }
+    await new Promise(resolve => setTimeout(resolve, 1000));
+  }
+  return { status: 'TIMEOUT' };
+}
+
 function fmtTime(iso: string | null): string {
   if (!iso) return '--';
   const d = new Date(iso);
@@ -176,7 +196,7 @@ function DevicesView({ devices, loading, reload, edit }: { devices: BiometricDev
       // Factory-led path: cloud queues a job, factory-server picks it up
       // within ~3s and runs it locally. Poll until DONE/FAILED (max 30s).
       if (r.status === 202 && r.data.jobId) {
-        const result = await pollJob(r.data.jobId);
+        const result = await pollBiometricJob(r.data.jobId);
         if (result.status === 'DONE' && result.result) {
           const info = result.result;
           alert(`✓ Connected (via factory)\nFirmware: ${info.firmware}\nSerial: ${info.serial}\nUsers on device: ${info.user_count}\nLogs on device: ${info.log_count}`);
@@ -194,21 +214,6 @@ function DevicesView({ devices, loading, reload, edit }: { devices: BiometricDev
     } catch (e: any) {
       alert(`✗ ${e?.response?.data?.error || e?.message || 'Failed'}`);
     } finally { setTesting(null); }
-  }
-
-  // Poll /jobs/:id every 1s for up to 30s. Returns { status, result, error }.
-  async function pollJob(jobId: string): Promise<{ status: string; result?: any; error?: string | null }> {
-    const start = Date.now();
-    while (Date.now() - start < 30_000) {
-      try {
-        const r = await api.get(`/biometric/jobs/${jobId}`);
-        if (r.data.status === 'DONE' || r.data.status === 'FAILED') {
-          return r.data;
-        }
-      } catch { /* keep polling */ }
-      await new Promise(resolve => setTimeout(resolve, 1000));
-    }
-    return { status: 'TIMEOUT' };
   }
 
   // Health summary across all devices — drives the panel above the table.
@@ -501,9 +506,27 @@ function MappingView({ devices }: { devices: BiometricDevice[] }) {
   async function pull() {
     if (!deviceId) return;
     setLoading(true);
-    try { const r = await api.post<PullUsersResp>(`/biometric/devices/${deviceId}/pull-users`, undefined, { timeout: 60_000 }); setData(r.data); }
-    catch (e: any) { alert(e?.response?.data?.error || 'Pull failed'); }
-    finally { setLoading(false); }
+    try {
+      const r = await api.post(`/biometric/devices/${deviceId}/pull-users`, undefined, { timeout: 60_000 });
+      // Factory-led: cloud queues a job, we poll until it completes.
+      if (r.status === 202 && r.data?.jobId) {
+        const job = await pollBiometricJob(r.data.jobId, 45_000);
+        if (job.status === 'DONE' && job.result) {
+          setData(job.result as PullUsersResp);
+        } else if (job.status === 'FAILED') {
+          alert(`Pull failed (factory): ${job.error || 'unknown error'}`);
+        } else {
+          alert('Pull timed out — factory-server did not respond. Check factory health.');
+        }
+      } else {
+        // Cloud-led: synchronous response
+        setData(r.data as PullUsersResp);
+      }
+    } catch (e: any) {
+      alert(e?.response?.data?.error || 'Pull failed');
+    } finally {
+      setLoading(false);
+    }
   }
 
   async function applySuggested() {
@@ -868,7 +891,20 @@ function OpsView({ devices, reload }: { devices: BiometricDevice[]; reload: () =
     setLog(`→ ${label}...\n`);
     try {
       const r = await fn();
-      setLog(prev => prev + JSON.stringify(r.data, null, 2) + '\n');
+      // Factory-led: 202 + jobId means the job is queued. Poll until done.
+      if (r?.status === 202 && r.data?.jobId) {
+        setLog(prev => prev + `→ queued (factory job ${r.data.jobId.slice(0, 8)}...) — polling\n`);
+        const job = await pollBiometricJob(r.data.jobId, 60_000);
+        if (job.status === 'DONE') {
+          setLog(prev => prev + `✓ DONE\n` + JSON.stringify(job.result, null, 2) + '\n');
+        } else if (job.status === 'FAILED') {
+          setLog(prev => prev + `✗ FAILED: ${job.error || 'unknown'}\n`);
+        } else {
+          setLog(prev => prev + `✗ TIMEOUT — factory did not respond within 60s\n`);
+        }
+      } else {
+        setLog(prev => prev + JSON.stringify(r.data, null, 2) + '\n');
+      }
       reload();
     } catch (e: any) {
       setLog(prev => prev + `✗ ${e?.response?.data?.error || e?.message || 'Failed'}\n`);
