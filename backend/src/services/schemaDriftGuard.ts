@@ -598,6 +598,12 @@ async function checkAndAddColumns(): Promise<void> {
  */
 async function backfillCashVoucherPoLink(): Promise<void> {
   try {
+    // Cheap pre-check: skip the heavy regex×cross-join scan if nothing needs it.
+    const pendingRows = await prisma.$queryRawUnsafe<Array<{ count: bigint }>>(
+      `SELECT COUNT(*)::bigint AS count FROM "CashVoucher" WHERE "purchaseOrderId" IS NULL AND purpose ~ 'PO-[0-9]'`,
+    );
+    const pending = Number(pendingRows[0]?.count ?? 0n);
+    if (pending === 0) return;
     const result = await prisma.$executeRawUnsafe(
       `UPDATE "CashVoucher" cv
        SET "purchaseOrderId" = po.id
@@ -617,6 +623,12 @@ async function backfillCashVoucherPoLink(): Promise<void> {
 
 async function backfillVendorPaymentPoLink(): Promise<void> {
   try {
+    // Cheap pre-check: skip the heavy regex×cross-join scan if nothing needs it.
+    const pendingRows = await prisma.$queryRawUnsafe<Array<{ count: bigint }>>(
+      `SELECT COUNT(*)::bigint AS count FROM "VendorPayment" WHERE "purchaseOrderId" IS NULL AND remarks ~ 'PO-[0-9]'`,
+    );
+    const pending = Number(pendingRows[0]?.count ?? 0n);
+    if (pending === 0) return;
     const result = await prisma.$executeRawUnsafe(
       `UPDATE "VendorPayment" vp
        SET "purchaseOrderId" = po.id
@@ -653,12 +665,17 @@ export async function runSchemaDriftGuard(): Promise<void> {
     // 2026-05-06 — AttendancePunch.employeeId becomes nullable (LaborWorker support)
     await prisma.$executeRawUnsafe(`ALTER TABLE "AttendancePunch" ALTER COLUMN "employeeId" DROP NOT NULL`);
     await prisma.$executeRawUnsafe(`CREATE INDEX IF NOT EXISTS "AttendancePunch_laborWorkerId_punchAt_idx" ON "AttendancePunch"("laborWorkerId", "punchAt")`);
-    // 2026-05-07 — VendorPayment ↔ PurchaseOrder FK index + one-shot backfill from remarks.
+    // 2026-05-07 — VendorPayment ↔ PurchaseOrder FK index. Index is fast; the
+    // remarks-regex backfill is fire-and-forget so server boot isn't blocked
+    // (Railway "Creating containers" hung on PR #64 because the regex×cross-join
+    // could take minutes on prod-sized data — see incident notes 2026-05-07).
     await prisma.$executeRawUnsafe(`CREATE INDEX IF NOT EXISTS "VendorPayment_purchaseOrderId_idx" ON "VendorPayment"("purchaseOrderId")`);
-    await backfillVendorPaymentPoLink();
-    // 2026-05-07 — Same shape for CashVoucher: index + one-shot backfill from purpose.
+    // 2026-05-07 — Same shape for CashVoucher: index now, backfill async.
     await prisma.$executeRawUnsafe(`CREATE INDEX IF NOT EXISTS "CashVoucher_purchaseOrderId_idx" ON "CashVoucher"("purchaseOrderId")`);
-    await backfillCashVoucherPoLink();
+    setImmediate(() => {
+      backfillVendorPaymentPoLink().catch(() => { /* logged inside */ });
+      backfillCashVoucherPoLink().catch(() => { /* logged inside */ });
+    });
     console.log('[SchemaDriftGuard] OK — all expected columns + tables present');
   } catch (err: unknown) {
     console.error('[SchemaDriftGuard] check failed:', (err instanceof Error ? err.message : String(err)));
