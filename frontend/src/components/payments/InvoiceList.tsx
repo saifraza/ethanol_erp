@@ -13,6 +13,10 @@ interface InvoiceListProps {
   // (so the parent can open its richer upload-staging modal). When omitted,
   // the component falls back to a plain multi-file POST with no metadata.
   onTriggerUpload?: () => void;
+  // Comma-separated category list for the upload guard (server requires the
+  // PO to have a line in one of these). Defaults to 'FUEL' to match the
+  // legacy fuel-only upload endpoint behaviour.
+  categories?: string;
 }
 
 interface EditState {
@@ -31,6 +35,7 @@ export default function InvoiceList({
   onClose,
   onChanged,
   onTriggerUpload,
+  categories,
 }: InvoiceListProps) {
   const [invoices, setInvoices] = useState<FuelInvoiceRow[]>([]);
   const [loading, setLoading] = useState(true);
@@ -86,6 +91,7 @@ export default function InvoiceList({
       for (const f of files) fd.append('files', f);
       // Empty meta — caller flow that wants per-file metadata uses onTriggerUpload.
       fd.append('meta', JSON.stringify(files.map(() => ({ vendorInvNo: null, vendorInvDate: null, totalAmount: null }))));
+      if (categories) fd.append('category', categories);
       await api.post(
         `/fuel/payments/${poId}/invoice`,
         fd,
