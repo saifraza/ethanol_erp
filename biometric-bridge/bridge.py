@@ -18,6 +18,9 @@ Endpoints (all require X-Bridge-Key header matching BIOMETRIC_BRIDGE_KEY env):
                                     push to dst device (multi-device replication)
   POST /devices/templates/list   — return per-user enrolled finger ids on device
                                     (used by factory-server's auto-replicator)
+  POST /devices/users/rename     — rename user_ids on device while preserving
+                                    enrolled fingerprint templates (one-shot
+                                    migration tool)
 
 Body for every endpoint:
   { "device": { "ip": "...", "port": 4370, "password": 0 }, ... }
@@ -439,6 +442,154 @@ def template_copy(body: TemplateCopyReq, x_bridge_key: Optional[str] = Header(No
                 return {"ok": False, "copied": [f for f, _ in pulled[:pulled.index((finger, template))]], "error": str(e)}
 
     return {"ok": True, "copied_fingers": [f for f, _ in pulled]}
+
+
+# ───────────────────────── rename user_ids on a device ─────────────────────────
+# One-shot migration: change user_ids on the device WITHOUT asking workers to
+# re-scan their fingerprints. For each (old_user_id, new_user_id) pair:
+#   1. Pull all 10 fingerprint templates from the old user
+#   2. Create a new user record with new_user_id + same name/card/privilege
+#   3. Save the pulled templates under the new user
+#   4. Delete the old user (only after templates copied successfully)
+#
+# Idempotent: re-running on a device that's already half-renamed is safe.
+# Both `old_user_id` and `new_user_id` strings are checked at every step.
+
+
+class RenameUserPair(BaseModel):
+    old_user_id: str
+    new_user_id: str
+
+
+class RenameUsersReq(BaseModel):
+    device: DeviceRef
+    pairs: list[RenameUserPair]
+
+
+@app.post("/devices/users/rename")
+def users_rename(body: RenameUsersReq, x_bridge_key: Optional[str] = Header(None)):
+    _check_key(x_bridge_key)
+    results = []
+    with _Conn(body.device) as conn:
+        users = list(conn.get_users() or [])
+        by_user_id: dict[str, ZKUser] = {str(u.user_id): u for u in users}
+        used_uids: set[int] = {u.uid for u in users}
+
+        def alloc_uid() -> int:
+            i = 1
+            while i in used_uids:
+                i += 1
+            used_uids.add(i)
+            return i
+
+        def has_any_template(uid: int) -> bool:
+            for finger in range(10):
+                try:
+                    if conn.get_user_template(uid=uid, temp_id=finger):
+                        return True
+                except Exception:
+                    pass
+            return False
+
+        for pair in body.pairs:
+            oid = str(pair.old_user_id)
+            nid = str(pair.new_user_id)
+            try:
+                old_user = by_user_id.get(oid)
+                new_user = by_user_id.get(nid)
+
+                # Idempotency: a previous run finished. Skip silently.
+                if not old_user and new_user:
+                    results.append({"old": oid, "new": nid, "status": "already_renamed"})
+                    continue
+                if not old_user:
+                    results.append({"old": oid, "new": nid, "status": "old_not_found"})
+                    continue
+
+                # 1. Pull all templates from the old user
+                pulled: list[tuple[int, object]] = []
+                for finger in range(10):
+                    try:
+                        t = conn.get_user_template(uid=old_user.uid, temp_id=finger)
+                        if t:
+                            pulled.append((finger, t))
+                    except Exception:
+                        pass
+
+                # 2. Resolve target user (create if needed)
+                if new_user is not None:
+                    # Refuse to clobber an existing enrolled user
+                    if has_any_template(new_user.uid):
+                        results.append({"old": oid, "new": nid, "status": "new_already_has_templates"})
+                        continue
+                    target_user = new_user
+                else:
+                    new_uid = alloc_uid()
+                    safe_name = _safe_name(old_user.name or "")
+                    if not safe_name:
+                        results.append({"old": oid, "new": nid, "status": "name_empty_after_sanitize"})
+                        continue
+                    try:
+                        conn.set_user(
+                            uid=new_uid,
+                            name=safe_name,
+                            privilege=int(old_user.privilege or 0),
+                            password=str(old_user.password or ""),
+                            group_id=str(old_user.group_id or ""),
+                            user_id=nid,
+                            card=int(old_user.card or 0),
+                        )
+                    except Exception as e:
+                        results.append({"old": oid, "new": nid, "status": "create_new_failed", "error": f"{type(e).__name__}: {e}"})
+                        continue
+                    refreshed = list(conn.get_users() or [])
+                    target_user = next((u for u in refreshed if str(u.user_id) == nid), None)
+                    if not target_user:
+                        results.append({"old": oid, "new": nid, "status": "create_new_not_visible"})
+                        continue
+                    by_user_id[nid] = target_user
+
+                # 3. Save templates under the new user
+                copied: list[int] = []
+                save_err: Optional[str] = None
+                for finger, template in pulled:
+                    try:
+                        template.uid = target_user.uid
+                        template.fid = finger
+                        conn.save_user_template(user=target_user, fingers=[template])
+                        copied.append(finger)
+                    except Exception as e:
+                        save_err = f"{type(e).__name__}: {e}"
+                        break
+
+                if save_err is not None:
+                    # Templates partial — DO NOT delete old, leave the device in a
+                    # recoverable state for re-run.
+                    results.append({"old": oid, "new": nid, "status": "template_save_failed", "copied": copied, "error": save_err})
+                    continue
+
+                # 4. Delete the old user
+                try:
+                    conn.delete_user(uid=old_user.uid)
+                    used_uids.discard(old_user.uid)
+                    by_user_id.pop(oid, None)
+                    results.append({"old": oid, "new": nid, "status": "ok", "fingers": copied})
+                except Exception as e:
+                    results.append({"old": oid, "new": nid, "status": "delete_old_failed", "copied": copied, "error": f"{type(e).__name__}: {e}"})
+            except Exception as e:
+                results.append({"old": oid, "new": nid, "status": "exception", "error": f"{type(e).__name__}: {e}"})
+
+    ok_count = sum(1 for r in results if r["status"] == "ok")
+    skipped = sum(1 for r in results if r["status"] == "already_renamed")
+    failed = len(results) - ok_count - skipped
+    return {
+        "ok": True,
+        "total": len(body.pairs),
+        "renamed": ok_count,
+        "already_renamed": skipped,
+        "failed": failed,
+        "results": results,
+    }
 
 
 class TemplatesListReq(BaseModel):

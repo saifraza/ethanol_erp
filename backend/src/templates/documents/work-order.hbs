@@ -1,6 +1,44 @@
 <!DOCTYPE html>
 <html lang="en">
-<head><meta charset="UTF-8"><title>Work Order</title>{{> base-styles}}</head>
+<head><meta charset="UTF-8"><title>Work Order</title>{{> base-styles}}
+<style>
+  /* Work-order-specific overrides — operators print these for contractors so
+     readability beats density. Sized to comfortably pass for ~11pt regular
+     business document text without affecting other PDFs that share
+     base-styles.hbs. */
+  body { font-size: 13px; }
+  .doc-title { font-size: 20px; padding: 10px 0 8px; letter-spacing: 1.5px; }
+  .details-grid { padding: 10px 0; }
+  .detail-label { font-size: 11px; width: 130px; padding: 4px 0; }
+  .detail-value { font-size: 12.5px; padding: 4px 0; }
+  .box-header { font-size: 11px; padding: 6px 10px; letter-spacing: 0.6px; }
+  .box-body { padding: 8px 10px; }
+  .box-body .name { font-size: 13.5px; margin-bottom: 4px; }
+  .box-body .trade,
+  .box-body .line,
+  .box-body .gstin { font-size: 11.5px; line-height: 1.55; }
+  .box-body .meta-label { font-size: 11px; }
+  .box-body .meta-val { font-size: 12px; }
+  .items-table thead th { font-size: 11px; padding: 7px 6px; letter-spacing: 0.4px; }
+  .items-table tbody td { font-size: 11.5px; padding: 6px 6px; }
+  .totals-box { width: 320px; }
+  .total-row { font-size: 12.5px; padding: 5px 8px; }
+  .total-row.grand { font-size: 15px; padding: 8px 8px; }
+  .amount-words { margin-top: 14px; }
+  .amount-words .label { font-size: 11px; }
+  .amount-words .text { font-size: 12.5px; }
+  .remarks-section { margin-top: 12px; }
+  .remarks-section .label { font-size: 11px; }
+  .remarks-section .text { font-size: 12px; line-height: 1.5; }
+  .sig-name { font-size: 12px; min-height: 16px; }
+  .sig-label { font-size: 12px; }
+  /* The terms section already had inline sizes (11px/10px). Bump matching. */
+  .terms-section .terms-title { font-size: 13.5px !important; padding-bottom: 5px !important; margin-bottom: 10px !important; }
+  .terms-section ol li { font-size: 12px !important; line-height: 1.55 !important; margin-bottom: 8px !important; }
+  .terms-section ol li > span { font-size: 12.5px !important; }
+  .terms-section ol li > div { font-size: 11.5px !important; }
+</style>
+</head>
 <body>
 <div class="page">
   {{> letterhead}}
