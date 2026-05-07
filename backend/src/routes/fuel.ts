@@ -1068,10 +1068,19 @@ router.get('/deals/:id/payments', authenticate, asyncHandler(async (req: AuthReq
 // ==========================================================================
 
 router.get('/payments', authenticate, asyncHandler(async (req: AuthRequest, res: Response) => {
+  // Category filter — defaults to FUEL for back-compat (existing fuel UI).
+  // Store / non-fuel callers pass a comma-separated list of inventory item
+  // categories: `?category=RAW_MATERIAL,CHEMICAL,PACKING,SPARE,CONSUMABLE,GENERAL`
+  // (URL prefix stays /fuel/payments for now — Phase 6 cleanup will rename).
+  const rawCategory = (typeof req.query.category === 'string' ? req.query.category : '').trim();
+  const categories = rawCategory
+    ? rawCategory.split(',').map(c => c.trim().toUpperCase()).filter(Boolean)
+    : ['FUEL'];
+
   const fuelPos = await prisma.purchaseOrder.findMany({
     where: {
       ...getCompanyFilter(req),
-      lines: { some: { inventoryItem: { category: 'FUEL' } } },
+      lines: { some: { inventoryItem: { category: { in: categories } } } },
       status: { not: 'DRAFT' },
     },
     take: 500,
@@ -1103,10 +1112,12 @@ router.get('/payments', authenticate, asyncHandler(async (req: AuthRequest, res:
   }
 
   const result = await Promise.all(fuelPos.map(async (po) => {
-    const fuelLines = po.lines.filter(l => l.inventoryItem?.category === 'FUEL');
-    const linesToSum = fuelLines.length > 0 ? fuelLines : po.lines;
-    const fuelLabel = fuelLines[0]?.inventoryItem?.name || fuelLines[0]?.description || po.lines[0]?.description || 'Fuel';
-    const fuelUnit = fuelLines[0]?.inventoryItem?.unit || 'MT';
+    // Pick the first line whose inventory item matches the requested category
+    // for the row label + unit. Legacy fallback: any line if none match.
+    const matchingLines = po.lines.filter(l => l.inventoryItem && categories.includes(l.inventoryItem.category));
+    const linesToSum = matchingLines.length > 0 ? matchingLines : po.lines;
+    const fuelLabel = matchingLines[0]?.inventoryItem?.name || matchingLines[0]?.description || po.lines[0]?.description || 'Item';
+    const fuelUnit = matchingLines[0]?.inventoryItem?.unit || po.lines[0]?.inventoryItem?.unit || 'MT';
 
     const totalReceived = linesToSum.reduce((s, l) => s + (l.receivedQty || 0), 0);
     const receivedValue = Math.round(linesToSum.reduce((s, l) => {
@@ -1236,13 +1247,21 @@ router.post(
     });
     if (!po) {
       cleanupAll();
-      res.status(404).json({ error: 'Fuel PO not found' });
+      res.status(404).json({ error: 'PO not found' });
       return;
     }
-    const isFuelPo = po.lines.some((l) => l.inventoryItem?.category === 'FUEL');
-    if (!isFuelPo) {
+    // Validate the PO carries an inventory line in one of the expected
+    // categories. Caller passes ?category= (or body.category) — same
+    // comma-separated convention as the row listing. Default 'FUEL' for
+    // back-compat with existing fuel UI.
+    const rawCategory = (typeof req.query.category === 'string' && req.query.category) || (typeof req.body?.category === 'string' && req.body.category) || '';
+    const allowedCategories = rawCategory
+      ? rawCategory.split(',').map((c: string) => c.trim().toUpperCase()).filter(Boolean)
+      : ['FUEL'];
+    const matchesCategory = po.lines.some((l) => l.inventoryItem && allowedCategories.includes(l.inventoryItem.category));
+    if (!matchesCategory) {
       cleanupAll();
-      res.status(400).json({ error: 'PO is not a fuel PO — use the regular vendor-invoice flow.' });
+      res.status(400).json({ error: `PO has no line in the requested category (${allowedCategories.join(', ')}).` });
       return;
     }
 
