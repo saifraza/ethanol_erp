@@ -2609,6 +2609,7 @@ model PurchaseOrder {
   lines           POLine[]
   grns            GoodsReceipt[]
   vendorInvoices  VendorInvoice[]
+  vendorPayments  VendorPayment[]
   grainTrucks     GrainTruck[]
   contractorBills ContractorBill[]
 
@@ -2908,6 +2909,11 @@ model VendorPayment {
   vendor               Vendor         @relation(fields: [vendorId], references: [id])
   invoiceId            String?
   invoice              VendorInvoice? @relation(fields: [invoiceId], references: [id])
+  // Direct link to the PO this payment is settling.
+  // Replaces the old `remarks contains "PO-{poNo}"` join (broke for PO-1 vs PO-10).
+  // Nullable: legacy rows + invoice-only payments without a single PO leave it null.
+  purchaseOrderId      String?
+  purchaseOrder        PurchaseOrder? @relation(fields: [purchaseOrderId], references: [id])
   paymentDate          DateTime       @default(now())
   amount               Float
   mode                 String         @default("BANK_TRANSFER") // CASH, CHEQUE, BANK_TRANSFER, NEFT, RTGS, UPI
@@ -2945,6 +2951,7 @@ model VendorPayment {
 
   @@index([vendorId])
   @@index([invoiceId])
+  @@index([purchaseOrderId])
   @@index([paymentDate])
   @@index([paymentStatus])
   @@index([bankFileBatch])

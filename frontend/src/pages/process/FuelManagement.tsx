@@ -94,6 +94,43 @@ interface VendorOption {
   category?: string;
 }
 
+// Payments tab — one row per fuel PO, served by GET /api/fuel/payments.
+interface FuelPaymentRow {
+  id: string;
+  poNo: number;
+  poDate: string;
+  status: string;
+  dealType: string;
+  paymentTerms: string | null;
+  creditDays: number;
+  vendor: { id: string; name: string; phone: string | null; bankName?: string | null; bankAccount?: string | null; bankIfsc?: string | null };
+  fuelName: string;
+  fuelUnit: string;
+  totalReceived: number;
+  poTotal: number;
+  receivedValue: number;
+  totalPaid: number;
+  pendingBank: number;
+  pendingCash: number;
+  outstanding: number;
+  lastPaymentDate: string | null;
+  grnCount: number;
+  isFullyPaid: boolean;
+}
+
+interface PayModalState {
+  poId: string;
+  poNo: number;
+  vendorName: string;
+  fuelName: string;
+  outstanding: number;
+  amount: string;
+  mode: 'CASH' | 'UPI' | 'NEFT' | 'RTGS' | 'BANK_TRANSFER' | 'CHEQUE';
+  reference: string;
+  remarks: string;
+  submitting: boolean;
+}
+
 const EMPTY_FORM: Partial<FuelItem> = {
   name: '', code: '', unit: 'MT', steamRate: null, calorificValue: null,
   minStock: 0, maxStock: null, defaultRate: 0, hsnCode: '', gstPercent: 5,
@@ -103,7 +140,7 @@ const EMPTY_FORM: Partial<FuelItem> = {
 export default function FuelManagement() {
   const { user } = useAuth();
   const isAdmin = user?.role === 'ADMIN' || user?.role === 'SUPER_ADMIN';
-  const [tab, setTab] = useState<'master' | 'daily' | 'deals' | 'closed'>('deals');
+  const [tab, setTab] = useState<'master' | 'daily' | 'deals' | 'closed' | 'payments'>('deals');
   const [fuels, setFuels] = useState<FuelItem[]>([]);
   const [warehouses, setWarehouses] = useState<Warehouse[]>([]);
   const [rows, setRows] = useState<ConsumptionRow[]>([]);
@@ -117,6 +154,10 @@ export default function FuelManagement() {
   const [expandedDeals, setExpandedDeals] = useState<Set<string>>(new Set());
   const [trucksModal, setTrucksModal] = useState<{ poId: string; title: string; subtitle?: string } | null>(null);
   const [ledgerModal, setLedgerModal] = useState<{ vendorId: string; vendorName: string } | null>(null);
+  const [payments, setPayments] = useState<FuelPaymentRow[]>([]);
+  const [paymentsLoading, setPaymentsLoading] = useState(false);
+  const [paymentsFilter, setPaymentsFilter] = useState<'all' | 'outstanding' | 'paid'>('outstanding');
+  const [payModal, setPayModal] = useState<PayModalState | null>(null);
   const [expandedFuels, setExpandedFuels] = useState<Set<string>>(new Set());
   const [dealForm, setDealForm] = useState({ vendorId: '', vendorName: '', vendorPhone: '', fuelItemId: '', rate: 0, remarks: '' });
   const [date, setDate] = useState(new Date().toISOString().split('T')[0]);
@@ -166,6 +207,22 @@ export default function FuelManagement() {
     setLoading(true);
     Promise.all([fetchMaster(), fetchSummary(), fetchConsumption(), fetchDeals()]).finally(() => setLoading(false));
   }, [fetchMaster, fetchSummary, fetchConsumption, fetchDeals]);
+
+  const fetchPayments = useCallback(async () => {
+    setPaymentsLoading(true);
+    try {
+      const res = await api.get<FuelPaymentRow[]>('/fuel/payments');
+      setPayments(res.data);
+    } catch (err) {
+      console.error(err);
+    } finally {
+      setPaymentsLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (tab === 'payments') fetchPayments();
+  }, [tab, fetchPayments]);
 
   // Group deals by fuel type for fuel-centric view
   interface FuelDealLine {
@@ -446,6 +503,35 @@ export default function FuelManagement() {
     } catch (err) { alert('Payment failed'); }
   };
 
+  const submitPayModal = async () => {
+    if (!payModal) return;
+    const amt = parseFloat(payModal.amount);
+    if (!isFinite(amt) || amt <= 0) {
+      alert('Enter a positive amount');
+      return;
+    }
+    if (amt > payModal.outstanding + 0.01) {
+      const ok = window.confirm(`Amount ₹${amt.toLocaleString('en-IN')} exceeds outstanding ₹${payModal.outstanding.toLocaleString('en-IN')}. Continue anyway?`);
+      if (!ok) return;
+    }
+    setPayModal({ ...payModal, submitting: true });
+    try {
+      await api.post(`/fuel/deals/${payModal.poId}/payment`, {
+        dealId: payModal.poId,
+        amount: amt,
+        mode: payModal.mode,
+        reference: payModal.reference || '',
+        remarks: payModal.remarks || '',
+      });
+      setPayModal(null);
+      await Promise.all([fetchPayments(), fetchDeals()]);
+    } catch (err: unknown) {
+      const msg = (err as { response?: { data?: { error?: string } } })?.response?.data?.error || 'Payment failed';
+      alert(msg);
+      setPayModal((prev) => prev ? { ...prev, submitting: false } : prev);
+    }
+  };
+
   if (loading) return (
     <div className="min-h-screen bg-slate-50 flex items-center justify-center">
       <div className="text-xs text-slate-400 uppercase tracking-widest">Loading...</div>
@@ -495,6 +581,9 @@ export default function FuelManagement() {
           </button>
           <button onClick={() => setTab('closed')} className={`px-5 py-2.5 text-[11px] font-bold uppercase tracking-widest border-b-2 ${tab === 'closed' ? 'border-blue-600 text-slate-800' : 'border-transparent text-slate-400 hover:text-slate-600'}`}>
             Closed Deals {closedDeals.length > 0 && <span className="ml-1 bg-slate-500 text-white text-[9px] px-1.5 py-0.5">{closedDeals.length}</span>}
+          </button>
+          <button onClick={() => setTab('payments')} className={`px-5 py-2.5 text-[11px] font-bold uppercase tracking-widest border-b-2 ${tab === 'payments' ? 'border-blue-600 text-slate-800' : 'border-transparent text-slate-400 hover:text-slate-600'}`}>
+            Payments
           </button>
         </div>
 
@@ -953,6 +1042,152 @@ export default function FuelManagement() {
             )}
           </div>
         )}
+        {/* ═══ TAB: PAYMENTS ═══ */}
+        {tab === 'payments' && (() => {
+          const filtered = payments.filter(p => {
+            if (paymentsFilter === 'outstanding') return p.outstanding > 0.01 || p.pendingBank > 0 || p.pendingCash > 0;
+            if (paymentsFilter === 'paid') return p.outstanding <= 0.01 && p.pendingBank <= 0 && p.pendingCash <= 0 && p.totalPaid > 0;
+            return true;
+          });
+          const sumPoTotal = filtered.reduce((s, p) => s + p.poTotal, 0);
+          const sumReceived = filtered.reduce((s, p) => s + p.receivedValue, 0);
+          const sumPaid = filtered.reduce((s, p) => s + p.totalPaid, 0);
+          const sumPendingBank = filtered.reduce((s, p) => s + p.pendingBank, 0);
+          const sumPendingCash = filtered.reduce((s, p) => s + p.pendingCash, 0);
+          const sumOutstanding = filtered.reduce((s, p) => s + p.outstanding, 0);
+          const vendorsWithDues = new Set(filtered.filter(p => p.outstanding > 0.01).map(p => p.vendor.id)).size;
+          return (
+            <div className="-mx-3 md:-mx-6 border-x border-b border-slate-300 overflow-hidden bg-white">
+              {/* Filter strip */}
+              <div className="bg-slate-50 border-b border-slate-300 px-4 py-2 flex items-center justify-between">
+                <div className="flex gap-2 text-[10px] font-bold uppercase tracking-widest">
+                  <button onClick={() => setPaymentsFilter('outstanding')} className={`px-3 py-1 border ${paymentsFilter === 'outstanding' ? 'bg-red-600 text-white border-red-600' : 'bg-white text-slate-600 border-slate-300 hover:border-slate-400'}`}>
+                    Outstanding {payments.filter(p => p.outstanding > 0.01 || p.pendingBank > 0 || p.pendingCash > 0).length > 0 && <span className="ml-1.5 opacity-80">({payments.filter(p => p.outstanding > 0.01 || p.pendingBank > 0 || p.pendingCash > 0).length})</span>}
+                  </button>
+                  <button onClick={() => setPaymentsFilter('paid')} className={`px-3 py-1 border ${paymentsFilter === 'paid' ? 'bg-emerald-600 text-white border-emerald-600' : 'bg-white text-slate-600 border-slate-300 hover:border-slate-400'}`}>
+                    Fully Paid
+                  </button>
+                  <button onClick={() => setPaymentsFilter('all')} className={`px-3 py-1 border ${paymentsFilter === 'all' ? 'bg-slate-800 text-white border-slate-800' : 'bg-white text-slate-600 border-slate-300 hover:border-slate-400'}`}>
+                    All Fuel POs
+                  </button>
+                </div>
+                <button onClick={fetchPayments} disabled={paymentsLoading} className="px-3 py-1 border border-slate-300 bg-white text-slate-600 text-[10px] font-bold uppercase tracking-widest hover:border-slate-400 disabled:opacity-50">
+                  {paymentsLoading ? 'Loading…' : 'Refresh'}
+                </button>
+              </div>
+              {/* KPI strip — payments-specific */}
+              <div className="grid grid-cols-5 gap-0 border-b border-slate-300">
+                <div className="px-4 py-3 border-r border-slate-300 border-l-4 border-l-blue-500">
+                  <div className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Fuel POs</div>
+                  <div className="text-xl font-bold text-slate-800 mt-1 font-mono tabular-nums">{filtered.length}</div>
+                </div>
+                <div className="px-4 py-3 border-r border-slate-300 border-l-4 border-l-slate-500">
+                  <div className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Received Value</div>
+                  <div className="text-xl font-bold text-slate-800 mt-1 font-mono tabular-nums">{fmtCurrency(sumReceived)}</div>
+                </div>
+                <div className="px-4 py-3 border-r border-slate-300 border-l-4 border-l-green-500">
+                  <div className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Paid (Confirmed)</div>
+                  <div className="text-xl font-bold text-emerald-700 mt-1 font-mono tabular-nums">{fmtCurrency(sumPaid)}</div>
+                </div>
+                <div className="px-4 py-3 border-r border-slate-300 border-l-4 border-l-amber-500">
+                  <div className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">In-Flight (Bank+Cash)</div>
+                  <div className="text-xl font-bold text-amber-700 mt-1 font-mono tabular-nums">{fmtCurrency(sumPendingBank + sumPendingCash)}</div>
+                </div>
+                <div className="px-4 py-3 border-l-4 border-l-red-600">
+                  <div className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Outstanding · {vendorsWithDues} Vendor{vendorsWithDues !== 1 ? 's' : ''}</div>
+                  <div className="text-xl font-bold text-red-700 mt-1 font-mono tabular-nums">{fmtCurrency(sumOutstanding)}</div>
+                </div>
+              </div>
+              {/* Table */}
+              {paymentsLoading && payments.length === 0 ? (
+                <div className="px-3 py-8 text-center text-xs text-slate-400 uppercase tracking-widest">Loading payments…</div>
+              ) : filtered.length === 0 ? (
+                <div className="px-3 py-8 text-center text-xs text-slate-400 uppercase tracking-widest">
+                  {paymentsFilter === 'outstanding' ? 'No outstanding fuel payments — all caught up.' : paymentsFilter === 'paid' ? 'No fully-paid fuel POs yet.' : 'No fuel POs found.'}
+                </div>
+              ) : (
+                <table className="w-full text-xs">
+                  <thead>
+                    <tr className="bg-slate-800 text-white">
+                      <th className="text-left px-3 py-1.5 font-semibold text-[10px] uppercase tracking-widest border-r border-slate-700">PO#</th>
+                      <th className="text-left px-3 py-1.5 font-semibold text-[10px] uppercase tracking-widest border-r border-slate-700">Vendor</th>
+                      <th className="text-left px-3 py-1.5 font-semibold text-[10px] uppercase tracking-widest border-r border-slate-700">Fuel</th>
+                      <th className="text-right px-3 py-1.5 font-semibold text-[10px] uppercase tracking-widest border-r border-slate-700">PO Total</th>
+                      <th className="text-right px-3 py-1.5 font-semibold text-[10px] uppercase tracking-widest border-r border-slate-700">Received Value</th>
+                      <th className="text-right px-3 py-1.5 font-semibold text-[10px] uppercase tracking-widest border-r border-slate-700">Paid</th>
+                      <th className="text-right px-3 py-1.5 font-semibold text-[10px] uppercase tracking-widest border-r border-slate-700">In-Flight</th>
+                      <th className="text-right px-3 py-1.5 font-semibold text-[10px] uppercase tracking-widest border-r border-slate-700">Outstanding</th>
+                      <th className="text-left px-3 py-1.5 font-semibold text-[10px] uppercase tracking-widest border-r border-slate-700">Last Pmt</th>
+                      <th className="text-left px-3 py-1.5 font-semibold text-[10px] uppercase tracking-widest">Actions</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {filtered.map((p, i) => {
+                      const inFlight = p.pendingBank + p.pendingCash;
+                      return (
+                        <tr key={p.id} className={`border-b border-slate-100 ${i % 2 ? 'bg-slate-50/70' : ''}`}>
+                          <td className="px-3 py-1.5 font-mono text-slate-500 border-r border-slate-100">PO-{p.poNo}</td>
+                          <td className="px-3 py-1.5 border-r border-slate-100">
+                            <div className="font-semibold text-slate-800">{p.vendor.name}</div>
+                            {p.vendor.phone && <div className="text-[9px] text-slate-400">{p.vendor.phone}</div>}
+                          </td>
+                          <td className="px-3 py-1.5 border-r border-slate-100">
+                            <div className="text-slate-700">{p.fuelName}</div>
+                            <div className="text-[9px] text-slate-400 font-mono tabular-nums">{fmtNum(p.totalReceived)} {p.fuelUnit} · {p.grnCount} GRN{p.grnCount !== 1 ? 's' : ''}</div>
+                          </td>
+                          <td className="px-3 py-1.5 text-right font-mono tabular-nums border-r border-slate-100">{fmtCurrency(p.poTotal)}</td>
+                          <td className="px-3 py-1.5 text-right font-mono tabular-nums font-bold border-r border-slate-100">{fmtCurrency(p.receivedValue)}</td>
+                          <td className="px-3 py-1.5 text-right font-mono tabular-nums text-green-700 border-r border-slate-100">{fmtCurrency(p.totalPaid)}</td>
+                          <td className={`px-3 py-1.5 text-right font-mono tabular-nums border-r border-slate-100 ${inFlight > 0 ? 'text-amber-700' : 'text-slate-400'}`}>{fmtCurrency(inFlight)}</td>
+                          <td className={`px-3 py-1.5 text-right font-mono tabular-nums font-bold border-r border-slate-100 ${p.outstanding > 0.01 ? 'text-red-600' : 'text-emerald-700'}`}>
+                            {p.outstanding > 0.01 ? fmtCurrency(p.outstanding) : '✓ Paid'}
+                          </td>
+                          <td className="px-3 py-1.5 border-r border-slate-100 text-[10px] text-slate-500 font-mono">
+                            {p.lastPaymentDate ? new Date(p.lastPaymentDate).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: '2-digit' }) : '—'}
+                          </td>
+                          <td className="px-3 py-1.5">
+                            <div className="flex gap-1 flex-wrap">
+                              {p.outstanding > 0.01 && p.totalReceived > 0 && (
+                                <button
+                                  onClick={() => setPayModal({
+                                    poId: p.id, poNo: p.poNo, vendorName: p.vendor.name, fuelName: p.fuelName,
+                                    outstanding: p.outstanding, amount: String(p.outstanding.toFixed(2)),
+                                    mode: 'NEFT', reference: '', remarks: '', submitting: false,
+                                  })}
+                                  className="text-[10px] bg-blue-600 text-white px-2 py-1 font-bold uppercase tracking-widest hover:bg-blue-700">
+                                  Pay
+                                </button>
+                              )}
+                              {p.grnCount > 0 && (
+                                <button onClick={() => setTrucksModal({ poId: p.id, title: `PO-${p.poNo}`, subtitle: `${p.vendor.name} · ${p.fuelName}` })} className="text-[10px] text-purple-600 font-semibold uppercase hover:underline">
+                                  Trucks
+                                </button>
+                              )}
+                              <button onClick={() => setLedgerModal({ vendorId: p.vendor.id, vendorName: p.vendor.name })} className="text-[10px] text-indigo-600 font-semibold uppercase hover:underline">
+                                Ledger
+                              </button>
+                            </div>
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                  <tfoot>
+                    <tr className="bg-slate-800 text-white">
+                      <td colSpan={3} className="px-3 py-2 text-[10px] font-bold uppercase tracking-widest">Totals · {filtered.length} PO{filtered.length !== 1 ? 's' : ''}</td>
+                      <td className="px-3 py-2 text-right font-mono tabular-nums font-bold">{fmtCurrency(sumPoTotal)}</td>
+                      <td className="px-3 py-2 text-right font-mono tabular-nums font-bold">{fmtCurrency(sumReceived)}</td>
+                      <td className="px-3 py-2 text-right font-mono tabular-nums text-green-300">{fmtCurrency(sumPaid)}</td>
+                      <td className="px-3 py-2 text-right font-mono tabular-nums text-amber-300">{fmtCurrency(sumPendingBank + sumPendingCash)}</td>
+                      <td className="px-3 py-2 text-right font-mono tabular-nums font-bold text-red-300">{fmtCurrency(sumOutstanding)}</td>
+                      <td colSpan={2}></td>
+                    </tr>
+                  </tfoot>
+                </table>
+              )}
+            </div>
+          );
+        })()}
       </div>
 
       {/* ═══ ADD/EDIT MODAL ═══ */}
@@ -1210,6 +1445,80 @@ export default function FuelManagement() {
           vendorName={ledgerModal.vendorName}
           onClose={() => setLedgerModal(null)}
         />
+      )}
+
+      {payModal && (
+        <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50">
+          <div className="bg-white w-[480px] max-w-[95vw] shadow-2xl">
+            <div className="bg-slate-800 text-white px-4 py-2.5 flex items-center justify-between">
+              <div>
+                <div className="text-xs font-bold uppercase tracking-widest">Pay PO-{payModal.poNo}</div>
+                <div className="text-[10px] text-slate-300">{payModal.vendorName} · {payModal.fuelName}</div>
+              </div>
+              <button onClick={() => setPayModal(null)} disabled={payModal.submitting} className="text-slate-300 hover:text-white text-lg leading-none disabled:opacity-50">×</button>
+            </div>
+            <div className="p-4 space-y-3">
+              <div className="bg-slate-50 border border-slate-200 px-3 py-2">
+                <div className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Outstanding</div>
+                <div className="text-lg font-bold text-red-700 font-mono tabular-nums">{fmtCurrency(payModal.outstanding)}</div>
+              </div>
+              <div>
+                <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">Amount (₹)</label>
+                <input
+                  type="number" step="0.01" min="0"
+                  value={payModal.amount}
+                  onChange={(e) => setPayModal({ ...payModal, amount: e.target.value })}
+                  className="w-full mt-1 border border-slate-300 px-2 py-1.5 text-sm font-mono tabular-nums focus:outline-none focus:border-blue-500"
+                  autoFocus
+                />
+              </div>
+              <div>
+                <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">Mode</label>
+                <select
+                  value={payModal.mode}
+                  onChange={(e) => setPayModal({ ...payModal, mode: e.target.value as PayModalState['mode'] })}
+                  className="w-full mt-1 border border-slate-300 px-2 py-1.5 text-sm focus:outline-none focus:border-blue-500"
+                >
+                  <option value="NEFT">NEFT</option>
+                  <option value="RTGS">RTGS</option>
+                  <option value="UPI">UPI</option>
+                  <option value="BANK_TRANSFER">Bank Transfer</option>
+                  <option value="CHEQUE">Cheque</option>
+                  <option value="CASH">Cash</option>
+                </select>
+              </div>
+              {payModal.mode !== 'CASH' && (
+                <div>
+                  <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">Reference / UTR</label>
+                  <input
+                    type="text"
+                    value={payModal.reference}
+                    onChange={(e) => setPayModal({ ...payModal, reference: e.target.value })}
+                    placeholder={payModal.mode === 'CHEQUE' ? 'Cheque no.' : 'UTR / UPI ref'}
+                    className="w-full mt-1 border border-slate-300 px-2 py-1.5 text-sm font-mono focus:outline-none focus:border-blue-500"
+                  />
+                </div>
+              )}
+              <div>
+                <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">Remarks (optional)</label>
+                <input
+                  type="text"
+                  value={payModal.remarks}
+                  onChange={(e) => setPayModal({ ...payModal, remarks: e.target.value })}
+                  className="w-full mt-1 border border-slate-300 px-2 py-1.5 text-sm focus:outline-none focus:border-blue-500"
+                />
+              </div>
+            </div>
+            <div className="bg-slate-50 border-t border-slate-200 px-4 py-2.5 flex justify-end gap-2">
+              <button onClick={() => setPayModal(null)} disabled={payModal.submitting} className="px-3 py-1.5 text-[11px] font-bold uppercase tracking-widest text-slate-600 border border-slate-300 hover:bg-slate-100 disabled:opacity-50">
+                Cancel
+              </button>
+              <button onClick={submitPayModal} disabled={payModal.submitting || !payModal.amount} className="px-4 py-1.5 text-[11px] font-bold uppercase tracking-widest bg-blue-600 text-white hover:bg-blue-700 disabled:opacity-50">
+                {payModal.submitting ? 'Recording…' : 'Record Payment'}
+              </button>
+            </div>
+          </div>
+        </div>
       )}
     </div>
   );

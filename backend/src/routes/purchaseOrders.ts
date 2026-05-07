@@ -361,21 +361,14 @@ router.get('/:id', asyncHandler(async (req: AuthRequest, res: Response) => {
     const totalTDS = (po.vendorInvoices || []).reduce((s: number, inv: any) =>
       s + (inv.payments || []).reduce((ps: number, p: any) => ps + (p.tdsDeducted || 0), 0), 0);
 
-    // Also count direct PO payments (not linked to invoices — from Pay on PO flow)
+    // Direct PO payments (Pay-on-PO flow). FK-keyed since 2026-05-07 — boot
+    // backfill migrated legacy rows that only carried `PO-{n}` in remarks.
     const directPayments = await prisma.vendorPayment.findMany({
-      where: {
-        vendorId: po.vendorId,
-        invoiceId: null,
-        OR: [
-          { remarks: { contains: `PO-${po.poNo} ` } },
-          { remarks: { endsWith: `PO-${po.poNo}` } },
-        ],
-      },
+      where: { purchaseOrderId: po.id, invoiceId: null },
       orderBy: { paymentDate: 'desc' },
       select: { id: true, amount: true, mode: true, reference: true, paymentDate: true, tdsDeducted: true, remarks: true, paymentStatus: true, adviceSentAt: true, adviceSentTo: true, hasGst: true, bankReceiptPath: true, bankReceiptScannedAt: true },
-    
-    take: 500,
-  });
+      take: 500,
+    });
     const directPaidTotal = directPayments.reduce((s, p) => s + p.amount, 0);
     totalPaid += directPaidTotal;
 
@@ -990,17 +983,12 @@ router.get('/:id/payments', asyncHandler(async (req: AuthRequest, res: Response)
   }, 0) * 100) / 100;
   const poTotal = po.grandTotal > 0 ? po.grandTotal : receivable;
 
-  // Find all payments referencing this PO
+  // Payments tied to this PO via FK (post-2026-05-07). Boot-time backfill
+  // migrated legacy rows from the old `remarks` matcher.
   const payments = await prisma.vendorPayment.findMany({
-    where: {
-      OR: [
-        { remarks: { contains: `PO-${po.poNo} ` } },
-        { remarks: { endsWith: `PO-${po.poNo}` } },
-      ],
-    },
+    where: { purchaseOrderId: po.id },
     orderBy: { paymentDate: 'asc' },
     select: { id: true, paymentDate: true, amount: true, mode: true, reference: true, remarks: true, isAdvance: true, paymentStatus: true, paymentNo: true, bankReceiptPath: true, adviceSentAt: true },
-  
     take: 500,
   });
 
@@ -1063,34 +1051,17 @@ router.post('/:id/pay', asyncHandler(async (req: AuthRequest, res: Response) => 
   }, 0) * 100) / 100;
   const receivable = receivedValue; // Cap at received value, not PO total
 
-  // Calculate already paid (confirmed payments)
+  // Already paid + pending-bank lookups now key off VendorPayment.purchaseOrderId.
   const existingPayments = await prisma.vendorPayment.findMany({
-    where: {
-      vendorId: po.vendorId,
-      invoiceId: null,
-      OR: [
-        { remarks: { contains: `PO-${po.poNo} ` } },
-        { remarks: { endsWith: `PO-${po.poNo}` } },
-      ],
-    },
+    where: { purchaseOrderId: po.id, invoiceId: null },
     select: { amount: true },
-  
     take: 500,
   });
   const alreadyPaid = existingPayments.reduce((s, p) => s + p.amount, 0);
 
-  // Count INITIATED (pending bank) payments — committed but UTR not entered yet
   const pendingBankPayments = await prisma.vendorPayment.findMany({
-    where: {
-      vendorId: po.vendorId,
-      paymentStatus: 'INITIATED',
-      OR: [
-        { remarks: { contains: `PO-${po.poNo} ` } },
-        { remarks: { endsWith: `PO-${po.poNo}` } },
-      ],
-    },
+    where: { purchaseOrderId: po.id, paymentStatus: 'INITIATED' },
     select: { amount: true },
-  
     take: 500,
   });
   const pendingBank = pendingBankPayments.reduce((s, p) => s + p.amount, 0);
@@ -1170,6 +1141,7 @@ router.post('/:id/pay', asyncHandler(async (req: AuthRequest, res: Response) => 
   const payment = await prisma.vendorPayment.create({
     data: {
       vendorId: po.vendorId,
+      purchaseOrderId: po.id,
       paymentDate: new Date(),
       amount,
       mode: payMode,

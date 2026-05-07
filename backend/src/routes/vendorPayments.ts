@@ -1002,6 +1002,7 @@ router.post('/allocate', validate(allocateSchema), asyncHandler(async (req: Auth
       const payment = await tx.vendorPayment.create({
         data: {
           vendorId: b.vendorId,
+          purchaseOrderId: po.id,
           paymentDate,
           amount: alloc.amount,
           mode: b.mode || 'NEFT',
@@ -1027,13 +1028,9 @@ router.post('/allocate', validate(allocateSchema), asyncHandler(async (req: Auth
         }, 0) * 100) / 100;
         const allPaid = await tx.vendorPayment.aggregate({
           where: {
-            vendorId: b.vendorId,
+            purchaseOrderId: po.id,
             paymentStatus: 'CONFIRMED',
             invoiceId: null,
-            OR: [
-              { remarks: { contains: `PO-${po.poNo} ` } },
-              { remarks: { endsWith: `PO-${po.poNo}` } },
-            ],
           },
           _sum: { amount: true },
         });
