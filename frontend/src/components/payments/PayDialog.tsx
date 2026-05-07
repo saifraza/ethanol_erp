@@ -5,12 +5,21 @@ import type { PoLedger } from './types';
 
 type PayMode = 'CASH' | 'UPI' | 'NEFT' | 'RTGS' | 'BANK_TRANSFER' | 'CHEQUE';
 
+// Fuel deals use a dedicated endpoint with its own pre-flight (confirmed-GRN
+// gate). Generic PO pay (accounts page, store, contractor, transporter, etc.)
+// uses /purchase-orders/:id/pay which has full validation incl. cash-voucher
+// routing + auto-close. Caller picks the surface.
+export type PayDialogSurface = 'fuel' | 'generic';
+
 interface PayDialogProps {
   poId: string;
   poNo: number;
   vendorName: string;
-  fuelName: string;
+  /** Subtitle line under the title — usually fuel name, item name, or category. */
+  subtitle?: string;
   outstanding: number;
+  /** Backend surface to POST against. Defaults to 'fuel'. */
+  surface?: PayDialogSurface;
   fmtCurrency: (n: number) => string;
   onClose: () => void;
   onPaid: () => void;
@@ -21,8 +30,9 @@ export default function PayDialog({
   poId,
   poNo,
   vendorName,
-  fuelName,
+  subtitle,
   outstanding,
+  surface = 'fuel',
   fmtCurrency,
   onClose,
   onPaid,
@@ -67,13 +77,24 @@ export default function PayDialog({
     }
     setSubmitting(true);
     try {
-      await api.post(`/fuel/deals/${poId}/payment`, {
-        dealId: poId,
-        amount: amt,
-        mode,
-        reference: reference || '',
-        remarks: remarks || '',
-      });
+      if (surface === 'generic') {
+        // /purchase-orders/:id/pay accepts hasGst (compulsory) + caps at received value.
+        await api.post(`/purchase-orders/${poId}/pay`, {
+          amount: amt,
+          mode,
+          reference: reference || '',
+          remarks: remarks || '',
+          hasGst: true, // accounts page is booking against received material; GST already in poTotal
+        });
+      } else {
+        await api.post(`/fuel/deals/${poId}/payment`, {
+          dealId: poId,
+          amount: amt,
+          mode,
+          reference: reference || '',
+          remarks: remarks || '',
+        });
+      }
       onPaid();
     } catch (err: unknown) {
       const msg = (err as { response?: { data?: { error?: string } } })?.response?.data?.error || 'Payment failed';
@@ -88,7 +109,7 @@ export default function PayDialog({
         <div className="bg-slate-800 text-white px-4 py-2.5 flex items-center justify-between">
           <div>
             <div className="text-xs font-bold uppercase tracking-widest">Pay PO-{poNo}</div>
-            <div className="text-[10px] text-slate-300">{vendorName} · {fuelName}</div>
+            <div className="text-[10px] text-slate-300">{vendorName}{subtitle ? ` · ${subtitle}` : ''}</div>
           </div>
           <button onClick={onClose} disabled={submitting} className="text-slate-300 hover:text-white text-lg leading-none disabled:opacity-50">×</button>
         </div>
