@@ -53,8 +53,13 @@ async function runSync(employeeId: string, op: Op): Promise<void> {
 
   if (!employee.deviceUserId) return;
 
+  // Cloud-led devices only — factoryManaged devices get the new employee
+  // picked up by the factory-server's master-data sync (within ~30s) and
+  // pushed to the device on its next autoPush tick. Trying to reach them
+  // from cloud requires a Tailscale tunnel back to the bridge, which we
+  // explicitly avoid in factory-led mode.
   const devices = await prisma.biometricDevice.findMany({
-    where: { active: true },
+    where: { active: true, factoryManaged: false },
     select: { code: true, ip: true, port: true, password: true },
   });
   if (devices.length === 0) return;

@@ -23,6 +23,8 @@ interface BiometricDevice {
   autoPushMinutes: number;
   lastAutoPullAt: string | null;
   lastAutoPushAt: string | null;
+  factoryManaged: boolean;
+  lastFactorySyncAt: string | null;
 }
 
 interface DeviceUser {
@@ -151,15 +153,93 @@ function DevicesView({ devices, loading, reload, edit }: { devices: BiometricDev
     setTesting(d.id);
     try {
       const r = await api.post(`/biometric/devices/${d.id}/test`);
-      alert(`✓ Connected\nFirmware: ${r.data.info.firmware}\nSerial: ${r.data.info.serial}\nUsers on device: ${r.data.info.user_count}\nLogs on device: ${r.data.info.log_count}`);
-      reload();
+      // Factory-led path: cloud queues a job, factory-server picks it up
+      // within ~3s and runs it locally. Poll until DONE/FAILED (max 30s).
+      if (r.status === 202 && r.data.jobId) {
+        const result = await pollJob(r.data.jobId);
+        if (result.status === 'DONE' && result.result) {
+          const info = result.result;
+          alert(`✓ Connected (via factory)\nFirmware: ${info.firmware}\nSerial: ${info.serial}\nUsers on device: ${info.user_count}\nLogs on device: ${info.log_count}`);
+          reload();
+        } else if (result.status === 'FAILED') {
+          alert(`✗ ${result.error || 'job failed'}`);
+        } else {
+          alert('✗ Test timed out — factory-server did not respond within 30s. Check factory health.');
+        }
+      } else {
+        // Cloud-led path: synchronous response
+        alert(`✓ Connected\nFirmware: ${r.data.info.firmware}\nSerial: ${r.data.info.serial}\nUsers on device: ${r.data.info.user_count}\nLogs on device: ${r.data.info.log_count}`);
+        reload();
+      }
     } catch (e: any) {
       alert(`✗ ${e?.response?.data?.error || e?.message || 'Failed'}`);
     } finally { setTesting(null); }
   }
 
+  // Poll /jobs/:id every 1s for up to 30s. Returns { status, result, error }.
+  async function pollJob(jobId: string): Promise<{ status: string; result?: any; error?: string | null }> {
+    const start = Date.now();
+    while (Date.now() - start < 30_000) {
+      try {
+        const r = await api.get(`/biometric/jobs/${jobId}`);
+        if (r.data.status === 'DONE' || r.data.status === 'FAILED') {
+          return r.data;
+        }
+      } catch { /* keep polling */ }
+      await new Promise(resolve => setTimeout(resolve, 1000));
+    }
+    return { status: 'TIMEOUT' };
+  }
+
+  // Health summary across all devices — drives the panel above the table.
+  const factoryDevices = devices.filter(d => d.factoryManaged);
+  const cloudDevices = devices.filter(d => !d.factoryManaged && d.active);
+  const latestFactorySync = factoryDevices.reduce<Date | null>((acc, d) => {
+    if (!d.lastFactorySyncAt) return acc;
+    const t = new Date(d.lastFactorySyncAt);
+    return !acc || t > acc ? t : acc;
+  }, null);
+  const factoryStaleMs = latestFactorySync ? Date.now() - latestFactorySync.getTime() : null;
+  const factoryStatus =
+    factoryDevices.length === 0 ? null
+    : !latestFactorySync ? 'WAITING'
+    : factoryStaleMs! < 5 * 60_000 ? 'OK'
+    : factoryStaleMs! < 30 * 60_000 ? 'STALE'
+    : 'SILENT';
+
   return (
     <div>
+      {factoryDevices.length > 0 && (
+        <div className="bg-violet-50 border-x border-t border-violet-200 px-4 py-2 -mx-3 md:-mx-6 flex items-center gap-3 text-[11px]">
+          <span className="text-[9px] font-bold uppercase tracking-widest px-1.5 py-0.5 border border-violet-400 text-violet-700 bg-white">Factory-led</span>
+          <span className="text-slate-700">
+            <span className="font-mono font-semibold">{factoryDevices.length}</span> device{factoryDevices.length === 1 ? '' : 's'} routed via factory-server
+            {cloudDevices.length > 0 && <span className="text-slate-500"> · {cloudDevices.length} cloud-led</span>}
+          </span>
+          <div className="flex-1" />
+          {factoryStatus === 'OK' && (
+            <span className="text-emerald-700 font-medium">
+              <span className="inline-block w-1.5 h-1.5 rounded-full bg-emerald-500 mr-1" />
+              Last batch {Math.round(factoryStaleMs! / 1000)}s ago
+            </span>
+          )}
+          {factoryStatus === 'STALE' && (
+            <span className="text-amber-700 font-medium" title="Factory hasn't synced in >5 min — investigate">
+              <span className="inline-block w-1.5 h-1.5 rounded-full bg-amber-500 mr-1" />
+              Last batch {Math.round(factoryStaleMs! / 60_000)}m ago
+            </span>
+          )}
+          {factoryStatus === 'SILENT' && (
+            <span className="text-rose-700 font-medium" title="Factory silent >30 min — cloud will resume pulling automatically">
+              <span className="inline-block w-1.5 h-1.5 rounded-full bg-rose-500 mr-1" />
+              Silent {Math.round(factoryStaleMs! / 60_000)}m — cloud takeover active
+            </span>
+          )}
+          {factoryStatus === 'WAITING' && (
+            <span className="text-slate-500 italic">Waiting for first factory sync…</span>
+          )}
+        </div>
+      )}
       <div className="bg-slate-100 border-x border-b border-slate-300 px-4 py-2 -mx-3 md:-mx-6 flex items-center gap-3">
         <span className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">Configured devices on plant LAN</span>
         <div className="flex-1" />
@@ -192,7 +272,13 @@ function DevicesView({ devices, loading, reload, edit }: { devices: BiometricDev
               {!loading && devices.length === 0 && <tr><td colSpan={9} className="px-3 py-6 text-center text-xs text-slate-400 uppercase tracking-widest">No devices configured. Add one to start.</td></tr>}
               {devices.map(d => (
                 <tr key={d.id} className="border-b border-slate-100 even:bg-slate-50/70">
-                  <td className="px-3 py-1.5 border-r border-slate-100 font-mono">{d.code}</td>
+                  <td className="px-3 py-1.5 border-r border-slate-100 font-mono">
+                    {d.code}
+                    {d.factoryManaged && (
+                      <span title={d.lastFactorySyncAt ? `Factory-managed (last sync: ${new Date(d.lastFactorySyncAt).toLocaleString('en-IN')})` : 'Factory-managed (no factory sync yet)'}
+                            className="ml-1 text-[8px] font-bold uppercase px-1 py-0.5 border border-violet-400 text-violet-700 bg-violet-50">FACTORY</span>
+                    )}
+                  </td>
                   <td className="px-3 py-1.5 border-r border-slate-100">{d.name}</td>
                   <td className="px-3 py-1.5 border-r border-slate-100 text-slate-500">{d.location || '--'}</td>
                   <td className="px-3 py-1.5 border-r border-slate-100 font-mono text-center">{d.ip}:{d.port}</td>
@@ -334,6 +420,27 @@ function DeviceFormModal({ initial, onClose }: { initial: Partial<BiometricDevic
                 {d.lastAutoPushAt && <>Last auto-push: <span className="font-mono">{new Date(d.lastAutoPushAt).toLocaleString('en-IN')}</span></>}
               </div>
             )}
+          </div>
+          <div className="col-span-2 mt-2 pt-3 border-t border-slate-200">
+            <label className="flex items-start gap-2 cursor-pointer">
+              <input
+                type="checkbox"
+                checked={!!d.factoryManaged}
+                onChange={e => setD({ ...d, factoryManaged: e.target.checked })}
+                className="mt-0.5"
+              />
+              <div className="flex-1">
+                <div className="text-[11px] font-semibold text-slate-700">Factory-managed</div>
+                <div className="text-[10px] text-slate-500 leading-relaxed mt-0.5">
+                  When checked, the factory-server PC pulls punches into its own DB and batches them here. Cloud scheduler skips this device. Use this once factory-server is deployed and the bridge is reachable from it. Default <span className="font-mono">off</span> = cloud pulls directly via the bridge.
+                </div>
+                {d.lastFactorySyncAt && (
+                  <div className="text-[10px] text-slate-500 mt-1">
+                    Last factory sync: <span className="font-mono">{new Date(d.lastFactorySyncAt).toLocaleString('en-IN')}</span>
+                  </div>
+                )}
+              </div>
+            </label>
           </div>
           {(d.serialNumber || d.firmware) && (
             <div className="col-span-2 text-[10px] text-slate-500 border-t border-slate-200 pt-2">

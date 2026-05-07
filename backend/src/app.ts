@@ -122,6 +122,7 @@ import payrollImportRoutes from './routes/payrollImport';
 import attendanceRoutes from './routes/attendance';
 import leaveApplicationRoutes from './routes/leaveApplications';
 import biometricRoutes from './routes/biometric';
+import biometricFactoryRoutes from './routes/biometricFactory';
 import laborWorkerRoutes from './routes/laborWorkers';
 // Logistics (Gate Entry)
 import gateEntryRoutes from './routes/gateEntry';
@@ -246,6 +247,10 @@ app.use('/api/hr/import-salary', payrollImportRoutes);
 app.use('/api/attendance', attendanceRoutes);
 app.use('/api/leave', leaveApplicationRoutes);
 app.use('/api/biometric', biometricRoutes);
+// Machine-to-machine endpoints for factory-server (X-WB-Key auth, no JWT).
+// Mounted on a separate path so the JWT middleware in biometricRoutes
+// doesn't reject the unauthenticated factory-server requests.
+app.use('/api/biometric-factory', biometricFactoryRoutes);
 app.use('/api/labor-workers', laborWorkerRoutes);
 
 app.use('/api/issues', issueRoutes);

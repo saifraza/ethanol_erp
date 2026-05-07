@@ -386,6 +386,100 @@ model WeighmentAuditQueue {
   @@index([weighmentId])
 }
 
+// ========================================================================
+// BIOMETRIC — factory-led mode (added 2026-05-07)
+// ------------------------------------------------------------------------
+// Pattern mirrors weighbridge: pull punches from devices into the factory
+// Postgres immediately, then sync to cloud in batches (every minute, but
+// resilient to multi-hour outages — cloudSynced=false rows persist).
+// Cloud is the source-of-truth for HR data (Employee, LaborWorker,
+// BiometricDevice config). Factory-server caches it via masterDataCache.ts.
+// ========================================================================
+
+// Local mirror of cloud BiometricDevice rows that have factoryManaged=true.
+// Refreshed from /api/biometric-factory/master-data every 30s. The factory
+// scheduler iterates only this table — never touches the cloud directly.
+model CachedBiometricDevice {
+  id              String   @id // cloud BiometricDevice.id
+  code            String   @unique
+  name            String
+  location        String?
+  ip              String
+  port            Int      @default(4370)
+  password        Int      @default(0)
+  autoPullMinutes Int      @default(0)
+  autoPushMinutes Int      @default(0)
+  companyId       String?
+  // Local sync state — independent of the cloud's lastAutoPullAt etc.
+  lastPullAt      DateTime?
+  lastPushAt      DateTime?
+  lastError       String?
+  updatedAt       DateTime @default(now())
+
+  @@index([code])
+}
+
+// Slim mirror of cloud Employee — just the fields needed to (a) resolve
+// punch user_id → Employee, and (b) push the user list back to devices.
+model CachedEmployee {
+  id           String   @id // cloud Employee.id
+  empCode      String?
+  empNo        Int?
+  firstName    String
+  lastName     String?
+  deviceUserId String?
+  cardNumber   String?
+  companyId    String?
+  isActive     Boolean  @default(true)
+  updatedAt    DateTime @default(now())
+
+  @@index([deviceUserId])
+  @@index([companyId])
+}
+
+// Same shape for labor.
+model CachedLaborWorker {
+  id           String   @id // cloud LaborWorker.id
+  workerCode   String?
+  workerNo     Int?
+  firstName    String
+  lastName     String?
+  deviceUserId String?
+  cardNumber   String?
+  companyId    String?
+  isActive     Boolean  @default(true)
+  updatedAt    DateTime @default(now())
+
+  @@index([deviceUserId])
+  @@index([companyId])
+}
+
+// Each fingerprint hit on a device. cloudSynced=false means we still owe
+// the cloud a copy. Identical pattern to Weighment.cloudSynced.
+model AttendancePunch {
+  id            String   @id @default(uuid())
+  deviceCode    String   // cloud BiometricDevice.code
+  deviceUserId  String   // value the device reports (string for type stability)
+  punchAt       DateTime // device clock, converted UTC by the bridge
+  direction     String   @default("AUTO") // IN | OUT | AUTO
+  // Resolved at pull time so reports work offline
+  employeeId    String?  // cloud Employee.id (cached via CachedEmployee)
+  laborWorkerId String?  // cloud LaborWorker.id
+  companyId     String?
+  // Cloud sync
+  cloudSynced   Boolean  @default(false)
+  cloudSyncedAt DateTime?
+  cloudError    String?
+  syncAttempts  Int      @default(0)
+  // Timestamps
+  createdAt     DateTime @default(now())
+
+  @@unique([deviceCode, deviceUserId, punchAt])
+  @@index([cloudSynced])
+  @@index([punchAt])
+  @@index([deviceCode])
+}
+
 // --- PRINT QUEUE ---
 // For managing printer jobs across PCs
 model PrintJob {

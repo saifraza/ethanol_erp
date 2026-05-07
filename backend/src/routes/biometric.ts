@@ -77,6 +77,9 @@ const deviceSchema = z.object({
   notes: z.string().nullable().optional(),
   autoPullMinutes: z.number().int().min(0).max(1440).default(0),
   autoPushMinutes: z.number().int().min(0).max(1440).default(0),
+  // 2026-05-07 — when true, factory-server PC owns this device; cloud
+  // scheduler skips it. Toggleable from the BiometricDevices admin UI.
+  factoryManaged: z.boolean().default(false),
 });
 
 router.get('/devices', asyncHandler(async (req: AuthRequest, res: Response) => {
@@ -114,9 +117,24 @@ router.post('/devices/:id/test', authorize('ADMIN'), asyncHandler(async (req: Au
   const d = await prisma.biometricDevice.findUnique({ where: { id: req.params.id } });
   if (!d) throw new NotFoundError('BiometricDevice', req.params.id);
 
+  // Factory-led: enqueue a job for the factory-server to execute against
+  // its local bridge. Cloud has no inbound path to the plant LAN — this
+  // matches the weighbridge pattern (factory pulls jobs, posts results).
+  if (d.factoryManaged) {
+    const job = await prisma.biometricJob.create({
+      data: {
+        type: 'TEST',
+        deviceId: d.id,
+        requestedBy: req.user?.id ?? null,
+      },
+    });
+    res.status(202).json({ ok: true, jobId: job.id, mode: 'factory' });
+    return;
+  }
+
+  // Cloud-led: hit the bridge directly via BIOMETRIC_BRIDGE_URL.
   try {
     const info = await bridge.deviceInfo(toBridgeDevice(d));
-    // Capture serial/firmware/platform on first successful test
     await prisma.biometricDevice.update({
       where: { id: d.id },
       data: {
@@ -125,11 +143,33 @@ router.post('/devices/:id/test', authorize('ADMIN'), asyncHandler(async (req: Au
         platform: info.platform ?? d.platform,
       },
     });
-    res.json({ ok: true, info });
+    res.json({ ok: true, info, mode: 'cloud' });
   } catch (err: unknown) {
     res.status(502).json({ ok: false, error: err instanceof Error ? err.message : String(err) });
   }
 }));
+
+// GET /jobs/:id — frontend polls this to learn when a queued job finishes.
+// JWT auth (admin only). Returns minimal shape: status + result/error.
+router.get('/jobs/:id', authorize('ADMIN'), asyncHandler(async (req: AuthRequest, res: Response) => {
+  const job = await prisma.biometricJob.findUnique({
+    where: { id: req.params.id },
+    select: {
+      id: true, type: true, deviceId: true, status: true,
+      requestedAt: true, claimedAt: true, completedAt: true,
+      result: true, error: true, attempts: true,
+    },
+  });
+  if (!job) throw new NotFoundError('BiometricJob', req.params.id);
+  // Parse the JSON result string back into structured data so the
+  // frontend doesn't have to.
+  const parsedResult = job.result ? safeJsonParse(job.result) : null;
+  res.json({ ...job, result: parsedResult });
+}));
+
+function safeJsonParse(s: string): unknown {
+  try { return JSON.parse(s); } catch { return s; }
+}
 
 // ════════════════════════════════════════════════════════════════
 // time sync

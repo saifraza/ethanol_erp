@@ -5,14 +5,14 @@
 #   powershell -ExecutionPolicy Bypass -File scripts\install-windows.ps1
 #
 # What it does:
-#   1. Verifies Python 3.10+ is on PATH (errors out if not — install via
+#   1. Verifies Python 3.10+ is on PATH (errors out if not -- install via
 #      https://www.python.org/downloads/windows/ first; tick "Add to PATH").
 #   2. Creates / refreshes the .venv with requirements.txt deps (pyzk + fastapi).
 #   3. Generates a random BIOMETRIC_BRIDGE_KEY into .env if one doesn't exist.
 #   4. Punches a Windows Firewall hole on TCP 5005 so the cloud (via Tailscale)
 #      can reach the bridge.
 #
-# It does NOT register the scheduled task — run register-task.ps1 separately
+# It does NOT register the scheduled task -- run register-task.ps1 separately
 # after this completes successfully.
 
 $ErrorActionPreference = 'Stop'
@@ -44,7 +44,7 @@ if (-not (Test-Path $venvPath)) {
 
 $venvPython = Join-Path $venvPath 'Scripts\python.exe'
 if (-not (Test-Path $venvPython)) {
-    Write-Error "venv python not found at $venvPython — install failed."
+    Write-Error "venv python not found at $venvPython -- install failed."
     exit 1
 }
 
@@ -59,7 +59,7 @@ if (-not (Test-Path $envFile)) {
     if ($key.Length -lt 32) { $key = $key + (Get-Random -Maximum 99999999).ToString() }
     "BIOMETRIC_BRIDGE_KEY=$key" | Out-File -FilePath $envFile -Encoding ascii
     Write-Host "[install] wrote .env with new BIOMETRIC_BRIDGE_KEY"
-    Write-Host "[install] >>> COPY THIS KEY TO RAILWAY ENV (BIOMETRIC_BRIDGE_KEY): $key"
+    Write-Host "[install] *** COPY THIS KEY (set BIOMETRIC_BRIDGE_KEY env var on factory-server + Railway): $key"
 } else {
     Write-Host "[install] .env already exists, leaving alone"
 }
@@ -76,7 +76,7 @@ if (-not $rule) {
 }
 
 Write-Host ""
-Write-Host "[install] ✓ done. Next steps:"
+Write-Host "[install] [OK] done. Next steps:"
 Write-Host "  1. Run scripts\register-task.ps1 to register the BiometricBridge scheduled task + watchdog."
 Write-Host "  2. On Railway, set BIOMETRIC_BRIDGE_URL=http://<factory-tailscale-ip>:5005 and BIOMETRIC_BRIDGE_KEY (from .env above)."
 Write-Host "  3. Hit /api/biometric/bridge-health from the cloud admin to verify."

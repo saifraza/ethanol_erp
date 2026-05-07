@@ -48,8 +48,10 @@ async function runSync(laborWorkerId: string, op: Op): Promise<void> {
 
   if (!w.deviceUserId) return;
 
+  // Skip factoryManaged devices — same reasoning as employeeDeviceSync:
+  // factory-server's autoPush picks up new labor on its master-data tick.
   const devices = await prisma.biometricDevice.findMany({
-    where: { active: true },
+    where: { active: true, factoryManaged: false },
     select: { code: true, ip: true, port: true, password: true },
   });
   if (devices.length === 0) return;

@@ -18,6 +18,8 @@ import { getCameraStatus } from './services/cameraCapture';
 import { startSyncWorker, getSyncWorkerStatus } from './services/syncWorker';
 import { initMasterDataCache, getCacheStats } from './services/masterDataCache';
 import { startWeightTriggeredCapture } from './services/weightTriggeredCapture';
+import { startBiometricScheduler, getBiometricSchedulerStatus } from './services/biometricScheduler';
+import { startBiometricJobRunner, getBiometricJobRunnerStatus } from './services/biometricJobRunner';
 
 const app = express();
 
@@ -33,7 +35,11 @@ app.use('/snapshots', express.static(path.join(__dirname, '..', 'data', 'snapsho
 
 // Health check
 app.get('/api/health', async (_req, res) => {
-  const cameras = await getCameraStatus().catch(() => []);
+  const [cameras, biometric] = await Promise.all([
+    getCameraStatus().catch(() => []),
+    getBiometricSchedulerStatus().catch(() => null),
+  ]);
+  const biometricJobs = getBiometricJobRunnerStatus();
   res.json({
     status: 'ok',
     server: 'MSPIL Factory Hub',
@@ -42,6 +48,8 @@ app.get('/api/health', async (_req, res) => {
     pcs: getAllPCStatus(),
     cameras,
     sync: getSyncWorkerStatus(),
+    biometric,
+    biometricJobs,
   });
 });
 
@@ -249,6 +257,16 @@ app.listen(config.port, '0.0.0.0', () => {
 
   // Initialize in-memory master data cache (load from disk, then 5s cloud sync)
   initMasterDataCache().catch(err => console.error('[CACHE] Init failed:', err));
+
+  // Biometric scheduler — pulls punches from each factory-managed device
+  // every minute and pushes the cached employee list back. Self-disables
+  // if BIOMETRIC_BRIDGE_KEY isn't configured.
+  startBiometricScheduler();
+
+  // Biometric job runner — polls cloud's BiometricJob queue every 3s for
+  // ad-hoc admin operations (Test, Pull Users, etc.). Same direction as
+  // the weighbridge sync: factory-server initiates every cloud call.
+  startBiometricJobRunner();
 
   // Weight-triggered video/photo capture for ML training corpus.
   // PAUSED 2026-05-03 — corpus is sufficient (38.6 GB / 51k clips on factory disk).
