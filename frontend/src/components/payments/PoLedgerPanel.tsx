@@ -69,8 +69,12 @@ export default function PoLedgerPanel({ led, loading, fmtCurrency, onOpenVendorL
                   {new Date(row.date).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: '2-digit' })}
                 </div>
                 <div className="col-span-2">
-                  <span className={`font-bold uppercase tracking-widest ${row.type === 'INVOICE' ? 'text-indigo-700' : 'text-emerald-700'}`}>
-                    {row.type === 'INVOICE' ? 'Bill' : 'Pay'}
+                  <span className={`font-bold uppercase tracking-widest ${
+                    row.type === 'INVOICE' ? 'text-indigo-700'
+                    : row.type === 'CASH_VOUCHER' ? 'text-amber-700'
+                    : 'text-emerald-700'
+                  }`}>
+                    {row.type === 'INVOICE' ? 'Bill' : row.type === 'CASH_VOUCHER' ? 'Cash' : 'Pay'}
                   </span>
                 </div>
                 <div className="col-span-4 truncate">
@@ -80,6 +84,15 @@ export default function PoLedgerPanel({ led, loading, fmtCurrency, onOpenVendorL
                         {row.vendorInvNo || row.fileName || 'Invoice'}
                       </a>
                     ) : (row.vendorInvNo || row.fileName || '—')
+                  ) : row.type === 'CASH_VOUCHER' ? (
+                    <>
+                      <span className="font-mono text-slate-700">CV-{row.voucherNo}</span>
+                      <span className="text-slate-400 mx-1">·</span>
+                      <span className="text-slate-600">{row.mode}</span>
+                      {row.reference && <span className="text-slate-400 ml-1 font-mono">{row.reference}</span>}
+                      {row.status === 'ACTIVE' && <span className="ml-1 text-amber-700 font-bold">(pending settlement)</span>}
+                      {row.status === 'CANCELLED' && <span className="ml-1 text-slate-400 font-bold">(cancelled)</span>}
+                    </>
                   ) : (
                     <>
                       <span className="font-mono text-slate-700">#{row.paymentNo}</span>
@@ -90,8 +103,12 @@ export default function PoLedgerPanel({ led, loading, fmtCurrency, onOpenVendorL
                     </>
                   )}
                 </div>
-                <div className={`col-span-2 text-right font-mono tabular-nums ${row.type === 'PAYMENT' ? 'text-emerald-700' : 'text-slate-700'}`}>
-                  {row.type === 'PAYMENT' ? '−' : '+'}{fmtCurrency(row.amount)}
+                <div className={`col-span-2 text-right font-mono tabular-nums ${
+                  row.type === 'PAYMENT' ? 'text-emerald-700'
+                  : row.type === 'CASH_VOUCHER' ? 'text-amber-700'
+                  : 'text-slate-700'
+                }`}>
+                  {row.type === 'PAYMENT' || row.type === 'CASH_VOUCHER' ? '−' : '+'}{fmtCurrency(row.amount)}
                 </div>
                 <div className={`col-span-2 text-right font-mono tabular-nums font-bold ${row.runningBalance > 0.01 ? 'text-red-700' : 'text-slate-500'}`}>
                   {fmtCurrency(row.runningBalance)}

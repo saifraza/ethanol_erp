@@ -71,7 +71,7 @@ export async function getPoLedger(req: AuthRequest, res: Response): Promise<void
   }, 0) * 100) / 100;
   const poTotal = po.grandTotal > 0 ? po.grandTotal : Math.max(plannedValue, receivedValue);
 
-  const [invoices, payments] = await Promise.all([
+  const [invoices, payments, cashVouchers] = await Promise.all([
     prisma.vendorInvoice.findMany({
       where: { poId: po.id },
       select: { id: true, vendorInvNo: true, invoiceDate: true, totalAmount: true, status: true, originalFileName: true, filePath: true, createdAt: true },
@@ -82,11 +82,17 @@ export async function getPoLedger(req: AuthRequest, res: Response): Promise<void
       select: { id: true, paymentNo: true, paymentDate: true, amount: true, mode: true, reference: true, paymentStatus: true, invoiceId: true },
       take: 500,
     }),
+    prisma.cashVoucher.findMany({
+      where: { purchaseOrderId: po.id, status: { not: 'CANCELLED' } },
+      select: { id: true, voucherNo: true, date: true, amount: true, paymentMode: true, paymentRef: true, status: true, payeeName: true, purpose: true },
+      take: 500,
+    }),
   ]);
 
   type LedgerRow =
     | { type: 'INVOICE'; date: Date; id: string; vendorInvNo: string | null; amount: number; status: string; fileName: string | null; filePath: string | null }
-    | { type: 'PAYMENT'; date: Date; id: string; paymentNo: number; amount: number; mode: string; reference: string | null; paymentStatus: string; invoiceId: string | null };
+    | { type: 'PAYMENT'; date: Date; id: string; paymentNo: number; amount: number; mode: string; reference: string | null; paymentStatus: string; invoiceId: string | null }
+    | { type: 'CASH_VOUCHER'; date: Date; id: string; voucherNo: number; amount: number; mode: string; reference: string | null; status: string };
 
   const rows: LedgerRow[] = [
     ...invoices.map<LedgerRow>((inv) => ({
@@ -110,11 +116,22 @@ export async function getPoLedger(req: AuthRequest, res: Response): Promise<void
       paymentStatus: p.paymentStatus,
       invoiceId: p.invoiceId,
     })),
+    ...cashVouchers.map<LedgerRow>((cv) => ({
+      type: 'CASH_VOUCHER',
+      date: cv.date,
+      id: cv.id,
+      voucherNo: cv.voucherNo,
+      amount: cv.amount,
+      mode: cv.paymentMode,
+      reference: cv.paymentRef,
+      status: cv.status,
+    })),
   ].sort((a, b) => a.date.getTime() - b.date.getTime());
 
   let running = 0;
   const ledger = rows.map((r) => {
-    // Invoices add to "owed", payments subtract. Running > 0 = vendor still owed.
+    // Invoices add to "owed", payments + cash vouchers subtract.
+    // Running > 0 = vendor still owed.
     running += r.type === 'INVOICE' ? r.amount : -r.amount;
     return { ...r, runningBalance: Math.round(running * 100) / 100 };
   });
@@ -122,10 +139,16 @@ export async function getPoLedger(req: AuthRequest, res: Response): Promise<void
   const totalInvoiced = invoices.reduce((s, i) => s + (i.totalAmount || 0), 0);
   const totalPaid = payments
     .filter((p) => p.paymentStatus === 'CONFIRMED')
-    .reduce((s, p) => s + p.amount, 0);
+    .reduce((s, p) => s + p.amount, 0)
+    + cashVouchers
+      .filter((cv) => cv.status === 'SETTLED')
+      .reduce((s, cv) => s + cv.amount, 0);
   const pendingBank = payments
     .filter((p) => p.paymentStatus === 'INITIATED')
     .reduce((s, p) => s + p.amount, 0);
+  const pendingCash = cashVouchers
+    .filter((cv) => cv.status === 'ACTIVE')
+    .reduce((s, cv) => s + cv.amount, 0);
 
   // Same fallback chain as the row-listing endpoint — without it a manual
   // PO (no GRNs) with bills uploaded but totals not yet filled in pins to
@@ -142,7 +165,7 @@ export async function getPoLedger(req: AuthRequest, res: Response): Promise<void
     payableBasis = poTotal;
     basisSource = 'PLANNED';
   }
-  const outstanding = Math.max(0, Math.round((payableBasis - totalPaid - pendingBank) * 100) / 100);
+  const outstanding = Math.max(0, Math.round((payableBasis - totalPaid - pendingBank - pendingCash) * 100) / 100);
 
   res.json({
     poNo: po.poNo,
@@ -152,6 +175,7 @@ export async function getPoLedger(req: AuthRequest, res: Response): Promise<void
     totalInvoiced: Math.round(totalInvoiced * 100) / 100,
     totalPaid: Math.round(totalPaid * 100) / 100,
     pendingBank: Math.round(pendingBank * 100) / 100,
+    pendingCash: Math.round(pendingCash * 100) / 100,
     outstanding,
     payableBasis: Math.round(payableBasis * 100) / 100,
     basisSource,
@@ -536,7 +560,7 @@ export async function listPaymentRows({ companyFilter, categories }: ListPayment
     const pendingBank = pendingBankAgg._sum.amount || 0;
 
     const pendingCashAgg = await prisma.cashVoucher.aggregate({
-      where: { status: 'ACTIVE', purpose: { contains: `PO-${po.poNo}` } },
+      where: { status: 'ACTIVE', purchaseOrderId: po.id },
       _sum: { amount: true },
     });
     const pendingCash = pendingCashAgg._sum.amount || 0;
