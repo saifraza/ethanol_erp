@@ -5,6 +5,7 @@ import fs from 'fs';
 import prisma from '../config/prisma';
 import { authenticate, authorize, AuthRequest, getCompanyFilter, getActiveCompanyId } from '../middleware/auth';
 import { asyncHandler } from '../shared/middleware';
+import { mirrorToS3 } from '../shared/s3Storage';
 
 const router = Router();
 
@@ -433,7 +434,7 @@ router.get('/by-po/:poId', authenticate, asyncHandler(async (req: AuthRequest, r
 }));
 
 // POST /api/grain-truck — create truck entry with optional photo
-router.post('/', authenticate, upload.single('photo'), asyncHandler(async (req: AuthRequest, res: Response) => {
+router.post('/', authenticate, upload.single('photo'), mirrorToS3('grain-truck'), asyncHandler(async (req: AuthRequest, res: Response) => {
     const { vehicleNo, supplier, weightGross, weightTare, moisture, starchPercent,
       damagedPercent, foreignMatter, quarantine, quarantineWeight, quarantineReason,
       remarks, date, uidRst, bags } = req.body;

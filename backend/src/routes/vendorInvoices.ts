@@ -19,6 +19,7 @@ import { generateVaultNote } from '../services/vaultWriter';
 import { recomputeGrnPaidStateForPO } from '../services/grnPaidState';
 import { calculateTds } from '../services/tdsCalculator';
 import { onVendorInvoiceBooked } from '../services/autoJournal';
+import { mirrorToS3 } from '../shared/s3Storage';
 
 // ── Zod schemas ──
 // Per-line shape used by the bulk Smart Upload flow. When `lines` is provided,
@@ -172,7 +173,7 @@ async function extractInvoiceFromBuffer(
 // ═══════════════════════════════════════════════
 // POST /upload-extract — Upload invoice file + AI extraction
 // ═══════════════════════════════════════════════
-router.post('/upload-extract', upload.single('file'), asyncHandler(async (req: Request, res: Response) => {
+router.post('/upload-extract', upload.single('file'), mirrorToS3('vendor-invoices'), asyncHandler(async (req: Request, res: Response) => {
   if (!req.file) { res.status(400).json({ error: 'No file uploaded' }); return; }
 
   const filePath = `vendor-invoices/${req.file.filename}`;
@@ -206,7 +207,7 @@ router.post('/upload-extract', upload.single('file'), asyncHandler(async (req: R
 // Accepts multipart "files" field (1..20). Returns one result per file.
 // Fails individually — one bad file doesn't break the batch.
 // ═══════════════════════════════════════════════
-router.post('/upload-extract-bulk', upload.array('files', 50), asyncHandler(async (req: AuthRequest, res: Response) => {
+router.post('/upload-extract-bulk', upload.array('files', 50), mirrorToS3('vendor-invoices'), asyncHandler(async (req: AuthRequest, res: Response) => {
   const files = (req.files as Express.Multer.File[] | undefined) ?? [];
   if (files.length === 0) {
     res.status(400).json({ error: 'No files uploaded' });

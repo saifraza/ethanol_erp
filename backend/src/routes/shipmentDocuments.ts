@@ -7,6 +7,7 @@ import path from 'path';
 import fs from 'fs';
 // RAG indexing removed — only compliance docs go to RAG
 import { generateVaultNote } from '../services/vaultWriter';
+import { mirrorToS3 } from '../shared/s3Storage';
 
 const router = Router();
 router.use(authenticate);
@@ -46,7 +47,7 @@ router.get('/shipment/:shipmentId', asyncHandler(async (req: AuthRequest, res: R
 }));
 
 // POST /upload — Upload document for a shipment
-router.post('/upload', upload.single('file'), asyncHandler(async (req: AuthRequest, res: Response) => {
+router.post('/upload', upload.single('file'), mirrorToS3('shipment-docs'), asyncHandler(async (req: AuthRequest, res: Response) => {
     if (!req.file) { res.status(400).json({ error: 'No file uploaded' }); return; }
 
     const b = req.body;
@@ -79,7 +80,7 @@ router.post('/upload', upload.single('file'), asyncHandler(async (req: AuthReque
 }));
 
 // POST /upload-general — Upload general document (quotation, etc.) not tied to shipment
-router.post('/upload-general', upload.single('file'), asyncHandler(async (req: AuthRequest, res: Response) => {
+router.post('/upload-general', upload.single('file'), mirrorToS3('shipment-docs'), asyncHandler(async (req: AuthRequest, res: Response) => {
     if (!req.file) { res.status(400).json({ error: 'No file uploaded' }); return; }
 
     const b = req.body;

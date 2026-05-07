@@ -19,6 +19,7 @@ import prisma from '../config/prisma';
 import multer from 'multer';
 import path from 'path';
 import fs from 'fs';
+import { mirrorToS3 } from '../shared/s3Storage';
 
 const router = Router();
 router.use(authenticate);
@@ -933,6 +934,7 @@ router.post(
     { name: 'invoice', maxCount: 1 },
     { name: 'ewayBill', maxCount: 1 },
   ]),
+  mirrorToS3('store-grn'),
   asyncHandler(async (req: AuthRequest, res: Response) => {
     const grn = await prisma.goodsReceipt.findFirst({
       where: { id: req.params.id, AND: [STORE_SOURCE_WHERE] },

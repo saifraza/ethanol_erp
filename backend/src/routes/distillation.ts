@@ -6,6 +6,7 @@ import { asyncHandler } from '../shared/middleware';
 import multer from 'multer';
 import path from 'path';
 import fs from 'fs';
+import { mirrorToS3 } from '../shared/s3Storage';
 
 const router = Router();
 router.use(authenticate);
@@ -27,7 +28,7 @@ router.get('/', asyncHandler(async (_req: AuthRequest, res: Response) => {
 router.post('/', upload.fields([
   { name: 'spentWashPhoto', maxCount: 1 },
   { name: 'rcLessPhoto', maxCount: 1 },
-]), asyncHandler(async (req: AuthRequest, res: Response) => {
+]), mirrorToS3('distillation'), asyncHandler(async (req: AuthRequest, res: Response) => {
   const b = req.body;
   const files = req.files as { [fieldname: string]: Express.Multer.File[] } | undefined;
   const spentWashPhotoUrl = files?.spentWashPhoto?.[0] ? `/uploads/distillation/${files.spentWashPhoto[0].filename}` : null;

@@ -6,6 +6,7 @@ import prisma from '../config/prisma';
 import { authenticate, AuthRequest, authorize } from '../middleware/auth';
 import { asyncHandler } from '../shared/middleware';
 import { broadcast } from '../services/messagingGateway';
+import { mirrorToS3 } from '../shared/s3Storage';
 
 const router = Router();
 router.use(authenticate);
@@ -24,7 +25,7 @@ router.get('/', async (_req: Request, res: Response) => {
   res.json(entries);
 });
 
-router.post('/', upload.single('iodinePhoto'), asyncHandler(async (req: AuthRequest, res: Response) => {
+router.post('/', upload.single('iodinePhoto'), mirrorToS3('iodine'), asyncHandler(async (req: AuthRequest, res: Response) => {
   const b = req.body;
   const userId = req.user?.id || 'unknown';
   const photoUrl = req.file ? `/uploads/iodine/${req.file.filename}` : null;

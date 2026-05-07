@@ -9,6 +9,7 @@ import path from 'path';
 import fs from 'fs';
 import { lightragUpload, lightragClassify, isRagEnabled } from '../services/lightragClient';
 import { generateVaultNote } from '../services/vaultWriter';
+import { mirrorToS3 } from '../shared/s3Storage';
 
 const router = Router();
 router.use(authenticate);
@@ -200,7 +201,7 @@ router.get('/:id', asyncHandler(async (req: AuthRequest, res: Response) => {
 // ═══════════════════════════════════════════════════════════
 // POST / — Upload new document
 // ═══════════════════════════════════════════════════════════
-router.post('/', upload.single('file'), asyncHandler(async (req: AuthRequest, res: Response) => {
+router.post('/', upload.single('file'), mirrorToS3('company-documents'), asyncHandler(async (req: AuthRequest, res: Response) => {
   if (!req.file) { res.status(400).json({ error: 'No file uploaded' }); return; }
 
   // Parse JSON fields from multipart form
@@ -302,7 +303,7 @@ router.post('/', upload.single('file'), asyncHandler(async (req: AuthRequest, re
 // ═══════════════════════════════════════════════════════════
 // POST /classify — Auto-categorize an uploaded file using AI
 // ═══════════════════════════════════════════════════════════
-router.post('/classify', upload.single('file'), asyncHandler(async (req: AuthRequest, res: Response) => {
+router.post('/classify', upload.single('file'), mirrorToS3('company-documents'), asyncHandler(async (req: AuthRequest, res: Response) => {
   if (!req.file) { res.status(400).json({ error: 'No file uploaded' }); return; }
   if (!isRagEnabled()) { res.status(503).json({ error: 'RAG service not configured' }); return; }
 

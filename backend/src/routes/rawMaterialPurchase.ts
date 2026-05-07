@@ -17,6 +17,7 @@ import {
   editInvoiceSchema,
   listPaymentRows,
 } from './paymentsByPo';
+import { mirrorToS3 } from '../shared/s3Storage';
 
 const router = Router();
 
@@ -1057,7 +1058,7 @@ router.get('/payments', authenticate, asyncHandler(async (req: AuthRequest, res:
 // Per-PO endpoints — shared handlers from paymentsByPo.ts. Multer is
 // invoked at this mount site so the RM upload endpoint accepts the same
 // `files` / `file` field names + 10 MB limit as fuel.
-router.post('/payments/:poId/invoice', authenticate, invoiceUploadFields, asyncHandler(postPoInvoice));
+router.post('/payments/:poId/invoice', authenticate, invoiceUploadFields, mirrorToS3('vendor-invoices'), asyncHandler(postPoInvoice));
 router.get('/payments/:poId/invoices', authenticate, asyncHandler(getPoInvoices));
 router.get('/payments/:poId/ledger', authenticate, asyncHandler(getPoLedger));
 router.put('/payments/invoices/:invoiceId', authenticate, validate(editInvoiceSchema), asyncHandler(putInvoice));
