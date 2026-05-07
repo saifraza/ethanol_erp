@@ -1144,7 +1144,27 @@ router.get('/payments', authenticate, asyncHandler(async (req: AuthRequest, res:
     });
     const pendingCash = pendingCashAgg._sum.amount || 0;
 
-    const outstanding = Math.max(0, Math.round((receivedValue - totalPaid - pendingBank - pendingCash) * 100) / 100);
+    const invoicedTotal = Math.round((invoicedByPo.get(po.id) || 0) * 100) / 100;
+
+    // Outstanding fallback chain — figure out the right "what we owe" basis.
+    // 1. If GRNs exist, use receivedValue (only pay for what arrived).
+    // 2. Else if invoices have totals, use the invoiced total (vendor-billed POs without weighbridge).
+    // 3. Else fall back to the planned PO total so a brand-new PO doesn't render as "✓ Paid".
+    // Without this chain a manual PO with 0 GRNs and 0 invoiced total
+    // shows outstanding=0 → looks settled even when nothing was paid.
+    let payableBasis: number;
+    let basisSource: 'RECEIVED' | 'INVOICED' | 'PLANNED';
+    if (receivedValue > 0) {
+      payableBasis = receivedValue;
+      basisSource = 'RECEIVED';
+    } else if (invoicedTotal > 0) {
+      payableBasis = invoicedTotal;
+      basisSource = 'INVOICED';
+    } else {
+      payableBasis = poTotal;
+      basisSource = 'PLANNED';
+    }
+    const outstanding = Math.max(0, Math.round((payableBasis - totalPaid - pendingBank - pendingCash) * 100) / 100);
 
     return {
       id: po.id,
@@ -1164,11 +1184,13 @@ router.get('/payments', authenticate, asyncHandler(async (req: AuthRequest, res:
       pendingBank: Math.round(pendingBank * 100) / 100,
       pendingCash: Math.round(pendingCash * 100) / 100,
       outstanding,
+      payableBasis: Math.round(payableBasis * 100) / 100,
+      basisSource,
       lastPaymentDate,
       grnCount: po._count.grns,
       invoiceCount: po._count.vendorInvoices,
-      invoicedTotal: Math.round((invoicedByPo.get(po.id) || 0) * 100) / 100,
-      isFullyPaid: receivedValue > 0 && (totalPaid + pendingBank + pendingCash) >= receivedValue - 0.01,
+      invoicedTotal,
+      isFullyPaid: payableBasis > 0 && (totalPaid + pendingBank + pendingCash) >= payableBasis - 0.01,
     };
   }));
 
@@ -1500,6 +1522,57 @@ router.get(
       outstanding,
       ledger,
     });
+  }),
+);
+
+// Backfill / correct invoice metadata for an already-uploaded file.
+// Used when an operator uploaded a bill earlier (when the upload modal
+// only took the file) and now wants to fill in the vendor invoice no /
+// date / total amount on it. Recomputes balanceAmount + status when total
+// changes so the accounts ledger stays consistent.
+const editFuelInvoiceSchema = z.object({
+  vendorInvNo: z.string().max(50).optional().nullable(),
+  vendorInvDate: z.string().optional().nullable(),
+  totalAmount: z.coerce.number().min(0).optional(),
+  remarks: z.string().max(500).optional().nullable(),
+});
+router.put(
+  '/payments/invoices/:invoiceId',
+  authenticate,
+  validate(editFuelInvoiceSchema),
+  asyncHandler(async (req: AuthRequest, res: Response) => {
+    const inv = await prisma.vendorInvoice.findUnique({
+      where: { id: req.params.invoiceId },
+      select: { id: true, totalAmount: true, paidAmount: true, status: true },
+    });
+    if (!inv) { res.status(404).json({ error: 'Invoice not found' }); return; }
+
+    const b = req.body as z.infer<typeof editFuelInvoiceSchema>;
+    const data: Record<string, unknown> = {};
+    if (b.vendorInvNo !== undefined) data.vendorInvNo = (b.vendorInvNo || '').trim() || null;
+    if (b.vendorInvDate !== undefined) data.vendorInvDate = b.vendorInvDate ? new Date(b.vendorInvDate) : null;
+    if (b.remarks !== undefined) data.remarks = (b.remarks || '').trim() || null;
+
+    if (b.totalAmount !== undefined && isFinite(b.totalAmount)) {
+      const total = Math.round(b.totalAmount * 100) / 100;
+      const paid = inv.paidAmount || 0;
+      const balance = Math.max(0, Math.round((total - paid) * 100) / 100);
+      const status = total > 0 && paid >= total - 0.01 ? 'PAID' : paid > 0 ? 'PARTIAL_PAID' : (inv.status === 'CANCELLED' ? 'CANCELLED' : 'PENDING');
+      data.totalAmount = total;
+      data.balanceAmount = balance;
+      data.status = status;
+    }
+
+    const updated = await prisma.vendorInvoice.update({
+      where: { id: inv.id },
+      data,
+      select: {
+        id: true, vendorInvNo: true, vendorInvDate: true, invoiceDate: true,
+        totalAmount: true, paidAmount: true, status: true,
+        filePath: true, originalFileName: true, remarks: true, createdAt: true,
+      },
+    });
+    res.json(updated);
   }),
 );
 
