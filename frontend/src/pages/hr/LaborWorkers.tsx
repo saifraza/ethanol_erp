@@ -7,7 +7,22 @@ const SKILL_CATEGORIES = ['UNSKILLED', 'SEMI_SKILLED', 'SKILLED'] as const;
 type Skill = typeof SKILL_CATEGORIES[number];
 
 interface ContractorRef { id: string; name: string; contractorCode: string | null; }
-interface WorkOrderRef { id: string; woNo: number; title: string; contractType: string; }
+interface RateCardEntry { category: string; label: string; rate8h: number; rate12h: number }
+interface WorkOrderRef {
+  id: string; woNo: number; title: string; contractType: string;
+  contractorId?: string;
+  manpowerRateCard?: RateCardEntry[] | null;
+}
+
+/** Look up the daily rate for a skill from a WO's rate card. Returns 8h shift
+ *  rate (the default). Returns null if the WO has no card or skill doesn't match.
+ *  Storage on LaborWorker.dailyRate is per-day (8h) — bill computation can
+ *  scale up for 12h shifts. */
+function rateFromWO(wo: WorkOrderRef | undefined, skill: string | null): number | null {
+  if (!wo || !wo.manpowerRateCard || !skill) return null;
+  const entry = wo.manpowerRateCard.find(r => r.category === skill);
+  return entry?.rate8h ?? null;
+}
 
 interface LaborWorker {
   id: string;
@@ -196,6 +211,13 @@ function FormModal({ initial, contractors, workOrders, onClose }: { initial: Par
   async function save() {
     setErr(null);
     if (!w.firstName?.trim() || !w.contractorId) { setErr('Name and contractor are required'); return; }
+    // Derive the daily rate from the selected WO's rate card. No more manual
+    // input -- single source of truth is the WO. If there's no card or no
+    // matching skill row, dailyRate stays null and the bill computation can
+    // surface the gap at billing time.
+    const wo = workOrders.find(o => o.id === w.workOrderId);
+    const derivedRate = rateFromWO(wo, w.skillCategory ?? null);
+
     setSaving(true);
     try {
       const payload = {
@@ -207,7 +229,7 @@ function FormModal({ initial, contractors, workOrders, onClose }: { initial: Par
         contractorId: w.contractorId,
         workOrderId: w.workOrderId || null,
         skillCategory: w.skillCategory ?? null,
-        dailyRate: w.dailyRate != null ? Number(w.dailyRate) : null,
+        dailyRate: derivedRate,
         cardNumber: w.cardNumber ?? null,
         joinedAt: w.joinedAt ?? null,
         remarks: w.remarks ?? null,
@@ -253,7 +275,30 @@ function FormModal({ initial, contractors, workOrders, onClose }: { initial: Par
               {SKILL_CATEGORIES.map(s => <option key={s} value={s}>{s.replace('_', ' ')}</option>)}
             </select>
           </Field>
-          <Field label="Daily Rate (₹)"><input type="number" step="0.01" value={w.dailyRate ?? ''} onChange={e => setW({ ...w, dailyRate: e.target.value ? parseFloat(e.target.value) : null })} className="w-full border border-slate-300 px-2.5 py-1.5 text-xs font-mono" /></Field>
+          {(() => {
+            // Rate is derived from the selected Work Order's manpower rate card
+            // by skill category. The form shows it read-only — no manual entry.
+            // If there's no WO or no matching skill row, show a hint instead.
+            const wo = workOrders.find(o => o.id === w.workOrderId);
+            const derived = rateFromWO(wo, w.skillCategory ?? null);
+            return (
+              <Field label="Daily Rate (₹) — from WO rate card">
+                <div className="w-full border border-slate-200 bg-slate-50 px-2.5 py-1.5 text-xs font-mono text-slate-700 flex items-center justify-between">
+                  <span>{derived != null ? `₹${derived.toLocaleString('en-IN')}` : <span className="text-slate-400 italic">—</span>}</span>
+                  {wo && wo.manpowerRateCard && (
+                    <span className="text-[10px] text-slate-400">8h shift</span>
+                  )}
+                </div>
+                <div className="text-[10px] text-slate-500 mt-0.5">
+                  {!w.workOrderId ? 'Pick a Work Order to set the rate' :
+                   !w.skillCategory ? 'Pick a Skill Category to set the rate' :
+                   !wo?.manpowerRateCard ? 'WO has no rate card — edit the WO to add one' :
+                   derived == null ? `No rate row for "${w.skillCategory}" in the WO rate card` :
+                   `Rate auto-set from WO-${wo.woNo}; edit the WO to change`}
+                </div>
+              </Field>
+            );
+          })()}
           <Field label="Joined At"><input type="date" value={w.joinedAt ? w.joinedAt.slice(0, 10) : ''} onChange={e => setW({ ...w, joinedAt: e.target.value || undefined })} className="w-full border border-slate-300 px-2.5 py-1.5 text-xs" /></Field>
           {w.id && (
             <Field label="Active">
