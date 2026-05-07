@@ -91,10 +91,6 @@ const EXPECTED_COLUMNS: ColumnCheck[] = [
   { table: 'VendorPayment', column: 'purchaseOrderId', sql: `ALTER TABLE "VendorPayment" ADD COLUMN IF NOT EXISTS "purchaseOrderId" TEXT` },
   // 2026-05-07 — Editable T&C on Work Orders (JSON array of {title, body})
   { table: 'WorkOrder', column: 'termsAndConditions', sql: `ALTER TABLE "WorkOrder" ADD COLUMN IF NOT EXISTS "termsAndConditions" JSONB` },
-  // 2026-05-07 — Cash vouchers join the same PO-FK pattern so the per-PO
-  // running ledger can interleave bank + cash events with running balance.
-  // Replaces legacy `purpose contains "PO-{n}"` matcher.
-  { table: 'CashVoucher', column: 'purchaseOrderId', sql: `ALTER TABLE "CashVoucher" ADD COLUMN IF NOT EXISTS "purchaseOrderId" TEXT` },
 ];
 
 const EXPECTED_TABLES: TableCheck[] = [
@@ -586,49 +582,8 @@ async function checkAndAddColumns(): Promise<void> {
  * match PO-10. Joins on vendorId so a stray PO-N token in a different vendor's
  * remarks can't cross-link.
  */
-/**
- * One-shot backfill for CashVoucher.purchaseOrderId — same approach as
- * the VendorPayment migration. Cash vouchers historically tracked their
- * PO via free-text in `purpose` (e.g. "Fuel payment against PO-112 …").
- * We parse the `PO-{n}` token with word-boundary regex so PO-1 doesn't
- * cross-link to PO-10. There's no vendorId on CashVoucher so we match by
- * payeeName as a soft scope (vouchers can be paid to non-vendors too).
- *
- * Idempotent: only updates rows where purchaseOrderId IS NULL.
- */
-async function backfillCashVoucherPoLink(): Promise<void> {
-  try {
-    // Cheap pre-check: skip the heavy regex×cross-join scan if nothing needs it.
-    const pendingRows = await prisma.$queryRawUnsafe<Array<{ count: bigint }>>(
-      `SELECT COUNT(*)::bigint AS count FROM "CashVoucher" WHERE "purchaseOrderId" IS NULL AND purpose ~ 'PO-[0-9]'`,
-    );
-    const pending = Number(pendingRows[0]?.count ?? 0n);
-    if (pending === 0) return;
-    const result = await prisma.$executeRawUnsafe(
-      `UPDATE "CashVoucher" cv
-       SET "purchaseOrderId" = po.id
-       FROM "PurchaseOrder" po
-       INNER JOIN "Vendor" v ON v.id = po."vendorId"
-       WHERE cv."purchaseOrderId" IS NULL
-         AND cv."payeeName" = v.name
-         AND cv.purpose ~ ('(^|[^0-9])PO-' || po."poNo"::text || '([^0-9]|$)')`,
-    );
-    if (typeof result === 'number' && result > 0) {
-      console.warn(`[SchemaDriftGuard] backfilled CashVoucher.purchaseOrderId for ${result} legacy row(s)`);
-    }
-  } catch (err: unknown) {
-    console.error('[SchemaDriftGuard] CashVoucher backfill failed:', (err instanceof Error ? err.message : String(err)));
-  }
-}
-
 async function backfillVendorPaymentPoLink(): Promise<void> {
   try {
-    // Cheap pre-check: skip the heavy regex×cross-join scan if nothing needs it.
-    const pendingRows = await prisma.$queryRawUnsafe<Array<{ count: bigint }>>(
-      `SELECT COUNT(*)::bigint AS count FROM "VendorPayment" WHERE "purchaseOrderId" IS NULL AND remarks ~ 'PO-[0-9]'`,
-    );
-    const pending = Number(pendingRows[0]?.count ?? 0n);
-    if (pending === 0) return;
     const result = await prisma.$executeRawUnsafe(
       `UPDATE "VendorPayment" vp
        SET "purchaseOrderId" = po.id
@@ -665,17 +620,9 @@ export async function runSchemaDriftGuard(): Promise<void> {
     // 2026-05-06 — AttendancePunch.employeeId becomes nullable (LaborWorker support)
     await prisma.$executeRawUnsafe(`ALTER TABLE "AttendancePunch" ALTER COLUMN "employeeId" DROP NOT NULL`);
     await prisma.$executeRawUnsafe(`CREATE INDEX IF NOT EXISTS "AttendancePunch_laborWorkerId_punchAt_idx" ON "AttendancePunch"("laborWorkerId", "punchAt")`);
-    // 2026-05-07 — VendorPayment ↔ PurchaseOrder FK index. Index is fast; the
-    // remarks-regex backfill is fire-and-forget so server boot isn't blocked
-    // (Railway "Creating containers" hung on PR #64 because the regex×cross-join
-    // could take minutes on prod-sized data — see incident notes 2026-05-07).
+    // 2026-05-07 — VendorPayment ↔ PurchaseOrder FK index + one-shot backfill from remarks.
     await prisma.$executeRawUnsafe(`CREATE INDEX IF NOT EXISTS "VendorPayment_purchaseOrderId_idx" ON "VendorPayment"("purchaseOrderId")`);
-    // 2026-05-07 — Same shape for CashVoucher: index now, backfill async.
-    await prisma.$executeRawUnsafe(`CREATE INDEX IF NOT EXISTS "CashVoucher_purchaseOrderId_idx" ON "CashVoucher"("purchaseOrderId")`);
-    setImmediate(() => {
-      backfillVendorPaymentPoLink().catch(() => { /* logged inside */ });
-      backfillCashVoucherPoLink().catch(() => { /* logged inside */ });
-    });
+    await backfillVendorPaymentPoLink();
     console.log('[SchemaDriftGuard] OK — all expected columns + tables present');
   } catch (err: unknown) {
     console.error('[SchemaDriftGuard] check failed:', (err instanceof Error ? err.message : String(err)));

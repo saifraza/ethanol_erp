@@ -2610,7 +2610,6 @@ model PurchaseOrder {
   grns            GoodsReceipt[]
   vendorInvoices  VendorInvoice[]
   vendorPayments  VendorPayment[]
-  cashVouchers    CashVoucher[]
   grainTrucks     GrainTruck[]
   contractorBills ContractorBill[]
 
@@ -3807,12 +3806,6 @@ model CashVoucher {
   settlementNote  String?
   linkedInvoiceId String? // when paperwork arrives, link to vendor invoice
   journalEntryId  String? // FK to auto-generated journal entry
-  // Direct link to the PO this voucher was paid against, when applicable.
-  // Replaces the legacy `purpose contains "PO-{n}"` matcher (broke for
-  // PO-1 vs PO-10). Nullable: many cash vouchers aren't tied to a PO
-  // (office expenses, labour, transport without a PO, etc.).
-  purchaseOrderId String?
-  purchaseOrder   PurchaseOrder? @relation(fields: [purchaseOrderId], references: [id])
   userId          String
   createdAt       DateTime  @default(now())
   updatedAt       DateTime  @updatedAt
@@ -3827,7 +3820,6 @@ model CashVoucher {
   @@index([userId])
   @@index([division])
   @@index([companyId])
-  @@index([purchaseOrderId])
 }
 
 // ══════════════════════════════════════════════════════════════
