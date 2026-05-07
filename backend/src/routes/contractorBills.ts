@@ -12,6 +12,7 @@ import path from 'path';
 import fs from 'fs';
 // RAG indexing removed — only compliance docs go to RAG
 import { generateVaultNote } from '../services/vaultWriter';
+import { mirrorToS3 } from '../shared/s3Storage';
 
 const router = Router();
 router.use(authenticate);
@@ -323,7 +324,7 @@ router.get('/:id/print', asyncHandler(async (req: AuthRequest, res: Response) =>
 }));
 
 // POST /:id/upload — upload document for bill
-router.post('/:id/upload', upload.single('document'), asyncHandler(async (req: AuthRequest, res: Response) => {
+router.post('/:id/upload', upload.single('document'), mirrorToS3('contractor-bills'), asyncHandler(async (req: AuthRequest, res: Response) => {
   const bill = await prisma.contractorBill.findUnique({ where: { id: req.params.id } });
   if (!bill) throw new NotFoundError('ContractorBill', req.params.id);
   if (!req.file) throw new ValidationError('No file uploaded');

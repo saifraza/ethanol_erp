@@ -14,6 +14,7 @@ import path from 'path';
 import fs from 'fs';
 import axios from 'axios';
 import { Prisma } from '@prisma/client';
+import { mirrorToS3 } from '../shared/s3Storage';
 
 // ── Zod schemas ──
 const createVendorPaymentSchema = z.object({
@@ -813,7 +814,7 @@ router.post('/:id/send-email', asyncHandler(async (req: AuthRequest, res: Respon
 // run Gemini 2.5 Flash to extract { UTR, amount, beneficiary, bank, timestamp }.
 // Auto-fills / cross-checks the payment and persists the extraction for audit.
 // ═══════════════════════════════════════════════
-router.post('/:id/scan-bank-receipt', bankReceiptUpload.single('file'), asyncHandler(async (req: AuthRequest, res: Response) => {
+router.post('/:id/scan-bank-receipt', bankReceiptUpload.single('file'), mirrorToS3('bank-receipts'), asyncHandler(async (req: AuthRequest, res: Response) => {
   if (!req.file) { res.status(400).json({ error: 'No file uploaded' }); return; }
 
   const payment = await prisma.vendorPayment.findUnique({

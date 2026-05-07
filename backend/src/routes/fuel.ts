@@ -16,6 +16,7 @@ import {
   editInvoiceSchema,
   listPaymentRows,
 } from './paymentsByPo';
+import { mirrorToS3 } from '../shared/s3Storage';
 
 const router = Router();
 
@@ -1098,7 +1099,7 @@ router.get('/payments', authenticate, asyncHandler(async (req: AuthRequest, res:
 //  same multipart wiring it had inline. Behaviour is unchanged — these
 //  are pure mounts, no parameter rewriting.
 // ==========================================================================
-router.post('/payments/:poId/invoice', authenticate, invoiceUploadFields, asyncHandler(postPoInvoice));
+router.post('/payments/:poId/invoice', authenticate, invoiceUploadFields, mirrorToS3('vendor-invoices'), asyncHandler(postPoInvoice));
 router.get('/payments/:poId/invoices', authenticate, asyncHandler(getPoInvoices));
 router.get('/payments/:poId/ledger', authenticate, asyncHandler(getPoLedger));
 router.put('/payments/invoices/:invoiceId', authenticate, validate(editInvoiceSchema), asyncHandler(putInvoice));

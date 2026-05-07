@@ -7,6 +7,7 @@ import { authenticate, AuthRequest, authorize } from '../middleware/auth';
 import { broadcast } from '../services/messagingGateway';
 import { asyncHandler } from '../shared/middleware';
 import { triggerRecompute as triggerFillRecompute } from '../services/fermentation/fillLive';
+import { mirrorToS3 } from '../shared/s3Storage';
 
 const router = Router();
 
@@ -528,7 +529,7 @@ router.post('/lab-reading', asyncHandler(async (req: AuthRequest, res: Response)
 }));
 
 // POST traditional lab entry (kept for backward compat)
-router.post('/', upload.single('spentLossPhoto'), async (req: AuthRequest, res: Response) => {
+router.post('/', upload.single('spentLossPhoto'), mirrorToS3('spent-loss'), async (req: AuthRequest, res: Response) => {
   const b = req.body;
   const batchNo = parseInt(b.batchNo) || 0;
   const fermenterNo = parseInt(b.fermenterNo) || 1;
