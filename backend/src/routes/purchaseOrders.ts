@@ -372,13 +372,12 @@ router.get('/:id', asyncHandler(async (req: AuthRequest, res: Response) => {
     const directPaidTotal = directPayments.reduce((s, p) => s + p.amount, 0);
     totalPaid += directPaidTotal;
 
-    // Pending cash vouchers (ACTIVE, not yet settled)
+    // Pending cash vouchers (ACTIVE, not yet settled) — FK-keyed since 2026-05-07.
     const pendingCashVouchers = await prisma.cashVoucher.findMany({
-      where: { status: 'ACTIVE', purpose: { contains: `PO-${po.poNo}` } },
+      where: { status: 'ACTIVE', purchaseOrderId: po.id },
       select: { id: true, voucherNo: true, amount: true, status: true },
-    
-    take: 500,
-  });
+      take: 500,
+    });
     const pendingCashTotal = pendingCashVouchers.reduce((s, v) => s + v.amount, 0);
 
     // PO amount is ALWAYS based on received weight — not ordered qty
@@ -1007,11 +1006,10 @@ router.get('/:id/payments', asyncHandler(async (req: AuthRequest, res: Response)
     return { ...p, runningTotal: Math.round(running * 100) / 100 };
   });
 
-  // Count pending cash vouchers
+  // Pending cash vouchers — FK-keyed since 2026-05-07.
   const pendingCash = await prisma.cashVoucher.findMany({
-    where: { status: 'ACTIVE', purpose: { contains: `PO-${po.poNo}` } },
+    where: { status: 'ACTIVE', purchaseOrderId: po.id },
     select: { id: true, voucherNo: true, amount: true, date: true },
-  
     take: 500,
   });
   const pendingCashTotal = pendingCash.reduce((s, v) => s + v.amount, 0);
@@ -1087,14 +1085,10 @@ router.post('/:id/pay', asyncHandler(async (req: AuthRequest, res: Response) => 
   });
   const pendingBank = pendingBankPayments.reduce((s, p) => s + p.amount, 0);
 
-  // Count ACTIVE (pending) cash vouchers
+  // ACTIVE (pending) cash vouchers — FK-keyed since 2026-05-07.
   const pendingCashVouchers = await prisma.cashVoucher.findMany({
-    where: {
-      status: 'ACTIVE',
-      purpose: { contains: `PO-${po.poNo}` },
-    },
+    where: { status: 'ACTIVE', purchaseOrderId: po.id },
     select: { amount: true },
-  
     take: 500,
   });
   const pendingCash = pendingCashVouchers.reduce((s, v) => s + v.amount, 0);
@@ -1126,6 +1120,7 @@ router.post('/:id/pay', asyncHandler(async (req: AuthRequest, res: Response) => 
         paymentMode: 'CASH',
         authorizedBy: req.user!.name || 'Admin',
         status: 'ACTIVE',
+        purchaseOrderId: po.id,
         userId: req.user!.id,
         companyId: getActiveCompanyId(req),
       },
