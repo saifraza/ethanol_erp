@@ -1,6 +1,7 @@
 import prisma from '../prisma';
 import { config } from '../config';
 import { getMasterData } from './masterDataCache';
+import { pushBiometricPunches, pullBiometricMasterData } from './biometricSync';
 
 // ==========================================================================
 //  Background sync worker — pushes weighments to cloud, pulls master data
@@ -536,6 +537,17 @@ async function syncCycle(): Promise<void> {
       console.error(`[SYNC-WORKER] Audit push crashed: ${err instanceof Error ? err.message : err}`);
     }
 
+    // Push attendance punches (factory-led biometric mode). Independent
+    // failure path — punch sync drift never blocks weighment sync.
+    try {
+      const punchResult = await pushBiometricPunches();
+      if (punchResult.synced > 0 || punchResult.failed > 0) {
+        console.log(`[SYNC-WORKER] Biometric punches: ${punchResult.synced} synced, ${punchResult.failed} failed`);
+      }
+    } catch (err) {
+      console.error(`[SYNC-WORKER] Biometric push crashed: ${err instanceof Error ? err.message : err}`);
+    }
+
     // Pull master data periodically
     const now = Date.now();
     if (now - _lastMasterPull > MASTER_DATA_INTERVAL_MS) {
@@ -545,6 +557,18 @@ async function syncCycle(): Promise<void> {
         _lastMasterPull = now;
       } catch (err) {
         console.error(`[SYNC-WORKER] Master pull failed: ${err instanceof Error ? err.message : err}`);
+      }
+
+      // Biometric master data (employees + labor + factory-managed devices).
+      // Same cadence as the legacy weighbridge master pull — keeps the
+      // device list and employee fingerprint roster fresh.
+      try {
+        const bioCounts = await pullBiometricMasterData();
+        if (bioCounts.devices > 0 || bioCounts.employees > 0 || bioCounts.laborWorkers > 0) {
+          console.log(`[SYNC-WORKER] Biometric master: devices=${bioCounts.devices} employees=${bioCounts.employees} labor=${bioCounts.laborWorkers}`);
+        }
+      } catch (err) {
+        console.error(`[SYNC-WORKER] Biometric master pull failed: ${err instanceof Error ? err.message : err}`);
       }
     }
 

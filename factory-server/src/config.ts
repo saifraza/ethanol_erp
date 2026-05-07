@@ -19,4 +19,8 @@ export const config = {
   cloudDatabaseUrl: process.env.CLOUD_DATABASE_URL || '',
   wbApiKey: requireEnv('WB_API_KEY', 'mspil-wb-2026'),
   jwtSecret: requireEnv('JWT_SECRET', 'mspil-factory-jwt-2026'),
+  // Local Python bridge (biometric-bridge) on the same factory PC.
+  // Empty key = biometric scheduler stays disabled (factory not in biometric mode).
+  biometricBridgeUrl: process.env.BIOMETRIC_BRIDGE_URL || 'http://127.0.0.1:5005',
+  biometricBridgeKey: process.env.BIOMETRIC_BRIDGE_KEY || '',
 };

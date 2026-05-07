@@ -275,7 +275,8 @@ type: skill
 │                                                         │
 │   Code:    factory-server/src/                           │
 │   Stack:   Node.js + Express + Prisma + React            │
-│   DB:      Same Railway PostgreSQL (via internet)        │
+│   DB:      LOCAL Postgres on the box (DATABASE_URL)      │
+│            + read-only cloud client (CLOUD_DATABASE_URL) │
 │                                                         │
 │   What it does:                                          │
 │   1. Receives weighments from ALL WB PCs on LAN          │
@@ -283,6 +284,9 @@ type: skill
 │   3. Monitors all PCs (heartbeats, online/offline)       │
 │   4. Serves admin dashboard (React frontend)             │
 │   5. Manages factory user accounts                       │
+│   6. Pulls fingerprint punches from biometric-bridge      │
+│      every 60s into local AttendancePunch table, then    │
+│      batches to cloud /api/biometric-factory/punches/push│
 │                                                         │
 │   Pages (React frontend at :5000):                       │
 │   /              → Login                                 │
@@ -376,6 +380,34 @@ type: skill
 - `POST /api/weighbridge/push` → factory server pushes weighments here
 - `GET /api/weighbridge/system-status` → shows all PCs on admin page
 - `GET /api/weighbridge/factory-users` → proxies user management to factory server
+- `POST /api/biometric-factory/punches/push` → factory server pushes attendance batches here (added 2026-05-07)
+- `GET  /api/biometric-factory/master-data` → factory server pulls cached employees + labor + factory-managed devices (added 2026-05-07)
+
+### 4. Biometric Bridge (Python FastAPI)
+**Repo path:** `biometric-bridge/`
+**Runs on:** Same factory PC as factory-server (port 5005)
+**Purpose:** Translates HTTP ↔ pyzk for eSSL/ZKTeco fingerprint devices. Stateless.
+
+| File | Purpose |
+|------|---------|
+| `bridge.py` | FastAPI app, all endpoints |
+| `requirements.txt` | pyzk + fastapi + uvicorn |
+| `scripts/install-windows.ps1` | One-time install + venv + .env key generation |
+| `scripts/start-bridge.ps1` | Launcher used by `BiometricBridge` schtask |
+| `scripts/watchdog.ps1` | 5-min self-heal if port 5005 dies |
+| `scripts/register-task.ps1` | Registers BiometricBridge + watchdog schtasks |
+| `DEPLOY.md` | End-to-end runbook |
+
+**Architecture (factory-led, since 2026-05-07):**
+- eSSL devices on plant LAN talk only to the bridge.
+- factory-server's `biometricScheduler.ts` pulls punches from each device every 60s.
+- Punches land in factory Postgres (`AttendancePunch` table) immediately.
+- `syncWorker.ts` batches them to cloud every 10-60s (same cadence as weighments).
+- Cloud-side `biometricScheduler.ts` skips devices where `factoryManaged=true`.
+
+**Key URLs (factory PC only, never exposed to public):**
+- `http://127.0.0.1:5005/health` → bridge alive check
+- `http://127.0.0.1:5005/devices/info` → POST with device IP, returns firmware/serial
 
 ---
 
@@ -405,6 +437,18 @@ Tare Weight →           SQLite updated
                                                cloudSynced=true      GRN auto-created
                                                          ──sync──→  PO line updated
                                                                     Inventory updated
+
+BIOMETRIC FLOW (added 2026-05-07)
+─────────────────────────────────────────────────────────────────
+Worker punches finger →  eSSL device buffers locally
+                         on flash; bridge polls
+                         every 60s
+                                    ──/punches/pull──→  factory Postgres
+                                                        AttendancePunch
+                                                        (cloudSynced=false)
+                                                                  ──/punches/push──→ AttendancePunch row
+                                                                                     written; HR pages
+                                                                                     query as before
 ```
 
 ---

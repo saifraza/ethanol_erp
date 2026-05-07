@@ -81,16 +81,19 @@ Handlers are loosely coupled via Prisma — no direct imports between weighbridg
 | System | Location | Stack | Database | Runs On |
 |--------|----------|-------|----------|---------|
 | **Cloud ERP** | `backend/` + `frontend/` | Express + Prisma + React | Railway PostgreSQL | Railway (app.mspil.in) |
-| **Factory Server** | `factory-server/` | Express + Prisma + React | Same Railway PostgreSQL (via internet) | Windows 192.168.0.10:5000 |
+| **Factory Server** | `factory-server/` | Express + Prisma + React | **Local Postgres** (DATABASE_URL on the factory PC) + read-only cloud client (CLOUD_DATABASE_URL) | Windows 192.168.0.10 / Tailscale 100.126.101.7 :5000 |
 | **Weighbridge PC** | `weighbridge/` | Python Flask + SQLite | Local SQLite per PC | Each WB PC :8098 |
+| **Biometric Bridge** | `biometric-bridge/` | Python FastAPI + pyzk | Stateless (no DB) | Same factory PC :5005 |
 
 **Data flow**: Weighbridge PC → Factory Server → Cloud ERP (weighments up, master data down).
+Same shape now drives biometric: eSSL devices → Biometric Bridge → Factory Server local Postgres → Cloud ERP.
 
 ### Boundary Rules
-- **Factory server** = operator-facing UI + local data + sync to cloud. NO business logic.
-- **Cloud backend** = all business logic, accounting, GST, e-invoicing. Receives weighments via POST /api/weighbridge/push.
-- **Weighbridge PC** = hardware-facing. Reads COM port, Flask UI, local SQLite.
-- **Cross-system auth**: `X-WB-Key` header (timing-safe, key in `WB_PUSH_KEY` env var).
+- **Factory server** = operator-facing UI + **local-first data** + sync to cloud. NO business logic. Owns its own Postgres on the factory PC; survives multi-hour internet outages without losing data.
+- **Cloud backend** = all business logic, accounting, GST, e-invoicing. Receives weighments via POST /api/weighbridge/push, attendance punches via POST /api/biometric-factory/punches/push.
+- **Weighbridge PC** = hardware-facing for the truck scale. Reads COM port, Flask UI, local SQLite.
+- **Biometric Bridge** = hardware-facing for fingerprint devices. Stateless Python service that translates HTTP ↔ pyzk. Factory-server is the only client.
+- **Cross-system auth**: `X-WB-Key` header (timing-safe, key in `WB_PUSH_KEY` env var). Same key authenticates both weighbridge sync and biometric-factory sync.
 
 ### AI Routing Table
 
@@ -109,6 +112,7 @@ Handlers are loosely coupled via Prisma — no direct imports between weighbridg
 | Inventory | `backend/src/routes/inventory*.ts` |
 | Fuel | `backend/src/routes/fuel.ts` |
 | Telegram auto-collect | `backend/src/services/telegramAutoCollect.ts`, `autoCollectModules/` |
+| Biometric devices / attendance / fingerprint | Cloud admin UI: `frontend/src/pages/hr/BiometricDevices.tsx`. Cloud routes: `backend/src/routes/biometric.ts` (admin) + `biometricFactory.ts` (machine-to-machine). Bridge: `biometric-bridge/bridge.py`. Factory-led pull/sync: `factory-server/src/services/biometricScheduler.ts` + `biometricSync.ts`. Architecture: `biometric-bridge/DEPLOY.md` |
 | E-invoice / e-way bill | `backend/src/services/eInvoice.ts`, `ewayBill.ts` |
 | UBI bank payments | `.claude/skills/ubi-h2h-banking.md` |
 | Module list / maturity | `.claude/skills/module-index.md` |

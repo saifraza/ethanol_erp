@@ -5626,6 +5626,12 @@ model BiometricDevice {
   autoPushMinutes Int       @default(0) // sync-employees interval; 0 = manual only
   lastAutoPullAt  DateTime? // last automatic pull-punches run
   lastAutoPushAt  DateTime? // last automatic sync-employees run
+  // Factory-led mode (added 2026-05-07): when true, the factory-server PC
+  // owns this device — pulls punches into its own DB and batches to cloud.
+  // Cloud's biometricScheduler.ts skips it. lastFactorySyncAt is updated by
+  // every batch the factory-server posts to /api/biometric/factory-push.
+  factoryManaged     Boolean   @default(false)
+  lastFactorySyncAt  DateTime?
   notes           String?
   createdAt       DateTime  @default(now())
   updatedAt       DateTime  @updatedAt

@@ -82,6 +82,10 @@ const EXPECTED_COLUMNS: ColumnCheck[] = [
   { table: 'BiometricDevice', column: 'lastAutoPushAt',  sql: `ALTER TABLE "BiometricDevice" ADD COLUMN IF NOT EXISTS "lastAutoPushAt" TIMESTAMP(3)` },
   // 2026-05-06 — LaborWorker support: AttendancePunch.employeeId becomes nullable, new laborWorkerId column
   { table: 'AttendancePunch', column: 'laborWorkerId', sql: `ALTER TABLE "AttendancePunch" ADD COLUMN IF NOT EXISTS "laborWorkerId" TEXT` },
+  // 2026-05-07 — Factory-led biometric mode (factory-server PC owns the device,
+  // pulls punches into its own DB, batches to cloud every minute).
+  { table: 'BiometricDevice', column: 'factoryManaged',    sql: `ALTER TABLE "BiometricDevice" ADD COLUMN IF NOT EXISTS "factoryManaged" BOOLEAN NOT NULL DEFAULT false` },
+  { table: 'BiometricDevice', column: 'lastFactorySyncAt', sql: `ALTER TABLE "BiometricDevice" ADD COLUMN IF NOT EXISTS "lastFactorySyncAt" TIMESTAMP(3)` },
 ];
 
 const EXPECTED_TABLES: TableCheck[] = [

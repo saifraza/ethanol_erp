@@ -49,6 +49,11 @@ export function startBiometricScheduler(): void {
 
 async function tick(): Promise<void> {
   const now = new Date();
+  // Skip devices owned by the factory-server (factoryManaged=true). Those are
+  // pulled into the factory-server's own DB and batched here via
+  // /api/biometric-factory/punches/push. Cloud is the fallback if the factory
+  // hasn't checked in for >30 min — in that case we resume cloud-led pulling.
+  const FACTORY_GRACE_MS = 30 * 60_000;
   const devices = await prisma.biometricDevice.findMany({
     where: {
       active: true,
@@ -61,8 +66,14 @@ async function tick(): Promise<void> {
       id: true, code: true, ip: true, port: true, password: true, companyId: true,
       autoPullMinutes: true, autoPushMinutes: true,
       lastAutoPullAt: true, lastAutoPushAt: true, lastPunchSyncAt: true,
+      factoryManaged: true, lastFactorySyncAt: true,
     },
-  });
+  }).then(rows => rows.filter(d => {
+    if (!d.factoryManaged) return true;
+    // Factory-managed: skip unless the factory has gone silent for >30min
+    if (!d.lastFactorySyncAt) return false; // never reported — trust the flag, skip
+    return (now.getTime() - d.lastFactorySyncAt.getTime()) > FACTORY_GRACE_MS;
+  }));
 
   for (const d of devices) {
     if (d.autoPullMinutes > 0) {
