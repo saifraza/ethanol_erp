@@ -94,6 +94,7 @@ import labTestingRoutes from './routes/labTesting';
 // Weighbridge (local service at factory gate)
 import weighbridgeRoutes from './routes/weighbridge';
 import weighbridgeAdminRoutes from './routes/weighbridgeAdmin';
+import uploadBackupAdminRoutes from './routes/uploadBackupAdmin';
 import weighbridgeAuditRoutes from './routes/weighbridgeAudit';
 import activityLogRoutes from './routes/activityLog';
 import fuelRoutes from './routes/fuel';
@@ -326,6 +327,7 @@ app.use('/api/weighbridge', weighbridgeRoutes);
 // NOTE: mounted AFTER the main weighbridge routes so its /admin/* subpaths
 // don't collide with anything existing. See .claude/skills/weighment-corrections.md
 app.use('/api/weighbridge/admin', weighbridgeAdminRoutes);
+app.use('/api/admin/backup-uploads', uploadBackupAdminRoutes);
 // Weighbridge audit events (cross-system safety log: scale-zero overrides,
 // delta-confirms, interval/duplicate overrides). Factory pushes via X-WB-Key,
 // admins read via JWT. See .claude/skills/weighbridge.md.

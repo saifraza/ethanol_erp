@@ -122,6 +122,10 @@ const server = app.listen(PORT, HOST, async () => {
   // Webhook delivery processor (cloud → factory server)
   startWebhookProcessor();
 
+  // Daily 2 AM IST backup of /app/backend/uploads → neat-shelf bucket (S3-compatible).
+  // No-op if AWS_* env vars aren't set.
+  import('./services/uploadBackupJob').then(m => m.startUploadBackupJob()).catch(() => {});
+
   // OPC health watchdog — monitors bridge connectivity, sends Telegram alerts
   if (process.env.DATABASE_URL_OPC) {
     import('./services/opcHealthWatchdog').then(m => m.startOpcWatchdog()).catch(() => {});
