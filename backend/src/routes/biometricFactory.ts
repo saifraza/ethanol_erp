@@ -174,7 +174,14 @@ router.post('/punches/push', asyncHandler(async (req: Request, res: Response) =>
     if (isNaN(ts.getTime())) continue;
     await prisma.biometricDevice.update({
       where: { id: dev.id },
-      data: { lastFactorySyncAt: ts, lastSyncStatus: 'OK' },
+      data: {
+        lastFactorySyncAt: ts,
+        lastSyncAt: ts, // also bump the canonical "last sync" so the UI's
+                       // LAST SYNC column reflects factory-led activity, not
+                       // just legacy cloud-led ops.
+        lastSyncStatus: 'OK',
+        lastSyncError: null,
+      },
     }).catch(() => {});
   }
 
