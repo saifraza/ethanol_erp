@@ -113,6 +113,8 @@ interface FuelPaymentRow {
   pendingBank: number;
   pendingCash: number;
   outstanding: number;
+  payableBasis: number;
+  basisSource: 'RECEIVED' | 'INVOICED' | 'PLANNED';
   lastPaymentDate: string | null;
   grnCount: number;
   invoiceCount: number;
@@ -302,6 +304,7 @@ export default function FuelManagement() {
   const [payModal, setPayModal] = useState<PayModalState | null>(null);
   const [uploadingPoId, setUploadingPoId] = useState<string | null>(null);
   const [invoicesModal, setInvoicesModal] = useState<{ poId: string; poNo: number; vendorName: string; invoices: FuelInvoiceRow[]; loading: boolean } | null>(null);
+  const [editInvoice, setEditInvoice] = useState<{ id: string; vendorInvNo: string; vendorInvDate: string; totalAmount: string; saving: boolean } | null>(null);
   const [uploadStaging, setUploadStaging] = useState<UploadStagingState | null>(null);
   const [stagingLedger, setStagingLedger] = useState<PoLedger | null>(null);
   const [stagingLedgerLoading, setStagingLedgerLoading] = useState(false);
@@ -780,6 +783,31 @@ export default function FuelManagement() {
     } catch (err) {
       console.error(err);
       setInvoicesModal((prev) => prev ? { ...prev, loading: false } : prev);
+    }
+  };
+
+  const saveInvoiceEdit = async () => {
+    if (!editInvoice) return;
+    setEditInvoice({ ...editInvoice, saving: true });
+    try {
+      const total = editInvoice.totalAmount.trim() ? Number(editInvoice.totalAmount) : 0;
+      if (editInvoice.totalAmount.trim() && (!isFinite(total) || total < 0)) {
+        alert('Total amount must be a non-negative number.');
+        setEditInvoice({ ...editInvoice, saving: false });
+        return;
+      }
+      const res = await api.put<FuelInvoiceRow>(`/fuel/payments/invoices/${editInvoice.id}`, {
+        vendorInvNo: editInvoice.vendorInvNo.trim() || null,
+        vendorInvDate: editInvoice.vendorInvDate || null,
+        totalAmount: editInvoice.totalAmount.trim() ? total : undefined,
+      });
+      setInvoicesModal((prev) => prev ? { ...prev, invoices: prev.invoices.map((i) => i.id === editInvoice.id ? res.data : i) } : prev);
+      setEditInvoice(null);
+      await fetchPayments();
+    } catch (err: unknown) {
+      const msg = (err as { response?: { data?: { error?: string } } })?.response?.data?.error || 'Save failed';
+      alert(msg);
+      setEditInvoice((prev) => prev ? { ...prev, saving: false } : prev);
     }
   };
 
@@ -1438,7 +1466,7 @@ export default function FuelManagement() {
                       <th className="text-left px-3 py-1.5 font-semibold text-[10px] uppercase tracking-widest border-r border-slate-700">Vendor</th>
                       <th className="text-left px-3 py-1.5 font-semibold text-[10px] uppercase tracking-widest border-r border-slate-700">Fuel</th>
                       <th className="text-right px-3 py-1.5 font-semibold text-[10px] uppercase tracking-widest border-r border-slate-700">PO Total</th>
-                      <th className="text-right px-3 py-1.5 font-semibold text-[10px] uppercase tracking-widest border-r border-slate-700">Received Value</th>
+                      <th className="text-right px-3 py-1.5 font-semibold text-[10px] uppercase tracking-widest border-r border-slate-700" title="Received value · Billed (when no GRN) · Planned (when no GRN + no invoices)">Payable</th>
                       <th className="text-right px-3 py-1.5 font-semibold text-[10px] uppercase tracking-widest border-r border-slate-700">Paid</th>
                       <th className="text-right px-3 py-1.5 font-semibold text-[10px] uppercase tracking-widest border-r border-slate-700">In-Flight</th>
                       <th className="text-right px-3 py-1.5 font-semibold text-[10px] uppercase tracking-widest border-r border-slate-700">Outstanding</th>
@@ -1462,11 +1490,25 @@ export default function FuelManagement() {
                             <div className="text-[9px] text-slate-400 font-mono tabular-nums">{fmtNum(p.totalReceived)} {p.fuelUnit} · {p.grnCount} GRN{p.grnCount !== 1 ? 's' : ''}</div>
                           </td>
                           <td className="px-3 py-1.5 text-right font-mono tabular-nums border-r border-slate-100">{fmtCurrency(p.poTotal)}</td>
-                          <td className="px-3 py-1.5 text-right font-mono tabular-nums font-bold border-r border-slate-100">{fmtCurrency(p.receivedValue)}</td>
+                          <td className="px-3 py-1.5 text-right font-mono tabular-nums font-bold border-r border-slate-100">
+                            {p.basisSource === 'RECEIVED' ? (
+                              fmtCurrency(p.receivedValue)
+                            ) : p.basisSource === 'INVOICED' ? (
+                              <>
+                                <div title="No GRNs — basis is the invoiced total">{fmtCurrency(p.invoicedTotal)}</div>
+                                <div className="text-[9px] text-indigo-500 font-bold uppercase tracking-widest">Billed</div>
+                              </>
+                            ) : (
+                              <>
+                                <div className="text-slate-400" title="No GRNs and no invoices — using planned PO total">{fmtCurrency(p.poTotal)}</div>
+                                <div className="text-[9px] text-amber-600 font-bold uppercase tracking-widest">Planned</div>
+                              </>
+                            )}
+                          </td>
                           <td className="px-3 py-1.5 text-right font-mono tabular-nums text-green-700 border-r border-slate-100">{fmtCurrency(p.totalPaid)}</td>
                           <td className={`px-3 py-1.5 text-right font-mono tabular-nums border-r border-slate-100 ${inFlight > 0 ? 'text-amber-700' : 'text-slate-400'}`}>{fmtCurrency(inFlight)}</td>
-                          <td className={`px-3 py-1.5 text-right font-mono tabular-nums font-bold border-r border-slate-100 ${p.outstanding > 0.01 ? 'text-red-600' : 'text-emerald-700'}`}>
-                            {p.outstanding > 0.01 ? fmtCurrency(p.outstanding) : '✓ Paid'}
+                          <td className={`px-3 py-1.5 text-right font-mono tabular-nums font-bold border-r border-slate-100 ${p.outstanding > 0.01 ? 'text-red-600' : p.totalPaid > 0 ? 'text-emerald-700' : 'text-slate-400'}`}>
+                            {p.outstanding > 0.01 ? fmtCurrency(p.outstanding) : p.totalPaid > 0 ? '✓ Paid' : '—'}
                           </td>
                           <td className="px-3 py-1.5 border-r border-slate-100 text-[10px] text-slate-500 font-mono">
                             {p.lastPaymentDate ? new Date(p.lastPaymentDate).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: '2-digit' }) : '—'}
@@ -1491,7 +1533,7 @@ export default function FuelManagement() {
                           </td>
                           <td className="px-3 py-1.5">
                             <div className="flex gap-1 flex-wrap">
-                              {p.outstanding > 0.01 && p.totalReceived > 0 && (
+                              {p.outstanding > 0.01 && (
                                 <button
                                   onClick={() => {
                                     setPayModal({
@@ -1836,36 +1878,90 @@ export default function FuelManagement() {
                     </tr>
                   </thead>
                   <tbody>
-                    {invoicesModal.invoices.map((inv, i) => (
-                      <tr key={inv.id} className={`border-b border-slate-100 ${i % 2 ? 'bg-slate-50/70' : ''}`}>
-                        <td className="px-2 py-1.5">
-                          {inv.filePath ? (
-                            <a href={`/uploads/${inv.filePath}`} target="_blank" rel="noopener noreferrer" className="text-blue-600 hover:underline truncate max-w-[200px] inline-block align-middle">
-                              {inv.originalFileName || 'Invoice'}
-                            </a>
-                          ) : (
-                            <span className="text-slate-400">{inv.originalFileName || '—'}</span>
-                          )}
-                        </td>
-                        <td className="px-2 py-1.5 font-mono text-slate-600">{inv.vendorInvNo || '—'}</td>
-                        <td className="px-2 py-1.5 text-slate-500 font-mono text-[10px]">
-                          {new Date(inv.createdAt).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: '2-digit' })}
-                        </td>
-                        <td className="px-2 py-1.5 text-right font-mono tabular-nums">{inv.totalAmount > 0 ? fmtCurrency(inv.totalAmount) : '—'}</td>
-                        <td className="px-2 py-1.5">
-                          <span className={`text-[9px] font-bold uppercase tracking-widest px-1.5 py-0.5 ${inv.status === 'PAID' ? 'bg-emerald-100 text-emerald-700' : inv.status === 'PARTIAL_PAID' ? 'bg-amber-100 text-amber-700' : inv.status === 'CANCELLED' ? 'bg-slate-100 text-slate-500' : 'bg-blue-100 text-blue-700'}`}>
-                            {inv.status}
-                          </span>
-                        </td>
-                        <td className="px-2 py-1.5 text-right">
-                          {(inv.paidAmount || 0) === 0 && (
-                            <button onClick={() => deleteInvoice(inv.id)} className="text-[10px] text-red-600 font-semibold uppercase hover:underline">
-                              Delete
-                            </button>
-                          )}
-                        </td>
-                      </tr>
-                    ))}
+                    {invoicesModal.invoices.map((inv, i) => {
+                      const isEditing = editInvoice?.id === inv.id;
+                      return (
+                        <tr key={inv.id} className={`border-b border-slate-100 ${i % 2 ? 'bg-slate-50/70' : ''}`}>
+                          <td className="px-2 py-1.5">
+                            {inv.filePath ? (
+                              <a href={`/uploads/${inv.filePath}`} target="_blank" rel="noopener noreferrer" className="text-blue-600 hover:underline truncate max-w-[200px] inline-block align-middle">
+                                {inv.originalFileName || 'Invoice'}
+                              </a>
+                            ) : (
+                              <span className="text-slate-400">{inv.originalFileName || '—'}</span>
+                            )}
+                          </td>
+                          <td className="px-2 py-1.5 font-mono text-slate-600">
+                            {isEditing ? (
+                              <input
+                                type="text" placeholder="—"
+                                value={editInvoice.vendorInvNo}
+                                onChange={(e) => setEditInvoice({ ...editInvoice, vendorInvNo: e.target.value })}
+                                className="w-full border border-slate-300 px-1 py-0.5 text-[11px] font-mono focus:outline-none focus:border-blue-500"
+                              />
+                            ) : (inv.vendorInvNo || '—')}
+                          </td>
+                          <td className="px-2 py-1.5 text-slate-500 font-mono text-[10px]">
+                            {isEditing ? (
+                              <input
+                                type="date"
+                                value={editInvoice.vendorInvDate}
+                                onChange={(e) => setEditInvoice({ ...editInvoice, vendorInvDate: e.target.value })}
+                                className="w-full border border-slate-300 px-1 py-0.5 text-[10px] font-mono focus:outline-none focus:border-blue-500"
+                              />
+                            ) : (
+                              new Date(inv.createdAt).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: '2-digit' })
+                            )}
+                          </td>
+                          <td className="px-2 py-1.5 text-right font-mono tabular-nums">
+                            {isEditing ? (
+                              <input
+                                type="number" step="0.01" min="0" placeholder="0"
+                                value={editInvoice.totalAmount}
+                                onChange={(e) => setEditInvoice({ ...editInvoice, totalAmount: e.target.value })}
+                                className="w-24 border border-slate-300 px-1 py-0.5 text-[11px] text-right font-mono tabular-nums focus:outline-none focus:border-blue-500"
+                              />
+                            ) : (inv.totalAmount > 0 ? fmtCurrency(inv.totalAmount) : '—')}
+                          </td>
+                          <td className="px-2 py-1.5">
+                            <span className={`text-[9px] font-bold uppercase tracking-widest px-1.5 py-0.5 ${inv.status === 'PAID' ? 'bg-emerald-100 text-emerald-700' : inv.status === 'PARTIAL_PAID' ? 'bg-amber-100 text-amber-700' : inv.status === 'CANCELLED' ? 'bg-slate-100 text-slate-500' : 'bg-blue-100 text-blue-700'}`}>
+                              {inv.status}
+                            </span>
+                          </td>
+                          <td className="px-2 py-1.5 text-right whitespace-nowrap">
+                            {isEditing ? (
+                              <div className="flex gap-1.5 justify-end">
+                                <button onClick={saveInvoiceEdit} disabled={editInvoice.saving} className="text-[10px] text-emerald-700 font-semibold uppercase hover:underline disabled:opacity-50">
+                                  {editInvoice.saving ? '…' : 'Save'}
+                                </button>
+                                <button onClick={() => setEditInvoice(null)} disabled={editInvoice.saving} className="text-[10px] text-slate-500 font-semibold uppercase hover:underline disabled:opacity-50">
+                                  Cancel
+                                </button>
+                              </div>
+                            ) : (
+                              <div className="flex gap-1.5 justify-end">
+                                <button
+                                  onClick={() => setEditInvoice({
+                                    id: inv.id,
+                                    vendorInvNo: inv.vendorInvNo || '',
+                                    vendorInvDate: inv.vendorInvDate ? String(inv.vendorInvDate).slice(0, 10) : '',
+                                    totalAmount: inv.totalAmount > 0 ? String(inv.totalAmount) : '',
+                                    saving: false,
+                                  })}
+                                  className="text-[10px] text-blue-700 font-semibold uppercase hover:underline">
+                                  Edit
+                                </button>
+                                {(inv.paidAmount || 0) === 0 && (
+                                  <button onClick={() => deleteInvoice(inv.id)} className="text-[10px] text-red-600 font-semibold uppercase hover:underline">
+                                    Delete
+                                  </button>
+                                )}
+                              </div>
+                            )}
+                          </td>
+                        </tr>
+                      );
+                    })}
                   </tbody>
                 </table>
               )}
