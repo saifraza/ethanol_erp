@@ -99,6 +99,18 @@ export interface BackupRunSummary {
   bytesUploaded: number;
 }
 
+let _lastRunAt: Date | null = null;
+let _lastRunSummary: BackupRunSummary | null = null;
+let _lastRunSource: 'scheduled' | 'manual' | null = null;
+
+export function getLastRun(): { at: string | null; summary: BackupRunSummary | null; source: 'scheduled' | 'manual' | null } {
+  return {
+    at: _lastRunAt ? _lastRunAt.toISOString() : null,
+    summary: _lastRunSummary,
+    source: _lastRunSource,
+  };
+}
+
 export async function runUploadBackup(): Promise<BackupRunSummary> {
   if (!bucketEnvReady()) {
     throw new Error('Bucket env vars missing (AWS_ENDPOINT_URL / AWS_S3_BUCKET_NAME / AWS_ACCESS_KEY_ID / AWS_SECRET_ACCESS_KEY)');
@@ -135,7 +147,15 @@ export async function runUploadBackup(): Promise<BackupRunSummary> {
     `[UploadBackup] Done — uploaded=${summary.uploaded}, skipped=${summary.skipped}, failed=${summary.failed}, ` +
     `bytes=${(summary.bytesUploaded / 1024 / 1024).toFixed(2)} MB`,
   );
+  _lastRunAt = new Date();
+  _lastRunSummary = summary;
   return summary;
+}
+
+export async function runUploadBackupAndRecord(source: 'scheduled' | 'manual'): Promise<BackupRunSummary> {
+  const s = await runUploadBackup();
+  _lastRunSource = source;
+  return s;
 }
 
 async function checkAndRun(): Promise<void> {
@@ -147,7 +167,7 @@ async function checkAndRun(): Promise<void> {
     if (istHour !== TARGET_HOUR_IST || lastRunDate === todayStr) return;
 
     console.log(`[UploadBackup] ${TARGET_HOUR_IST}AM IST trigger — starting daily backup…`);
-    await runUploadBackup();
+    await runUploadBackupAndRecord('scheduled');
     lastRunDate = todayStr; // set after success so failure allows retry next minute
   } catch (err) {
     console.error('[UploadBackup] Run failed:', (err as Error).message);

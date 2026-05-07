@@ -13,7 +13,7 @@ import {
   PackageSearch, ArrowRightLeft, ClipboardCheck, BarChart2, Banknote, PieChart, HardHat,
   FolderArchive, Search, ShieldCheck, ListChecks, BotMessageSquare,
   UserCheck as UserCheckIcon, Network, Wallet, CircleDollarSign, LayoutGrid, Sparkles, Plus,
-  Calendar as CalendarIcon, Clock as ClockIcon, Fingerprint
+  Calendar as CalendarIcon, Clock as ClockIcon, Fingerprint, HardDrive
 } from 'lucide-react';
 
 export interface ModuleDef {
@@ -130,6 +130,7 @@ export const MODULE_DEFS: ModuleDef[] = [
   { key: 'weighbridge-audit', label: 'Weighbridge Audit', to: '/admin/weighbridge-audit', icon: ClipboardCheck, group: 'admin', adminOnly: true },
   { key: 'activity-log', label: 'Activity Log', to: '/admin/activity-log', icon: ClipboardCheck, group: 'admin', adminOnly: true },
   { key: 'ai-usage', label: 'AI Usage', to: '/admin/ai-usage', icon: Sparkles, group: 'admin', adminOnly: true },
+  { key: 'storage-health', label: 'Storage Health', to: '/admin/storage-health', icon: HardDrive, group: 'admin', adminOnly: true },
 
   // ── HR & PAYROLL ──
   { key: 'hr-dashboard', label: 'HR Dashboard', to: '/hr/dashboard', icon: LayoutGrid, group: 'hr' },
