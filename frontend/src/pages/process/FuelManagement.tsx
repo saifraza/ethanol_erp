@@ -3,6 +3,10 @@ import api from '../../services/api';
 import { useAuth } from '../../context/AuthContext';
 import WeighbridgeTrucksModal from '../../components/WeighbridgeTrucksModal';
 import VendorLedgerModal from '../../components/VendorLedgerModal';
+import PoLedgerPanel from '../../components/payments/PoLedgerPanel';
+import PayDialog from '../../components/payments/PayDialog';
+import InvoiceList from '../../components/payments/InvoiceList';
+import type { PoLedger } from '../../components/payments/types';
 
 interface Warehouse {
   id: string;
@@ -122,20 +126,6 @@ interface FuelPaymentRow {
   isFullyPaid: boolean;
 }
 
-interface FuelInvoiceRow {
-  id: string;
-  vendorInvNo: string | null;
-  vendorInvDate: string | null;
-  invoiceDate: string;
-  totalAmount: number;
-  paidAmount: number;
-  status: string;
-  filePath: string | null;
-  originalFileName: string | null;
-  remarks: string | null;
-  createdAt: string;
-}
-
 // Per-file plan inside the upload staging modal — what the operator wants
 // to record alongside this particular bill.
 interface FilePlanRow {
@@ -155,143 +145,6 @@ interface UploadStagingState {
   payRef: string;
   payRemarks: string;
   submitting: boolean;
-}
-
-// Ledger feed served by /api/fuel/payments/:poId/ledger.
-type PoLedgerEvent =
-  | { type: 'INVOICE'; date: string; id: string; vendorInvNo: string | null; amount: number; status: string; fileName: string | null; filePath: string | null; runningBalance: number }
-  | { type: 'PAYMENT'; date: string; id: string; paymentNo: number; amount: number; mode: string; reference: string | null; paymentStatus: string; invoiceId: string | null; runningBalance: number };
-
-interface PoLedger {
-  poNo: number;
-  vendor: { id: string; name: string; phone: string | null };
-  poTotal: number;
-  receivedValue: number;
-  totalInvoiced: number;
-  totalPaid: number;
-  pendingBank: number;
-  outstanding: number;
-  payableBasis: number;
-  basisSource: 'RECEIVED' | 'INVOICED' | 'PLANNED';
-  ledger: PoLedgerEvent[];
-}
-
-interface PayModalState {
-  poId: string;
-  poNo: number;
-  vendorName: string;
-  fuelName: string;
-  outstanding: number;
-  amount: string;
-  mode: 'CASH' | 'UPI' | 'NEFT' | 'RTGS' | 'BANK_TRANSFER' | 'CHEQUE';
-  reference: string;
-  remarks: string;
-  submitting: boolean;
-}
-
-// Reusable running-ledger panel — same KPIs + scrollable event list rendered
-// in the Pay modal and the upload-staging modal. Keeps the two flows visually
-// consistent with the accounts Payments Out ledger style.
-function PoLedgerPanel({ led, loading, fmtCurrency, onOpenVendorLedger }: { led: PoLedger | null; loading: boolean; fmtCurrency: (n: number) => string; onOpenVendorLedger?: () => void }) {
-  if (loading) {
-    return <div className="text-xs text-slate-400 uppercase tracking-widest text-center py-6">Loading PO ledger…</div>;
-  }
-  if (!led) {
-    return <div className="text-xs text-slate-400 uppercase tracking-widest text-center py-6">No ledger data.</div>;
-  }
-  // "Settled" only makes sense once something has actually been paid AND the
-  // payable basis is fully covered. A PO with received=0 / invoiced=0 / no
-  // payments hangs on the planned amount and should read as Pending.
-  const trulySettled = led.totalPaid > 0 && led.outstanding <= 0.01;
-  return (
-    <div className="space-y-3">
-      <div className="flex items-center justify-between">
-        <div className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">PO-{led.poNo} Running Ledger</div>
-        {onOpenVendorLedger && (
-          <button onClick={onOpenVendorLedger} className="text-[10px] text-indigo-700 font-bold uppercase tracking-widest hover:underline">
-            View Vendor Ledger →
-          </button>
-        )}
-      </div>
-      <div className="grid grid-cols-2 gap-0 border border-slate-300">
-        <div className="px-3 py-2 border-r border-b border-slate-300 bg-white">
-          <div className="text-[9px] font-bold text-slate-400 uppercase tracking-widest">Received Value</div>
-          <div className="text-sm font-mono tabular-nums font-bold text-slate-800">{fmtCurrency(led.receivedValue)}</div>
-        </div>
-        <div className="px-3 py-2 border-b border-slate-300 bg-white">
-          <div className="text-[9px] font-bold text-slate-400 uppercase tracking-widest">Invoiced</div>
-          <div className="text-sm font-mono tabular-nums font-bold text-slate-800">{fmtCurrency(led.totalInvoiced)}</div>
-        </div>
-        <div className="px-3 py-2 border-r border-slate-300 bg-white">
-          <div className="text-[9px] font-bold text-slate-400 uppercase tracking-widest">Paid (Confirmed)</div>
-          <div className="text-sm font-mono tabular-nums font-bold text-emerald-700">{fmtCurrency(led.totalPaid)}</div>
-        </div>
-        <div className="px-3 py-2 bg-white">
-          <div className="text-[9px] font-bold text-slate-400 uppercase tracking-widest">
-            Outstanding
-            {led.basisSource !== 'RECEIVED' && (
-              <span className={`ml-1 normal-case text-[8px] font-bold ${led.basisSource === 'INVOICED' ? 'text-indigo-500' : 'text-amber-600'}`}>
-                ({led.basisSource === 'INVOICED' ? 'billed basis' : 'planned basis'})
-              </span>
-            )}
-          </div>
-          <div className={`text-sm font-mono tabular-nums font-bold ${led.outstanding > 0.01 ? 'text-red-700' : trulySettled ? 'text-emerald-700' : 'text-slate-400'}`}>
-            {led.outstanding > 0.01 ? fmtCurrency(led.outstanding) : trulySettled ? '✓ Settled' : '—'}
-          </div>
-        </div>
-      </div>
-      <div className="border border-slate-300 bg-white">
-        <div className="bg-slate-100 border-b border-slate-300 px-2 py-1.5 text-[9px] font-bold text-slate-500 uppercase tracking-widest grid grid-cols-12 gap-2">
-          <div className="col-span-2">Date</div>
-          <div className="col-span-2">Type</div>
-          <div className="col-span-4">Ref</div>
-          <div className="col-span-2 text-right">Amount</div>
-          <div className="col-span-2 text-right">Balance</div>
-        </div>
-        <div className="max-h-72 overflow-y-auto">
-          {led.ledger.length === 0 ? (
-            <div className="px-3 py-6 text-center text-[10px] text-slate-400 uppercase tracking-widest">No invoice or payment events yet.</div>
-          ) : (
-            led.ledger.map((row, i) => (
-              <div key={`${row.type}-${row.id}`} className={`px-2 py-1.5 text-[10px] border-b border-slate-100 grid grid-cols-12 gap-2 ${i % 2 ? 'bg-slate-50/60' : ''}`}>
-                <div className="col-span-2 font-mono text-slate-500">
-                  {new Date(row.date).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: '2-digit' })}
-                </div>
-                <div className="col-span-2">
-                  <span className={`font-bold uppercase tracking-widest ${row.type === 'INVOICE' ? 'text-indigo-700' : 'text-emerald-700'}`}>
-                    {row.type === 'INVOICE' ? 'Bill' : 'Pay'}
-                  </span>
-                </div>
-                <div className="col-span-4 truncate">
-                  {row.type === 'INVOICE' ? (
-                    row.filePath ? (
-                      <a href={`/uploads/${row.filePath}`} target="_blank" rel="noopener noreferrer" className="text-blue-600 hover:underline">
-                        {row.vendorInvNo || row.fileName || 'Invoice'}
-                      </a>
-                    ) : (row.vendorInvNo || row.fileName || '—')
-                  ) : (
-                    <>
-                      <span className="font-mono text-slate-700">#{row.paymentNo}</span>
-                      <span className="text-slate-400 mx-1">·</span>
-                      <span className="text-slate-600">{row.mode}</span>
-                      {row.reference && <span className="text-slate-400 ml-1 font-mono">{row.reference}</span>}
-                      {row.paymentStatus === 'INITIATED' && <span className="ml-1 text-amber-700 font-bold">(pending UTR)</span>}
-                    </>
-                  )}
-                </div>
-                <div className={`col-span-2 text-right font-mono tabular-nums ${row.type === 'PAYMENT' ? 'text-emerald-700' : 'text-slate-700'}`}>
-                  {row.type === 'PAYMENT' ? '−' : '+'}{fmtCurrency(row.amount)}
-                </div>
-                <div className={`col-span-2 text-right font-mono tabular-nums font-bold ${row.runningBalance > 0.01 ? 'text-red-700' : 'text-slate-500'}`}>
-                  {fmtCurrency(row.runningBalance)}
-                </div>
-              </div>
-            ))
-          )}
-        </div>
-      </div>
-    </div>
-  );
 }
 
 const EMPTY_FORM: Partial<FuelItem> = {
@@ -321,15 +174,15 @@ export default function FuelManagement() {
   const [paymentsLoading, setPaymentsLoading] = useState(false);
   const [paymentsFilter, setPaymentsFilter] = useState<'all' | 'outstanding' | 'paid'>('outstanding');
   const [paymentsSearch, setPaymentsSearch] = useState('');
-  const [payModal, setPayModal] = useState<PayModalState | null>(null);
+  const [payDialog, setPayDialog] = useState<{ poId: string; poNo: number; vendorId: string; vendorName: string; fuelName: string; outstanding: number } | null>(null);
   const [uploadingPoId, setUploadingPoId] = useState<string | null>(null);
-  const [invoicesModal, setInvoicesModal] = useState<{ poId: string; poNo: number; vendorName: string; invoices: FuelInvoiceRow[]; loading: boolean } | null>(null);
-  const [editInvoice, setEditInvoice] = useState<{ id: string; vendorInvNo: string; vendorInvDate: string; totalAmount: string; saving: boolean } | null>(null);
+  const [invoicesModal, setInvoicesModal] = useState<{ poId: string; poNo: number; vendorName: string } | null>(null);
+  // Bumped after a staging-modal upload completes so an open InvoiceList
+  // remounts and re-fetches its invoice rows.
+  const [invoiceListNonce, setInvoiceListNonce] = useState(0);
   const [uploadStaging, setUploadStaging] = useState<UploadStagingState | null>(null);
   const [stagingLedger, setStagingLedger] = useState<PoLedger | null>(null);
   const [stagingLedgerLoading, setStagingLedgerLoading] = useState(false);
-  const [payLedger, setPayLedger] = useState<PoLedger | null>(null);
-  const [payLedgerLoading, setPayLedgerLoading] = useState(false);
   const invoiceFileInputRef = React.useRef<HTMLInputElement | null>(null);
   const pendingUploadPoIdRef = React.useRef<string | null>(null);
   const [expandedFuels, setExpandedFuels] = useState<Set<string>>(new Set());
@@ -659,24 +512,6 @@ export default function FuelManagement() {
 
   const fmtCurrency = (n: number) => n === 0 ? '--' : '₹' + n.toLocaleString('en-IN', { maximumFractionDigits: 0 });
 
-  const recordPayment = async (dealId: string, vendorName: string, outstanding: number) => {
-    const amount = prompt(`Pay ${vendorName}\nOutstanding: ₹${outstanding.toLocaleString()}\n\nEnter payment amount:`);
-    if (!amount) return;
-    const mode = prompt('Payment mode:\n1. CASH\n2. UPI\n3. BANK_TRANSFER\n4. NEFT\n\nEnter mode (or press Enter for CASH):');
-    const modeMap: Record<string, string> = { '1': 'CASH', '2': 'UPI', '3': 'BANK_TRANSFER', '4': 'NEFT' };
-    const ref = (mode === '2' || mode === 'UPI' || mode === '3' || mode === 'BANK_TRANSFER' || mode === '4' || mode === 'NEFT')
-      ? prompt('Enter reference (UTR / UPI ref):') : '';
-    try {
-      await api.post(`/fuel/deals/${dealId}/payment`, {
-        dealId,
-        amount: parseFloat(amount),
-        mode: modeMap[mode || '1'] || mode || 'CASH',
-        reference: ref || '',
-      });
-      fetchDeals();
-    } catch (err) { alert('Payment failed'); }
-  };
-
   const triggerInvoiceUpload = (poId: string) => {
     if (uploadingPoId) return;
     pendingUploadPoIdRef.current = poId;
@@ -783,8 +618,8 @@ export default function FuelManagement() {
       setStagingLedger(null);
       await fetchPayments();
       if (invoicesModal && invoicesModal.poId === uploadStaging.poId) {
-        const list = await api.get<FuelInvoiceRow[]>(`/fuel/payments/${uploadStaging.poId}/invoices`);
-        setInvoicesModal((prev) => prev ? { ...prev, invoices: list.data } : prev);
+        // Force the open InvoiceList to remount + refetch.
+        setInvoiceListNonce((n) => n + 1);
       }
     } catch (err: unknown) {
       const msg = (err as { response?: { data?: { error?: string } } })?.response?.data?.error || 'Upload failed';
@@ -792,84 +627,6 @@ export default function FuelManagement() {
       setUploadStaging((prev) => prev ? { ...prev, submitting: false } : prev);
     } finally {
       setUploadingPoId(null);
-    }
-  };
-
-  const openInvoicesModal = async (row: FuelPaymentRow) => {
-    setInvoicesModal({ poId: row.id, poNo: row.poNo, vendorName: row.vendor.name, invoices: [], loading: true });
-    try {
-      const res = await api.get<FuelInvoiceRow[]>(`/fuel/payments/${row.id}/invoices`);
-      setInvoicesModal((prev) => prev ? { ...prev, invoices: res.data, loading: false } : prev);
-    } catch (err) {
-      console.error(err);
-      setInvoicesModal((prev) => prev ? { ...prev, loading: false } : prev);
-    }
-  };
-
-  const saveInvoiceEdit = async () => {
-    if (!editInvoice) return;
-    setEditInvoice({ ...editInvoice, saving: true });
-    try {
-      const total = editInvoice.totalAmount.trim() ? Number(editInvoice.totalAmount) : 0;
-      if (editInvoice.totalAmount.trim() && (!isFinite(total) || total < 0)) {
-        alert('Total amount must be a non-negative number.');
-        setEditInvoice({ ...editInvoice, saving: false });
-        return;
-      }
-      const res = await api.put<FuelInvoiceRow>(`/fuel/payments/invoices/${editInvoice.id}`, {
-        vendorInvNo: editInvoice.vendorInvNo.trim() || null,
-        vendorInvDate: editInvoice.vendorInvDate || null,
-        totalAmount: editInvoice.totalAmount.trim() ? total : undefined,
-      });
-      setInvoicesModal((prev) => prev ? { ...prev, invoices: prev.invoices.map((i) => i.id === editInvoice.id ? res.data : i) } : prev);
-      setEditInvoice(null);
-      await fetchPayments();
-    } catch (err: unknown) {
-      const msg = (err as { response?: { data?: { error?: string } } })?.response?.data?.error || 'Save failed';
-      alert(msg);
-      setEditInvoice((prev) => prev ? { ...prev, saving: false } : prev);
-    }
-  };
-
-  const deleteInvoice = async (invoiceId: string) => {
-    if (!invoicesModal) return;
-    if (!window.confirm('Remove this invoice attachment?')) return;
-    try {
-      await api.delete(`/fuel/payments/invoices/${invoiceId}`);
-      setInvoicesModal((prev) => prev ? { ...prev, invoices: prev.invoices.filter((i) => i.id !== invoiceId) } : prev);
-      await fetchPayments();
-    } catch (err: unknown) {
-      const msg = (err as { response?: { data?: { error?: string } } })?.response?.data?.error || 'Delete failed';
-      alert(msg);
-    }
-  };
-
-  const submitPayModal = async () => {
-    if (!payModal) return;
-    const amt = parseFloat(payModal.amount);
-    if (!isFinite(amt) || amt <= 0) {
-      alert('Enter a positive amount');
-      return;
-    }
-    if (amt > payModal.outstanding + 0.01) {
-      const ok = window.confirm(`Amount ₹${amt.toLocaleString('en-IN')} exceeds outstanding ₹${payModal.outstanding.toLocaleString('en-IN')}. Continue anyway?`);
-      if (!ok) return;
-    }
-    setPayModal({ ...payModal, submitting: true });
-    try {
-      await api.post(`/fuel/deals/${payModal.poId}/payment`, {
-        dealId: payModal.poId,
-        amount: amt,
-        mode: payModal.mode,
-        reference: payModal.reference || '',
-        remarks: payModal.remarks || '',
-      });
-      setPayModal(null);
-      await Promise.all([fetchPayments(), fetchDeals()]);
-    } catch (err: unknown) {
-      const msg = (err as { response?: { data?: { error?: string } } })?.response?.data?.error || 'Payment failed';
-      alert(msg);
-      setPayModal((prev) => prev ? { ...prev, submitting: false } : prev);
     }
   };
 
@@ -1541,7 +1298,7 @@ export default function FuelManagement() {
                           <td className="px-3 py-1.5 border-r border-slate-100 text-center">
                             <div className="flex items-center justify-center gap-1.5">
                               <button
-                                onClick={() => openInvoicesModal(p)}
+                                onClick={() => setInvoicesModal({ poId: p.id, poNo: p.poNo, vendorName: p.vendor.name })}
                                 disabled={p.invoiceCount === 0}
                                 className={`text-[10px] font-bold font-mono tabular-nums px-1.5 py-0.5 ${p.invoiceCount > 0 ? 'bg-indigo-100 text-indigo-700 hover:bg-indigo-200 cursor-pointer' : 'text-slate-300 cursor-not-allowed'}`}
                                 title={p.invoiceCount > 0 ? `${p.invoiceCount} invoice${p.invoiceCount === 1 ? '' : 's'} attached · ${fmtCurrency(p.invoicedTotal)} billed` : 'No invoices yet'}>
@@ -1560,19 +1317,10 @@ export default function FuelManagement() {
                             <div className="flex gap-1 flex-wrap">
                               {p.outstanding > 0.01 && (
                                 <button
-                                  onClick={() => {
-                                    setPayModal({
-                                      poId: p.id, poNo: p.poNo, vendorName: p.vendor.name, fuelName: p.fuelName,
-                                      outstanding: p.outstanding, amount: String(p.outstanding.toFixed(2)),
-                                      mode: 'NEFT', reference: '', remarks: '', submitting: false,
-                                    });
-                                    setPayLedger(null);
-                                    setPayLedgerLoading(true);
-                                    fetchPoLedger(p.id).then((led) => {
-                                      setPayLedger(led);
-                                      setPayLedgerLoading(false);
-                                    });
-                                  }}
+                                  onClick={() => setPayDialog({
+                                    poId: p.id, poNo: p.poNo, vendorId: p.vendor.id, vendorName: p.vendor.name, fuelName: p.fuelName,
+                                    outstanding: p.outstanding,
+                                  })}
                                   className="text-[10px] bg-blue-600 text-white px-2 py-1 font-bold uppercase tracking-widest hover:bg-blue-700">
                                   Pay
                                 </button>
@@ -1876,134 +1624,16 @@ export default function FuelManagement() {
       />
 
       {invoicesModal && (
-        <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50">
-          <div className="bg-white w-[640px] max-w-[95vw] shadow-2xl">
-            <div className="bg-slate-800 text-white px-4 py-2.5 flex items-center justify-between">
-              <div>
-                <div className="text-xs font-bold uppercase tracking-widest">Invoices · PO-{invoicesModal.poNo}</div>
-                <div className="text-[10px] text-slate-300">{invoicesModal.vendorName}</div>
-              </div>
-              <button onClick={() => setInvoicesModal(null)} className="text-slate-300 hover:text-white text-lg leading-none">×</button>
-            </div>
-            <div className="p-4 space-y-3 max-h-[70vh] overflow-y-auto">
-              {invoicesModal.loading ? (
-                <div className="text-xs text-slate-400 uppercase tracking-widest text-center py-6">Loading…</div>
-              ) : invoicesModal.invoices.length === 0 ? (
-                <div className="text-xs text-slate-400 uppercase tracking-widest text-center py-6">No invoices attached yet.</div>
-              ) : (
-                <table className="w-full text-xs">
-                  <thead>
-                    <tr className="bg-slate-100 border-b border-slate-300">
-                      <th className="text-left px-2 py-1.5 font-bold uppercase tracking-widest text-[10px] text-slate-600">File</th>
-                      <th className="text-left px-2 py-1.5 font-bold uppercase tracking-widest text-[10px] text-slate-600">Inv No.</th>
-                      <th className="text-left px-2 py-1.5 font-bold uppercase tracking-widest text-[10px] text-slate-600">Uploaded</th>
-                      <th className="text-right px-2 py-1.5 font-bold uppercase tracking-widest text-[10px] text-slate-600">Amount</th>
-                      <th className="text-left px-2 py-1.5 font-bold uppercase tracking-widest text-[10px] text-slate-600">Status</th>
-                      <th className="px-2 py-1.5"></th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {invoicesModal.invoices.map((inv, i) => {
-                      const isEditing = editInvoice?.id === inv.id;
-                      return (
-                        <tr key={inv.id} className={`border-b border-slate-100 ${i % 2 ? 'bg-slate-50/70' : ''}`}>
-                          <td className="px-2 py-1.5">
-                            {inv.filePath ? (
-                              <a href={`/uploads/${inv.filePath}`} target="_blank" rel="noopener noreferrer" className="text-blue-600 hover:underline truncate max-w-[200px] inline-block align-middle">
-                                {inv.originalFileName || 'Invoice'}
-                              </a>
-                            ) : (
-                              <span className="text-slate-400">{inv.originalFileName || '—'}</span>
-                            )}
-                          </td>
-                          <td className="px-2 py-1.5 font-mono text-slate-600">
-                            {isEditing ? (
-                              <input
-                                type="text" placeholder="—"
-                                value={editInvoice.vendorInvNo}
-                                onChange={(e) => setEditInvoice({ ...editInvoice, vendorInvNo: e.target.value })}
-                                className="w-full border border-slate-300 px-1 py-0.5 text-[11px] font-mono focus:outline-none focus:border-blue-500"
-                              />
-                            ) : (inv.vendorInvNo || '—')}
-                          </td>
-                          <td className="px-2 py-1.5 text-slate-500 font-mono text-[10px]">
-                            {isEditing ? (
-                              <input
-                                type="date"
-                                value={editInvoice.vendorInvDate}
-                                onChange={(e) => setEditInvoice({ ...editInvoice, vendorInvDate: e.target.value })}
-                                className="w-full border border-slate-300 px-1 py-0.5 text-[10px] font-mono focus:outline-none focus:border-blue-500"
-                              />
-                            ) : (
-                              new Date(inv.createdAt).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: '2-digit' })
-                            )}
-                          </td>
-                          <td className="px-2 py-1.5 text-right font-mono tabular-nums">
-                            {isEditing ? (
-                              <input
-                                type="number" step="0.01" min="0" placeholder="0"
-                                value={editInvoice.totalAmount}
-                                onChange={(e) => setEditInvoice({ ...editInvoice, totalAmount: e.target.value })}
-                                className="w-24 border border-slate-300 px-1 py-0.5 text-[11px] text-right font-mono tabular-nums focus:outline-none focus:border-blue-500"
-                              />
-                            ) : (inv.totalAmount > 0 ? fmtCurrency(inv.totalAmount) : '—')}
-                          </td>
-                          <td className="px-2 py-1.5">
-                            <span className={`text-[9px] font-bold uppercase tracking-widest px-1.5 py-0.5 ${inv.status === 'PAID' ? 'bg-emerald-100 text-emerald-700' : inv.status === 'PARTIAL_PAID' ? 'bg-amber-100 text-amber-700' : inv.status === 'CANCELLED' ? 'bg-slate-100 text-slate-500' : 'bg-blue-100 text-blue-700'}`}>
-                              {inv.status}
-                            </span>
-                          </td>
-                          <td className="px-2 py-1.5 text-right whitespace-nowrap">
-                            {isEditing ? (
-                              <div className="flex gap-1.5 justify-end">
-                                <button onClick={saveInvoiceEdit} disabled={editInvoice.saving} className="text-[10px] text-emerald-700 font-semibold uppercase hover:underline disabled:opacity-50">
-                                  {editInvoice.saving ? '…' : 'Save'}
-                                </button>
-                                <button onClick={() => setEditInvoice(null)} disabled={editInvoice.saving} className="text-[10px] text-slate-500 font-semibold uppercase hover:underline disabled:opacity-50">
-                                  Cancel
-                                </button>
-                              </div>
-                            ) : (
-                              <div className="flex gap-1.5 justify-end">
-                                <button
-                                  onClick={() => setEditInvoice({
-                                    id: inv.id,
-                                    vendorInvNo: inv.vendorInvNo || '',
-                                    vendorInvDate: inv.vendorInvDate ? String(inv.vendorInvDate).slice(0, 10) : '',
-                                    totalAmount: inv.totalAmount > 0 ? String(inv.totalAmount) : '',
-                                    saving: false,
-                                  })}
-                                  className="text-[10px] text-blue-700 font-semibold uppercase hover:underline">
-                                  Edit
-                                </button>
-                                {(inv.paidAmount || 0) === 0 && (
-                                  <button onClick={() => deleteInvoice(inv.id)} className="text-[10px] text-red-600 font-semibold uppercase hover:underline">
-                                    Delete
-                                  </button>
-                                )}
-                              </div>
-                            )}
-                          </td>
-                        </tr>
-                      );
-                    })}
-                  </tbody>
-                </table>
-              )}
-            </div>
-            <div className="bg-slate-50 border-t border-slate-200 px-4 py-2.5 flex justify-between items-center">
-              <button
-                onClick={() => triggerInvoiceUpload(invoicesModal.poId)}
-                disabled={uploadingPoId === invoicesModal.poId}
-                className="px-3 py-1.5 text-[11px] font-bold uppercase tracking-widest bg-blue-600 text-white hover:bg-blue-700 disabled:opacity-50">
-                {uploadingPoId === invoicesModal.poId ? 'Uploading…' : '+ Upload Files'}
-              </button>
-              <button onClick={() => setInvoicesModal(null)} className="px-3 py-1.5 text-[11px] font-bold uppercase tracking-widest text-slate-600 border border-slate-300 hover:bg-slate-100">
-                Close
-              </button>
-            </div>
-          </div>
-        </div>
+        <InvoiceList
+          key={`invoices-${invoicesModal.poId}-${invoiceListNonce}`}
+          poId={invoicesModal.poId}
+          poNo={invoicesModal.poNo}
+          vendorName={invoicesModal.vendorName}
+          fmtCurrency={fmtCurrency}
+          onClose={() => setInvoicesModal(null)}
+          onChanged={() => { fetchPayments(); }}
+          onTriggerUpload={() => triggerInvoiceUpload(invoicesModal.poId)}
+        />
       )}
 
       {uploadStaging && (
@@ -2131,90 +1761,21 @@ export default function FuelManagement() {
         </div>
       )}
 
-      {payModal && (
-        <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50">
-          <div className="bg-white w-[920px] max-w-[95vw] max-h-[92vh] shadow-2xl flex flex-col">
-            <div className="bg-slate-800 text-white px-4 py-2.5 flex items-center justify-between">
-              <div>
-                <div className="text-xs font-bold uppercase tracking-widest">Pay PO-{payModal.poNo}</div>
-                <div className="text-[10px] text-slate-300">{payModal.vendorName} · {payModal.fuelName}</div>
-              </div>
-              <button onClick={() => setPayModal(null)} disabled={payModal.submitting} className="text-slate-300 hover:text-white text-lg leading-none disabled:opacity-50">×</button>
-            </div>
-            <div className="flex-1 overflow-y-auto grid grid-cols-1 md:grid-cols-2 gap-0">
-              {/* Left: form */}
-              <div className="p-4 space-y-3 border-r border-slate-200">
-                <div className="bg-slate-50 border border-slate-200 px-3 py-2">
-                  <div className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Outstanding</div>
-                  <div className="text-lg font-bold text-red-700 font-mono tabular-nums">{fmtCurrency(payModal.outstanding)}</div>
-                </div>
-                <div>
-                  <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">Amount (₹)</label>
-                  <input
-                    type="number" step="0.01" min="0"
-                    value={payModal.amount}
-                    onChange={(e) => setPayModal({ ...payModal, amount: e.target.value })}
-                    className="w-full mt-1 border border-slate-300 px-2 py-1.5 text-sm font-mono tabular-nums focus:outline-none focus:border-blue-500"
-                    autoFocus
-                  />
-                </div>
-                <div>
-                  <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">Mode</label>
-                  <select
-                    value={payModal.mode}
-                    onChange={(e) => setPayModal({ ...payModal, mode: e.target.value as PayModalState['mode'] })}
-                    className="w-full mt-1 border border-slate-300 px-2 py-1.5 text-sm focus:outline-none focus:border-blue-500"
-                  >
-                    <option value="NEFT">NEFT</option>
-                    <option value="RTGS">RTGS</option>
-                    <option value="UPI">UPI</option>
-                    <option value="BANK_TRANSFER">Bank Transfer</option>
-                    <option value="CHEQUE">Cheque</option>
-                    <option value="CASH">Cash</option>
-                  </select>
-                </div>
-                {payModal.mode !== 'CASH' && (
-                  <div>
-                    <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">Reference / UTR</label>
-                    <input
-                      type="text"
-                      value={payModal.reference}
-                      onChange={(e) => setPayModal({ ...payModal, reference: e.target.value })}
-                      placeholder={payModal.mode === 'CHEQUE' ? 'Cheque no.' : 'UTR / UPI ref'}
-                      className="w-full mt-1 border border-slate-300 px-2 py-1.5 text-sm font-mono focus:outline-none focus:border-blue-500"
-                    />
-                  </div>
-                )}
-                <div>
-                  <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">Remarks (optional)</label>
-                  <input
-                    type="text"
-                    value={payModal.remarks}
-                    onChange={(e) => setPayModal({ ...payModal, remarks: e.target.value })}
-                    className="w-full mt-1 border border-slate-300 px-2 py-1.5 text-sm focus:outline-none focus:border-blue-500"
-                  />
-                </div>
-              </div>
-              {/* Right: PO ledger panel */}
-              <div className="p-4 bg-slate-50">
-                <PoLedgerPanel
-                  led={payLedger}
-                  loading={payLedgerLoading}
-                  fmtCurrency={fmtCurrency}
-                  onOpenVendorLedger={payModal ? () => setLedgerModal({ vendorId: payLedger?.vendor.id || '', vendorName: payModal.vendorName }) : undefined}
-                />
-              </div>
-            </div>
-            <div className="bg-slate-50 border-t border-slate-200 px-4 py-2.5 flex justify-end gap-2">
-              <button onClick={() => setPayModal(null)} disabled={payModal.submitting} className="px-3 py-1.5 text-[11px] font-bold uppercase tracking-widest text-slate-600 border border-slate-300 hover:bg-slate-100 disabled:opacity-50">
-                Cancel
-              </button>
-              <button onClick={submitPayModal} disabled={payModal.submitting || !payModal.amount} className="px-4 py-1.5 text-[11px] font-bold uppercase tracking-widest bg-blue-600 text-white hover:bg-blue-700 disabled:opacity-50">
-                {payModal.submitting ? 'Recording…' : 'Record Payment'}
-              </button>
-            </div>
-          </div>
-        </div>
+      {payDialog && (
+        <PayDialog
+          poId={payDialog.poId}
+          poNo={payDialog.poNo}
+          vendorName={payDialog.vendorName}
+          fuelName={payDialog.fuelName}
+          outstanding={payDialog.outstanding}
+          fmtCurrency={fmtCurrency}
+          onClose={() => setPayDialog(null)}
+          onPaid={() => {
+            setPayDialog(null);
+            void Promise.all([fetchPayments(), fetchDeals()]);
+          }}
+          onOpenVendorLedger={() => setLedgerModal({ vendorId: payDialog.vendorId, vendorName: payDialog.vendorName })}
+        />
       )}
     </div>
   );
