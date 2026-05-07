@@ -3,7 +3,7 @@
   "version": "1.1.1",
   "private": true,
   "scripts": {
-    "build": "cd backend && npm ci && npx prisma generate && npx prisma generate --schema=prisma/opc/schema.prisma && npx tsc --outDir dist && cp -r src/data dist/ && cp -r src/templates dist/ && cd ../frontend && npm ci && npx vite build --outDir ../backend/public --emptyOutDir && cd .. && rm -rf frontend/node_modules && cd backend && npm prune --omit=dev",
+    "build": "cd backend && npm ci && npx prisma generate && npx prisma generate --schema=prisma/opc/schema.prisma && npx tsc --outDir dist && cp -r src/data dist/ && cp -r src/templates dist/ && cd ../frontend && npm ci && npx vite build --outDir ../backend/public --emptyOutDir && cd .. && rm -rf frontend/node_modules",
     "start": "cd backend && node dist/server.js",
     "postinstall": "npm run build"
   },
