@@ -3,7 +3,6 @@ import { CreditCard, FileText, Search, RefreshCw } from 'lucide-react';
 import api from '../../services/api';
 import PayDialog from '../../components/payments/PayDialog';
 import VendorLedgerModal from '../../components/VendorLedgerModal';
-import VendorPaymentDialog from '../../components/payments/VendorPaymentDialog';
 
 // ═══════════════════════════════════════════════
 // Helpers
@@ -160,7 +159,6 @@ export default function PaymentsOut() {
   // Modals
   const [payDialog, setPayDialog] = useState<PendingPayable | null>(null);
   const [vendorModalId, setVendorModalId] = useState<string | null>(null);
-  const [recordPaymentVendor, setRecordPaymentVendor] = useState<{ id: string; name: string } | null>(null);
 
   // ── Fetchers ──────────────────────────────────
 
@@ -415,23 +413,12 @@ export default function PaymentsOut() {
                 ))}
               </select>
               {selectedVendorId && (
-                <>
-                  <button
-                    onClick={() => {
-                      const v = filteredVendors.find((x) => x.id === selectedVendorId);
-                      if (v) setRecordPaymentVendor({ id: v.id, name: v.name });
-                    }}
-                    className="px-3 py-1.5 text-[10px] font-bold uppercase tracking-widest bg-blue-600 text-white hover:bg-blue-700"
-                  >
-                    + Record Payment
-                  </button>
-                  <button
-                    onClick={() => { setSelectedVendorId(''); setLedger([]); setLedgerBalance(0); }}
-                    className="text-[10px] text-slate-500 uppercase tracking-widest hover:text-slate-800"
-                  >
-                    Clear
-                  </button>
-                </>
+                <button
+                  onClick={() => { setSelectedVendorId(''); setLedger([]); setLedgerBalance(0); }}
+                  className="text-[10px] text-slate-500 uppercase tracking-widest hover:text-slate-800"
+                >
+                  Clear
+                </button>
               )}
             </div>
 
@@ -791,23 +778,6 @@ export default function PaymentsOut() {
         <VendorLedgerModal
           vendorId={vendorModalId}
           onClose={() => setVendorModalId(null)}
-        />
-      )}
-
-      {/* Record payment from the Vendor Ledger tab */}
-      {recordPaymentVendor && (
-        <VendorPaymentDialog
-          vendorId={recordPaymentVendor.id}
-          vendorName={recordPaymentVendor.name}
-          fmtCurrency={fmtCurrency}
-          onClose={() => setRecordPaymentVendor(null)}
-          onSaved={() => {
-            const vid = recordPaymentVendor.id;
-            setRecordPaymentVendor(null);
-            // Refetch the ledger and pending list so the new payment appears.
-            if (selectedVendorId === vid) fetchLedger(vid);
-            fetchPending();
-          }}
         />
       )}
     </div>
