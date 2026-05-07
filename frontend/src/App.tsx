@@ -67,6 +67,7 @@ const WeighmentCorrections = React.lazy(() => import('./pages/admin/WeighmentCor
 const WeighbridgeAudit = React.lazy(() => import('./pages/admin/WeighbridgeAudit'));
 const ActivityLog = React.lazy(() => import('./pages/admin/ActivityLog'));
 const AiUsage = React.lazy(() => import('./pages/admin/AiUsage'));
+const StorageHealth = React.lazy(() => import('./pages/admin/StorageHealth'));
 const Companies = React.lazy(() => import('./pages/admin/Companies'));
 // Compliance
 const ComplianceDashboard = React.lazy(() => import('./pages/compliance/ComplianceDashboard'));
@@ -251,6 +252,7 @@ export default function App() {
         <Route path="admin/weighbridge-audit" element={<WeighbridgeAudit />} />
         <Route path="admin/activity-log" element={<ActivityLog />} />
         <Route path="admin/ai-usage" element={<AiUsage />} />
+        <Route path="admin/storage-health" element={<StorageHealth />} />
         <Route path="admin/companies" element={<Companies />} />
         {/* Compliance */}
         <Route path="compliance" element={<ComplianceDashboard />} />
