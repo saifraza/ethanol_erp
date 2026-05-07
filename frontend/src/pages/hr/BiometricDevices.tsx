@@ -104,12 +104,32 @@ export default function BiometricDevices() {
           <span className="text-[10px] text-slate-400">|</span>
           <span className="text-[10px] text-slate-400">eSSL / ZKTeco — devices, mapping, sync</span>
           <div className="flex-1" />
-          {/* Bridge health pill */}
-          {bridgeStatus && (
-            <span className={`text-[9px] font-bold uppercase tracking-widest px-2 py-0.5 border ${bridgeStatus.reachable ? 'border-emerald-400 text-emerald-300' : 'border-rose-400 text-rose-300'}`}>
-              Bridge {bridgeStatus.reachable ? 'OK' : 'DOWN'}
-            </span>
-          )}
+          {/* Bridge health pill — only meaningful for cloud-led devices.
+              In factory-led mode the cloud never calls the bridge; the
+              factory-server does, on the plant LAN. Hide the badge when
+              every device is factory-managed (no cloud→bridge calls
+              expected) and surface a "Factory-led" pill instead. */}
+          {(() => {
+            const cloudLedCount = devices.filter(d => d.active && !d.factoryManaged).length;
+            const factoryLedCount = devices.filter(d => d.active && d.factoryManaged).length;
+            if (cloudLedCount === 0 && factoryLedCount > 0) {
+              return (
+                <span className="text-[9px] font-bold uppercase tracking-widest px-2 py-0.5 border border-violet-400 text-violet-300"
+                      title="All active devices are factory-managed. Cloud does not call the bridge.">
+                  Factory-led
+                </span>
+              );
+            }
+            if (bridgeStatus) {
+              return (
+                <span className={`text-[9px] font-bold uppercase tracking-widest px-2 py-0.5 border ${bridgeStatus.reachable ? 'border-emerald-400 text-emerald-300' : 'border-rose-400 text-rose-300'}`}
+                      title={bridgeStatus.reachable ? 'Cloud reaches bridge OK' : 'Cloud cannot reach bridge — only matters for cloud-led devices'}>
+                  Bridge {bridgeStatus.reachable ? 'OK' : 'DOWN'}
+                </span>
+              );
+            }
+            return null;
+          })()}
         </div>
 
         {/* Tabs */}
