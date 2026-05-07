@@ -20,6 +20,13 @@ interface PayDialogProps {
   outstanding: number;
   /** Backend surface to POST against. Defaults to 'fuel'. */
   surface?: PayDialogSurface;
+  /**
+   * URL prefix for the per-PO ledger fetch (and any future per-PO calls
+   * the dialog adds). Defaults to '/fuel/payments' — Raw Material /
+   * other surfaces pass '/raw-material-purchase/payments' etc. so the
+   * right-pane ledger hits the surface-scoped endpoint.
+   */
+  apiBase?: string;
   fmtCurrency: (n: number) => string;
   onClose: () => void;
   onPaid: () => void;
@@ -33,6 +40,7 @@ export default function PayDialog({
   subtitle,
   outstanding,
   surface = 'fuel',
+  apiBase = '/fuel/payments',
   fmtCurrency,
   onClose,
   onPaid,
@@ -51,7 +59,7 @@ export default function PayDialog({
     let cancelled = false;
     setLedger(null);
     setLedgerLoading(true);
-    api.get<PoLedger>(`/fuel/payments/${poId}/ledger`)
+    api.get<PoLedger>(`${apiBase}/${poId}/ledger`)
       .then((res) => {
         if (cancelled) return;
         setLedger(res.data);
@@ -63,7 +71,7 @@ export default function PayDialog({
         if (!cancelled) setLedgerLoading(false);
       });
     return () => { cancelled = true; };
-  }, [poId]);
+  }, [poId, apiBase]);
 
   const submit = async () => {
     const amt = parseFloat(amount);

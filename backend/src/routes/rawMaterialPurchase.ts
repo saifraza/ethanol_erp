@@ -7,6 +7,16 @@ import { NotFoundError } from '../shared/errors';
 import { z } from 'zod';
 import prisma from '../config/prisma';
 import { DEFAULT_RM_TERM_KEYS } from '../data/poTerms';
+import {
+  invoiceUploadFields,
+  getPoLedger,
+  getPoInvoices,
+  postPoInvoice,
+  putInvoice,
+  deleteInvoice,
+  editInvoiceSchema,
+  listPaymentRows,
+} from './paymentsByPo';
 
 const router = Router();
 
@@ -349,34 +359,34 @@ router.get('/deals', authenticate, asyncHandler(async (req: AuthRequest, res: Re
       }
     }
 
-    // Direct payments (no invoiceId) referencing this deal
+    // Direct VendorPayments tagged to this PO via the purchaseOrderId FK.
+    // Migrated from the legacy `remarks contains 'PO-${poNo}'` scan in PR
+    // #40-style cleanup — boot-time backfill already populated the FK on
+    // historical rows. Includes invoice-linked payments too; we de-dupe
+    // against GRN-invoice paidAmount via the fkLinkedInvoiceIds set so
+    // upload-with-payment rows don't double-count.
     const directPayments = await prisma.vendorPayment.findMany({
-      where: {
-        vendorId: deal.vendor.id,
-        invoiceId: null,
-        OR: [
-          { remarks: { contains: `PO-${deal.poNo} ` } },
-          { remarks: { endsWith: `PO-${deal.poNo}` } },
-          { remarks: { contains: `PO-${deal.poNo}|` } },
-          { remarks: { contains: `PO-${deal.poNo} |` } },
-        ],
-      },
-      select: { amount: true },
-    
-    take: 500,
-  });
+      where: { purchaseOrderId: deal.id },
+      select: { amount: true, invoiceId: true },
+      take: 500,
+    });
     let totalPaid = directPayments.reduce((s, p) => s + p.amount, 0);
+    const fkLinkedInvoiceIds = new Set(
+      directPayments.map(p => p.invoiceId).filter((x): x is string => !!x)
+    );
 
     // Invoice-based payments from GRNs
     const grnIds = deal.grns.map(g => g.id);
     if (grnIds.length > 0) {
       const invoices = await prisma.vendorInvoice.findMany({
         where: { grnId: { in: grnIds } },
-        select: { paidAmount: true },
-      
+        select: { id: true, paidAmount: true },
+
     take: 500,
   });
-      totalPaid += invoices.reduce((s, inv) => s + (inv.paidAmount || 0), 0);
+      totalPaid += invoices
+        .filter(inv => !fkLinkedInvoiceIds.has(inv.id))
+        .reduce((s, inv) => s + (inv.paidAmount || 0), 0);
     }
 
     // GrainTruck count for this deal
@@ -758,10 +768,13 @@ router.post('/deals/:id/payment', authenticate, validate(paymentSchema), asyncHa
   const tdsDeducted = parseFloat(b.tdsDeducted) || 0;
   const paymentDate = b.paymentDate ? new Date(b.paymentDate) : new Date();
 
-  // Create VendorPayment with PO reference in remarks
+  // Create VendorPayment — FK to PO is the source of truth (the legacy
+  // `remarks contains PO-…` scan above has been retired). Remarks string
+  // kept for human readability but the lookup paths use purchaseOrderId.
   const payment = await prisma.vendorPayment.create({
     data: {
       vendorId: deal.vendorId,
+      purchaseOrderId: deal.id,
       paymentDate,
       amount,
       mode: b.mode || 'CASH',
@@ -799,14 +812,7 @@ router.get('/deals/:id/payments', authenticate, asyncHandler(async (req: AuthReq
   if (!deal) return res.status(404).json({ error: 'Deal not found' });
 
   const directPayments = await prisma.vendorPayment.findMany({
-    where: {
-      vendorId: deal.vendorId,
-      OR: [
-        { remarks: { contains: `PO-${deal.poNo} ` } },
-        { remarks: { endsWith: `PO-${deal.poNo}` } },
-        { remarks: { contains: `PO-${deal.poNo}|` } },
-      ],
-    },
+    where: { purchaseOrderId: req.params.id },
     take: 200,
     orderBy: { paymentDate: 'desc' },
     select: {
@@ -969,34 +975,31 @@ router.get('/summary', authenticate, asyncHandler(async (req: AuthRequest, res: 
     const linesToSum = rawLines.length > 0 ? rawLines : deal.lines;
     const totalValue = linesToSum.reduce((s, l) => s + (l.receivedQty || 0) * (l.rate || 0), 0);
 
-    // Direct payments
+    // Direct payments via FK (was a remarks-LIKE scan; FK-migrated to match
+    // the source-of-truth pattern used elsewhere in the file).
     const directPayments = await prisma.vendorPayment.findMany({
-      where: {
-        vendorId: deal.vendor.id,
-        invoiceId: null,
-        OR: [
-          { remarks: { contains: `PO-${deal.poNo} ` } },
-          { remarks: { endsWith: `PO-${deal.poNo}` } },
-          { remarks: { contains: `PO-${deal.poNo}|` } },
-          { remarks: { contains: `PO-${deal.poNo} |` } },
-        ],
-      },
-      select: { amount: true },
-    
+      where: { purchaseOrderId: deal.id },
+      select: { amount: true, invoiceId: true },
+
     take: 500,
   });
     let totalPaid = directPayments.reduce((s, p) => s + p.amount, 0);
+    const fkLinkedInvoiceIds = new Set(
+      directPayments.map(p => p.invoiceId).filter((x): x is string => !!x)
+    );
 
     // Invoice payments
     const grnIds = deal.grns.map(g => g.id);
     if (grnIds.length > 0) {
       const invoices = await prisma.vendorInvoice.findMany({
         where: { grnId: { in: grnIds } },
-        select: { paidAmount: true },
-      
+        select: { id: true, paidAmount: true },
+
     take: 500,
   });
-      totalPaid += invoices.reduce((s, inv) => s + (inv.paidAmount || 0), 0);
+      totalPaid += invoices
+        .filter(inv => !fkLinkedInvoiceIds.has(inv.id))
+        .reduce((s, inv) => s + (inv.paidAmount || 0), 0);
     }
 
     totalOutstanding += Math.max(0, totalValue - totalPaid);
@@ -1034,5 +1037,30 @@ router.get('/summary', authenticate, asyncHandler(async (req: AuthRequest, res: 
     lowStockItems: lowStock.map(i => i.name),
   });
 }));
+
+
+// ==========================================================================
+//  RAW MATERIAL PAYMENTS — every PO with a RAW_MATERIAL line, with running
+//  balance + per-PO ledger. Mirrors the Fuel Payments tab but locked to
+//  category=RAW_MATERIAL (RM page is single-purpose; no override).
+//  Same response shape as /api/fuel/payments — frontend reuses the
+//  StorePayments-style table.
+// ==========================================================================
+router.get('/payments', authenticate, asyncHandler(async (req: AuthRequest, res: Response) => {
+  const result = await listPaymentRows({
+    companyFilter: getCompanyFilter(req),
+    categories: ['RAW_MATERIAL'],
+  });
+  res.json(result);
+}));
+
+// Per-PO endpoints — shared handlers from paymentsByPo.ts. Multer is
+// invoked at this mount site so the RM upload endpoint accepts the same
+// `files` / `file` field names + 10 MB limit as fuel.
+router.post('/payments/:poId/invoice', authenticate, invoiceUploadFields, asyncHandler(postPoInvoice));
+router.get('/payments/:poId/invoices', authenticate, asyncHandler(getPoInvoices));
+router.get('/payments/:poId/ledger', authenticate, asyncHandler(getPoLedger));
+router.put('/payments/invoices/:invoiceId', authenticate, validate(editInvoiceSchema), asyncHandler(putInvoice));
+router.delete('/payments/invoices/:invoiceId', authenticate, asyncHandler(deleteInvoice));
 
 export default router;
