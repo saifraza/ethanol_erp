@@ -6,8 +6,27 @@ import { z } from 'zod';
 import prisma from '../config/prisma';
 import { writeAudit } from '../utils/auditLog';
 import { getEffectiveGstRate, resolveHsnFromString } from '../services/taxRateLookup';
+import multer from 'multer';
+import path from 'path';
+import fs from 'fs';
+import crypto from 'crypto';
 
 const router = Router();
+
+// Multer setup for fuel-invoice uploads. Files share the same on-disk
+// directory as VendorInvoice uploads (uploads/vendor-invoices/) so the
+// existing /uploads static serve and any future Smart-Upload cleanup
+// applies uniformly. Same 10MB limit as vendorInvoices.ts.
+const fuelInvoiceUploadDir = path.join(__dirname, '../../uploads/vendor-invoices');
+if (!fs.existsSync(fuelInvoiceUploadDir)) fs.mkdirSync(fuelInvoiceUploadDir, { recursive: true });
+
+const fuelInvoiceUpload = multer({
+  storage: multer.diskStorage({
+    destination: (_req, _file, cb) => cb(null, fuelInvoiceUploadDir),
+    filename: (_req, file, cb) => cb(null, `${Date.now()}-${Math.random().toString(36).slice(2, 8)}${path.extname(file.originalname)}`),
+  }),
+  limits: { fileSize: 10 * 1024 * 1024 },
+});
 
 // ==========================================================================
 //  FUEL MASTER — InventoryItem with category='FUEL'
@@ -1067,9 +1086,21 @@ router.get('/payments', authenticate, asyncHandler(async (req: AuthRequest, res:
           inventoryItem: { select: { id: true, name: true, unit: true, category: true } },
         },
       },
-      _count: { select: { grns: true } },
+      _count: { select: { grns: true, vendorInvoices: true } },
     },
   });
+
+  // Aggregate invoiced totals per PO in a single query (cheaper than N round-trips).
+  const fuelPoIds = fuelPos.map(p => p.id);
+  const invoiceTotalsRaw = fuelPoIds.length > 0 ? await prisma.vendorInvoice.groupBy({
+    by: ['poId'],
+    where: { poId: { in: fuelPoIds } },
+    _sum: { totalAmount: true },
+  }) : [];
+  const invoicedByPo = new Map<string, number>();
+  for (const row of invoiceTotalsRaw) {
+    if (row.poId) invoicedByPo.set(row.poId, row._sum.totalAmount || 0);
+  }
 
   const result = await Promise.all(fuelPos.map(async (po) => {
     const fuelLines = po.lines.filter(l => l.inventoryItem?.category === 'FUEL');
@@ -1135,11 +1166,128 @@ router.get('/payments', authenticate, asyncHandler(async (req: AuthRequest, res:
       outstanding,
       lastPaymentDate,
       grnCount: po._count.grns,
+      invoiceCount: po._count.vendorInvoices,
+      invoicedTotal: Math.round((invoicedByPo.get(po.id) || 0) * 100) / 100,
       isFullyPaid: receivedValue > 0 && (totalPaid + pendingBank + pendingCash) >= receivedValue - 0.01,
     };
   }));
 
   res.json(result);
 }));
+
+// ==========================================================================
+//  FUEL INVOICE UPLOAD — attach a vendor bill PDF/image to a fuel PO.
+//  Lightweight: no AI extraction, no 3-way match. Just stores the file and
+//  creates a minimal VendorInvoice row (status=PENDING) so the file is
+//  visible to accounts and downloadable from the PO. Accounts can later
+//  promote it to a fully-booked invoice via /vendor-invoices flows.
+// ==========================================================================
+
+router.post(
+  '/payments/:poId/invoice',
+  authenticate,
+  fuelInvoiceUpload.single('file'),
+  asyncHandler(async (req: AuthRequest, res: Response) => {
+    if (!req.file) { res.status(400).json({ error: 'No file uploaded' }); return; }
+
+    const po = await prisma.purchaseOrder.findUnique({
+      where: { id: req.params.poId },
+      select: { id: true, poNo: true, vendorId: true, companyId: true, division: true, lines: { select: { inventoryItem: { select: { category: true } } } } },
+    });
+    if (!po) {
+      // Clean up the orphan file before bailing.
+      try { fs.unlinkSync(req.file.path); } catch { /* best effort */ }
+      res.status(404).json({ error: 'Fuel PO not found' });
+      return;
+    }
+    const isFuelPo = po.lines.some((l) => l.inventoryItem?.category === 'FUEL');
+    if (!isFuelPo) {
+      try { fs.unlinkSync(req.file.path); } catch { /* best effort */ }
+      res.status(400).json({ error: 'PO is not a fuel PO — use the regular vendor-invoice flow.' });
+      return;
+    }
+
+    // Hash file for de-dupe — re-uploading the same bill against the same
+    // PO returns the existing row instead of creating a duplicate.
+    const fileBuffer = fs.readFileSync(req.file.path);
+    const fileHash = crypto.createHash('sha256').update(fileBuffer).digest('hex');
+    const filePath = `vendor-invoices/${req.file.filename}`;
+
+    const existing = await prisma.vendorInvoice.findFirst({
+      where: { poId: po.id, fileHash },
+      select: { id: true, filePath: true, originalFileName: true, createdAt: true, totalAmount: true, vendorInvNo: true },
+    });
+    if (existing) {
+      // Same file already attached — drop the duplicate disk write.
+      try { fs.unlinkSync(req.file.path); } catch { /* best effort */ }
+      res.json({ ok: true, deduped: true, invoice: existing });
+      return;
+    }
+
+    const remarks = (typeof req.body?.remarks === 'string' ? req.body.remarks : '').slice(0, 500) || null;
+    const vendorInvNo = (typeof req.body?.vendorInvNo === 'string' ? req.body.vendorInvNo : '').slice(0, 50) || null;
+
+    const invoice = await prisma.vendorInvoice.create({
+      data: {
+        vendorId: po.vendorId,
+        poId: po.id,
+        vendorInvNo,
+        invoiceDate: new Date(),
+        productName: '',
+        status: 'PENDING',
+        filePath,
+        fileHash,
+        originalFileName: req.file.originalname,
+        remarks,
+        userId: req.user!.id,
+        companyId: po.companyId ?? getActiveCompanyId(req),
+        division: po.division ?? 'ETHANOL',
+      },
+      select: { id: true, filePath: true, originalFileName: true, createdAt: true, totalAmount: true, vendorInvNo: true },
+    });
+
+    res.status(201).json({ ok: true, deduped: false, invoice });
+  }),
+);
+
+router.get(
+  '/payments/:poId/invoices',
+  authenticate,
+  asyncHandler(async (req: AuthRequest, res: Response) => {
+    const invoices = await prisma.vendorInvoice.findMany({
+      where: { poId: req.params.poId },
+      take: 200,
+      orderBy: { createdAt: 'desc' },
+      select: {
+        id: true, vendorInvNo: true, vendorInvDate: true, invoiceDate: true,
+        totalAmount: true, paidAmount: true, status: true,
+        filePath: true, originalFileName: true, remarks: true, createdAt: true,
+      },
+    });
+    res.json(invoices);
+  }),
+);
+
+router.delete(
+  '/payments/invoices/:invoiceId',
+  authenticate,
+  asyncHandler(async (req: AuthRequest, res: Response) => {
+    const inv = await prisma.vendorInvoice.findUnique({
+      where: { id: req.params.invoiceId },
+      select: { id: true, filePath: true, status: true, paidAmount: true, poId: true },
+    });
+    if (!inv) { res.status(404).json({ error: 'Invoice not found' }); return; }
+    if ((inv.paidAmount || 0) > 0) {
+      res.status(400).json({ error: 'Cannot delete — invoice has payments recorded against it.' });
+      return;
+    }
+    await prisma.vendorInvoice.delete({ where: { id: inv.id } });
+    if (inv.filePath) {
+      const onDisk = path.join(__dirname, '../../uploads', inv.filePath);
+      try { fs.unlinkSync(onDisk); } catch { /* file may already be gone */ }
+    }
+    res.json({ ok: true });
+  }),
+);
 
 export default router;
