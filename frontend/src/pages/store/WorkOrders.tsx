@@ -116,6 +116,7 @@ interface WorkOrder {
   creditDays: number;
   remarks?: string | null;
   division?: string | null;
+  termsAndConditions?: Array<{ title: string; body: string }> | null;
   createdAt: string;
   lines?: WorkOrderLine[];
   progress?: ProgressEntry[];
@@ -200,6 +201,27 @@ const DEFAULT_RATE_CARD: RateCardEntry[] = [
   { category: 'SUPERVISOR',   label: 'Supervisor',   rate8h: 0, rate12h: 0 },
 ];
 
+// Default Terms & Conditions for new MANPOWER_SUPPLY work orders. Sourced from
+// the standard MSPIL manpower-WO template. The user can edit/add/remove on a
+// per-WO basis. Backend keeps a copy too (data/manpowerWoTerms.ts) so a
+// half-finished form still produces a valid PDF.
+const DEFAULT_MANPOWER_TERMS: Array<{ title: string; body: string }> = [
+  { title: 'Labor Deployment',
+    body: 'Contractor will deploy physically fit and experienced labourers as agreed.\nReplacement shall be provided if any labour is found unfit or unskilled.' },
+  { title: 'Work Responsibility',
+    body: 'Laborers shall work only as per the instructions given by the authorized client representative.\nContractor is responsible for labor discipline and behavior.' },
+  { title: 'Safety & Compliance',
+    body: 'Contractor must ensure safety equipment where required.\nClient shall not be held liable for any injury or accident of the labor during work.\nAll statutory compliances including PF, ESI, etc. shall be shared on a 50:50 basis, wherein 50% shall be borne by the contractor and the remaining 50% shall be borne by the company, as per applicable rules and regulations.' },
+  { title: 'Damage & Liability',
+    body: 'Labour will handle materials carefully; however:\nMinor operational damages are not the contractor’s liability.\nMajor damage due to negligence will be compensated as mutually agreed.' },
+  { title: 'Termination of Work Order',
+    body: 'This work order will remain valid for the period agreed at the time of issue.' },
+  { title: 'Dispute Resolution',
+    body: 'Any dispute will be settled amicably.\nIf unresolved, the jurisdiction shall be Narsinghpur courts only.' },
+  { title: 'Duties & Taxes',
+    body: 'Taxes and duties, PF, ESI etc. extra as applicable according to law, at the time of billing.' },
+];
+
 const emptyRosterRow = (categoryKey = 'SKILLED'): ManpowerRosterRow => ({
   categoryKey,
   shiftHours: 8,
@@ -274,6 +296,7 @@ export default function WorkOrders() {
   const [formRetention, setFormRetention] = useState(0);
   const [formCreditDays, setFormCreditDays] = useState(30);
   const [formPaymentTerms, setFormPaymentTerms] = useState('');
+  const [formTerms, setFormTerms] = useState<Array<{ title: string; body: string }>>([]);
   const [formRemarks, setFormRemarks] = useState('');
   const [formLines, setFormLines] = useState<DraftLine[]>([emptyLine()]);
   // Manpower form state
@@ -409,6 +432,9 @@ export default function WorkOrders() {
     setFormRetention(0);
     setFormCreditDays(30);
     setFormPaymentTerms('');
+    setFormTerms(
+      kind === 'MANPOWER_SUPPLY' ? DEFAULT_MANPOWER_TERMS.map(t => ({ ...t })) : [],
+    );
     setFormRemarks('');
     setFormLines([emptyLine()]);
     setFormRateCard(DEFAULT_RATE_CARD.map((e) => ({ ...e })));
@@ -435,6 +461,14 @@ export default function WorkOrders() {
     setFormRetention(wo.retentionPercent);
     setFormCreditDays(wo.creditDays);
     setFormPaymentTerms(wo.paymentTerms ?? '');
+    // Existing T&C: use what's stored. Otherwise pre-fill from defaults for
+    // manpower-supply WOs created before this feature shipped (so the editor
+    // has something to start from instead of an empty list).
+    setFormTerms(
+      Array.isArray(wo.termsAndConditions) && wo.termsAndConditions.length > 0
+        ? wo.termsAndConditions.map(t => ({ ...t }))
+        : (kind === 'MANPOWER_SUPPLY' ? DEFAULT_MANPOWER_TERMS.map(t => ({ ...t })) : []),
+    );
     setFormRemarks(wo.remarks ?? '');
     if (kind === 'MANPOWER_SUPPLY') {
       const card = (wo.manpowerRateCard && wo.manpowerRateCard.length > 0) ? wo.manpowerRateCard : DEFAULT_RATE_CARD;
@@ -532,6 +566,14 @@ export default function WorkOrders() {
         paymentTerms: formPaymentTerms || null,
         creditDays: formCreditDays,
         remarks: formRemarks || null,
+        // Strip empty rows; trim title/body. Empty arrays send null so backend
+        // can apply the manpower default (server-side safety net).
+        termsAndConditions: (() => {
+          const cleaned = formTerms
+            .map(t => ({ title: t.title.trim(), body: (t.body ?? '').trim() }))
+            .filter(t => t.title.length > 0);
+          return cleaned.length > 0 ? cleaned : null;
+        })(),
         lines: payloadLines,
       };
       if (editId) {
@@ -1033,6 +1075,58 @@ export default function WorkOrders() {
                   <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-0.5">Payment Terms</label>
                   <input type="text" value={formPaymentTerms} onChange={(e) => setFormPaymentTerms(e.target.value)} placeholder="30% advance, 60% on completion, 10% retention release after 90 days" className="w-full border border-slate-300 px-2 py-1.5 text-xs" />
                 </div>
+              </div>
+
+              {/* Terms & Conditions editor — list of {title, body} sections rendered
+                  as numbered list on the PDF. Pre-filled with 7 standard sections
+                  for manpower-supply WOs (DEFAULT_MANPOWER_TERMS); GENERAL contracts
+                  start empty and the user can opt-in. */}
+              <div className="border border-slate-300 bg-slate-50/50 p-3 mt-2">
+                <div className="flex items-center justify-between mb-2">
+                  <div>
+                    <div className="text-[10px] font-bold text-slate-600 uppercase tracking-widest">Terms &amp; Conditions</div>
+                    <div className="text-[10px] text-slate-500 mt-0.5">Numbered list rendered on the WO PDF. Edit body to customise per-WO.</div>
+                  </div>
+                  <div className="flex gap-2">
+                    {formTerms.length === 0 && formContractType === 'MANPOWER_SUPPLY' && (
+                      <button type="button" onClick={() => setFormTerms(DEFAULT_MANPOWER_TERMS.map(t => ({ ...t })))}
+                        className="px-2 py-1 text-[11px] border border-violet-400 text-violet-700 bg-white hover:bg-violet-50">
+                        Load Standard 7
+                      </button>
+                    )}
+                    <button type="button" onClick={() => setFormTerms(prev => [...prev, { title: '', body: '' }])}
+                      className="px-2 py-1 text-[11px] border border-slate-400 text-slate-700 bg-white hover:bg-slate-100">
+                      + Add Section
+                    </button>
+                  </div>
+                </div>
+                {formTerms.length === 0 ? (
+                  <div className="text-[11px] text-slate-400 italic py-3 text-center">No T&amp;C sections — click "Add Section" to start, or "Load Standard 7" for the manpower template.</div>
+                ) : (
+                  <div className="space-y-2">
+                    {formTerms.map((t, idx) => (
+                      <div key={idx} className="border border-slate-200 bg-white p-2">
+                        <div className="flex items-center gap-2 mb-1">
+                          <span className="text-[10px] font-bold text-slate-500 w-5 text-right">{idx + 1}.</span>
+                          <input type="text" value={t.title} placeholder="Section title (e.g. Labor Deployment)"
+                            onChange={(e) => setFormTerms(prev => prev.map((p, i) => i === idx ? { ...p, title: e.target.value } : p))}
+                            className="flex-1 border border-slate-300 px-2 py-1 text-xs font-semibold" />
+                          <button type="button" onClick={() => setFormTerms(prev => prev.filter((_, i) => i !== idx))}
+                            className="px-2 py-1 text-[10px] text-rose-600 hover:bg-rose-50 border border-rose-200">Remove</button>
+                          <button type="button" disabled={idx === 0}
+                            onClick={() => setFormTerms(prev => { const a = [...prev]; [a[idx - 1], a[idx]] = [a[idx], a[idx - 1]]; return a; })}
+                            className="px-2 py-1 text-[10px] text-slate-500 hover:bg-slate-50 border border-slate-200 disabled:opacity-30">↑</button>
+                          <button type="button" disabled={idx === formTerms.length - 1}
+                            onClick={() => setFormTerms(prev => { const a = [...prev]; [a[idx + 1], a[idx]] = [a[idx], a[idx + 1]]; return a; })}
+                            className="px-2 py-1 text-[10px] text-slate-500 hover:bg-slate-50 border border-slate-200 disabled:opacity-30">↓</button>
+                        </div>
+                        <textarea value={t.body} placeholder="Body — multiple lines OK; renders as bullet block on PDF"
+                          onChange={(e) => setFormTerms(prev => prev.map((p, i) => i === idx ? { ...p, body: e.target.value } : p))}
+                          rows={3} className="w-full border border-slate-300 px-2 py-1 text-xs font-normal" />
+                      </div>
+                    ))}
+                  </div>
+                )}
               </div>
 
               {/* Lines table — GENERAL contracts only */}

@@ -89,6 +89,8 @@ const EXPECTED_COLUMNS: ColumnCheck[] = [
   // 2026-05-07 — Fuel Payments tab + bulletproof PO ↔ payment join.
   // Replaces the broken `remarks contains "PO-{poNo}"` matcher (PO-1 vs PO-10 collided).
   { table: 'VendorPayment', column: 'purchaseOrderId', sql: `ALTER TABLE "VendorPayment" ADD COLUMN IF NOT EXISTS "purchaseOrderId" TEXT` },
+  // 2026-05-07 — Editable T&C on Work Orders (JSON array of {title, body})
+  { table: 'WorkOrder', column: 'termsAndConditions', sql: `ALTER TABLE "WorkOrder" ADD COLUMN IF NOT EXISTS "termsAndConditions" JSONB` },
 ];
 
 const EXPECTED_TABLES: TableCheck[] = [
