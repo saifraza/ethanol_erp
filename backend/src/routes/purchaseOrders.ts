@@ -976,12 +976,21 @@ router.get('/:id/payments', asyncHandler(async (req: AuthRequest, res: Response)
   });
   if (!po) return res.status(404).json({ error: 'PO not found' });
 
-  // Calculate receivable from RECEIVED quantity only (not full PO)
-  const receivable = Math.round(po.lines.reduce((s, l) => {
+  // Same fallback chain as the POST /:id/pay handler below — keeps the
+  // ledger's `remaining` consistent with what Pay actually allows.
+  const receivedValue = Math.round(po.lines.reduce((s, l) => {
     const base = (l.receivedQty || 0) * l.rate;
     return s + base + base * (l.gstPercent || 0) / 100;
   }, 0) * 100) / 100;
-  const poTotal = po.grandTotal > 0 ? po.grandTotal : receivable;
+  const poTotal = po.grandTotal > 0 ? po.grandTotal : receivedValue;
+  const invoicedAggLedger = await prisma.vendorInvoice.aggregate({
+    where: { poId: po.id },
+    _sum: { totalAmount: true },
+  });
+  const invoicedTotalLedger = invoicedAggLedger._sum.totalAmount || 0;
+  const receivable = receivedValue > 0
+    ? receivedValue
+    : invoicedTotalLedger > 0 ? invoicedTotalLedger : poTotal;
 
   // Payments tied to this PO via FK (post-2026-05-07). Boot-time backfill
   // migrated legacy rows from the old `remarks` matcher.
@@ -1038,8 +1047,13 @@ router.post('/:id/pay', asyncHandler(async (req: AuthRequest, res: Response) => 
   const FUEL_KEYWORDS = ['coal', 'husk', 'bagasse', 'mustard', 'furnace', 'diesel', 'hsd', 'lfo', 'hfo', 'biomass'];
   const isFuel = itemCategory === 'FUEL' || FUEL_KEYWORDS.some(kw => (po.lines[0]?.description || '').toLowerCase().includes(kw));
 
-  // Calculate receivable — based on RECEIVED quantity only (not full PO value)
-  // User can only pay for material that's actually been delivered
+  // Receivable basis — same fallback chain as /api/fuel/payments (#46):
+  //   1. receivedValue when GRNs exist (only pay for what arrived)
+  //   2. invoicedTotal when bills are on file but no weighbridge
+  //   3. poTotal as the planned-amount fallback for manual no-GRN POs
+  // Without this, the row endpoint says "you owe ₹X (planned)" but Pay
+  // rejects the payment as "exceeds remaining ₹0" because receivedValue
+  // is 0. Surfaced on PO-112 (3 invoices, no GRNs).
   const receivedValue = Math.round(po.lines.reduce((s, l) => {
     const base = (l.receivedQty || 0) * l.rate;
     return s + base + base * (l.gstPercent || 0) / 100;
@@ -1049,7 +1063,14 @@ router.post('/:id/pay', asyncHandler(async (req: AuthRequest, res: Response) => 
     const base = qty * l.rate;
     return s + base + base * (l.gstPercent || 0) / 100;
   }, 0) * 100) / 100;
-  const receivable = receivedValue; // Cap at received value, not PO total
+  const invoicedAgg = await prisma.vendorInvoice.aggregate({
+    where: { poId: po.id },
+    _sum: { totalAmount: true },
+  });
+  const invoicedTotal = invoicedAgg._sum.totalAmount || 0;
+  const receivable = receivedValue > 0
+    ? receivedValue
+    : invoicedTotal > 0 ? invoicedTotal : poTotal;
 
   // Already paid + pending-bank lookups now key off VendorPayment.purchaseOrderId.
   const existingPayments = await prisma.vendorPayment.findMany({

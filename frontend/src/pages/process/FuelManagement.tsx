@@ -1105,7 +1105,7 @@ export default function FuelManagement() {
             title="Fuel Payments"
             defaultCategory="FUEL"
             invoiceUploadCategories="FUEL"
-            paySurface="fuel"
+            paySurface="generic"
             renderToolbar={false}
             variant="fuel"
             posLabel="Fuel POs"
