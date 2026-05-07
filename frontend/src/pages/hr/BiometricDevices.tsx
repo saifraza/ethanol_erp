@@ -23,6 +23,8 @@ interface BiometricDevice {
   autoPushMinutes: number;
   lastAutoPullAt: string | null;
   lastAutoPushAt: string | null;
+  factoryManaged: boolean;
+  lastFactorySyncAt: string | null;
 }
 
 interface DeviceUser {
@@ -192,7 +194,13 @@ function DevicesView({ devices, loading, reload, edit }: { devices: BiometricDev
               {!loading && devices.length === 0 && <tr><td colSpan={9} className="px-3 py-6 text-center text-xs text-slate-400 uppercase tracking-widest">No devices configured. Add one to start.</td></tr>}
               {devices.map(d => (
                 <tr key={d.id} className="border-b border-slate-100 even:bg-slate-50/70">
-                  <td className="px-3 py-1.5 border-r border-slate-100 font-mono">{d.code}</td>
+                  <td className="px-3 py-1.5 border-r border-slate-100 font-mono">
+                    {d.code}
+                    {d.factoryManaged && (
+                      <span title={d.lastFactorySyncAt ? `Factory-managed (last sync: ${new Date(d.lastFactorySyncAt).toLocaleString('en-IN')})` : 'Factory-managed (no factory sync yet)'}
+                            className="ml-1 text-[8px] font-bold uppercase px-1 py-0.5 border border-violet-400 text-violet-700 bg-violet-50">FACTORY</span>
+                    )}
+                  </td>
                   <td className="px-3 py-1.5 border-r border-slate-100">{d.name}</td>
                   <td className="px-3 py-1.5 border-r border-slate-100 text-slate-500">{d.location || '--'}</td>
                   <td className="px-3 py-1.5 border-r border-slate-100 font-mono text-center">{d.ip}:{d.port}</td>
@@ -334,6 +342,27 @@ function DeviceFormModal({ initial, onClose }: { initial: Partial<BiometricDevic
                 {d.lastAutoPushAt && <>Last auto-push: <span className="font-mono">{new Date(d.lastAutoPushAt).toLocaleString('en-IN')}</span></>}
               </div>
             )}
+          </div>
+          <div className="col-span-2 mt-2 pt-3 border-t border-slate-200">
+            <label className="flex items-start gap-2 cursor-pointer">
+              <input
+                type="checkbox"
+                checked={!!d.factoryManaged}
+                onChange={e => setD({ ...d, factoryManaged: e.target.checked })}
+                className="mt-0.5"
+              />
+              <div className="flex-1">
+                <div className="text-[11px] font-semibold text-slate-700">Factory-managed</div>
+                <div className="text-[10px] text-slate-500 leading-relaxed mt-0.5">
+                  When checked, the factory-server PC pulls punches into its own DB and batches them here. Cloud scheduler skips this device. Use this once factory-server is deployed and the bridge is reachable from it. Default <span className="font-mono">off</span> = cloud pulls directly via the bridge.
+                </div>
+                {d.lastFactorySyncAt && (
+                  <div className="text-[10px] text-slate-500 mt-1">
+                    Last factory sync: <span className="font-mono">{new Date(d.lastFactorySyncAt).toLocaleString('en-IN')}</span>
+                  </div>
+                )}
+              </div>
+            </label>
           </div>
           {(d.serialNumber || d.firmware) && (
             <div className="col-span-2 text-[10px] text-slate-500 border-t border-slate-200 pt-2">

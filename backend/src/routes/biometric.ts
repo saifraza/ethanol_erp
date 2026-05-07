@@ -77,6 +77,9 @@ const deviceSchema = z.object({
   notes: z.string().nullable().optional(),
   autoPullMinutes: z.number().int().min(0).max(1440).default(0),
   autoPushMinutes: z.number().int().min(0).max(1440).default(0),
+  // 2026-05-07 — when true, factory-server PC owns this device; cloud
+  // scheduler skips it. Toggleable from the BiometricDevices admin UI.
+  factoryManaged: z.boolean().default(false),
 });
 
 router.get('/devices', asyncHandler(async (req: AuthRequest, res: Response) => {
