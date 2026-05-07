@@ -1,6 +1,37 @@
 // Shared payment-related types used by FuelManagement and the
 // payments component library (PoLedgerPanel, PayDialog, InvoiceList).
 
+// One row per PO returned by the payments listing endpoints
+// (/fuel/payments and /raw-material-purchase/payments share this shape).
+// The column was originally named after fuel; for store / RM rows the
+// `fuelName` field carries the line description / material name.
+export interface PaymentRow {
+  id: string;
+  poNo: number;
+  poDate: string;
+  status: string;
+  dealType: string;
+  paymentTerms: string | null;
+  creditDays: number;
+  vendor: { id: string; name: string; phone: string | null; bankName?: string | null; bankAccount?: string | null; bankIfsc?: string | null };
+  fuelName: string;
+  fuelUnit: string;
+  totalReceived: number;
+  poTotal: number;
+  receivedValue: number;
+  totalPaid: number;
+  pendingBank: number;
+  pendingCash: number;
+  outstanding: number;
+  payableBasis: number;
+  basisSource: 'RECEIVED' | 'INVOICED' | 'PLANNED';
+  lastPaymentDate: string | null;
+  grnCount: number;
+  invoiceCount: number;
+  invoicedTotal: number;
+  isFullyPaid: boolean;
+}
+
 // One uploaded invoice attached to a fuel PO.
 export interface FuelInvoiceRow {
   id: string;
