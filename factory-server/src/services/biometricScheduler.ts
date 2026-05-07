@@ -59,6 +59,13 @@ async function tick(): Promise<void> {
     const devices = await prisma.cachedBiometricDevice.findMany();
     if (devices.length === 0) return;
 
+    // Auto time-sync interval (every 60 min). Hard-coded — admins shouldn't
+    // need to think about clock drift; device clocks should "just work."
+    // Factory-server's clock is the canonical source (Windows NTP keeps it
+    // accurate). Pushes its own clock to every device every hour, keeping
+    // all devices within ~1 second of each other.
+    const TIME_SYNC_INTERVAL_MS = 60 * 60_000;
+
     for (const d of devices) {
       if (d.autoPullMinutes > 0) {
         const due = !d.lastPullAt || (Date.now() - d.lastPullAt.getTime()) >= d.autoPullMinutes * 60_000;
@@ -80,11 +87,50 @@ async function tick(): Promise<void> {
           }).finally(() => inFlight.delete(key));
         }
       }
+      // Time sync — independent of pull/push intervals
+      const timeSyncDue = !d.lastTimeSyncAt
+        || (Date.now() - d.lastTimeSyncAt.getTime()) >= TIME_SYNC_INTERVAL_MS;
+      const tsKey = `time|${d.id}`;
+      if (timeSyncDue && !inFlight.has(tsKey)) {
+        inFlight.add(tsKey);
+        autoTimeSync(d).catch(err => {
+          console.warn(`[biometric time ${d.code}] ${err instanceof Error ? err.message : err}`);
+        }).finally(() => inFlight.delete(tsKey));
+      }
     }
     _lastError = null;
   } catch (err) {
     _lastError = err instanceof Error ? err.message : String(err);
     console.warn(`[biometric] tick failed: ${_lastError}`);
+  }
+}
+
+async function autoTimeSync(d: CachedDevice): Promise<void> {
+  // Push factory-server's UTC clock to the device. `set_to` omitted = bridge
+  // uses NOW from its own clock, which on the factory PC is NTP-aligned.
+  const ctrl = new AbortController();
+  const timer = setTimeout(() => ctrl.abort(), 15_000);
+  try {
+    const res = await fetch(`${config.biometricBridgeUrl}/devices/time/sync`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'X-Bridge-Key': config.biometricBridgeKey },
+      body: JSON.stringify({ device: toRef(d) }),
+      signal: ctrl.signal,
+    });
+    if (!res.ok) {
+      const txt = await res.text().catch(() => '');
+      throw new Error(`bridge ${res.status}: ${txt.slice(0, 100)}`);
+    }
+    await prisma.cachedBiometricDevice.update({
+      where: { id: d.id },
+      data: { lastTimeSyncAt: new Date() },
+    });
+    console.log(`[biometric time ${d.code}] clock synced`);
+  } catch (err) {
+    // Non-fatal -- clock drift is bounded by next attempt 60 min later.
+    console.warn(`[biometric time ${d.code}] sync failed: ${err instanceof Error ? err.message : err}`);
+  } finally {
+    clearTimeout(timer);
   }
 }
 
@@ -96,6 +142,8 @@ interface CachedDevice {
   password: number;
   companyId: string | null;
   lastPullAt: Date | null;
+  lastPushAt: Date | null;
+  lastTimeSyncAt: Date | null;
 }
 
 async function autoPull(d: CachedDevice): Promise<void> {

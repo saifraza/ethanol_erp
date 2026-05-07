@@ -204,14 +204,17 @@ function DailyView({ employees }: { employees: EmployeeRef[] }) {
                       {sorted.map(p => (
                         <span
                           key={p.id}
-                          title={p.source}
-                          className={`inline-block mr-1 px-1.5 py-0.5 border text-[10px] font-mono ${
+                          title={`${p.source}${p.deviceId ? ` · ${p.deviceId}` : ''}`}
+                          className={`inline-flex items-center gap-1 mr-1 px-1.5 py-0.5 border text-[10px] font-mono ${
                             p.source === 'DEVICE' ? 'border-emerald-300 bg-emerald-50' :
                             p.source === 'MANUAL' ? 'border-amber-300 bg-amber-50' :
                             'border-slate-300 bg-slate-50'
                           }`}
                         >
                           {fmtTime(p.punchAt)}
+                          {p.deviceId && (
+                            <span className="text-[9px] text-slate-400 font-semibold">{p.deviceId}</span>
+                          )}
                         </span>
                       ))}
                     </td>

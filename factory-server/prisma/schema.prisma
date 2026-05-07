@@ -413,6 +413,7 @@ model CachedBiometricDevice {
   // Local sync state — independent of the cloud's lastAutoPullAt etc.
   lastPullAt      DateTime?
   lastPushAt      DateTime?
+  lastTimeSyncAt  DateTime? // factory-server pushes its own clock to device every ~60 min
   lastError       String?
   updatedAt       DateTime @default(now())
 
