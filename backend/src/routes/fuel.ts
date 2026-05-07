@@ -1452,7 +1452,12 @@ router.get(
       const base = (l.receivedQty || 0) * l.rate;
       return s + base + base * ((l.gstPercent || 0) / 100);
     }, 0) * 100) / 100;
-    const poTotal = po.grandTotal > 0 ? po.grandTotal : receivedValue;
+    const plannedValue = Math.round(po.lines.reduce((s, l) => {
+      const q = l.quantity >= 900000 ? (l.receivedQty || 0) : l.quantity;
+      const base = q * (l.rate || 0);
+      return s + base + base * ((l.gstPercent || 0) / 100);
+    }, 0) * 100) / 100;
+    const poTotal = po.grandTotal > 0 ? po.grandTotal : Math.max(plannedValue, receivedValue);
 
     const [invoices, payments] = await Promise.all([
       prisma.vendorInvoice.findMany({
@@ -1509,7 +1514,23 @@ router.get(
     const pendingBank = payments
       .filter((p) => p.paymentStatus === 'INITIATED')
       .reduce((s, p) => s + p.amount, 0);
-    const outstanding = Math.max(0, Math.round((Math.max(receivedValue, totalInvoiced) - totalPaid - pendingBank) * 100) / 100);
+
+    // Same fallback chain as /api/fuel/payments — without it a manual PO
+    // (no GRNs) with bills uploaded but totals not yet filled in pins to
+    // outstanding=0 and renders as "✓ Settled" while nothing is paid.
+    let payableBasis: number;
+    let basisSource: 'RECEIVED' | 'INVOICED' | 'PLANNED';
+    if (receivedValue > 0) {
+      payableBasis = receivedValue;
+      basisSource = 'RECEIVED';
+    } else if (totalInvoiced > 0) {
+      payableBasis = totalInvoiced;
+      basisSource = 'INVOICED';
+    } else {
+      payableBasis = poTotal;
+      basisSource = 'PLANNED';
+    }
+    const outstanding = Math.max(0, Math.round((payableBasis - totalPaid - pendingBank) * 100) / 100);
 
     res.json({
       poNo: po.poNo,
@@ -1520,6 +1541,8 @@ router.get(
       totalPaid: Math.round(totalPaid * 100) / 100,
       pendingBank: Math.round(pendingBank * 100) / 100,
       outstanding,
+      payableBasis: Math.round(payableBasis * 100) / 100,
+      basisSource,
       ledger,
     });
   }),

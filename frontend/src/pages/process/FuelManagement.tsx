@@ -171,6 +171,8 @@ interface PoLedger {
   totalPaid: number;
   pendingBank: number;
   outstanding: number;
+  payableBasis: number;
+  basisSource: 'RECEIVED' | 'INVOICED' | 'PLANNED';
   ledger: PoLedgerEvent[];
 }
 
@@ -190,16 +192,27 @@ interface PayModalState {
 // Reusable running-ledger panel — same KPIs + scrollable event list rendered
 // in the Pay modal and the upload-staging modal. Keeps the two flows visually
 // consistent with the accounts Payments Out ledger style.
-function PoLedgerPanel({ led, loading, fmtCurrency }: { led: PoLedger | null; loading: boolean; fmtCurrency: (n: number) => string }) {
+function PoLedgerPanel({ led, loading, fmtCurrency, onOpenVendorLedger }: { led: PoLedger | null; loading: boolean; fmtCurrency: (n: number) => string; onOpenVendorLedger?: () => void }) {
   if (loading) {
     return <div className="text-xs text-slate-400 uppercase tracking-widest text-center py-6">Loading PO ledger…</div>;
   }
   if (!led) {
     return <div className="text-xs text-slate-400 uppercase tracking-widest text-center py-6">No ledger data.</div>;
   }
+  // "Settled" only makes sense once something has actually been paid AND the
+  // payable basis is fully covered. A PO with received=0 / invoiced=0 / no
+  // payments hangs on the planned amount and should read as Pending.
+  const trulySettled = led.totalPaid > 0 && led.outstanding <= 0.01;
   return (
     <div className="space-y-3">
-      <div className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">PO-{led.poNo} Running Ledger</div>
+      <div className="flex items-center justify-between">
+        <div className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">PO-{led.poNo} Running Ledger</div>
+        {onOpenVendorLedger && (
+          <button onClick={onOpenVendorLedger} className="text-[10px] text-indigo-700 font-bold uppercase tracking-widest hover:underline">
+            View Vendor Ledger →
+          </button>
+        )}
+      </div>
       <div className="grid grid-cols-2 gap-0 border border-slate-300">
         <div className="px-3 py-2 border-r border-b border-slate-300 bg-white">
           <div className="text-[9px] font-bold text-slate-400 uppercase tracking-widest">Received Value</div>
@@ -214,9 +227,16 @@ function PoLedgerPanel({ led, loading, fmtCurrency }: { led: PoLedger | null; lo
           <div className="text-sm font-mono tabular-nums font-bold text-emerald-700">{fmtCurrency(led.totalPaid)}</div>
         </div>
         <div className="px-3 py-2 bg-white">
-          <div className="text-[9px] font-bold text-slate-400 uppercase tracking-widest">Outstanding</div>
-          <div className={`text-sm font-mono tabular-nums font-bold ${led.outstanding > 0.01 ? 'text-red-700' : 'text-emerald-700'}`}>
-            {led.outstanding > 0.01 ? fmtCurrency(led.outstanding) : '✓ Settled'}
+          <div className="text-[9px] font-bold text-slate-400 uppercase tracking-widest">
+            Outstanding
+            {led.basisSource !== 'RECEIVED' && (
+              <span className={`ml-1 normal-case text-[8px] font-bold ${led.basisSource === 'INVOICED' ? 'text-indigo-500' : 'text-amber-600'}`}>
+                ({led.basisSource === 'INVOICED' ? 'billed basis' : 'planned basis'})
+              </span>
+            )}
+          </div>
+          <div className={`text-sm font-mono tabular-nums font-bold ${led.outstanding > 0.01 ? 'text-red-700' : trulySettled ? 'text-emerald-700' : 'text-slate-400'}`}>
+            {led.outstanding > 0.01 ? fmtCurrency(led.outstanding) : trulySettled ? '✓ Settled' : '—'}
           </div>
         </div>
       </div>
@@ -1482,7 +1502,12 @@ export default function FuelManagement() {
                         <tr key={p.id} className={`border-b border-slate-100 ${i % 2 ? 'bg-slate-50/70' : ''}`}>
                           <td className="px-3 py-1.5 font-mono text-slate-500 border-r border-slate-100">PO-{p.poNo}</td>
                           <td className="px-3 py-1.5 border-r border-slate-100">
-                            <div className="font-semibold text-slate-800">{p.vendor.name}</div>
+                            <button
+                              onClick={() => setLedgerModal({ vendorId: p.vendor.id, vendorName: p.vendor.name })}
+                              title="Open full vendor ledger across all POs + payments"
+                              className="font-semibold text-slate-800 hover:text-indigo-700 hover:underline text-left">
+                              {p.vendor.name}
+                            </button>
                             {p.vendor.phone && <div className="text-[9px] text-slate-400">{p.vendor.phone}</div>}
                           </td>
                           <td className="px-3 py-1.5 border-r border-slate-100">
@@ -2086,7 +2111,12 @@ export default function FuelManagement() {
 
               {/* Right: PO running ledger */}
               <div className="p-4 bg-slate-50">
-                <PoLedgerPanel led={stagingLedger} loading={stagingLedgerLoading} fmtCurrency={fmtCurrency} />
+                <PoLedgerPanel
+                  led={stagingLedger}
+                  loading={stagingLedgerLoading}
+                  fmtCurrency={fmtCurrency}
+                  onOpenVendorLedger={stagingLedger ? () => setLedgerModal({ vendorId: stagingLedger.vendor.id, vendorName: stagingLedger.vendor.name }) : undefined}
+                />
               </div>
             </div>
             <div className="bg-slate-50 border-t border-slate-200 px-4 py-2.5 flex justify-end gap-2">
@@ -2167,7 +2197,12 @@ export default function FuelManagement() {
               </div>
               {/* Right: PO ledger panel */}
               <div className="p-4 bg-slate-50">
-                <PoLedgerPanel led={payLedger} loading={payLedgerLoading} fmtCurrency={fmtCurrency} />
+                <PoLedgerPanel
+                  led={payLedger}
+                  loading={payLedgerLoading}
+                  fmtCurrency={fmtCurrency}
+                  onOpenVendorLedger={payModal ? () => setLedgerModal({ vendorId: payLedger?.vendor.id || '', vendorName: payModal.vendorName }) : undefined}
+                />
               </div>
             </div>
             <div className="bg-slate-50 border-t border-slate-200 px-4 py-2.5 flex justify-end gap-2">
