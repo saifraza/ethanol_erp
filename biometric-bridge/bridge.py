@@ -284,6 +284,64 @@ def delete_user(body: DeleteUserReq, x_bridge_key: Optional[str] = Header(None))
         return {"ok": True, "deleted_uid": existing.uid}
 
 
+# ───────────────────────── bulk delete ─────────────────────────
+# Single-connection bulk delete with disable_device() framing — the rename
+# ceremony showed that delete_user calls during active matching get silently
+# dropped on some firmwares. disable_device puts the unit in admin-only mode
+# so deletes commit deterministically. enable_device restores normal use.
+
+class BulkDeleteReq(BaseModel):
+    device: DeviceRef
+    user_ids: list[str]
+
+
+@app.post("/devices/users/bulk-delete")
+def bulk_delete(body: BulkDeleteReq, x_bridge_key: Optional[str] = Header(None)):
+    _check_key(x_bridge_key)
+    results: list[dict] = []
+    with _Conn(body.device) as conn:
+        # NOTE: deliberately NOT calling disable_device(). On CM/ETHANOL
+        # firmware, disable puts the unit in RAM-only mode and enable_device
+        # reloads from flash, silently undoing the deletes. Letting deletes
+        # go through with the device live commits to flash directly.
+        users = list(conn.get_users() or [])
+        by_user_id = {str(u.user_id): u for u in users}
+
+        for user_id in body.user_ids:
+            target = by_user_id.get(str(user_id))
+            if not target:
+                results.append({"user_id": user_id, "status": "not_found"})
+                continue
+            try:
+                conn.delete_user(uid=target.uid)
+                by_user_id.pop(str(user_id), None)
+                results.append({"user_id": user_id, "status": "ok", "uid": target.uid})
+            except Exception as e:
+                results.append({"user_id": user_id, "status": "error", "error": f"{type(e).__name__}: {e}"})
+
+        # Force the device to commit pending changes to flash. pyzk's
+        # refresh_data sends CMD_REFRESHDATA which makes the device write
+        # through any RAM-staged changes.
+        try:
+            conn.refresh_data()
+        except Exception:
+            pass
+
+        # Re-fetch to verify deletes actually committed.
+        try:
+            refetched = {str(u.user_id) for u in (conn.get_users() or [])}
+            for r in results:
+                if r["status"] == "ok" and str(r["user_id"]) in refetched:
+                    r["status"] = "delete_silent_fail"
+        except Exception:
+            pass
+
+    ok = sum(1 for r in results if r["status"] == "ok")
+    not_found = sum(1 for r in results if r["status"] == "not_found")
+    failed = len(results) - ok - not_found
+    return {"ok": True, "total": len(body.user_ids), "deleted": ok, "not_found": not_found, "failed": failed, "results": results}
+
+
 # ───────────────────────── enrollment ─────────────────────────
 
 class EnrollReq(BaseModel):
