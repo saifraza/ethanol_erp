@@ -134,6 +134,44 @@ interface FuelInvoiceRow {
   createdAt: string;
 }
 
+// Per-file plan inside the upload staging modal — what the operator wants
+// to record alongside this particular bill.
+interface FilePlanRow {
+  file: File;
+  vendorInvNo: string;
+  vendorInvDate: string; // yyyy-mm-dd from the date input
+  totalAmount: string;   // raw input — parsed to number on submit
+}
+
+interface UploadStagingState {
+  poId: string;
+  poNo: number;
+  vendorName: string;
+  rows: FilePlanRow[];
+  payNow: string;        // raw input
+  payMode: 'CASH' | 'NEFT' | 'RTGS' | 'UPI' | 'BANK_TRANSFER' | 'CHEQUE';
+  payRef: string;
+  payRemarks: string;
+  submitting: boolean;
+}
+
+// Ledger feed served by /api/fuel/payments/:poId/ledger.
+type PoLedgerEvent =
+  | { type: 'INVOICE'; date: string; id: string; vendorInvNo: string | null; amount: number; status: string; fileName: string | null; filePath: string | null; runningBalance: number }
+  | { type: 'PAYMENT'; date: string; id: string; paymentNo: number; amount: number; mode: string; reference: string | null; paymentStatus: string; invoiceId: string | null; runningBalance: number };
+
+interface PoLedger {
+  poNo: number;
+  vendor: { id: string; name: string; phone: string | null };
+  poTotal: number;
+  receivedValue: number;
+  totalInvoiced: number;
+  totalPaid: number;
+  pendingBank: number;
+  outstanding: number;
+  ledger: PoLedgerEvent[];
+}
+
 interface PayModalState {
   poId: string;
   poNo: number;
@@ -145,6 +183,93 @@ interface PayModalState {
   reference: string;
   remarks: string;
   submitting: boolean;
+}
+
+// Reusable running-ledger panel — same KPIs + scrollable event list rendered
+// in the Pay modal and the upload-staging modal. Keeps the two flows visually
+// consistent with the accounts Payments Out ledger style.
+function PoLedgerPanel({ led, loading, fmtCurrency }: { led: PoLedger | null; loading: boolean; fmtCurrency: (n: number) => string }) {
+  if (loading) {
+    return <div className="text-xs text-slate-400 uppercase tracking-widest text-center py-6">Loading PO ledger…</div>;
+  }
+  if (!led) {
+    return <div className="text-xs text-slate-400 uppercase tracking-widest text-center py-6">No ledger data.</div>;
+  }
+  return (
+    <div className="space-y-3">
+      <div className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">PO-{led.poNo} Running Ledger</div>
+      <div className="grid grid-cols-2 gap-0 border border-slate-300">
+        <div className="px-3 py-2 border-r border-b border-slate-300 bg-white">
+          <div className="text-[9px] font-bold text-slate-400 uppercase tracking-widest">Received Value</div>
+          <div className="text-sm font-mono tabular-nums font-bold text-slate-800">{fmtCurrency(led.receivedValue)}</div>
+        </div>
+        <div className="px-3 py-2 border-b border-slate-300 bg-white">
+          <div className="text-[9px] font-bold text-slate-400 uppercase tracking-widest">Invoiced</div>
+          <div className="text-sm font-mono tabular-nums font-bold text-slate-800">{fmtCurrency(led.totalInvoiced)}</div>
+        </div>
+        <div className="px-3 py-2 border-r border-slate-300 bg-white">
+          <div className="text-[9px] font-bold text-slate-400 uppercase tracking-widest">Paid (Confirmed)</div>
+          <div className="text-sm font-mono tabular-nums font-bold text-emerald-700">{fmtCurrency(led.totalPaid)}</div>
+        </div>
+        <div className="px-3 py-2 bg-white">
+          <div className="text-[9px] font-bold text-slate-400 uppercase tracking-widest">Outstanding</div>
+          <div className={`text-sm font-mono tabular-nums font-bold ${led.outstanding > 0.01 ? 'text-red-700' : 'text-emerald-700'}`}>
+            {led.outstanding > 0.01 ? fmtCurrency(led.outstanding) : '✓ Settled'}
+          </div>
+        </div>
+      </div>
+      <div className="border border-slate-300 bg-white">
+        <div className="bg-slate-100 border-b border-slate-300 px-2 py-1.5 text-[9px] font-bold text-slate-500 uppercase tracking-widest grid grid-cols-12 gap-2">
+          <div className="col-span-2">Date</div>
+          <div className="col-span-2">Type</div>
+          <div className="col-span-4">Ref</div>
+          <div className="col-span-2 text-right">Amount</div>
+          <div className="col-span-2 text-right">Balance</div>
+        </div>
+        <div className="max-h-72 overflow-y-auto">
+          {led.ledger.length === 0 ? (
+            <div className="px-3 py-6 text-center text-[10px] text-slate-400 uppercase tracking-widest">No invoice or payment events yet.</div>
+          ) : (
+            led.ledger.map((row, i) => (
+              <div key={`${row.type}-${row.id}`} className={`px-2 py-1.5 text-[10px] border-b border-slate-100 grid grid-cols-12 gap-2 ${i % 2 ? 'bg-slate-50/60' : ''}`}>
+                <div className="col-span-2 font-mono text-slate-500">
+                  {new Date(row.date).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: '2-digit' })}
+                </div>
+                <div className="col-span-2">
+                  <span className={`font-bold uppercase tracking-widest ${row.type === 'INVOICE' ? 'text-indigo-700' : 'text-emerald-700'}`}>
+                    {row.type === 'INVOICE' ? 'Bill' : 'Pay'}
+                  </span>
+                </div>
+                <div className="col-span-4 truncate">
+                  {row.type === 'INVOICE' ? (
+                    row.filePath ? (
+                      <a href={`/uploads/${row.filePath}`} target="_blank" rel="noopener noreferrer" className="text-blue-600 hover:underline">
+                        {row.vendorInvNo || row.fileName || 'Invoice'}
+                      </a>
+                    ) : (row.vendorInvNo || row.fileName || '—')
+                  ) : (
+                    <>
+                      <span className="font-mono text-slate-700">#{row.paymentNo}</span>
+                      <span className="text-slate-400 mx-1">·</span>
+                      <span className="text-slate-600">{row.mode}</span>
+                      {row.reference && <span className="text-slate-400 ml-1 font-mono">{row.reference}</span>}
+                      {row.paymentStatus === 'INITIATED' && <span className="ml-1 text-amber-700 font-bold">(pending UTR)</span>}
+                    </>
+                  )}
+                </div>
+                <div className={`col-span-2 text-right font-mono tabular-nums ${row.type === 'PAYMENT' ? 'text-emerald-700' : 'text-slate-700'}`}>
+                  {row.type === 'PAYMENT' ? '−' : '+'}{fmtCurrency(row.amount)}
+                </div>
+                <div className={`col-span-2 text-right font-mono tabular-nums font-bold ${row.runningBalance > 0.01 ? 'text-red-700' : 'text-slate-500'}`}>
+                  {fmtCurrency(row.runningBalance)}
+                </div>
+              </div>
+            ))
+          )}
+        </div>
+      </div>
+    </div>
+  );
 }
 
 const EMPTY_FORM: Partial<FuelItem> = {
@@ -177,6 +302,11 @@ export default function FuelManagement() {
   const [payModal, setPayModal] = useState<PayModalState | null>(null);
   const [uploadingPoId, setUploadingPoId] = useState<string | null>(null);
   const [invoicesModal, setInvoicesModal] = useState<{ poId: string; poNo: number; vendorName: string; invoices: FuelInvoiceRow[]; loading: boolean } | null>(null);
+  const [uploadStaging, setUploadStaging] = useState<UploadStagingState | null>(null);
+  const [stagingLedger, setStagingLedger] = useState<PoLedger | null>(null);
+  const [stagingLedgerLoading, setStagingLedgerLoading] = useState(false);
+  const [payLedger, setPayLedger] = useState<PoLedger | null>(null);
+  const [payLedgerLoading, setPayLedgerLoading] = useState(false);
   const invoiceFileInputRef = React.useRef<HTMLInputElement | null>(null);
   const pendingUploadPoIdRef = React.useRef<string | null>(null);
   const [expandedFuels, setExpandedFuels] = useState<Set<string>>(new Set());
@@ -533,6 +663,16 @@ export default function FuelManagement() {
     }
   };
 
+  const fetchPoLedger = async (poId: string): Promise<PoLedger | null> => {
+    try {
+      const res = await api.get<PoLedger>(`/fuel/payments/${poId}/ledger`);
+      return res.data;
+    } catch (err) {
+      console.error(err);
+      return null;
+    }
+  };
+
   const handleInvoiceFileSelected = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const fileList = e.target.files;
     const poId = pendingUploadPoIdRef.current;
@@ -544,36 +684,89 @@ export default function FuelManagement() {
       alert(`"${tooBig.name}" is over the 10 MB limit. Pick smaller files.`);
       return;
     }
-    setUploadingPoId(poId);
+    const row = payments.find(p => p.id === poId);
+    const today = new Date().toISOString().slice(0, 10);
+    setUploadStaging({
+      poId,
+      poNo: row?.poNo || 0,
+      vendorName: row?.vendor.name || '',
+      rows: files.map<FilePlanRow>((f) => ({ file: f, vendorInvNo: '', vendorInvDate: today, totalAmount: '' })),
+      payNow: '',
+      payMode: 'NEFT',
+      payRef: '',
+      payRemarks: '',
+      submitting: false,
+    });
+    setStagingLedger(null);
+    setStagingLedgerLoading(true);
+    fetchPoLedger(poId).then((led) => {
+      setStagingLedger(led);
+      setStagingLedgerLoading(false);
+    });
+  };
+
+  const submitUploadStaging = async () => {
+    if (!uploadStaging) return;
+    if (uploadStaging.rows.length === 0) return;
+    const meta = uploadStaging.rows.map((r) => ({
+      vendorInvNo: r.vendorInvNo.trim() || null,
+      vendorInvDate: r.vendorInvDate || null,
+      totalAmount: r.totalAmount.trim() ? Number(r.totalAmount) : null,
+    }));
+    const payAmount = uploadStaging.payNow.trim() ? Number(uploadStaging.payNow) : 0;
+    if (uploadStaging.payNow.trim() && (!isFinite(payAmount) || payAmount <= 0)) {
+      alert('Amount Paid must be a positive number, or leave it blank.');
+      return;
+    }
+    const payment = payAmount > 0 ? {
+      amount: payAmount,
+      mode: uploadStaging.payMode,
+      reference: uploadStaging.payRef.trim(),
+      remarks: uploadStaging.payRemarks.trim(),
+    } : null;
+
+    setUploadStaging({ ...uploadStaging, submitting: true });
+    setUploadingPoId(uploadStaging.poId);
+
     const fd = new FormData();
-    for (const f of files) fd.append('files', f);
+    for (const r of uploadStaging.rows) fd.append('files', r.file);
+    fd.append('meta', JSON.stringify(meta));
+    if (payment) fd.append('payment', JSON.stringify(payment));
+
     try {
       const res = await api.post<{
         ok: boolean;
         results: Array<{ ok: boolean; deduped: boolean; fileName: string; error?: string }>;
+        payment: { id: string; amount: number; paymentNo: number; mode: string; reference: string | null } | null;
         summary: { created: number; deduped: number; failed: number };
       }>(
-        `/fuel/payments/${poId}/invoice`,
+        `/fuel/payments/${uploadStaging.poId}/invoice`,
         fd,
         { headers: { 'Content-Type': 'multipart/form-data' } },
       );
       const { created, deduped, failed } = res.data.summary;
+      const parts: string[] = [];
+      if (created > 0) parts.push(`${created} uploaded`);
+      if (deduped > 0) parts.push(`${deduped} deduped`);
+      if (failed > 0) parts.push(`${failed} failed`);
+      if (res.data.payment) parts.push(`payment ₹${res.data.payment.amount.toLocaleString('en-IN')} recorded`);
       if (failed > 0) {
         const failures = res.data.results.filter(r => !r.ok).map(r => `• ${r.fileName}: ${r.error || 'failed'}`).join('\n');
-        alert(`Uploaded ${created}, deduped ${deduped}, ${failed} failed:\n\n${failures}`);
-      } else if (deduped > 0 && created === 0) {
-        alert(`All ${deduped} file${deduped === 1 ? ' was' : 's were'} already attached to this PO — nothing new uploaded.`);
-      } else if (deduped > 0) {
-        alert(`Uploaded ${created} new · ${deduped} skipped as duplicates.`);
+        alert(`${parts.join(' · ')}\n\nFailures:\n${failures}`);
+      } else if (parts.length > 0) {
+        // Lightweight confirmation — only if anything actually happened.
       }
+      setUploadStaging(null);
+      setStagingLedger(null);
       await fetchPayments();
-      if (invoicesModal && invoicesModal.poId === poId) {
-        const list = await api.get<FuelInvoiceRow[]>(`/fuel/payments/${poId}/invoices`);
+      if (invoicesModal && invoicesModal.poId === uploadStaging.poId) {
+        const list = await api.get<FuelInvoiceRow[]>(`/fuel/payments/${uploadStaging.poId}/invoices`);
         setInvoicesModal((prev) => prev ? { ...prev, invoices: list.data } : prev);
       }
     } catch (err: unknown) {
       const msg = (err as { response?: { data?: { error?: string } } })?.response?.data?.error || 'Upload failed';
       alert(msg);
+      setUploadStaging((prev) => prev ? { ...prev, submitting: false } : prev);
     } finally {
       setUploadingPoId(null);
     }
@@ -1300,11 +1493,19 @@ export default function FuelManagement() {
                             <div className="flex gap-1 flex-wrap">
                               {p.outstanding > 0.01 && p.totalReceived > 0 && (
                                 <button
-                                  onClick={() => setPayModal({
-                                    poId: p.id, poNo: p.poNo, vendorName: p.vendor.name, fuelName: p.fuelName,
-                                    outstanding: p.outstanding, amount: String(p.outstanding.toFixed(2)),
-                                    mode: 'NEFT', reference: '', remarks: '', submitting: false,
-                                  })}
+                                  onClick={() => {
+                                    setPayModal({
+                                      poId: p.id, poNo: p.poNo, vendorName: p.vendor.name, fuelName: p.fuelName,
+                                      outstanding: p.outstanding, amount: String(p.outstanding.toFixed(2)),
+                                      mode: 'NEFT', reference: '', remarks: '', submitting: false,
+                                    });
+                                    setPayLedger(null);
+                                    setPayLedgerLoading(true);
+                                    fetchPoLedger(p.id).then((led) => {
+                                      setPayLedger(led);
+                                      setPayLedgerLoading(false);
+                                    });
+                                  }}
                                   className="text-[10px] bg-blue-600 text-white px-2 py-1 font-bold uppercase tracking-widest hover:bg-blue-700">
                                   Pay
                                 </button>
@@ -1684,9 +1885,129 @@ export default function FuelManagement() {
         </div>
       )}
 
+      {uploadStaging && (
+        <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50">
+          <div className="bg-white w-[1080px] max-w-[97vw] max-h-[94vh] shadow-2xl flex flex-col">
+            <div className="bg-slate-800 text-white px-4 py-2.5 flex items-center justify-between">
+              <div>
+                <div className="text-xs font-bold uppercase tracking-widest">Upload Invoices · PO-{uploadStaging.poNo}</div>
+                <div className="text-[10px] text-slate-300">{uploadStaging.vendorName} · {uploadStaging.rows.length} file{uploadStaging.rows.length === 1 ? '' : 's'}</div>
+              </div>
+              <button onClick={() => { if (!uploadStaging.submitting) { setUploadStaging(null); setStagingLedger(null); } }} disabled={uploadStaging.submitting} className="text-slate-300 hover:text-white text-lg leading-none disabled:opacity-50">×</button>
+            </div>
+            <div className="flex-1 overflow-y-auto grid grid-cols-1 lg:grid-cols-2 gap-0">
+              {/* Left: per-file metadata + payment block */}
+              <div className="p-4 border-r border-slate-200 space-y-4">
+                <div>
+                  <div className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-2">Invoice Details</div>
+                  <div className="border border-slate-300">
+                    <div className="bg-slate-100 border-b border-slate-300 px-2 py-1.5 text-[9px] font-bold text-slate-500 uppercase tracking-widest grid grid-cols-12 gap-2">
+                      <div className="col-span-4">File</div>
+                      <div className="col-span-3">Inv No.</div>
+                      <div className="col-span-3">Inv Date</div>
+                      <div className="col-span-2 text-right">Total ₹</div>
+                    </div>
+                    {uploadStaging.rows.map((row, idx) => (
+                      <div key={idx} className={`px-2 py-1.5 border-b border-slate-100 grid grid-cols-12 gap-2 ${idx % 2 ? 'bg-slate-50/60' : ''}`}>
+                        <div className="col-span-4 text-[10px] text-slate-700 truncate" title={row.file.name}>
+                          {row.file.name}
+                          <div className="text-[9px] text-slate-400 font-mono">{(row.file.size / 1024).toFixed(0)} KB</div>
+                        </div>
+                        <input
+                          type="text" placeholder="—"
+                          value={row.vendorInvNo}
+                          onChange={(e) => setUploadStaging((prev) => prev ? { ...prev, rows: prev.rows.map((r, i) => i === idx ? { ...r, vendorInvNo: e.target.value } : r) } : prev)}
+                          className="col-span-3 border border-slate-300 px-1.5 py-1 text-[11px] font-mono focus:outline-none focus:border-blue-500"
+                        />
+                        <input
+                          type="date"
+                          value={row.vendorInvDate}
+                          onChange={(e) => setUploadStaging((prev) => prev ? { ...prev, rows: prev.rows.map((r, i) => i === idx ? { ...r, vendorInvDate: e.target.value } : r) } : prev)}
+                          className="col-span-3 border border-slate-300 px-1.5 py-1 text-[11px] font-mono focus:outline-none focus:border-blue-500"
+                        />
+                        <input
+                          type="number" step="0.01" min="0" placeholder="0"
+                          value={row.totalAmount}
+                          onChange={(e) => setUploadStaging((prev) => prev ? { ...prev, rows: prev.rows.map((r, i) => i === idx ? { ...r, totalAmount: e.target.value } : r) } : prev)}
+                          className="col-span-2 border border-slate-300 px-1.5 py-1 text-[11px] text-right font-mono tabular-nums focus:outline-none focus:border-blue-500"
+                        />
+                      </div>
+                    ))}
+                  </div>
+                  <div className="text-[9px] text-slate-400 mt-1">Inv No / date / total are optional — accounts can fill in later.</div>
+                </div>
+
+                <div>
+                  <div className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-2">Record Payment Now (optional)</div>
+                  <div className="grid grid-cols-2 gap-2">
+                    <div className="col-span-2">
+                      <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">Amount Paid (₹)</label>
+                      <input
+                        type="number" step="0.01" min="0" placeholder="Leave blank to skip"
+                        value={uploadStaging.payNow}
+                        onChange={(e) => setUploadStaging((prev) => prev ? { ...prev, payNow: e.target.value } : prev)}
+                        className="w-full mt-1 border border-slate-300 px-2 py-1.5 text-sm font-mono tabular-nums focus:outline-none focus:border-blue-500"
+                      />
+                    </div>
+                    <div>
+                      <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">Mode</label>
+                      <select
+                        value={uploadStaging.payMode}
+                        onChange={(e) => setUploadStaging((prev) => prev ? { ...prev, payMode: e.target.value as UploadStagingState['payMode'] } : prev)}
+                        className="w-full mt-1 border border-slate-300 px-2 py-1.5 text-xs focus:outline-none focus:border-blue-500"
+                      >
+                        <option value="NEFT">NEFT</option>
+                        <option value="RTGS">RTGS</option>
+                        <option value="UPI">UPI</option>
+                        <option value="BANK_TRANSFER">Bank Transfer</option>
+                        <option value="CHEQUE">Cheque</option>
+                        <option value="CASH">Cash</option>
+                      </select>
+                    </div>
+                    <div>
+                      <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">Reference / UTR</label>
+                      <input
+                        type="text"
+                        value={uploadStaging.payRef}
+                        onChange={(e) => setUploadStaging((prev) => prev ? { ...prev, payRef: e.target.value } : prev)}
+                        placeholder={uploadStaging.payMode === 'CHEQUE' ? 'Cheque no.' : 'UTR / UPI ref'}
+                        className="w-full mt-1 border border-slate-300 px-2 py-1.5 text-xs font-mono focus:outline-none focus:border-blue-500"
+                      />
+                    </div>
+                    <div className="col-span-2">
+                      <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">Remarks</label>
+                      <input
+                        type="text"
+                        value={uploadStaging.payRemarks}
+                        onChange={(e) => setUploadStaging((prev) => prev ? { ...prev, payRemarks: e.target.value } : prev)}
+                        className="w-full mt-1 border border-slate-300 px-2 py-1.5 text-xs focus:outline-none focus:border-blue-500"
+                      />
+                    </div>
+                  </div>
+                  <div className="text-[9px] text-slate-400 mt-1">If amount is set, a VendorPayment is recorded immediately. With one new invoice it links to that invoice; with several, it sits on the PO.</div>
+                </div>
+              </div>
+
+              {/* Right: PO running ledger */}
+              <div className="p-4 bg-slate-50">
+                <PoLedgerPanel led={stagingLedger} loading={stagingLedgerLoading} fmtCurrency={fmtCurrency} />
+              </div>
+            </div>
+            <div className="bg-slate-50 border-t border-slate-200 px-4 py-2.5 flex justify-end gap-2">
+              <button onClick={() => { if (!uploadStaging.submitting) { setUploadStaging(null); setStagingLedger(null); } }} disabled={uploadStaging.submitting} className="px-3 py-1.5 text-[11px] font-bold uppercase tracking-widest text-slate-600 border border-slate-300 hover:bg-slate-100 disabled:opacity-50">
+                Cancel
+              </button>
+              <button onClick={submitUploadStaging} disabled={uploadStaging.submitting || uploadStaging.rows.length === 0} className="px-4 py-1.5 text-[11px] font-bold uppercase tracking-widest bg-blue-600 text-white hover:bg-blue-700 disabled:opacity-50">
+                {uploadStaging.submitting ? 'Uploading…' : (uploadStaging.payNow.trim() ? `Upload + Pay ₹${Number(uploadStaging.payNow).toLocaleString('en-IN')}` : `Upload ${uploadStaging.rows.length} file${uploadStaging.rows.length === 1 ? '' : 's'}`)}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {payModal && (
         <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50">
-          <div className="bg-white w-[480px] max-w-[95vw] shadow-2xl">
+          <div className="bg-white w-[920px] max-w-[95vw] max-h-[92vh] shadow-2xl flex flex-col">
             <div className="bg-slate-800 text-white px-4 py-2.5 flex items-center justify-between">
               <div>
                 <div className="text-xs font-bold uppercase tracking-widest">Pay PO-{payModal.poNo}</div>
@@ -1694,56 +2015,63 @@ export default function FuelManagement() {
               </div>
               <button onClick={() => setPayModal(null)} disabled={payModal.submitting} className="text-slate-300 hover:text-white text-lg leading-none disabled:opacity-50">×</button>
             </div>
-            <div className="p-4 space-y-3">
-              <div className="bg-slate-50 border border-slate-200 px-3 py-2">
-                <div className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Outstanding</div>
-                <div className="text-lg font-bold text-red-700 font-mono tabular-nums">{fmtCurrency(payModal.outstanding)}</div>
-              </div>
-              <div>
-                <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">Amount (₹)</label>
-                <input
-                  type="number" step="0.01" min="0"
-                  value={payModal.amount}
-                  onChange={(e) => setPayModal({ ...payModal, amount: e.target.value })}
-                  className="w-full mt-1 border border-slate-300 px-2 py-1.5 text-sm font-mono tabular-nums focus:outline-none focus:border-blue-500"
-                  autoFocus
-                />
-              </div>
-              <div>
-                <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">Mode</label>
-                <select
-                  value={payModal.mode}
-                  onChange={(e) => setPayModal({ ...payModal, mode: e.target.value as PayModalState['mode'] })}
-                  className="w-full mt-1 border border-slate-300 px-2 py-1.5 text-sm focus:outline-none focus:border-blue-500"
-                >
-                  <option value="NEFT">NEFT</option>
-                  <option value="RTGS">RTGS</option>
-                  <option value="UPI">UPI</option>
-                  <option value="BANK_TRANSFER">Bank Transfer</option>
-                  <option value="CHEQUE">Cheque</option>
-                  <option value="CASH">Cash</option>
-                </select>
-              </div>
-              {payModal.mode !== 'CASH' && (
+            <div className="flex-1 overflow-y-auto grid grid-cols-1 md:grid-cols-2 gap-0">
+              {/* Left: form */}
+              <div className="p-4 space-y-3 border-r border-slate-200">
+                <div className="bg-slate-50 border border-slate-200 px-3 py-2">
+                  <div className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Outstanding</div>
+                  <div className="text-lg font-bold text-red-700 font-mono tabular-nums">{fmtCurrency(payModal.outstanding)}</div>
+                </div>
                 <div>
-                  <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">Reference / UTR</label>
+                  <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">Amount (₹)</label>
                   <input
-                    type="text"
-                    value={payModal.reference}
-                    onChange={(e) => setPayModal({ ...payModal, reference: e.target.value })}
-                    placeholder={payModal.mode === 'CHEQUE' ? 'Cheque no.' : 'UTR / UPI ref'}
-                    className="w-full mt-1 border border-slate-300 px-2 py-1.5 text-sm font-mono focus:outline-none focus:border-blue-500"
+                    type="number" step="0.01" min="0"
+                    value={payModal.amount}
+                    onChange={(e) => setPayModal({ ...payModal, amount: e.target.value })}
+                    className="w-full mt-1 border border-slate-300 px-2 py-1.5 text-sm font-mono tabular-nums focus:outline-none focus:border-blue-500"
+                    autoFocus
                   />
                 </div>
-              )}
-              <div>
-                <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">Remarks (optional)</label>
-                <input
-                  type="text"
-                  value={payModal.remarks}
-                  onChange={(e) => setPayModal({ ...payModal, remarks: e.target.value })}
-                  className="w-full mt-1 border border-slate-300 px-2 py-1.5 text-sm focus:outline-none focus:border-blue-500"
-                />
+                <div>
+                  <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">Mode</label>
+                  <select
+                    value={payModal.mode}
+                    onChange={(e) => setPayModal({ ...payModal, mode: e.target.value as PayModalState['mode'] })}
+                    className="w-full mt-1 border border-slate-300 px-2 py-1.5 text-sm focus:outline-none focus:border-blue-500"
+                  >
+                    <option value="NEFT">NEFT</option>
+                    <option value="RTGS">RTGS</option>
+                    <option value="UPI">UPI</option>
+                    <option value="BANK_TRANSFER">Bank Transfer</option>
+                    <option value="CHEQUE">Cheque</option>
+                    <option value="CASH">Cash</option>
+                  </select>
+                </div>
+                {payModal.mode !== 'CASH' && (
+                  <div>
+                    <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">Reference / UTR</label>
+                    <input
+                      type="text"
+                      value={payModal.reference}
+                      onChange={(e) => setPayModal({ ...payModal, reference: e.target.value })}
+                      placeholder={payModal.mode === 'CHEQUE' ? 'Cheque no.' : 'UTR / UPI ref'}
+                      className="w-full mt-1 border border-slate-300 px-2 py-1.5 text-sm font-mono focus:outline-none focus:border-blue-500"
+                    />
+                  </div>
+                )}
+                <div>
+                  <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">Remarks (optional)</label>
+                  <input
+                    type="text"
+                    value={payModal.remarks}
+                    onChange={(e) => setPayModal({ ...payModal, remarks: e.target.value })}
+                    className="w-full mt-1 border border-slate-300 px-2 py-1.5 text-sm focus:outline-none focus:border-blue-500"
+                  />
+                </div>
+              </div>
+              {/* Right: PO ledger panel */}
+              <div className="p-4 bg-slate-50">
+                <PoLedgerPanel led={payLedger} loading={payLedgerLoading} fmtCurrency={fmtCurrency} />
               </div>
             </div>
             <div className="bg-slate-50 border-t border-slate-200 px-4 py-2.5 flex justify-end gap-2">
