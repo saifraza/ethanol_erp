@@ -290,9 +290,10 @@ async function main() {
         const pair = pairByNew.get(r.new);
         if (!pair) continue;
         const key = `${pair.kind}|${pair.id}`;
-        // Count as success: explicit ok, already_renamed (prior run), or
-        // old_not_found (user wasn't on that device anyway — nothing to do)
-        if (r.status === 'ok' || r.status === 'already_renamed' || r.status === 'old_not_found') {
+        // Count as success: explicit ok, ok_recovered (prior run finished
+        // template-copy but didn't delete old, this run cleaned up), already_renamed
+        // (prior run finished cleanly), or old_not_found (user not on that device).
+        if (r.status === 'ok' || r.status === 'ok_recovered' || r.status === 'ok_resolved_conflict' || r.status === 'already_renamed' || r.status === 'old_not_found') {
           successCount.set(key, (successCount.get(key) ?? 0) + 1);
         } else {
           failures.push({ device: d.code, pair, status: r.status, error: r.error });
