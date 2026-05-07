@@ -25,6 +25,7 @@ const Liquefaction = React.lazy(() => import('./pages/process/Liquefaction'));
 const Fermentation = React.lazy(() => import('./pages/process/Fermentation'));
 const Distillation = React.lazy(() => import('./pages/process/Distillation'));
 const RawMaterial = React.lazy(() => import('./pages/process/RawMaterial'));
+const RawMaterialPayments = React.lazy(() => import('./pages/process/RawMaterialPayments'));
 const DryerMonitor = React.lazy(() => import('./pages/process/DryerMonitor'));
 const Decanter = React.lazy(() => import('./pages/process/Decanter'));
 const FuelManagement = React.lazy(() => import('./pages/process/FuelManagement'));
@@ -197,6 +198,10 @@ export default function App() {
         <Route index element={<HomeRedirect />} />
         <Route path="dashboard" element={<PlantOnly><Dashboard /></PlantOnly>} />
         <Route path="process/raw-material" element={<PlantOnly><RawMaterial /></PlantOnly>} />
+        {/* Raw Material payments — accounts-style page; mirrors fuel pattern but
+            scoped to RAW_MATERIAL category. Sits under /process/raw-material/
+            because that's where the existing RM Deals page lives. */}
+        <Route path="process/raw-material/payments" element={<RawMaterialPayments />} />
         <Route path="process/grain-stock" element={<PlantOnly><SiloStock /></PlantOnly>} />
         <Route path="process/grain-stock-old" element={<PlantOnly><GrainUnloading /></PlantOnly>} />
         <Route path="process/grain-unloading" element={<PlantOnly><GrainUnloadingTrucks /></PlantOnly>} />

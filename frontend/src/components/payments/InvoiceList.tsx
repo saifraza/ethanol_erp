@@ -17,6 +17,13 @@ interface InvoiceListProps {
   // PO to have a line in one of these). Defaults to 'FUEL' to match the
   // legacy fuel-only upload endpoint behaviour.
   categories?: string;
+  /**
+   * URL prefix for invoice CRUD calls. Defaults to '/fuel/payments' so the
+   * existing fuel UI keeps working unchanged. Surface-specific pages
+   * (Raw Material, Store, etc.) pass their own prefix to route to the
+   * surface-scoped endpoints.
+   */
+  apiBase?: string;
 }
 
 interface EditState {
@@ -36,6 +43,7 @@ export default function InvoiceList({
   onChanged,
   onTriggerUpload,
   categories,
+  apiBase = '/fuel/payments',
 }: InvoiceListProps) {
   const [invoices, setInvoices] = useState<FuelInvoiceRow[]>([]);
   const [loading, setLoading] = useState(true);
@@ -46,7 +54,7 @@ export default function InvoiceList({
   const fetchInvoices = async () => {
     setLoading(true);
     try {
-      const res = await api.get<FuelInvoiceRow[]>(`/fuel/payments/${poId}/invoices`);
+      const res = await api.get<FuelInvoiceRow[]>(`${apiBase}/${poId}/invoices`);
       setInvoices(res.data);
     } catch (err) {
       console.error(err);
@@ -58,7 +66,7 @@ export default function InvoiceList({
   useEffect(() => {
     let cancelled = false;
     setLoading(true);
-    api.get<FuelInvoiceRow[]>(`/fuel/payments/${poId}/invoices`)
+    api.get<FuelInvoiceRow[]>(`${apiBase}/${poId}/invoices`)
       .then((res) => {
         if (cancelled) return;
         setInvoices(res.data);
@@ -66,7 +74,7 @@ export default function InvoiceList({
       .catch((err) => { console.error(err); })
       .finally(() => { if (!cancelled) setLoading(false); });
     return () => { cancelled = true; };
-  }, [poId]);
+  }, [poId, apiBase]);
 
   const triggerInternalUpload = () => {
     if (uploading) return;
@@ -93,7 +101,7 @@ export default function InvoiceList({
       fd.append('meta', JSON.stringify(files.map(() => ({ vendorInvNo: null, vendorInvDate: null, totalAmount: null }))));
       if (categories) fd.append('category', categories);
       await api.post(
-        `/fuel/payments/${poId}/invoice`,
+        `${apiBase}/${poId}/invoice`,
         fd,
         { headers: { 'Content-Type': 'multipart/form-data' } },
       );
@@ -117,7 +125,7 @@ export default function InvoiceList({
         setEditInvoice({ ...editInvoice, saving: false });
         return;
       }
-      const res = await api.put<FuelInvoiceRow>(`/fuel/payments/invoices/${editInvoice.id}`, {
+      const res = await api.put<FuelInvoiceRow>(`${apiBase}/invoices/${editInvoice.id}`, {
         vendorInvNo: editInvoice.vendorInvNo.trim() || null,
         vendorInvDate: editInvoice.vendorInvDate || null,
         totalAmount: editInvoice.totalAmount.trim() ? total : undefined,
@@ -135,7 +143,7 @@ export default function InvoiceList({
   const deleteInvoice = async (invoiceId: string) => {
     if (!window.confirm('Remove this invoice attachment?')) return;
     try {
-      await api.delete(`/fuel/payments/invoices/${invoiceId}`);
+      await api.delete(`${apiBase}/invoices/${invoiceId}`);
       setInvoices((prev) => prev.filter((i) => i.id !== invoiceId));
       onChanged();
     } catch (err: unknown) {

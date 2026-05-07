@@ -6,27 +6,18 @@ import { z } from 'zod';
 import prisma from '../config/prisma';
 import { writeAudit } from '../utils/auditLog';
 import { getEffectiveGstRate, resolveHsnFromString } from '../services/taxRateLookup';
-import multer from 'multer';
-import path from 'path';
-import fs from 'fs';
-import crypto from 'crypto';
+import {
+  invoiceUploadFields,
+  getPoLedger,
+  getPoInvoices,
+  postPoInvoice,
+  putInvoice,
+  deleteInvoice,
+  editInvoiceSchema,
+  listPaymentRows,
+} from './paymentsByPo';
 
 const router = Router();
-
-// Multer setup for fuel-invoice uploads. Files share the same on-disk
-// directory as VendorInvoice uploads (uploads/vendor-invoices/) so the
-// existing /uploads static serve and any future Smart-Upload cleanup
-// applies uniformly. Same 10MB limit as vendorInvoices.ts.
-const fuelInvoiceUploadDir = path.join(__dirname, '../../uploads/vendor-invoices');
-if (!fs.existsSync(fuelInvoiceUploadDir)) fs.mkdirSync(fuelInvoiceUploadDir, { recursive: true });
-
-const fuelInvoiceUpload = multer({
-  storage: multer.diskStorage({
-    destination: (_req, _file, cb) => cb(null, fuelInvoiceUploadDir),
-    filename: (_req, file, cb) => cb(null, `${Date.now()}-${Math.random().toString(36).slice(2, 8)}${path.extname(file.originalname)}`),
-  }),
-  limits: { fileSize: 10 * 1024 * 1024 },
-});
 
 // ==========================================================================
 //  FUEL MASTER — InventoryItem with category='FUEL'
@@ -616,28 +607,40 @@ router.get('/deals', authenticate, asyncHandler(async (req: AuthRequest, res: Re
     const totalValue = isOpenDeal ? receivedValue : Math.max(plannedValue, receivedValue);
 
     // Direct VendorPayments tagged to this PO via the new purchaseOrderId FK.
-    // Invoice-linked payments (paid against a vendor bill) come in separately
-    // below, so we filter them out here to avoid double-counting.
+    // We sum every payment on the FK regardless of whether it's also linked
+    // to an invoice — PO-81 demonstrated the previous bug where the
+    // upload-with-payment flow set both purchaseOrderId AND invoiceId, and
+    // the old `invoiceId: null` filter then excluded that payment from
+    // `totalPaid` even though no GRN-linked invoice existed to pick it up.
+    // Net: same payment showed correctly under /fuel/payments but as ₹0
+    // here. Source of truth is the FK now; invoice-linkage is metadata.
     const directPayments = await prisma.vendorPayment.findMany({
       where: {
         purchaseOrderId: deal.id,
-        invoiceId: null,
       },
-      select: { amount: true },
+      select: { amount: true, invoiceId: true },
       take: 500,
     });
     let totalPaid = directPayments.reduce((s, p) => s + p.amount, 0);
+    // Track which invoice IDs we've already credited via the PO FK so the
+    // GRN-invoice loop below doesn't double-count when paidAmount mirrors
+    // the same VendorPayment row.
+    const fkLinkedInvoiceIds = new Set(
+      directPayments.map(p => p.invoiceId).filter((x): x is string => !!x)
+    );
 
     // Add invoice-based payments (from vendorPayments route which links to invoiceId)
     const grnIds = deal.grns.map(g => g.id);
     if (grnIds.length > 0) {
       const invoices = await prisma.vendorInvoice.findMany({
         where: { grnId: { in: grnIds } },
-        select: { paidAmount: true },
-      
+        select: { id: true, paidAmount: true },
+
     take: 500,
   });
-      totalPaid += invoices.reduce((s, inv) => s + (inv.paidAmount || 0), 0);
+      totalPaid += invoices
+        .filter(inv => !fkLinkedInvoiceIds.has(inv.id))
+        .reduce((s, inv) => s + (inv.paidAmount || 0), 0);
     }
 
     return {
@@ -1072,572 +1075,33 @@ router.get('/payments', authenticate, asyncHandler(async (req: AuthRequest, res:
   // Store / non-fuel callers pass a comma-separated list of inventory item
   // categories: `?category=RAW_MATERIAL,CHEMICAL,PACKING,SPARE,CONSUMABLE,GENERAL`
   // (URL prefix stays /fuel/payments for now — Phase 6 cleanup will rename).
+  // Body of this endpoint extracted to listPaymentRows() in paymentsByPo.ts
+  // so the Raw Material surface can call it under its own URL prefix without
+  // duplicating the fallback-chain logic.
   const rawCategory = (typeof req.query.category === 'string' ? req.query.category : '').trim();
   const categories = rawCategory
     ? rawCategory.split(',').map(c => c.trim().toUpperCase()).filter(Boolean)
     : ['FUEL'];
 
-  const fuelPos = await prisma.purchaseOrder.findMany({
-    where: {
-      ...getCompanyFilter(req),
-      lines: { some: { inventoryItem: { category: { in: categories } } } },
-      status: { not: 'DRAFT' },
-    },
-    take: 500,
-    orderBy: { poDate: 'desc' },
-    select: {
-      id: true, poNo: true, poDate: true, status: true, dealType: true,
-      grandTotal: true, paymentTerms: true, creditDays: true,
-      vendor: { select: { id: true, name: true, phone: true, bankName: true, bankAccount: true, bankIfsc: true } },
-      lines: {
-        select: {
-          quantity: true, receivedQty: true, rate: true, gstPercent: true, description: true,
-          inventoryItem: { select: { id: true, name: true, unit: true, category: true } },
-        },
-      },
-      _count: { select: { grns: true, vendorInvoices: true } },
-    },
+  const result = await listPaymentRows({
+    companyFilter: getCompanyFilter(req),
+    categories,
   });
-
-  // Aggregate invoiced totals per PO in a single query (cheaper than N round-trips).
-  const fuelPoIds = fuelPos.map(p => p.id);
-  const invoiceTotalsRaw = fuelPoIds.length > 0 ? await prisma.vendorInvoice.groupBy({
-    by: ['poId'],
-    where: { poId: { in: fuelPoIds } },
-    _sum: { totalAmount: true },
-  }) : [];
-  const invoicedByPo = new Map<string, number>();
-  for (const row of invoiceTotalsRaw) {
-    if (row.poId) invoicedByPo.set(row.poId, row._sum.totalAmount || 0);
-  }
-
-  const result = await Promise.all(fuelPos.map(async (po) => {
-    // Pick the first line whose inventory item matches the requested category
-    // for the row label + unit. Legacy fallback: any line if none match.
-    const matchingLines = po.lines.filter(l => l.inventoryItem && categories.includes(l.inventoryItem.category));
-    const linesToSum = matchingLines.length > 0 ? matchingLines : po.lines;
-    const fuelLabel = matchingLines[0]?.inventoryItem?.name || matchingLines[0]?.description || po.lines[0]?.description || 'Item';
-    const fuelUnit = matchingLines[0]?.inventoryItem?.unit || po.lines[0]?.inventoryItem?.unit || 'MT';
-
-    const totalReceived = linesToSum.reduce((s, l) => s + (l.receivedQty || 0), 0);
-    const receivedValue = Math.round(linesToSum.reduce((s, l) => {
-      const base = (l.receivedQty || 0) * (l.rate || 0);
-      return s + base + base * ((l.gstPercent || 0) / 100);
-    }, 0) * 100) / 100;
-    const isOpen = po.dealType === 'OPEN';
-    const plannedValue = Math.round(linesToSum.reduce((s, l) => {
-      const q = l.quantity >= 900000 ? (l.receivedQty || 0) : l.quantity;
-      const base = q * (l.rate || 0);
-      return s + base + base * ((l.gstPercent || 0) / 100);
-    }, 0) * 100) / 100;
-    const poTotal = po.grandTotal > 0 ? po.grandTotal : (isOpen ? receivedValue : Math.max(plannedValue, receivedValue));
-
-    const confirmedPayments = await prisma.vendorPayment.findMany({
-      where: { purchaseOrderId: po.id, paymentStatus: 'CONFIRMED' },
-      select: { amount: true, paymentDate: true },
-      take: 500,
-    });
-    const totalPaid = confirmedPayments.reduce((s, p) => s + p.amount, 0);
-    const lastPaymentDate = confirmedPayments.reduce<Date | null>((latest, p) => {
-      if (!latest || p.paymentDate > latest) return p.paymentDate;
-      return latest;
-    }, null);
-
-    const pendingBankAgg = await prisma.vendorPayment.aggregate({
-      where: { purchaseOrderId: po.id, paymentStatus: 'INITIATED' },
-      _sum: { amount: true },
-    });
-    const pendingBank = pendingBankAgg._sum.amount || 0;
-
-    const pendingCashAgg = await prisma.cashVoucher.aggregate({
-      where: { status: 'ACTIVE', purpose: { contains: `PO-${po.poNo}` } },
-      _sum: { amount: true },
-    });
-    const pendingCash = pendingCashAgg._sum.amount || 0;
-
-    const invoicedTotal = Math.round((invoicedByPo.get(po.id) || 0) * 100) / 100;
-
-    // Outstanding fallback chain — figure out the right "what we owe" basis.
-    // 1. If GRNs exist, use receivedValue (only pay for what arrived).
-    // 2. Else if invoices have totals, use the invoiced total (vendor-billed POs without weighbridge).
-    // 3. Else fall back to the planned PO total so a brand-new PO doesn't render as "✓ Paid".
-    // Without this chain a manual PO with 0 GRNs and 0 invoiced total
-    // shows outstanding=0 → looks settled even when nothing was paid.
-    let payableBasis: number;
-    let basisSource: 'RECEIVED' | 'INVOICED' | 'PLANNED';
-    if (receivedValue > 0) {
-      payableBasis = receivedValue;
-      basisSource = 'RECEIVED';
-    } else if (invoicedTotal > 0) {
-      payableBasis = invoicedTotal;
-      basisSource = 'INVOICED';
-    } else {
-      payableBasis = poTotal;
-      basisSource = 'PLANNED';
-    }
-    const outstanding = Math.max(0, Math.round((payableBasis - totalPaid - pendingBank - pendingCash) * 100) / 100);
-
-    return {
-      id: po.id,
-      poNo: po.poNo,
-      poDate: po.poDate,
-      status: po.status,
-      dealType: po.dealType,
-      paymentTerms: po.paymentTerms,
-      creditDays: po.creditDays,
-      vendor: po.vendor,
-      fuelName: fuelLabel,
-      fuelUnit,
-      totalReceived: Math.round(totalReceived * 100) / 100,
-      poTotal: Math.round(poTotal * 100) / 100,
-      receivedValue,
-      totalPaid: Math.round(totalPaid * 100) / 100,
-      pendingBank: Math.round(pendingBank * 100) / 100,
-      pendingCash: Math.round(pendingCash * 100) / 100,
-      outstanding,
-      payableBasis: Math.round(payableBasis * 100) / 100,
-      basisSource,
-      lastPaymentDate,
-      grnCount: po._count.grns,
-      invoiceCount: po._count.vendorInvoices,
-      invoicedTotal,
-      isFullyPaid: payableBasis > 0 && (totalPaid + pendingBank + pendingCash) >= payableBasis - 0.01,
-    };
-  }));
-
   res.json(result);
 }));
 
 // ==========================================================================
-//  FUEL INVOICE UPLOAD — attach a vendor bill PDF/image to a fuel PO.
-//  Lightweight: no AI extraction, no 3-way match. Just stores the file and
-//  creates a minimal VendorInvoice row (status=PENDING) so the file is
-//  visible to accounts and downloadable from the PO. Accounts can later
-//  promote it to a fully-booked invoice via /vendor-invoices flows.
+//  FUEL INVOICE UPLOAD + LEDGER + INVOICE CRUD
+//  Handlers extracted to ./paymentsByPo so the Raw Material page (and any
+//  future surface) can reuse them under its own URL prefix. Multer is
+//  invoked here at mount-time so /fuel/payments/:poId/invoice keeps the
+//  same multipart wiring it had inline. Behaviour is unchanged — these
+//  are pure mounts, no parameter rewriting.
 // ==========================================================================
-
-// Accepts up to 20 files in a single request under either field name —
-// `files` (preferred for multi-pick) or `file` (legacy single-pick).
-// Frontend currently always sends under `files`, but accepting both keeps
-// the endpoint backward-compatible with any half-deployed clients.
-router.post(
-  '/payments/:poId/invoice',
-  authenticate,
-  fuelInvoiceUpload.fields([
-    { name: 'files', maxCount: 20 },
-    { name: 'file', maxCount: 1 },
-  ]),
-  asyncHandler(async (req: AuthRequest, res: Response) => {
-    const filesByField = (req.files || {}) as Record<string, Express.Multer.File[]>;
-    const uploaded: Express.Multer.File[] = [
-      ...(filesByField.files || []),
-      ...(filesByField.file || []),
-    ];
-    if (uploaded.length === 0) { res.status(400).json({ error: 'No files uploaded' }); return; }
-
-    const cleanupAll = () => {
-      for (const f of uploaded) {
-        try { fs.unlinkSync(f.path); } catch { /* best effort */ }
-      }
-    };
-
-    const po = await prisma.purchaseOrder.findUnique({
-      where: { id: req.params.poId },
-      select: { id: true, poNo: true, vendorId: true, companyId: true, division: true, lines: { select: { inventoryItem: { select: { category: true } } } } },
-    });
-    if (!po) {
-      cleanupAll();
-      res.status(404).json({ error: 'PO not found' });
-      return;
-    }
-    // Validate the PO carries an inventory line in one of the expected
-    // categories. Caller passes ?category= (or body.category) — same
-    // comma-separated convention as the row listing. Default 'FUEL' for
-    // back-compat with existing fuel UI.
-    const rawCategory = (typeof req.query.category === 'string' && req.query.category) || (typeof req.body?.category === 'string' && req.body.category) || '';
-    const allowedCategories = rawCategory
-      ? rawCategory.split(',').map((c: string) => c.trim().toUpperCase()).filter(Boolean)
-      : ['FUEL'];
-    const matchesCategory = po.lines.some((l) => l.inventoryItem && allowedCategories.includes(l.inventoryItem.category));
-    if (!matchesCategory) {
-      cleanupAll();
-      res.status(400).json({ error: `PO has no line in the requested category (${allowedCategories.join(', ')}).` });
-      return;
-    }
-
-    // Bulk fallback fields (apply to every file when per-file `meta` not provided).
-    const remarks = (typeof req.body?.remarks === 'string' ? req.body.remarks : '').slice(0, 500) || null;
-    const fallbackInvNo = (typeof req.body?.vendorInvNo === 'string' ? req.body.vendorInvNo : '').slice(0, 50) || null;
-
-    // Per-file metadata. JSON-encoded array, length should match files order.
-    // Each entry: { vendorInvNo?, vendorInvDate? (ISO), totalAmount? (number) }
-    interface PerFileMeta { vendorInvNo?: string | null; vendorInvDate?: string | null; totalAmount?: number | null }
-    let metaList: PerFileMeta[] = [];
-    if (typeof req.body?.meta === 'string' && req.body.meta.trim().length > 0) {
-      try {
-        const parsed = JSON.parse(req.body.meta);
-        if (Array.isArray(parsed)) metaList = parsed as PerFileMeta[];
-      } catch { /* malformed — ignore, use fallback */ }
-    }
-
-    // Optional payment to record once invoices are created.
-    interface PaymentMeta { amount?: number; mode?: string; reference?: string; remarks?: string }
-    let paymentMeta: PaymentMeta | null = null;
-    if (typeof req.body?.payment === 'string' && req.body.payment.trim().length > 0) {
-      try {
-        const parsed = JSON.parse(req.body.payment) as PaymentMeta;
-        if (parsed && typeof parsed.amount === 'number' && parsed.amount > 0) paymentMeta = parsed;
-      } catch { /* malformed — ignore */ }
-    }
-
-    interface PerFileResult {
-      ok: boolean;
-      deduped: boolean;
-      fileName: string;
-      invoice?: { id: string; filePath: string | null; originalFileName: string | null; createdAt: Date; totalAmount: number; vendorInvNo: string | null };
-      error?: string;
-    }
-    const results: PerFileResult[] = [];
-    const newlyCreatedInvoiceIds: string[] = [];
-
-    for (let i = 0; i < uploaded.length; i++) {
-      const f = uploaded[i];
-      const meta = metaList[i] || {};
-      try {
-        const fileBuffer = fs.readFileSync(f.path);
-        const fileHash = crypto.createHash('sha256').update(fileBuffer).digest('hex');
-        const filePath = `vendor-invoices/${f.filename}`;
-
-        const existing = await prisma.vendorInvoice.findFirst({
-          where: { poId: po.id, fileHash },
-          select: { id: true, filePath: true, originalFileName: true, createdAt: true, totalAmount: true, vendorInvNo: true },
-        });
-        if (existing) {
-          try { fs.unlinkSync(f.path); } catch { /* best effort */ }
-          results.push({ ok: true, deduped: true, fileName: f.originalname, invoice: existing });
-          continue;
-        }
-
-        const totalAmount = typeof meta.totalAmount === 'number' && isFinite(meta.totalAmount) && meta.totalAmount > 0
-          ? Math.round(meta.totalAmount * 100) / 100
-          : 0;
-        const vendorInvNo = (meta.vendorInvNo || '').toString().slice(0, 50) || fallbackInvNo;
-        const vendorInvDate = meta.vendorInvDate ? new Date(meta.vendorInvDate) : null;
-
-        const invoice = await prisma.vendorInvoice.create({
-          data: {
-            vendorId: po.vendorId,
-            poId: po.id,
-            vendorInvNo,
-            vendorInvDate,
-            invoiceDate: new Date(),
-            productName: '',
-            status: 'PENDING',
-            // Header totals — when totalAmount given we mirror it into balanceAmount
-            // so the existing accounts ledger / outstanding views light up correctly.
-            totalAmount,
-            balanceAmount: totalAmount,
-            filePath,
-            fileHash,
-            originalFileName: f.originalname,
-            remarks,
-            userId: req.user!.id,
-            companyId: po.companyId ?? getActiveCompanyId(req),
-            division: po.division ?? 'ETHANOL',
-          },
-          select: { id: true, filePath: true, originalFileName: true, createdAt: true, totalAmount: true, vendorInvNo: true },
-        });
-        results.push({ ok: true, deduped: false, fileName: f.originalname, invoice });
-        newlyCreatedInvoiceIds.push(invoice.id);
-      } catch (err: unknown) {
-        try { fs.unlinkSync(f.path); } catch { /* best effort */ }
-        const msg = err instanceof Error ? err.message : 'Upload failed';
-        results.push({ ok: false, deduped: false, fileName: f.originalname, error: msg });
-      }
-    }
-
-    // Optional payment alongside the upload. Linked to a single invoice via
-    // invoiceId only when exactly one new invoice was created in this batch
-    // (clean attribution); otherwise the payment hangs off the PO via FK.
-    let createdPayment: { id: string; amount: number; paymentNo: number; mode: string; reference: string | null } | null = null;
-    if (paymentMeta && paymentMeta.amount && paymentMeta.amount > 0) {
-      const mode = (paymentMeta.mode || 'CASH').toString().slice(0, 20);
-      const reference = (paymentMeta.reference || '').toString().slice(0, 100) || '';
-      const payRemarks = (paymentMeta.remarks || '').toString().slice(0, 500)
-        || `Fuel deal PO-${po.poNo}${newlyCreatedInvoiceIds.length === 1 ? ' (1 invoice attached)' : newlyCreatedInvoiceIds.length > 1 ? ` (${newlyCreatedInvoiceIds.length} invoices attached)` : ''}`;
-      const linkedInvoiceId = newlyCreatedInvoiceIds.length === 1 ? newlyCreatedInvoiceIds[0] : null;
-
-      const payment = await prisma.vendorPayment.create({
-        data: {
-          vendorId: po.vendorId,
-          purchaseOrderId: po.id,
-          invoiceId: linkedInvoiceId,
-          paymentDate: new Date(),
-          amount: Math.round(paymentMeta.amount * 100) / 100,
-          mode,
-          reference,
-          paymentStatus: reference ? 'CONFIRMED' : 'INITIATED',
-          confirmedAt: reference ? new Date() : null,
-          isAdvance: false,
-          remarks: payRemarks,
-          userId: req.user!.id,
-          companyId: po.companyId ?? getActiveCompanyId(req),
-        },
-        select: { id: true, amount: true, paymentNo: true, mode: true, reference: true, paymentStatus: true },
-      });
-
-      // When linked to a single invoice, bump its paid/balance figures so the
-      // accounts ledger reflects the partial/full pay-down. Status mirrors
-      // the existing PaymentsOut convention (PARTIAL_PAID vs PAID).
-      if (linkedInvoiceId) {
-        const inv = await prisma.vendorInvoice.findUnique({
-          where: { id: linkedInvoiceId },
-          select: { totalAmount: true, paidAmount: true },
-        });
-        if (inv) {
-          const newPaid = Math.round(((inv.paidAmount || 0) + payment.amount) * 100) / 100;
-          const total = inv.totalAmount || 0;
-          const newBalance = Math.max(0, Math.round((total - newPaid) * 100) / 100);
-          const newStatus = total > 0 && newPaid >= total - 0.01 ? 'PAID' : newPaid > 0 ? 'PARTIAL_PAID' : 'PENDING';
-          await prisma.vendorInvoice.update({
-            where: { id: linkedInvoiceId },
-            data: { paidAmount: newPaid, balanceAmount: newBalance, status: newStatus },
-          });
-        }
-      }
-
-      // Auto-journal — same path the standalone fuel/Pay button uses.
-      if (payment.paymentStatus === 'CONFIRMED') {
-        try {
-          const { onVendorPaymentMade } = await import('../services/autoJournal');
-          await onVendorPaymentMade(prisma as Parameters<typeof onVendorPaymentMade>[0], {
-            id: payment.id, amount: payment.amount, mode, reference,
-            tdsDeducted: 0, vendorId: po.vendorId, userId: req.user!.id, paymentDate: new Date(),
-          });
-        } catch { /* best-effort */ }
-      }
-
-      createdPayment = { id: payment.id, amount: payment.amount, paymentNo: payment.paymentNo, mode: payment.mode, reference: payment.reference };
-    }
-
-    const created = results.filter((r) => r.ok && !r.deduped).length;
-    const deduped = results.filter((r) => r.ok && r.deduped).length;
-    const failed = results.filter((r) => !r.ok).length;
-    res.status(created > 0 || createdPayment ? 201 : 200).json({
-      ok: failed === 0,
-      results,
-      payment: createdPayment,
-      summary: { created, deduped, failed },
-    });
-  }),
-);
-
-router.get(
-  '/payments/:poId/invoices',
-  authenticate,
-  asyncHandler(async (req: AuthRequest, res: Response) => {
-    const invoices = await prisma.vendorInvoice.findMany({
-      where: { poId: req.params.poId },
-      take: 200,
-      orderBy: { createdAt: 'desc' },
-      select: {
-        id: true, vendorInvNo: true, vendorInvDate: true, invoiceDate: true,
-        totalAmount: true, paidAmount: true, status: true,
-        filePath: true, originalFileName: true, remarks: true, createdAt: true,
-      },
-    });
-    res.json(invoices);
-  }),
-);
-
-// Running ledger for a single fuel PO. Same shape PaymentsOut uses on its
-// vendor ledger so the UI can lay it out identically. Each row carries a
-// running balance: invoiced – paid (so positive = vendor still owed).
-router.get(
-  '/payments/:poId/ledger',
-  authenticate,
-  asyncHandler(async (req: AuthRequest, res: Response) => {
-    const po = await prisma.purchaseOrder.findUnique({
-      where: { id: req.params.poId },
-      select: {
-        id: true, poNo: true, grandTotal: true, status: true,
-        vendor: { select: { id: true, name: true, phone: true } },
-        lines: { select: { quantity: true, receivedQty: true, rate: true, gstPercent: true } },
-      },
-    });
-    if (!po) { res.status(404).json({ error: 'PO not found' }); return; }
-
-    const receivedValue = Math.round(po.lines.reduce((s, l) => {
-      const base = (l.receivedQty || 0) * l.rate;
-      return s + base + base * ((l.gstPercent || 0) / 100);
-    }, 0) * 100) / 100;
-    const plannedValue = Math.round(po.lines.reduce((s, l) => {
-      const q = l.quantity >= 900000 ? (l.receivedQty || 0) : l.quantity;
-      const base = q * (l.rate || 0);
-      return s + base + base * ((l.gstPercent || 0) / 100);
-    }, 0) * 100) / 100;
-    const poTotal = po.grandTotal > 0 ? po.grandTotal : Math.max(plannedValue, receivedValue);
-
-    const [invoices, payments] = await Promise.all([
-      prisma.vendorInvoice.findMany({
-        where: { poId: po.id },
-        select: { id: true, vendorInvNo: true, invoiceDate: true, totalAmount: true, status: true, originalFileName: true, filePath: true, createdAt: true },
-        take: 500,
-      }),
-      prisma.vendorPayment.findMany({
-        where: { purchaseOrderId: po.id },
-        select: { id: true, paymentNo: true, paymentDate: true, amount: true, mode: true, reference: true, paymentStatus: true, invoiceId: true },
-        take: 500,
-      }),
-    ]);
-
-    type LedgerRow =
-      | { type: 'INVOICE'; date: Date; id: string; vendorInvNo: string | null; amount: number; status: string; fileName: string | null; filePath: string | null }
-      | { type: 'PAYMENT'; date: Date; id: string; paymentNo: number; amount: number; mode: string; reference: string | null; paymentStatus: string; invoiceId: string | null };
-
-    const rows: LedgerRow[] = [
-      ...invoices.map<LedgerRow>((inv) => ({
-        type: 'INVOICE',
-        date: inv.invoiceDate || inv.createdAt,
-        id: inv.id,
-        vendorInvNo: inv.vendorInvNo,
-        amount: inv.totalAmount || 0,
-        status: inv.status,
-        fileName: inv.originalFileName,
-        filePath: inv.filePath,
-      })),
-      ...payments.map<LedgerRow>((p) => ({
-        type: 'PAYMENT',
-        date: p.paymentDate,
-        id: p.id,
-        paymentNo: p.paymentNo,
-        amount: p.amount,
-        mode: p.mode,
-        reference: p.reference,
-        paymentStatus: p.paymentStatus,
-        invoiceId: p.invoiceId,
-      })),
-    ].sort((a, b) => a.date.getTime() - b.date.getTime());
-
-    let running = 0;
-    const ledger = rows.map((r) => {
-      // Invoices add to "owed", payments subtract. Running > 0 = vendor still owed.
-      running += r.type === 'INVOICE' ? r.amount : -r.amount;
-      return { ...r, runningBalance: Math.round(running * 100) / 100 };
-    });
-
-    const totalInvoiced = invoices.reduce((s, i) => s + (i.totalAmount || 0), 0);
-    const totalPaid = payments
-      .filter((p) => p.paymentStatus === 'CONFIRMED')
-      .reduce((s, p) => s + p.amount, 0);
-    const pendingBank = payments
-      .filter((p) => p.paymentStatus === 'INITIATED')
-      .reduce((s, p) => s + p.amount, 0);
-
-    // Same fallback chain as /api/fuel/payments — without it a manual PO
-    // (no GRNs) with bills uploaded but totals not yet filled in pins to
-    // outstanding=0 and renders as "✓ Settled" while nothing is paid.
-    let payableBasis: number;
-    let basisSource: 'RECEIVED' | 'INVOICED' | 'PLANNED';
-    if (receivedValue > 0) {
-      payableBasis = receivedValue;
-      basisSource = 'RECEIVED';
-    } else if (totalInvoiced > 0) {
-      payableBasis = totalInvoiced;
-      basisSource = 'INVOICED';
-    } else {
-      payableBasis = poTotal;
-      basisSource = 'PLANNED';
-    }
-    const outstanding = Math.max(0, Math.round((payableBasis - totalPaid - pendingBank) * 100) / 100);
-
-    res.json({
-      poNo: po.poNo,
-      vendor: po.vendor,
-      poTotal: Math.round(poTotal * 100) / 100,
-      receivedValue,
-      totalInvoiced: Math.round(totalInvoiced * 100) / 100,
-      totalPaid: Math.round(totalPaid * 100) / 100,
-      pendingBank: Math.round(pendingBank * 100) / 100,
-      outstanding,
-      payableBasis: Math.round(payableBasis * 100) / 100,
-      basisSource,
-      ledger,
-    });
-  }),
-);
-
-// Backfill / correct invoice metadata for an already-uploaded file.
-// Used when an operator uploaded a bill earlier (when the upload modal
-// only took the file) and now wants to fill in the vendor invoice no /
-// date / total amount on it. Recomputes balanceAmount + status when total
-// changes so the accounts ledger stays consistent.
-const editFuelInvoiceSchema = z.object({
-  vendorInvNo: z.string().max(50).optional().nullable(),
-  vendorInvDate: z.string().optional().nullable(),
-  totalAmount: z.coerce.number().min(0).optional(),
-  remarks: z.string().max(500).optional().nullable(),
-});
-router.put(
-  '/payments/invoices/:invoiceId',
-  authenticate,
-  validate(editFuelInvoiceSchema),
-  asyncHandler(async (req: AuthRequest, res: Response) => {
-    const inv = await prisma.vendorInvoice.findUnique({
-      where: { id: req.params.invoiceId },
-      select: { id: true, totalAmount: true, paidAmount: true, status: true },
-    });
-    if (!inv) { res.status(404).json({ error: 'Invoice not found' }); return; }
-
-    const b = req.body as z.infer<typeof editFuelInvoiceSchema>;
-    const data: Record<string, unknown> = {};
-    if (b.vendorInvNo !== undefined) data.vendorInvNo = (b.vendorInvNo || '').trim() || null;
-    if (b.vendorInvDate !== undefined) data.vendorInvDate = b.vendorInvDate ? new Date(b.vendorInvDate) : null;
-    if (b.remarks !== undefined) data.remarks = (b.remarks || '').trim() || null;
-
-    if (b.totalAmount !== undefined && isFinite(b.totalAmount)) {
-      const total = Math.round(b.totalAmount * 100) / 100;
-      const paid = inv.paidAmount || 0;
-      const balance = Math.max(0, Math.round((total - paid) * 100) / 100);
-      const status = total > 0 && paid >= total - 0.01 ? 'PAID' : paid > 0 ? 'PARTIAL_PAID' : (inv.status === 'CANCELLED' ? 'CANCELLED' : 'PENDING');
-      data.totalAmount = total;
-      data.balanceAmount = balance;
-      data.status = status;
-    }
-
-    const updated = await prisma.vendorInvoice.update({
-      where: { id: inv.id },
-      data,
-      select: {
-        id: true, vendorInvNo: true, vendorInvDate: true, invoiceDate: true,
-        totalAmount: true, paidAmount: true, status: true,
-        filePath: true, originalFileName: true, remarks: true, createdAt: true,
-      },
-    });
-    res.json(updated);
-  }),
-);
-
-router.delete(
-  '/payments/invoices/:invoiceId',
-  authenticate,
-  asyncHandler(async (req: AuthRequest, res: Response) => {
-    const inv = await prisma.vendorInvoice.findUnique({
-      where: { id: req.params.invoiceId },
-      select: { id: true, filePath: true, status: true, paidAmount: true, poId: true },
-    });
-    if (!inv) { res.status(404).json({ error: 'Invoice not found' }); return; }
-    if ((inv.paidAmount || 0) > 0) {
-      res.status(400).json({ error: 'Cannot delete — invoice has payments recorded against it.' });
-      return;
-    }
-    await prisma.vendorInvoice.delete({ where: { id: inv.id } });
-    if (inv.filePath) {
-      const onDisk = path.join(__dirname, '../../uploads', inv.filePath);
-      try { fs.unlinkSync(onDisk); } catch { /* file may already be gone */ }
-    }
-    res.json({ ok: true });
-  }),
-);
+router.post('/payments/:poId/invoice', authenticate, invoiceUploadFields, asyncHandler(postPoInvoice));
+router.get('/payments/:poId/invoices', authenticate, asyncHandler(getPoInvoices));
+router.get('/payments/:poId/ledger', authenticate, asyncHandler(getPoLedger));
+router.put('/payments/invoices/:invoiceId', authenticate, validate(editInvoiceSchema), asyncHandler(putInvoice));
+router.delete('/payments/invoices/:invoiceId', authenticate, asyncHandler(deleteInvoice));
 
 export default router;
