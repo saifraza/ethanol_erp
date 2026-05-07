@@ -1183,70 +1183,107 @@ router.get('/payments', authenticate, asyncHandler(async (req: AuthRequest, res:
 //  promote it to a fully-booked invoice via /vendor-invoices flows.
 // ==========================================================================
 
+// Accepts up to 20 files in a single request under either field name —
+// `files` (preferred for multi-pick) or `file` (legacy single-pick).
+// Frontend currently always sends under `files`, but accepting both keeps
+// the endpoint backward-compatible with any half-deployed clients.
 router.post(
   '/payments/:poId/invoice',
   authenticate,
-  fuelInvoiceUpload.single('file'),
+  fuelInvoiceUpload.fields([
+    { name: 'files', maxCount: 20 },
+    { name: 'file', maxCount: 1 },
+  ]),
   asyncHandler(async (req: AuthRequest, res: Response) => {
-    if (!req.file) { res.status(400).json({ error: 'No file uploaded' }); return; }
+    const filesByField = (req.files || {}) as Record<string, Express.Multer.File[]>;
+    const uploaded: Express.Multer.File[] = [
+      ...(filesByField.files || []),
+      ...(filesByField.file || []),
+    ];
+    if (uploaded.length === 0) { res.status(400).json({ error: 'No files uploaded' }); return; }
+
+    const cleanupAll = () => {
+      for (const f of uploaded) {
+        try { fs.unlinkSync(f.path); } catch { /* best effort */ }
+      }
+    };
 
     const po = await prisma.purchaseOrder.findUnique({
       where: { id: req.params.poId },
       select: { id: true, poNo: true, vendorId: true, companyId: true, division: true, lines: { select: { inventoryItem: { select: { category: true } } } } },
     });
     if (!po) {
-      // Clean up the orphan file before bailing.
-      try { fs.unlinkSync(req.file.path); } catch { /* best effort */ }
+      cleanupAll();
       res.status(404).json({ error: 'Fuel PO not found' });
       return;
     }
     const isFuelPo = po.lines.some((l) => l.inventoryItem?.category === 'FUEL');
     if (!isFuelPo) {
-      try { fs.unlinkSync(req.file.path); } catch { /* best effort */ }
+      cleanupAll();
       res.status(400).json({ error: 'PO is not a fuel PO — use the regular vendor-invoice flow.' });
-      return;
-    }
-
-    // Hash file for de-dupe — re-uploading the same bill against the same
-    // PO returns the existing row instead of creating a duplicate.
-    const fileBuffer = fs.readFileSync(req.file.path);
-    const fileHash = crypto.createHash('sha256').update(fileBuffer).digest('hex');
-    const filePath = `vendor-invoices/${req.file.filename}`;
-
-    const existing = await prisma.vendorInvoice.findFirst({
-      where: { poId: po.id, fileHash },
-      select: { id: true, filePath: true, originalFileName: true, createdAt: true, totalAmount: true, vendorInvNo: true },
-    });
-    if (existing) {
-      // Same file already attached — drop the duplicate disk write.
-      try { fs.unlinkSync(req.file.path); } catch { /* best effort */ }
-      res.json({ ok: true, deduped: true, invoice: existing });
       return;
     }
 
     const remarks = (typeof req.body?.remarks === 'string' ? req.body.remarks : '').slice(0, 500) || null;
     const vendorInvNo = (typeof req.body?.vendorInvNo === 'string' ? req.body.vendorInvNo : '').slice(0, 50) || null;
 
-    const invoice = await prisma.vendorInvoice.create({
-      data: {
-        vendorId: po.vendorId,
-        poId: po.id,
-        vendorInvNo,
-        invoiceDate: new Date(),
-        productName: '',
-        status: 'PENDING',
-        filePath,
-        fileHash,
-        originalFileName: req.file.originalname,
-        remarks,
-        userId: req.user!.id,
-        companyId: po.companyId ?? getActiveCompanyId(req),
-        division: po.division ?? 'ETHANOL',
-      },
-      select: { id: true, filePath: true, originalFileName: true, createdAt: true, totalAmount: true, vendorInvNo: true },
-    });
+    interface PerFileResult {
+      ok: boolean;
+      deduped: boolean;
+      fileName: string;
+      invoice?: { id: string; filePath: string | null; originalFileName: string | null; createdAt: Date; totalAmount: number; vendorInvNo: string | null };
+      error?: string;
+    }
+    const results: PerFileResult[] = [];
 
-    res.status(201).json({ ok: true, deduped: false, invoice });
+    for (const f of uploaded) {
+      try {
+        const fileBuffer = fs.readFileSync(f.path);
+        const fileHash = crypto.createHash('sha256').update(fileBuffer).digest('hex');
+        const filePath = `vendor-invoices/${f.filename}`;
+
+        const existing = await prisma.vendorInvoice.findFirst({
+          where: { poId: po.id, fileHash },
+          select: { id: true, filePath: true, originalFileName: true, createdAt: true, totalAmount: true, vendorInvNo: true },
+        });
+        if (existing) {
+          try { fs.unlinkSync(f.path); } catch { /* best effort */ }
+          results.push({ ok: true, deduped: true, fileName: f.originalname, invoice: existing });
+          continue;
+        }
+
+        const invoice = await prisma.vendorInvoice.create({
+          data: {
+            vendorId: po.vendorId,
+            poId: po.id,
+            // vendorInvNo / remarks are bulk-applied to every file in this batch;
+            // accounts can edit per-file later via the invoice list.
+            vendorInvNo,
+            invoiceDate: new Date(),
+            productName: '',
+            status: 'PENDING',
+            filePath,
+            fileHash,
+            originalFileName: f.originalname,
+            remarks,
+            userId: req.user!.id,
+            companyId: po.companyId ?? getActiveCompanyId(req),
+            division: po.division ?? 'ETHANOL',
+          },
+          select: { id: true, filePath: true, originalFileName: true, createdAt: true, totalAmount: true, vendorInvNo: true },
+        });
+        results.push({ ok: true, deduped: false, fileName: f.originalname, invoice });
+      } catch (err: unknown) {
+        try { fs.unlinkSync(f.path); } catch { /* best effort */ }
+        const msg = err instanceof Error ? err.message : 'Upload failed';
+        results.push({ ok: false, deduped: false, fileName: f.originalname, error: msg });
+      }
+    }
+
+    const created = results.filter((r) => r.ok && !r.deduped).length;
+    const deduped = results.filter((r) => r.ok && r.deduped).length;
+    const failed = results.filter((r) => !r.ok).length;
+    res.status(created > 0 ? 201 : 200).json({ ok: failed === 0, results, summary: { created, deduped, failed } });
   }),
 );
 

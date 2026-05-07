@@ -173,6 +173,7 @@ export default function FuelManagement() {
   const [payments, setPayments] = useState<FuelPaymentRow[]>([]);
   const [paymentsLoading, setPaymentsLoading] = useState(false);
   const [paymentsFilter, setPaymentsFilter] = useState<'all' | 'outstanding' | 'paid'>('outstanding');
+  const [paymentsSearch, setPaymentsSearch] = useState('');
   const [payModal, setPayModal] = useState<PayModalState | null>(null);
   const [uploadingPoId, setUploadingPoId] = useState<string | null>(null);
   const [invoicesModal, setInvoicesModal] = useState<{ poId: string; poNo: number; vendorName: string; invoices: FuelInvoiceRow[]; loading: boolean } | null>(null);
@@ -533,28 +534,39 @@ export default function FuelManagement() {
   };
 
   const handleInvoiceFileSelected = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
+    const fileList = e.target.files;
     const poId = pendingUploadPoIdRef.current;
     pendingUploadPoIdRef.current = null;
-    if (!file || !poId) return;
-    if (file.size > 10 * 1024 * 1024) {
-      alert('File too large — 10 MB max.');
+    if (!fileList || fileList.length === 0 || !poId) return;
+    const files = Array.from(fileList);
+    const tooBig = files.find(f => f.size > 10 * 1024 * 1024);
+    if (tooBig) {
+      alert(`"${tooBig.name}" is over the 10 MB limit. Pick smaller files.`);
       return;
     }
     setUploadingPoId(poId);
     const fd = new FormData();
-    fd.append('file', file);
+    for (const f of files) fd.append('files', f);
     try {
-      const res = await api.post<{ ok: boolean; deduped: boolean; invoice: FuelInvoiceRow }>(
+      const res = await api.post<{
+        ok: boolean;
+        results: Array<{ ok: boolean; deduped: boolean; fileName: string; error?: string }>;
+        summary: { created: number; deduped: number; failed: number };
+      }>(
         `/fuel/payments/${poId}/invoice`,
         fd,
         { headers: { 'Content-Type': 'multipart/form-data' } },
       );
-      if (res.data.deduped) {
-        alert('This file is already attached to this PO — skipped duplicate upload.');
+      const { created, deduped, failed } = res.data.summary;
+      if (failed > 0) {
+        const failures = res.data.results.filter(r => !r.ok).map(r => `• ${r.fileName}: ${r.error || 'failed'}`).join('\n');
+        alert(`Uploaded ${created}, deduped ${deduped}, ${failed} failed:\n\n${failures}`);
+      } else if (deduped > 0 && created === 0) {
+        alert(`All ${deduped} file${deduped === 1 ? ' was' : 's were'} already attached to this PO — nothing new uploaded.`);
+      } else if (deduped > 0) {
+        alert(`Uploaded ${created} new · ${deduped} skipped as duplicates.`);
       }
       await fetchPayments();
-      // If invoice modal is open for this PO, refresh its list too.
       if (invoicesModal && invoicesModal.poId === poId) {
         const list = await api.get<FuelInvoiceRow[]>(`/fuel/payments/${poId}/invoices`);
         setInvoicesModal((prev) => prev ? { ...prev, invoices: list.data } : prev);
@@ -1132,7 +1144,19 @@ export default function FuelManagement() {
         )}
         {/* ═══ TAB: PAYMENTS ═══ */}
         {tab === 'payments' && (() => {
+          const q = paymentsSearch.trim().toLowerCase();
+          const matchesSearch = (p: FuelPaymentRow) => {
+            if (!q) return true;
+            return (
+              p.vendor.name.toLowerCase().includes(q) ||
+              `po-${p.poNo}`.includes(q) ||
+              String(p.poNo).includes(q) ||
+              p.fuelName.toLowerCase().includes(q) ||
+              (p.vendor.phone || '').toLowerCase().includes(q)
+            );
+          };
           const filtered = payments.filter(p => {
+            if (!matchesSearch(p)) return false;
             if (paymentsFilter === 'outstanding') return p.outstanding > 0.01 || p.pendingBank > 0 || p.pendingCash > 0;
             if (paymentsFilter === 'paid') return p.outstanding <= 0.01 && p.pendingBank <= 0 && p.pendingCash <= 0 && p.totalPaid > 0;
             return true;
@@ -1147,7 +1171,7 @@ export default function FuelManagement() {
           return (
             <div className="-mx-3 md:-mx-6 border-x border-b border-slate-300 overflow-hidden bg-white">
               {/* Filter strip */}
-              <div className="bg-slate-50 border-b border-slate-300 px-4 py-2 flex items-center justify-between">
+              <div className="bg-slate-50 border-b border-slate-300 px-4 py-2 flex items-center justify-between gap-3 flex-wrap">
                 <div className="flex gap-2 text-[10px] font-bold uppercase tracking-widest">
                   <button onClick={() => setPaymentsFilter('outstanding')} className={`px-3 py-1 border ${paymentsFilter === 'outstanding' ? 'bg-red-600 text-white border-red-600' : 'bg-white text-slate-600 border-slate-300 hover:border-slate-400'}`}>
                     Outstanding {payments.filter(p => p.outstanding > 0.01 || p.pendingBank > 0 || p.pendingCash > 0).length > 0 && <span className="ml-1.5 opacity-80">({payments.filter(p => p.outstanding > 0.01 || p.pendingBank > 0 || p.pendingCash > 0).length})</span>}
@@ -1159,9 +1183,29 @@ export default function FuelManagement() {
                     All Fuel POs
                   </button>
                 </div>
-                <button onClick={fetchPayments} disabled={paymentsLoading} className="px-3 py-1 border border-slate-300 bg-white text-slate-600 text-[10px] font-bold uppercase tracking-widest hover:border-slate-400 disabled:opacity-50">
-                  {paymentsLoading ? 'Loading…' : 'Refresh'}
-                </button>
+                <div className="flex items-center gap-2 flex-1 max-w-md">
+                  <div className="relative flex-1">
+                    <input
+                      type="search"
+                      value={paymentsSearch}
+                      onChange={(e) => setPaymentsSearch(e.target.value)}
+                      placeholder="Search vendor, PO#, fuel, phone…"
+                      className="w-full border border-slate-300 bg-white pl-7 pr-2 py-1 text-xs focus:outline-none focus:border-slate-500"
+                    />
+                    <span className="absolute left-2 top-1/2 -translate-y-1/2 text-slate-400 text-xs">⌕</span>
+                    {paymentsSearch && (
+                      <button
+                        onClick={() => setPaymentsSearch('')}
+                        className="absolute right-1 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-700 text-xs px-1"
+                        aria-label="Clear search">
+                        ×
+                      </button>
+                    )}
+                  </div>
+                  <button onClick={fetchPayments} disabled={paymentsLoading} className="px-3 py-1 border border-slate-300 bg-white text-slate-600 text-[10px] font-bold uppercase tracking-widest hover:border-slate-400 disabled:opacity-50 whitespace-nowrap">
+                    {paymentsLoading ? 'Loading…' : 'Refresh'}
+                  </button>
+                </div>
               </div>
               {/* KPI strip — payments-specific */}
               <div className="grid grid-cols-5 gap-0 border-b border-slate-300">
@@ -1246,7 +1290,7 @@ export default function FuelManagement() {
                               <button
                                 onClick={() => triggerInvoiceUpload(p.id)}
                                 disabled={uploadingPoId === p.id}
-                                title="Upload invoice (PDF or image, max 10 MB)"
+                                title="Upload invoices (PDF or image, max 10 MB each — pick multiple)"
                                 className="text-[10px] font-bold uppercase tracking-widest text-slate-500 hover:text-blue-600 disabled:opacity-50">
                                 {uploadingPoId === p.id ? '…' : '+ Upload'}
                               </button>
@@ -1557,6 +1601,7 @@ export default function FuelManagement() {
       <input
         ref={invoiceFileInputRef}
         type="file"
+        multiple
         accept="application/pdf,image/png,image/jpeg,image/jpg,image/webp"
         className="hidden"
         onChange={handleInvoiceFileSelected}
@@ -1629,7 +1674,7 @@ export default function FuelManagement() {
                 onClick={() => triggerInvoiceUpload(invoicesModal.poId)}
                 disabled={uploadingPoId === invoicesModal.poId}
                 className="px-3 py-1.5 text-[11px] font-bold uppercase tracking-widest bg-blue-600 text-white hover:bg-blue-700 disabled:opacity-50">
-                {uploadingPoId === invoicesModal.poId ? 'Uploading…' : '+ Upload Another'}
+                {uploadingPoId === invoicesModal.poId ? 'Uploading…' : '+ Upload Files'}
               </button>
               <button onClick={() => setInvoicesModal(null)} className="px-3 py-1.5 text-[11px] font-bold uppercase tracking-widest text-slate-600 border border-slate-300 hover:bg-slate-100">
                 Close
