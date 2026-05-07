@@ -255,9 +255,9 @@ function DevicesView({ devices, loading, reload, edit }: { devices: BiometricDev
             </span>
           )}
           {factoryStatus === 'SILENT' && (
-            <span className="text-rose-700 font-medium" title="Factory silent >30 min — cloud will resume pulling automatically">
+            <span className="text-rose-700 font-medium" title="Factory hasn't reported in 30+ min. Check factory-server health (Tailscale 100.126.101.7:5000/api/health).">
               <span className="inline-block w-1.5 h-1.5 rounded-full bg-rose-500 mr-1" />
-              Silent {Math.round(factoryStaleMs! / 60_000)}m — cloud takeover active
+              Factory silent {Math.round(factoryStaleMs! / 60_000)}m — investigate
             </span>
           )}
           {factoryStatus === 'WAITING' && (

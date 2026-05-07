@@ -17,6 +17,12 @@ import { config } from '../config';
 
 const BATCH = 200;
 
+// Track when we last sent a heartbeat-only ping so we don't spam the
+// cloud every 10s. Once a minute is plenty for the "factory is alive"
+// signal -- well within the 30-min cloud-takeover threshold.
+let _lastHeartbeatOnlyAt = 0;
+const HEARTBEAT_ONLY_MIN_INTERVAL_MS = 60_000;
+
 interface PushResp {
   ok: boolean;
   acceptedCount: number;
@@ -30,17 +36,47 @@ export async function pushBiometricPunches(): Promise<{ synced: number; failed: 
     orderBy: { createdAt: 'asc' },
     take: BATCH,
   });
-  if (rows.length === 0) return { synced: 0, failed: 0 };
 
   // Fetch device heartbeats: one per distinct deviceCode, with the latest
-  // pull timestamp. Sent alongside punches so the cloud can flag the device
-  // as alive even when no new punches happened in this cycle.
+  // pull timestamp. Sent alongside punches AND on its own when the punch
+  // queue is drained -- without this, the cloud's lastFactorySyncAt goes
+  // stale and the 30-min "cloud takeover" kicks in even though the
+  // factory is healthy and just hasn't seen new punches.
   const devices = await prisma.cachedBiometricDevice.findMany({
     select: { code: true, lastPullAt: true },
   });
   const deviceHeartbeats = devices
     .filter(d => d.lastPullAt)
     .map(d => ({ deviceCode: d.code, lastPullAt: d.lastPullAt!.toISOString() }));
+
+  // No new punches AND no devices? Nothing to do.
+  if (rows.length === 0 && deviceHeartbeats.length === 0) {
+    return { synced: 0, failed: 0 };
+  }
+
+  // No new punches but we have devices -- throttled heartbeat-only ping
+  // (every 60s, well within the 30-min cloud-takeover threshold).
+  if (rows.length === 0) {
+    const now = Date.now();
+    if (now - _lastHeartbeatOnlyAt < HEARTBEAT_ONLY_MIN_INTERVAL_MS) {
+      return { synced: 0, failed: 0 };
+    }
+    _lastHeartbeatOnlyAt = now;
+    try {
+      const res = await fetch(`${config.cloudErpUrl}/biometric-factory/punches/push`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'X-WB-Key': config.cloudApiKey },
+        body: JSON.stringify({ punches: [], deviceHeartbeats }),
+      });
+      if (!res.ok) {
+        const txt = await res.text().catch(() => '');
+        console.warn(`[BIO-SYNC] heartbeat ${res.status}: ${txt.slice(0, 120)}`);
+      }
+    } catch (err) {
+      console.warn(`[BIO-SYNC] heartbeat threw: ${err instanceof Error ? err.message : err}`);
+    }
+    return { synced: 0, failed: 0 };
+  }
 
   const punches = rows.map(r => ({
     factoryPunchId: r.id,

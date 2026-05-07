@@ -52,8 +52,11 @@ async function tick(): Promise<void> {
   // Skip devices owned by the factory-server (factoryManaged=true). Those are
   // pulled into the factory-server's own DB and batched here via
   // /api/biometric-factory/punches/push. Cloud is the fallback if the factory
-  // hasn't checked in for >30 min — in that case we resume cloud-led pulling.
+  // hasn't checked in for >30 min AND we have a bridge URL configured.
+  // Without a bridge URL, "takeover" is impossible — every attempt would
+  // 500 and stamp ERROR on the device, which is misleading.
   const FACTORY_GRACE_MS = 30 * 60_000;
+  const cloudBridgeConfigured = !!process.env.BIOMETRIC_BRIDGE_URL;
   const devices = await prisma.biometricDevice.findMany({
     where: {
       active: true,
@@ -70,6 +73,8 @@ async function tick(): Promise<void> {
     },
   }).then(rows => rows.filter(d => {
     if (!d.factoryManaged) return true;
+    // No bridge URL on cloud → takeover impossible, stay silent.
+    if (!cloudBridgeConfigured) return false;
     // Factory-managed: skip unless the factory has gone silent for >30min
     if (!d.lastFactorySyncAt) return false; // never reported — trust the flag, skip
     return (now.getTime() - d.lastFactorySyncAt.getTime()) > FACTORY_GRACE_MS;
