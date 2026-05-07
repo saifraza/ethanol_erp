@@ -16,6 +16,7 @@ import multer from 'multer';
 import path from 'path';
 import fs from 'fs';
 import axios from 'axios';
+import { mirrorToS3 } from '../shared/s3Storage';
 
 const router = Router();
 router.use(authenticate);
@@ -196,7 +197,7 @@ async function matchVendorInvoice(extracted: any) {
   return { matchedVendor: vendor, matchedInvoices, suggestedAction };
 }
 
-router.post('/classify', upload.single('file'), asyncHandler(async (req: Request, res: Response) => {
+router.post('/classify', upload.single('file'), mirrorToS3('document-classifier'), asyncHandler(async (req: Request, res: Response) => {
   if (!req.file) { res.status(400).json({ error: 'No file uploaded' }); return; }
 
   const filePath = `document-classifier/${req.file.filename}`;

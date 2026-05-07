@@ -13,6 +13,7 @@ import fs from 'fs';
 import axios from 'axios';
 // RAG indexing removed — only compliance docs go to RAG
 import { generateVaultNote } from '../services/vaultWriter';
+import { mirrorToS3 } from '../shared/s3Storage';
 
 const router = Router();
 router.use(authenticate);
@@ -489,6 +490,7 @@ router.post('/upload-extract',
     { name: 'invoice', maxCount: 1 },
     { name: 'ewayBill', maxCount: 1 },
   ]),
+  mirrorToS3('grn-documents'),
   asyncHandler(async (req: Request, res: Response) => {
     const files = req.files as Record<string, Express.Multer.File[]> | undefined;
     const invoiceFile = files?.invoice?.[0];

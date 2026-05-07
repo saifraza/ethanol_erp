@@ -8,6 +8,7 @@ import { asyncHandler } from '../shared/middleware';
 import { recomputeEthanolEntryByDate } from './ethanolProduct';
 import { nextInvoiceNo } from '../utils/invoiceCounter';
 import { invoiceDisplayNo } from '../utils/invoiceDisplay';
+import { mirrorToS3 } from '../shared/s3Storage';
 
 const router = Router();
 
@@ -224,7 +225,7 @@ router.get('/report', authenticate, asyncHandler(async (req: AuthRequest, res: R
 }));
 
 // POST /api/dispatch — create a dispatch entry with optional photo + optional lifting
-router.post('/', authenticate, upload.single('photo'), asyncHandler(async (req: AuthRequest, res: Response) => {
+router.post('/', authenticate, upload.single('photo'), mirrorToS3('dispatch'), asyncHandler(async (req: AuthRequest, res: Response) => {
     const { vehicleNo, partyName, destination, quantityBL, strength, remarks, date, batchNo,
             contractId, driverName, driverPhone, driverLicense, transporterName, distanceKm,
             rstNo, sealNo, pesoDate } = req.body;

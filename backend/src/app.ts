@@ -95,6 +95,7 @@ import labTestingRoutes from './routes/labTesting';
 import weighbridgeRoutes from './routes/weighbridge';
 import weighbridgeAdminRoutes from './routes/weighbridgeAdmin';
 import uploadBackupAdminRoutes from './routes/uploadBackupAdmin';
+import uploadServeRoutes from './routes/uploadServe';
 import weighbridgeAuditRoutes from './routes/weighbridgeAudit';
 import activityLogRoutes from './routes/activityLog';
 import fuelRoutes from './routes/fuel';
@@ -372,8 +373,9 @@ app.use('/api/companies', authenticate, companyRoutes);
 app.use('/api/mobile', mobileRoutes);
 
 
-// Serve uploaded files
-app.use('/uploads', express.static(path.join(__dirname, '..', 'uploads')));
+// Serve uploaded files — streams from S3 (neat-shelf bucket), falls back to
+// local volume for any files not yet migrated. Replaces the old express.static.
+app.use('/uploads', uploadServeRoutes);
 
 // Build version — set at startup so frontend can detect new deploys
 const BUILD_TIME = new Date().toISOString();

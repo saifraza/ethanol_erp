@@ -8,6 +8,7 @@ import path from 'path';
 import fs from 'fs';
 import axios from 'axios';
 import { nextDocNo } from '../utils/docSequence';
+import { mirrorToS3 } from '../shared/s3Storage';
 
 const router = Router();
 router.use(authenticate);
@@ -189,7 +190,7 @@ router.delete('/:id', asyncHandler(async (req: AuthRequest, res: Response) => {
 // ═══════════════════════════════════════════════
 // POST /:id/quotations/upload — upload one quote PDF/image + AI parse
 // ═══════════════════════════════════════════════
-router.post('/:id/quotations/upload', upload.single('file'), asyncHandler(async (req: AuthRequest, res: Response) => {
+router.post('/:id/quotations/upload', upload.single('file'), mirrorToS3('project-quotations'), asyncHandler(async (req: AuthRequest, res: Response) => {
   if (!req.file) { res.status(400).json({ error: 'No file uploaded' }); return; }
   const project = await prisma.projectPurchase.findUnique({ where: { id: req.params.id } });
   if (!project) { res.status(404).json({ error: 'Project not found' }); return; }
