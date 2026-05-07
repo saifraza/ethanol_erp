@@ -34,10 +34,12 @@ async function runSync(laborWorkerId: string, op: Op): Promise<void> {
   });
   if (!w) return;
 
-  // Auto-assign deviceUserId — prefer 'L<workerNo>' (avoids collision with
-  // Employee numeric ids), with fallback to high-range numeric on collision.
+  // Auto-assign deviceUserId — prefer workerCode (e.g. "LW-001") so the
+  // device shows the same id as the ERP. Falls back to 'L<workerNo>' for
+  // legacy rows and high-range numeric on collision.
   if (op === 'UPSERT' && !w.deviceUserId) {
-    const allocated = await findAvailableDeviceUserId(`L${w.workerNo}`, 'LABOR', w.id);
+    const preferred = w.workerCode?.trim() || `L${w.workerNo}`;
+    const allocated = await findAvailableDeviceUserId(preferred, 'LABOR', w.id);
     if (!allocated) {
       console.warn(`[laborWorkerDeviceSync] could not allocate deviceUserId for ${w.workerCode}`);
       return;
