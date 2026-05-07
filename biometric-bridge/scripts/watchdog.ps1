@@ -1,7 +1,7 @@
 # biometric-bridge watchdog. Runs every 5 min via the BiometricBridgeWatchdog
 # scheduled task. If TCP 5005 isn't LISTEN-ing, kicks the BiometricBridge task.
 #
-# Mirrors factory-server\scripts\watchdog.ps1 — same incident-driven pattern:
+# Mirrors factory-server\scripts\watchdog.ps1 -- same incident-driven pattern:
 # the start-bridge schtask is one-shot (Status=Ready, no auto-restart). If
 # uvicorn crashes we'd stay dead until a human intervened. This watchdog
 # self-heals within 5 min.

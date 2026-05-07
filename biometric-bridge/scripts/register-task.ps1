@@ -9,7 +9,7 @@
 #
 # Idempotent: deletes existing tasks of the same name before recreating.
 
-$ErrorActionPreference = 'Stop'
+$ErrorActionPreference = 'Continue'
 
 $root = Split-Path -Parent $PSScriptRoot
 
@@ -19,9 +19,9 @@ $watchdogScript = Join-Path $root 'scripts\watchdog.ps1'
 if (-not (Test-Path $startScript)) { Write-Error "missing $startScript"; exit 1 }
 if (-not (Test-Path $watchdogScript)) { Write-Error "missing $watchdogScript"; exit 1 }
 
-# Bridge task — runs at boot, blocks on uvicorn, restarted by watchdog if it dies
+# Bridge task -- runs at boot, blocks on uvicorn, restarted by watchdog if it dies
 Write-Host "[register] BiometricBridge"
-schtasks /Delete /TN BiometricBridge /F 2>$null
+& cmd /c "schtasks /Delete /TN BiometricBridge /F >nul 2>&1"
 $bridgeAction = "powershell.exe -ExecutionPolicy Bypass -WindowStyle Hidden -File `"$startScript`""
 schtasks /Create `
     /TN BiometricBridge `
@@ -31,9 +31,9 @@ schtasks /Create `
     /RL HIGHEST `
     /F | Out-Null
 
-# Watchdog task — every 5 min, kicks BiometricBridge if port 5005 is dead
+# Watchdog task -- every 5 min, kicks BiometricBridge if port 5005 is dead
 Write-Host "[register] BiometricBridgeWatchdog"
-schtasks /Delete /TN BiometricBridgeWatchdog /F 2>$null
+& cmd /c "schtasks /Delete /TN BiometricBridgeWatchdog /F >nul 2>&1"
 $watchdogAction = "powershell.exe -ExecutionPolicy Bypass -WindowStyle Hidden -File `"$watchdogScript`""
 schtasks /Create `
     /TN BiometricBridgeWatchdog `
@@ -44,15 +44,15 @@ schtasks /Create `
     /F | Out-Null
 
 Write-Host ""
-Write-Host "[register] ✓ tasks registered. Triggering bridge now…"
+Write-Host "[register] [OK] tasks registered. Triggering bridge now?"
 schtasks /Run /TN BiometricBridge | Out-Null
 Start-Sleep -Seconds 5
 
 $listening = @(Get-NetTCPConnection -LocalPort 5005 -State Listen -ErrorAction SilentlyContinue).Count -gt 0
 if ($listening) {
-    Write-Host "[register] ✓ bridge listening on :5005"
+    Write-Host "[register] [OK] bridge listening on :5005"
 } else {
-    Write-Warning "[register] bridge not yet listening on :5005 — wait 10-15s, then check logs\bridge-<date>.log"
+    Write-Warning "[register] bridge not yet listening on :5005 -- wait 10-15s, then check logs\bridge-<date>.log"
 }
 
 Write-Host ""
