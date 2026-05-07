@@ -596,22 +596,17 @@ router.get('/deals', authenticate, asyncHandler(async (req: AuthRequest, res: Re
     }, 0);
     const totalValue = isOpenDeal ? receivedValue : Math.max(plannedValue, receivedValue);
 
-    // Get total payments: direct VendorPayments referencing this deal + invoice payments
-    // Step 8 fix: Count direct payments (fuel page Pay button) and invoice payments separately
-    // to avoid double-counting. Direct payments have no invoiceId; invoice payments have one.
+    // Direct VendorPayments tagged to this PO via the new purchaseOrderId FK.
+    // Invoice-linked payments (paid against a vendor bill) come in separately
+    // below, so we filter them out here to avoid double-counting.
     const directPayments = await prisma.vendorPayment.findMany({
       where: {
-        vendorId: deal.vendor.id,
-        invoiceId: null, // Only direct payments, not invoice-linked
-        OR: [
-          { remarks: { contains: `PO-${deal.poNo} ` } },
-          { remarks: { endsWith: `PO-${deal.poNo}` } },
-        ],
+        purchaseOrderId: deal.id,
+        invoiceId: null,
       },
       select: { amount: true },
-    
-    take: 500,
-  });
+      take: 500,
+    });
     let totalPaid = directPayments.reduce((s, p) => s + p.amount, 0);
 
     // Add invoice-based payments (from vendorPayments route which links to invoiceId)
@@ -971,10 +966,13 @@ router.post('/deals/:id/payment', authenticate, validate(fuelPaymentSchema), asy
   const tdsDeducted = parseFloat(b.tdsDeducted) || 0;
   const paymentDate = b.paymentDate ? new Date(b.paymentDate) : new Date();
 
-  // Create VendorPayment with PO reference in remarks (for fuel deal tracking)
+  // Create VendorPayment linked to the PO via FK (canonical join).
+  // Remarks still carry `PO-{n}` for human readability + legacy queries on
+  // VendorPayment that haven't been switched yet.
   const payment = await prisma.vendorPayment.create({
     data: {
       vendorId: deal.vendorId,
+      purchaseOrderId: deal.id,
       paymentDate,
       amount,
       mode: b.mode || 'CASH',
@@ -1011,23 +1009,20 @@ router.get('/deals/:id/payments', authenticate, asyncHandler(async (req: AuthReq
   });
   if (!deal) return res.status(404).json({ error: 'Deal not found' });
 
-  // Get all payments for this vendor that reference this deal (bank + invoice-based)
-  const directPayments = await prisma.vendorPayment.findMany({
-    where: {
-      vendorId: deal.vendorId,
-      OR: [
-        { remarks: { contains: `PO-${deal.poNo} ` } },
-        { remarks: { endsWith: `PO-${deal.poNo}` } },
-        { remarks: { contains: `PO-${deal.poNo}|` } },
-      ],
-    },
+  // Direct payments: pulled by FK. Backfill at boot already migrated legacy rows.
+  const dealRow = await prisma.purchaseOrder.findUnique({
+    where: { id: req.params.id },
+    select: { id: true },
+  });
+  const directPayments = dealRow ? await prisma.vendorPayment.findMany({
+    where: { purchaseOrderId: dealRow.id },
     take: 200,
     orderBy: { paymentDate: 'desc' },
     select: {
       id: true, paymentNo: true, paymentDate: true, amount: true,
       mode: true, reference: true, remarks: true,
     },
-  });
+  }) : [];
 
   // Also include cash vouchers linked to this deal
   let cashPayments: Array<Record<string, unknown>> = [];
@@ -1045,6 +1040,106 @@ router.get('/deals/:id/payments', authenticate, asyncHandler(async (req: AuthReq
   ].sort((a, b) => new Date(String((b as Record<string, unknown>).paymentDate || 0)).getTime() - new Date(String((a as Record<string, unknown>).paymentDate || 0)).getTime());
 
   res.json(allPayments);
+}));
+
+// ==========================================================================
+//  FUEL PAYMENTS — every PO with a FUEL-category line, with running balance.
+//  Powers the Payments tab in the Fuel module. Mirrors the Payments Out
+//  ledger but scoped to fuel POs (any dealType, any status).
+// ==========================================================================
+
+router.get('/payments', authenticate, asyncHandler(async (req: AuthRequest, res: Response) => {
+  const fuelPos = await prisma.purchaseOrder.findMany({
+    where: {
+      ...getCompanyFilter(req),
+      lines: { some: { inventoryItem: { category: 'FUEL' } } },
+      status: { not: 'DRAFT' },
+    },
+    take: 500,
+    orderBy: { poDate: 'desc' },
+    select: {
+      id: true, poNo: true, poDate: true, status: true, dealType: true,
+      grandTotal: true, paymentTerms: true, creditDays: true,
+      vendor: { select: { id: true, name: true, phone: true, bankName: true, bankAccount: true, bankIfsc: true } },
+      lines: {
+        select: {
+          quantity: true, receivedQty: true, rate: true, gstPercent: true, description: true,
+          inventoryItem: { select: { id: true, name: true, unit: true, category: true } },
+        },
+      },
+      _count: { select: { grns: true } },
+    },
+  });
+
+  const result = await Promise.all(fuelPos.map(async (po) => {
+    const fuelLines = po.lines.filter(l => l.inventoryItem?.category === 'FUEL');
+    const linesToSum = fuelLines.length > 0 ? fuelLines : po.lines;
+    const fuelLabel = fuelLines[0]?.inventoryItem?.name || fuelLines[0]?.description || po.lines[0]?.description || 'Fuel';
+    const fuelUnit = fuelLines[0]?.inventoryItem?.unit || 'MT';
+
+    const totalReceived = linesToSum.reduce((s, l) => s + (l.receivedQty || 0), 0);
+    const receivedValue = Math.round(linesToSum.reduce((s, l) => {
+      const base = (l.receivedQty || 0) * (l.rate || 0);
+      return s + base + base * ((l.gstPercent || 0) / 100);
+    }, 0) * 100) / 100;
+    const isOpen = po.dealType === 'OPEN';
+    const plannedValue = Math.round(linesToSum.reduce((s, l) => {
+      const q = l.quantity >= 900000 ? (l.receivedQty || 0) : l.quantity;
+      const base = q * (l.rate || 0);
+      return s + base + base * ((l.gstPercent || 0) / 100);
+    }, 0) * 100) / 100;
+    const poTotal = po.grandTotal > 0 ? po.grandTotal : (isOpen ? receivedValue : Math.max(plannedValue, receivedValue));
+
+    const confirmedPayments = await prisma.vendorPayment.findMany({
+      where: { purchaseOrderId: po.id, paymentStatus: 'CONFIRMED' },
+      select: { amount: true, paymentDate: true },
+      take: 500,
+    });
+    const totalPaid = confirmedPayments.reduce((s, p) => s + p.amount, 0);
+    const lastPaymentDate = confirmedPayments.reduce<Date | null>((latest, p) => {
+      if (!latest || p.paymentDate > latest) return p.paymentDate;
+      return latest;
+    }, null);
+
+    const pendingBankAgg = await prisma.vendorPayment.aggregate({
+      where: { purchaseOrderId: po.id, paymentStatus: 'INITIATED' },
+      _sum: { amount: true },
+    });
+    const pendingBank = pendingBankAgg._sum.amount || 0;
+
+    const pendingCashAgg = await prisma.cashVoucher.aggregate({
+      where: { status: 'ACTIVE', purpose: { contains: `PO-${po.poNo}` } },
+      _sum: { amount: true },
+    });
+    const pendingCash = pendingCashAgg._sum.amount || 0;
+
+    const outstanding = Math.max(0, Math.round((receivedValue - totalPaid - pendingBank - pendingCash) * 100) / 100);
+
+    return {
+      id: po.id,
+      poNo: po.poNo,
+      poDate: po.poDate,
+      status: po.status,
+      dealType: po.dealType,
+      paymentTerms: po.paymentTerms,
+      creditDays: po.creditDays,
+      vendor: po.vendor,
+      fuelName: fuelLabel,
+      fuelUnit,
+      totalReceived: Math.round(totalReceived * 100) / 100,
+      poTotal: Math.round(poTotal * 100) / 100,
+      receivedValue,
+      totalPaid: Math.round(totalPaid * 100) / 100,
+      pendingBank: Math.round(pendingBank * 100) / 100,
+      pendingCash: Math.round(pendingCash * 100) / 100,
+      outstanding,
+      lastPaymentDate,
+      grnCount: po._count.grns,
+      isFullyPaid: receivedValue > 0 && (totalPaid + pendingBank + pendingCash) >= receivedValue - 0.01,
+    };
+  }));
+
+  res.json(result);
 }));
 
 export default router;

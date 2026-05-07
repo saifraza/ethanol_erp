@@ -86,6 +86,9 @@ const EXPECTED_COLUMNS: ColumnCheck[] = [
   // pulls punches into its own DB, batches to cloud every minute).
   { table: 'BiometricDevice', column: 'factoryManaged',    sql: `ALTER TABLE "BiometricDevice" ADD COLUMN IF NOT EXISTS "factoryManaged" BOOLEAN NOT NULL DEFAULT false` },
   { table: 'BiometricDevice', column: 'lastFactorySyncAt', sql: `ALTER TABLE "BiometricDevice" ADD COLUMN IF NOT EXISTS "lastFactorySyncAt" TIMESTAMP(3)` },
+  // 2026-05-07 — Fuel Payments tab + bulletproof PO ↔ payment join.
+  // Replaces the broken `remarks contains "PO-{poNo}"` matcher (PO-1 vs PO-10 collided).
+  { table: 'VendorPayment', column: 'purchaseOrderId', sql: `ALTER TABLE "VendorPayment" ADD COLUMN IF NOT EXISTS "purchaseOrderId" TEXT` },
 ];
 
 const EXPECTED_TABLES: TableCheck[] = [
@@ -561,6 +564,40 @@ async function checkAndAddColumns(): Promise<void> {
   console.warn(`[SchemaDriftGuard] column repair complete. Investigate why prisma db push skipped these on the last deploy.`);
 }
 
+/**
+ * One-shot idempotent backfill: link existing VendorPayment rows to their PO via
+ * the new VendorPayment.purchaseOrderId FK, parsing the legacy `PO-{n}` token
+ * out of `remarks`.
+ *
+ * Why: until 2026-05-07 the join between a payment and its PO was a string
+ * match `remarks contains "PO-{poNo}"`. That match collided across PO-prefix
+ * pairs (PO-1 also matched PO-10 / PO-100 etc.) — surfaced as P1 in
+ * AUDIT_FUEL_PO_2026-04-01.md. Fix: use a proper FK going forward, plus this
+ * one-time backfill so historical fuel deals + PO ledgers reconcile.
+ *
+ * Safety: only updates rows where purchaseOrderId IS NULL, so re-runs on a
+ * later deploy are a no-op. Uses POSIX `~` with word-boundary so PO-1 doesn't
+ * match PO-10. Joins on vendorId so a stray PO-N token in a different vendor's
+ * remarks can't cross-link.
+ */
+async function backfillVendorPaymentPoLink(): Promise<void> {
+  try {
+    const result = await prisma.$executeRawUnsafe(
+      `UPDATE "VendorPayment" vp
+       SET "purchaseOrderId" = po.id
+       FROM "PurchaseOrder" po
+       WHERE vp."purchaseOrderId" IS NULL
+         AND vp."vendorId" = po."vendorId"
+         AND vp.remarks ~ ('(^|[^0-9])PO-' || po."poNo"::text || '([^0-9]|$)')`,
+    );
+    if (typeof result === 'number' && result > 0) {
+      console.warn(`[SchemaDriftGuard] backfilled VendorPayment.purchaseOrderId for ${result} legacy row(s)`);
+    }
+  } catch (err: unknown) {
+    console.error('[SchemaDriftGuard] VendorPayment backfill failed:', (err instanceof Error ? err.message : String(err)));
+  }
+}
+
 export async function runSchemaDriftGuard(): Promise<void> {
   try {
     // Tables first (so column checks below can reference them)
@@ -581,6 +618,9 @@ export async function runSchemaDriftGuard(): Promise<void> {
     // 2026-05-06 — AttendancePunch.employeeId becomes nullable (LaborWorker support)
     await prisma.$executeRawUnsafe(`ALTER TABLE "AttendancePunch" ALTER COLUMN "employeeId" DROP NOT NULL`);
     await prisma.$executeRawUnsafe(`CREATE INDEX IF NOT EXISTS "AttendancePunch_laborWorkerId_punchAt_idx" ON "AttendancePunch"("laborWorkerId", "punchAt")`);
+    // 2026-05-07 — VendorPayment ↔ PurchaseOrder FK index + one-shot backfill from remarks.
+    await prisma.$executeRawUnsafe(`CREATE INDEX IF NOT EXISTS "VendorPayment_purchaseOrderId_idx" ON "VendorPayment"("purchaseOrderId")`);
+    await backfillVendorPaymentPoLink();
     console.log('[SchemaDriftGuard] OK — all expected columns + tables present');
   } catch (err: unknown) {
     console.error('[SchemaDriftGuard] check failed:', (err instanceof Error ? err.message : String(err)));
