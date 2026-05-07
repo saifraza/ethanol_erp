@@ -37,17 +37,24 @@ export async function pushBiometricPunches(): Promise<{ synced: number; failed: 
     take: BATCH,
   });
 
-  // Fetch device heartbeats: one per distinct deviceCode, with the latest
-  // pull timestamp. Sent alongside punches AND on its own when the punch
-  // queue is drained -- without this, the cloud's lastFactorySyncAt goes
-  // stale and the 30-min "cloud takeover" kicks in even though the
-  // factory is healthy and just hasn't seen new punches.
+  // Fetch device heartbeats: one per cached device. Sent alongside punches
+  // AND on its own when the punch queue is drained. Without this, the
+  // cloud's lastFactorySyncAt goes stale and the 30-min "cloud takeover"
+  // kicks in even though the factory is healthy and just hasn't seen
+  // new punches.
+  //
+  // Send for ALL cached devices, including ones that haven't been pulled
+  // yet (e.g. unreachable device). The factory is still alive and TRYING
+  // -- the cloud should know that. For never-pulled devices, use NOW() as
+  // the heartbeat time so the LAST SYNC column populates immediately.
+  const now = new Date();
   const devices = await prisma.cachedBiometricDevice.findMany({
     select: { code: true, lastPullAt: true },
   });
-  const deviceHeartbeats = devices
-    .filter(d => d.lastPullAt)
-    .map(d => ({ deviceCode: d.code, lastPullAt: d.lastPullAt!.toISOString() }));
+  const deviceHeartbeats = devices.map(d => ({
+    deviceCode: d.code,
+    lastPullAt: (d.lastPullAt ?? now).toISOString(),
+  }));
 
   // No new punches AND no devices? Nothing to do.
   if (rows.length === 0 && deviceHeartbeats.length === 0) {
