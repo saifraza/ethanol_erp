@@ -1,70 +1,16 @@
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
-import { X, CreditCard, FileText, Upload, Download, Mail, Scan, Sparkles } from 'lucide-react';
+import { X, CreditCard, FileText, Upload, Download, Mail } from 'lucide-react';
 import api from '../../services/api';
-import { useAuth } from '../../context/AuthContext';
-
-const AI_ROLES = ['ADMIN', 'SUPER_ADMIN', 'OWNER', 'ACCOUNTS_MANAGER', 'FINANCE', 'PROCUREMENT_MANAGER'];
 
 // Pulls the clean UTR/bank-ref out of a free-text payment reference.
 // Example input : "RTGSO-JAY BAJRANG BHUSA BHA UBINR22026041601296969"
 // Returns       : { utr: "UBINR22026041601296969", prefix: "RTGSO-JAY BAJRANG BHUSA BHA" }
-/**
- * Find a subset of GRNs whose totalAmount sums to within tolerance of the target.
- * Used to auto-tick GRNs on a bundled invoice (e.g. one bill covering 5 trucks).
- *
- * Strategy: depth-limited backtracking, GRNs sorted by amount desc.
- * Caps depth at 7 (max trucks per bill we've seen) and total nodes at 200K so
- * worst-case is ~50ms even on a slow phone. Returns the FIRST subset found.
- */
-function findGrnSubsetMatchingTotal<T extends { id: string; totalAmount: number }>(
-  grns: T[],
-  target: number,
-  tolerance = 0.05,
-  maxDepth = 7,
-): string[] | null {
-  if (target <= 0 || grns.length === 0) return null;
-  const tol = Math.max(target * tolerance, 1);
-  const sorted = [...grns].sort((a, b) => b.totalAmount - a.totalAmount);
-  let visited = 0;
-  const NODE_CAP = 200000;
-
-  function search(start: number, remaining: number, picked: string[]): string[] | null {
-    if (++visited > NODE_CAP) return null;
-    if (Math.abs(remaining) <= tol && picked.length > 0) return picked;
-    if (picked.length >= maxDepth) return null;
-    if (remaining < -tol) return null;
-    for (let i = start; i < sorted.length; i++) {
-      const next = sorted[i];
-      if (next.totalAmount > remaining + tol) continue; // skip — can't fit
-      const got = search(i + 1, remaining - next.totalAmount, [...picked, next.id]);
-      if (got) return got;
-    }
-    return null;
-  }
-  return search(0, target, []);
-}
-
 function parseUtr(ref: string | null | undefined): { utr: string; prefix: string } {
   if (!ref) return { utr: '', prefix: '' };
   const trimmed = ref.trim();
   const m = trimmed.match(/^(.*?)\s*([A-Z]{4}[A-Z0-9]{8,})\s*$/);
   if (m) return { utr: m[2], prefix: m[1].trim() };
   return { utr: trimmed, prefix: '' };
-}
-
-async function scanBankReceipt(paymentId: string, file: File): Promise<{ ok: boolean; extracted?: Record<string, unknown> | null; warnings?: string[]; error?: string }> {
-  const fd = new FormData();
-  fd.append('file', file);
-  try {
-    const res = await api.post<{ extracted: Record<string, unknown> | null; warnings: string[] }>(`/vendor-payments/${paymentId}/scan-bank-receipt`, fd, {
-      headers: { 'Content-Type': 'multipart/form-data' },
-      timeout: 60000,
-    });
-    return { ok: true, extracted: res.data.extracted, warnings: res.data.warnings || [] };
-  } catch (err: unknown) {
-    const msg = (err as { response?: { data?: { error?: string } }; message?: string })?.response?.data?.error || (err as { message?: string })?.message || 'Scan failed';
-    return { ok: false, error: msg };
-  }
 }
 
 async function sendPaymentAdvice(paymentId: string, payee: string, vendorEmail: string | null | undefined): Promise<{ ok: boolean; sentTo?: string; error?: string }> {
@@ -218,16 +164,14 @@ const COMP_TYPES = [
   { key: 'CASH', label: 'CASH' },
 ];
 
-type TabKey = 'pending' | 'completed' | 'ledger' | 'outstanding' | 'unmatched';
+type TabKey = 'pending' | 'completed' | 'ledger' | 'outstanding';
 
 // ═══════════════════════════════════════════════
 // Component
 // ═══════════════════════════════════════════════
 
 export default function PaymentsOut() {
-  const { user } = useAuth();
-  const canUseAI = !!user && AI_ROLES.includes((user.role || '').toUpperCase());
-  const [activeTab, setActiveTab] = useState<TabKey>('pending');
+  const [activeTab, setActiveTab] = useState<TabKey>('ledger');
 
   // --- Pending tab ---
   const [pendingItems, setPendingItems] = useState<PendingPayable[]>([]);
@@ -308,7 +252,6 @@ export default function PaymentsOut() {
   const [poPaySaving, setPoPaySaving] = useState(false);
   const [bankPendingPayment, setBankPendingPayment] = useState<any>(null);
   const [bankUtrInput, setBankUtrInput] = useState('');
-  const [bankReceiptFile, setBankReceiptFile] = useState<File | null>(null);
   const [bankConfirming, setBankConfirming] = useState(false);
   const [poPayments, setPoPayments] = useState<Array<{ id: string; paymentDate: string; amount: number; mode: string; reference: string; runningTotal: number }>>([]);
 
@@ -373,21 +316,13 @@ export default function PaymentsOut() {
   const [payModal, setPayModal] = useState<{ item: PendingPayable; invoice: PendingPayable['invoices'][0] } | null>(null);
   const [invoiceForm, setInvoiceForm] = useState({ vendorInvNo: '', vendorInvDate: todayStr(), quantity: '', rate: '', gstPercent: '18', supplyType: 'INTRA_STATE' });
   const [invoiceFilePath, setInvoiceFilePath] = useState('');
-  const [extracting, setExtracting] = useState(false);
-  const [extracted, setExtracted] = useState<Record<string, unknown> | null>(null);
+  const [uploading, setUploading] = useState(false);
   const [payForm, setPayForm] = useState({ amount: '', mode: 'NEFT', reference: '', paymentDate: todayStr(), tdsDeducted: '', tdsSection: '', tdsLedgerId: '', remarks: '' });
   // Compulsory GST choice for every payment (invoice pay, direct pay, split pay) — null = not picked yet
   const [payHasGst, setPayHasGst] = useState<boolean | null>(null);
 
-  // Scan Bank Receipt modal — upload the bank's payment confirmation (PDF/JPG) + AI extract
-  const [scanTarget, setScanTarget] = useState<{ paymentId: string; payee: string; amount: number; existing?: string | null } | null>(null);
-  const [scanFile, setScanFile] = useState<File | null>(null);
-  const [scanUploading, setScanUploading] = useState(false);
-  const [scanResult, setScanResult] = useState<{ extracted: Record<string, unknown> | null; warnings: string[] } | null>(null);
-
-  // ── Bulk Smart Upload — drop N vendor invoices, AI extracts each, match GRN(s), save all ──
-  const [smartUploadOpen, setSmartUploadOpen] = useState(false);
-  type SmartUnbilledGrn = {
+  // ── GRN list shape used by the manual Link-GRN modal ──
+  type UnbilledGrn = {
     id: string;
     grnNo: number;
     grnDate: string;
@@ -400,416 +335,10 @@ export default function PaymentsOut() {
     po: { id: string; poNo: number; poType: string | null } | null;
     lines: Array<{ id: string; description: string; receivedQty: number; rate: number; unit: string }>;
   };
-  type SmartExtracted = {
-    invoice_number?: string | null;
-    invoice_date?: string | null;
-    vendor_name?: string | null;
-    gstin?: string | null;
-    items?: Array<{
-      description?: string;
-      hsn?: string;
-      qty?: number;
-      unit?: string;
-      rate?: number;
-      amount?: number;
-      vehicle_no?: string | null;
-      ticket_no?: string | null;
-      delivery_date?: string | null;
-    }>;
-    taxable_amount?: number | null;
-    cgst?: number | null;
-    sgst?: number | null;
-    igst?: number | null;
-    total_gst?: number | null;
-    freight?: number | null;
-    total_amount?: number | null;
-    supply_type?: 'INTRA_STATE' | 'INTER_STATE' | null;
-  };
-  type SmartDuplicate = { invoiceId: string; invoiceNo: number; vendorInvNo: string | null; totalAmount: number; vendorName: string | null; isMatched: boolean };
-  type SmartUploadEntry = {
-    id: string;
-    file: File;
-    status: 'pending' | 'extracting' | 'extracted' | 'saving' | 'saved' | 'error';
-    filePath?: string;
-    fileHash?: string;
-    extracted?: SmartExtracted | null;
-    matchedVendor?: Vendor | null;
-    unbilledGrns?: SmartUnbilledGrn[];
-    selectedGrnIds?: string[];                 // user-confirmed picks (auto-ticked only on EXACT match)
-    suggestedGrnIds?: string[];                 // AI's proposal when match is approximate — user must click Apply
-    suggestedReason?: string;                   // human-readable why ("Sum ₹X vs bill ₹Y, diff ₹Z")
-    duplicateOf?: SmartDuplicate;
-    error?: string;
-    savedInvoiceNo?: number;
-  };
-  const [smartUploadEntries, setSmartUploadEntries] = useState<SmartUploadEntry[]>([]);
-  const [smartUploadBusy, setSmartUploadBusy] = useState(false);
-  const [smartSavingAll, setSmartSavingAll] = useState(false);
-  // Preset vendor — set when the user picks from the dropdown OR when the modal
-  // is opened from a per-PO row (vendor is already known there).
-  const [smartPresetVendor, setSmartPresetVendor] = useState<Vendor | null>(null);
-  const [smartPresetGrns, setSmartPresetGrns] = useState<SmartUnbilledGrn[]>([]);
-
-  // Auto-load vendors on first modal open so the dropdown is populated immediately.
-  useEffect(() => {
-    if (smartUploadOpen && vendors.length === 0) {
-      api.get<{ vendors: Vendor[] }>('/vendors')
-        .then(res => setVendors(res.data.vendors || []))
-        .catch(() => { /* ignore — user can click "Load vendors" */ });
-    }
-  }, [smartUploadOpen, vendors.length]);
-
-  // ── Vendor matching helper (gstin > pan > fuzzy name) ──
-  const matchExtractedToVendor = useCallback((ext: SmartExtracted | null | undefined, vendorList: Vendor[]): Vendor | null => {
-    if (!ext) return null;
-    const gstin = (ext.gstin || '').trim().toUpperCase();
-    if (gstin.length === 15) {
-      const byGstin = vendorList.find(v => (v.gstin || '').trim().toUpperCase() === gstin);
-      if (byGstin) return byGstin;
-      // GSTIN 3-12 chars are PAN
-      const pan = gstin.slice(2, 12);
-      const byPan = vendorList.find(v => (v.pan || '').trim().toUpperCase() === pan);
-      if (byPan) return byPan;
-    }
-    const name = (ext.vendor_name || '').trim().toLowerCase();
-    if (name.length >= 4) {
-      // Substring match either way
-      const exact = vendorList.find(v => v.name.trim().toLowerCase() === name);
-      if (exact) return exact;
-      const partial = vendorList.find(v => {
-        const vn = v.name.trim().toLowerCase();
-        return vn.includes(name) || name.includes(vn);
-      });
-      if (partial) return partial;
-    }
-    return null;
-  }, []);
-
-  // ── File picker → append entries (no auto-extract; user clicks Analyze) ──
-  // New entries inherit the preset vendor + its open GRNs so the user doesn't
-  // re-pick the vendor for each batch.
-  const onSmartFilesPicked = (files: FileList | null) => {
-    if (!files || files.length === 0) return;
-    const next: SmartUploadEntry[] = Array.from(files).map(f => ({
-      id: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
-      file: f,
-      status: 'pending',
-      matchedVendor: smartPresetVendor,
-      unbilledGrns: smartPresetVendor ? smartPresetGrns : undefined,
-      selectedGrnIds: smartPresetVendor ? [] : undefined,
-    }));
-    setSmartUploadEntries(prev => [...prev, ...next]);
-  };
-
-  // ── Open Smart Upload modal pre-scoped to a specific vendor ──
-  // Used by the per-PO inline button on the Pending tab so accounts can drop
-  // the bill straight onto the row without re-picking the vendor.
-  const openSmartUploadForVendor = useCallback(async (vendorId: string, vendorName: string) => {
-    let list = vendors;
-    if (list.length === 0) {
-      try {
-        const r = await api.get<{ vendors: Vendor[] }>('/vendors');
-        list = r.data.vendors || [];
-        setVendors(list);
-      } catch { /* fall through */ }
-    }
-    const v = list.find(x => x.id === vendorId) || { id: vendorId, name: vendorName, gstin: null, pan: null };
-    setSmartPresetVendor(v);
-    try {
-      const r = await api.get<{ grns: SmartUnbilledGrn[] }>(`/goods-receipts/unbilled?vendorId=${vendorId}`);
-      setSmartPresetGrns(r.data.grns || []);
-    } catch {
-      setSmartPresetGrns([]);
-    }
-    setSmartUploadEntries([]);
-    setSmartUploadOpen(true);
-  }, [vendors]);
-
-  // ── Bulk extract → vendor match → fetch unbilled GRNs per entry ──
-  const runSmartBulk = useCallback(async () => {
-    const pending = smartUploadEntries.filter(e => e.status === 'pending');
-    if (pending.length === 0) return;
-    setSmartUploadBusy(true);
-    setSmartUploadEntries(prev => prev.map(e => e.status === 'pending' ? { ...e, status: 'extracting' } : e));
-
-    try {
-      // Chunk uploads — server caps at 50 files per request; chunking also keeps
-      // each request a manageable size and lets the UI flip cards to "extracted"
-      // progressively instead of waiting for the whole batch.
-      const CHUNK = 15;
-      type BulkResp = { count: number; results: Array<{ filePath: string; originalName: string; fileHash: string; extracted: SmartExtracted | null; duplicateOf?: SmartDuplicate; error?: string }> };
-      const allResults: BulkResp['results'] = [];
-      for (let i = 0; i < pending.length; i += CHUNK) {
-        const slice = pending.slice(i, i + CHUNK);
-        const fd = new FormData();
-        for (const e of slice) fd.append('files', e.file);
-        const res = await api.post<BulkResp>(
-          '/vendor-invoices/upload-extract-bulk', fd,
-          { headers: { 'Content-Type': 'multipart/form-data' }, timeout: 240000 },
-        );
-        allResults.push(...(res.data.results || []));
-      }
-      const results = allResults;
-
-      // Ensure vendor list is loaded for matching.
-      let vendorList = vendors;
-      if (vendorList.length === 0) {
-        try {
-          const vRes = await api.get<{ vendors: Vendor[] }>('/vendors');
-          vendorList = vRes.data.vendors || [];
-          setVendors(vendorList);
-        } catch { /* matchedVendor will stay null */ }
-      }
-
-      // Pair results with the pending entries (results are returned in upload order).
-      const grnFetches: Array<Promise<void>> = [];
-      const updated = new Map<string, SmartUploadEntry>();
-      pending.forEach((entry, i) => {
-        const r = results[i];
-        if (!r) {
-          updated.set(entry.id, { ...entry, status: 'error', error: 'No response from server' });
-          return;
-        }
-        const matchedVendor = matchExtractedToVendor(r.extracted, vendorList);
-        const next: SmartUploadEntry = {
-          ...entry,
-          status: r.error ? 'error' : 'extracted',
-          filePath: r.filePath,
-          fileHash: r.fileHash,
-          extracted: r.extracted,
-          matchedVendor,
-          duplicateOf: r.duplicateOf,
-          error: r.error,
-        };
-        updated.set(entry.id, next);
-
-        // Fire GRN fetch in parallel (will be merged when it resolves).
-        if (matchedVendor) {
-          grnFetches.push(
-            api.get<{ grns: SmartUnbilledGrn[] }>(`/goods-receipts/unbilled?vendorId=${matchedVendor.id}`)
-              .then(g => {
-                const grns = g.data.grns || [];
-                // Two buckets:
-                //   selected  → auto-ticked (vehicle match, OR amount within 0.5%)
-                //   suggested → AI proposal user must explicitly Apply (within 0.5%–5%)
-                const taxable = Number(r.extracted?.taxable_amount) || 0;
-                let selected: string[] = [];
-                let suggested: string[] = [];
-                let suggestedReason: string | undefined;
-
-                const norm = (s: string | null | undefined) => (s || '').toString().toUpperCase().replace(/[\s\-]+/g, '');
-                const items = r.extracted?.items || [];
-                const matchedByLine = new Set<string>();
-                for (const it of items) {
-                  const vNeedle = norm(it.vehicle_no);
-                  const tNeedle = norm(it.ticket_no);
-                  if (vNeedle.length >= 5) {
-                    const hit = grns.find(gr => norm(gr.vehicleNo) === vNeedle && !matchedByLine.has(gr.id));
-                    if (hit) { matchedByLine.add(hit.id); continue; }
-                  }
-                  if (tNeedle.length >= 2) {
-                    const ticketDigits = tNeedle.replace(/\D+/g, '');
-                    const hit = grns.find(gr => gr.ticketNo != null && String(gr.ticketNo) === ticketDigits && !matchedByLine.has(gr.id));
-                    if (hit) { matchedByLine.add(hit.id); continue; }
-                  }
-                }
-
-                if (matchedByLine.size > 0) {
-                  // Vehicle/ticket = identity match → auto-apply.
-                  selected = Array.from(matchedByLine);
-                } else if (taxable > 0 && grns.length > 0) {
-                  // Try near-exact subset-sum (within 0.5%) — auto-apply.
-                  const tight = findGrnSubsetMatchingTotal(grns, taxable, 0.005, 7);
-                  if (tight && tight.length > 0) {
-                    selected = tight;
-                  } else {
-                    // Try approximate subset-sum (within 5%) — suggest, don't apply.
-                    const loose = findGrnSubsetMatchingTotal(grns, taxable, 0.05, 7);
-                    if (loose && loose.length > 0) {
-                      const sum = loose.reduce((s, id) => s + (grns.find(gr => gr.id === id)?.totalAmount || 0), 0);
-                      const diff = sum - taxable;
-                      suggested = loose;
-                      suggestedReason = `${loose.length} GRN${loose.length > 1 ? 's' : ''} sum ₹${Math.round(sum).toLocaleString('en-IN')} vs bill ₹${Math.round(taxable).toLocaleString('en-IN')} (diff ${diff >= 0 ? '+' : ''}₹${Math.round(diff).toLocaleString('en-IN')})`;
-                    } else {
-                      // Single-GRN fallback: near-exact applies, approximate suggests.
-                      const tightSingle = grns.find(gr => Math.abs(gr.totalAmount - taxable) / Math.max(taxable, 1) < 0.005);
-                      if (tightSingle) {
-                        selected = [tightSingle.id];
-                      } else {
-                        const looseSingle = grns.find(gr => Math.abs(gr.totalAmount - taxable) / Math.max(taxable, 1) < 0.05);
-                        if (looseSingle) {
-                          suggested = [looseSingle.id];
-                          const diff = looseSingle.totalAmount - taxable;
-                          suggestedReason = `GRN-${looseSingle.grnNo} ₹${Math.round(looseSingle.totalAmount).toLocaleString('en-IN')} vs bill ₹${Math.round(taxable).toLocaleString('en-IN')} (diff ${diff >= 0 ? '+' : ''}₹${Math.round(diff).toLocaleString('en-IN')})`;
-                        }
-                      }
-                    }
-                  }
-                }
-
-                setSmartUploadEntries(prev => prev.map(p => p.id === entry.id ? {
-                  ...p,
-                  unbilledGrns: grns,
-                  selectedGrnIds: selected,
-                  suggestedGrnIds: suggested.length > 0 ? suggested : undefined,
-                  suggestedReason,
-                } : p));
-              })
-              .catch(() => {
-                setSmartUploadEntries(prev => prev.map(p => p.id === entry.id ? { ...p, unbilledGrns: [] } : p));
-              }),
-          );
-        }
-      });
-      // Apply extraction updates immediately; GRN fetches resolve in background.
-      setSmartUploadEntries(prev => prev.map(p => updated.get(p.id) || p));
-      await Promise.all(grnFetches);
-    } catch (err: unknown) {
-      const msg = (err as { response?: { data?: { error?: string } }; message?: string })?.response?.data?.error
-        || (err as { message?: string })?.message
-        || 'Bulk upload failed';
-      setSmartUploadEntries(prev => prev.map(e => e.status === 'extracting' ? { ...e, status: 'error', error: msg } : e));
-    } finally {
-      setSmartUploadBusy(false);
-    }
-  }, [smartUploadEntries, vendors, matchExtractedToVendor]);
-
-  // ── Save one entry → POST /vendor-invoices with lines[] ──
-  // Three paths:
-  // 1. Duplicate of an UNMATCHED existing invoice → POST /link-grns to that
-  //    invoice, no new row created.
-  // 2. Duplicate of a MATCHED existing invoice → already filtered out by
-  //    saveAllSmartEntries (skip on Save All).
-  // 3. New bill → normal POST /vendor-invoices with lines (or placeholder line
-  //    when no GRN is ticked, for later manual linking).
-  const saveSmartEntry = useCallback(async (entry: SmartUploadEntry): Promise<{ ok: boolean; invoiceNo?: number; error?: string }> => {
-    if (!entry.matchedVendor) return { ok: false, error: 'Vendor not matched' };
-    const ext = entry.extracted || {};
-    const pickedGrns = (entry.unbilledGrns || []).filter(g => entry.selectedGrnIds?.includes(g.id));
-
-    // Path 1 — duplicate of unmatched existing: link GRNs to the existing invoice.
-    if (entry.duplicateOf && !entry.duplicateOf.isMatched) {
-      const grnIds = pickedGrns.map(g => g.id);
-      if (grnIds.length === 0) {
-        return { ok: false, error: 'Pick at least one GRN to finish linking the existing invoice' };
-      }
-      try {
-        await api.post(`/vendor-invoices/${entry.duplicateOf.invoiceId}/link-grns`, { grnIds });
-        return { ok: true, invoiceNo: entry.duplicateOf.invoiceNo };
-      } catch (err: unknown) {
-        const msg = (err as { response?: { data?: { error?: string } }; message?: string })?.response?.data?.error
-          || (err as { message?: string })?.message
-          || 'Link failed';
-        return { ok: false, error: msg };
-      }
-    }
-
-    // Derive default GST% from extraction, fall back to 18.
-    const taxable = Number(ext.taxable_amount) || pickedGrns.reduce((s, g) => s + g.totalAmount, 0);
-    const totalGst = Number(ext.total_gst) || 0;
-    const gstPercent = taxable > 0 ? Math.round((totalGst / taxable) * 100) : 18;
-    const supplyType = ext.supply_type === 'INTER_STATE' ? 'INTER_STATE' : 'INTRA_STATE';
-
-    let lines: Array<{ grnId: string | null; productName: string; hsnCode: string | null; quantity: number; unit: string; rate: number; gstPercent: number }>;
-    let poId: string | null;
-
-    if (pickedGrns.length > 0) {
-      // Normal path — one line per selected GRN, qty/rate from the GRN.
-      lines = pickedGrns.map(g => ({
-        grnId: g.id,
-        productName: g.lines?.[0]?.description || `GRN-${g.grnNo}`,
-        hsnCode: ext.items?.[0]?.hsn || null,
-        quantity: g.totalQty,
-        unit: g.lines?.[0]?.unit || 'KG',
-        rate: g.totalQty > 0 ? g.totalAmount / g.totalQty : 0,
-        gstPercent,
-      }));
-      poId = pickedGrns[0].po?.id || pickedGrns[0].poId || null;
-    } else {
-      // No GRN selected — save a placeholder so accounts can find and link later.
-      // Infer poId from the vendor's open GRNs (rolling-PO pattern), else leave null.
-      poId = entry.unbilledGrns?.[0]?.po?.id || entry.unbilledGrns?.[0]?.poId || null;
-      const item0 = ext.items?.[0];
-      const qty = Number(item0?.qty) || 1;
-      const rate = Number(item0?.rate) || (qty > 0 ? taxable / qty : taxable) || 0;
-      lines = [{
-        grnId: null,
-        productName: item0?.description || `Bill ${ext.invoice_number || ''} (GRN to link)`,
-        hsnCode: item0?.hsn || null,
-        quantity: qty,
-        unit: item0?.unit || 'KG',
-        rate,
-        gstPercent,
-      }];
-    }
-
-    try {
-      const res = await api.post<{ invoiceNo: number }>('/vendor-invoices', {
-        vendorId: entry.matchedVendor.id,
-        poId,
-        vendorInvNo: ext.invoice_number || '',
-        vendorInvDate: ext.invoice_date || todayStr(),
-        invoiceDate: ext.invoice_date || todayStr(),
-        supplyType,
-        gstPercent,
-        filePath: entry.filePath || null,
-        fileHash: entry.fileHash || null,
-        originalFileName: entry.file.name,
-        status: 'APPROVED',
-        lines,
-      });
-      return { ok: true, invoiceNo: res.data.invoiceNo };
-    } catch (err: unknown) {
-      const msg = (err as { response?: { data?: { error?: string } }; message?: string })?.response?.data?.error
-        || (err as { message?: string })?.message
-        || 'Save failed';
-      return { ok: false, error: msg };
-    }
-  }, []);
-
-  // ── Save All → iterate sequentially so server transactions don't clash ──
-  // Saves every extracted entry that has a matched vendor — cards with no GRN
-  // ticked are saved as placeholders for later manual linking.
-  const saveAllSmartEntries = useCallback(async () => {
-    // Skip already-matched duplicates (no-op). Save:
-    //  - new bills (no duplicateOf)
-    //  - duplicates of UNMATCHED existing invoices (those route to /link-grns).
-    const ready = smartUploadEntries.filter(e =>
-      e.status === 'extracted' && e.matchedVendor && (!e.duplicateOf || !e.duplicateOf.isMatched)
-    );
-    if (ready.length === 0) return;
-    setSmartSavingAll(true);
-    for (const entry of ready) {
-      setSmartUploadEntries(prev => prev.map(p => p.id === entry.id ? { ...p, status: 'saving' } : p));
-      const r = await saveSmartEntry(entry);
-      setSmartUploadEntries(prev => prev.map(p => p.id === entry.id
-        ? (r.ok ? { ...p, status: 'saved', savedInvoiceNo: r.invoiceNo } : { ...p, status: 'error', error: r.error })
-        : p));
-    }
-    setSmartSavingAll(false);
-    // Notify the page to re-fetch pending; listener is wired alongside fetchPending below.
-    window.dispatchEvent(new Event('payments-out:refresh'));
-  }, [smartUploadEntries, saveSmartEntry]);
-
-  const closeSmartUpload = () => {
-    if (smartUploadBusy || smartSavingAll) return;
-    setSmartUploadOpen(false);
-    setSmartUploadEntries([]);
-    setSmartPresetVendor(null);
-    setSmartPresetGrns([]);
-  };
-
-  const updateSmartEntry = (id: string, patch: Partial<SmartUploadEntry>) => {
-    setSmartUploadEntries(prev => prev.map(e => e.id === id ? { ...e, ...patch } : e));
-  };
-
-  const removeSmartEntry = (id: string) => {
-    setSmartUploadEntries(prev => prev.filter(e => e.id !== id));
-  };
 
   // ── Manually link GRNs to an already-saved vendor invoice ──
-  // Used when the bulk AI couldn't auto-match a GRN, or accounts wants to
-  // attach an additional GRN to a bill after it was booked.
+  // Used when accounts wants to attach a GRN to a bill that was booked
+  // without one, or to attach an additional GRN later.
   type LinkGrnTarget = {
     invoiceId: string;
     invoiceNo: number | null;
@@ -817,7 +346,7 @@ export default function PaymentsOut() {
     vendorId: string;
     vendorName: string;
     poId: string | null;
-    grnsAvailable: SmartUnbilledGrn[];
+    grnsAvailable: UnbilledGrn[];
     selected: Set<string>;
     saving: boolean;
     error?: string;
@@ -837,7 +366,7 @@ export default function PaymentsOut() {
       saving: false,
     });
     try {
-      const r = await api.get<{ grns: SmartUnbilledGrn[] }>(`/goods-receipts/unbilled?vendorId=${invoice.vendorId}`);
+      const r = await api.get<{ grns: UnbilledGrn[] }>(`/goods-receipts/unbilled?vendorId=${invoice.vendorId}`);
       setLinkGrnTarget(prev => prev && prev.invoiceId === invoice.id ? { ...prev, grnsAvailable: r.data.grns || [] } : prev);
     } catch {
       setLinkGrnTarget(prev => prev && prev.invoiceId === invoice.id ? { ...prev, grnsAvailable: [], error: 'Failed to load GRNs' } : prev);
@@ -853,12 +382,10 @@ export default function PaymentsOut() {
         grnIds: Array.from(linkGrnTarget.selected),
       });
       setLinkGrnTarget(null);
-      // Refresh PO detail panel + unmatched list so the row drops off.
+      // Refresh PO detail panel so the row drops off.
       if (selectedPOId) {
         try { const ref = await api.get(`/purchase-orders/${selectedPOId}`); setPODetail(ref.data); } catch { /* noop */ }
       }
-      // Notify the unmatched-list listener (declared next to fetchUnmatched below) to refetch.
-      window.dispatchEvent(new Event('payments-out:unmatched-refresh'));
     } catch (err: unknown) {
       const resp = (err as { response?: { data?: { error?: string; conflicts?: string[] } } })?.response?.data;
       const conflicts = resp?.conflicts && resp.conflicts.length > 0 ? `\n${resp.conflicts.join('\n')}` : '';
@@ -973,42 +500,6 @@ export default function PaymentsOut() {
     }
   }, []);
 
-  // Unmatched invoices = vendor bills with NO GRN linkage at all (header or any line).
-  type UnmatchedInvoice = {
-    id: string;
-    invoiceNo: number;
-    vendorInvNo: string | null;
-    vendorInvDate: string | null;
-    invoiceDate: string;
-    totalAmount: number;
-    balanceAmount: number;
-    status: string;
-    filePath: string | null;
-    poId: string | null;
-    vendor: { id: string; name: string } | null;
-    po: { id: string; poNo: number } | null;
-  };
-  const [unmatched, setUnmatched] = useState<UnmatchedInvoice[]>([]);
-  const [unmatchedLoading, setUnmatchedLoading] = useState(false);
-  const fetchUnmatched = useCallback(async () => {
-    try {
-      setUnmatchedLoading(true);
-      const res = await api.get<{ invoices: UnmatchedInvoice[] }>('/vendor-invoices/unmatched');
-      setUnmatched(res.data.invoices || []);
-    } catch (err) {
-      console.error('Failed to fetch unmatched:', err);
-    } finally {
-      setUnmatchedLoading(false);
-    }
-  }, []);
-
-  // Listen for refresh requests from the Link-GRN modal (declared above this fetcher).
-  useEffect(() => {
-    const handler = () => { fetchUnmatched(); };
-    window.addEventListener('payments-out:unmatched-refresh', handler);
-    return () => window.removeEventListener('payments-out:unmatched-refresh', handler);
-  }, [fetchUnmatched]);
-
   // ═══════════════════════════════════════════════
   // Effects
   // ═══════════════════════════════════════════════
@@ -1046,8 +537,7 @@ export default function PaymentsOut() {
     if (activeTab === 'completed') fetchCompleted();
     if (activeTab === 'ledger' && vendors.length === 0) fetchVendors();
     if (activeTab === 'outstanding') fetchOutstanding();
-    if (activeTab === 'unmatched') fetchUnmatched();
-  }, [activeTab, fetchCompleted, fetchVendors, fetchOutstanding, fetchUnmatched, vendors.length]);
+  }, [activeTab, fetchCompleted, fetchVendors, fetchOutstanding, vendors.length]);
 
   useEffect(() => {
     if (selectedVendor && activeTab === 'ledger') fetchLedger(selectedVendor);
@@ -1085,17 +575,18 @@ export default function PaymentsOut() {
       gstPercent: '', supplyType: 'INTRA_STATE',
     });
     setInvoiceFilePath('');
-    setExtracted(null);
-    setExtracting(false);
+    setUploading(false);
     setInvoiceModal(item);
     setError('');
   };
 
+  // Upload the bill file. The endpoint stores the file and returns its filePath;
+  // any extracted JSON in the response is ignored — the form fields stay typed.
   const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
     try {
-      setExtracting(true);
+      setUploading(true);
       setError('');
       const formData = new FormData();
       formData.append('file', file);
@@ -1103,29 +594,13 @@ export default function PaymentsOut() {
         headers: { 'Content-Type': 'multipart/form-data' },
         timeout: 60000,
       });
-      const { filePath, extracted: ext, error: extractErr } = res.data;
+      const { filePath } = res.data;
       setInvoiceFilePath(filePath || '');
-      if (ext && !ext.raw) {
-        setExtracted(ext);
-        // Pre-fill form from extracted data
-        setInvoiceForm(f => ({
-          ...f,
-          vendorInvNo: ext.invoice_number || f.vendorInvNo,
-          vendorInvDate: ext.invoice_date || f.vendorInvDate,
-          quantity: ext.items?.[0]?.qty ? String(ext.items[0].qty) : f.quantity,
-          rate: ext.items?.[0]?.rate ? String(ext.items[0].rate) : (ext.taxable_amount ? String(ext.taxable_amount) : f.rate),
-          gstPercent: ext.total_gst && ext.taxable_amount ? String(Math.round((ext.total_gst / ext.taxable_amount) * 100)) : f.gstPercent,
-          supplyType: ext.supply_type === 'INTER_STATE' ? 'INTER_STATE' : 'INTRA_STATE',
-        }));
-      } else {
-        setExtracted(null);
-        if (extractErr) setError(`AI could not read invoice: ${extractErr}`);
-      }
     } catch (err: unknown) {
       const msg = (err as { response?: { data?: { error?: string } } })?.response?.data?.error || 'Upload failed';
       setError(msg);
     } finally {
-      setExtracting(false);
+      setUploading(false);
     }
   };
 
@@ -1197,7 +672,6 @@ export default function PaymentsOut() {
       );
       setBankPendingPayment(initiated || null);
       setBankUtrInput('');
-      setBankReceiptFile(null);
     } catch { setPoPayments([]); setPoPendingCash(0); setPoPendingCashVouchers([]); setPoReceivedValue(0); }
   };
 
@@ -1585,24 +1059,14 @@ export default function PaymentsOut() {
             <span className="text-[10px] text-slate-400">|</span>
             <span className="text-[10px] text-slate-400">Accounts Payable Workflow</span>
           </div>
-          {canUseAI && (
-            <button
-              onClick={() => setSmartUploadOpen(true)}
-              className="flex items-center gap-1.5 px-3 py-1 bg-purple-600 text-white text-[11px] font-bold uppercase tracking-widest hover:bg-purple-700"
-              title="Drop any document — AI classifies & auto-routes"
-            >
-              <Sparkles size={12} /> Smart Upload
-            </button>
-          )}
         </div>
 
         {/* Tabs */}
         <div className="bg-slate-100 border-x border-b border-slate-300 px-4 py-0 -mx-3 md:-mx-6 flex gap-0">
           {([
-            { key: 'pending' as const, label: 'Pending' },
-            { key: 'unmatched' as const, label: 'Unmatched' },
-            { key: 'completed' as const, label: 'Completed' },
             { key: 'ledger' as const, label: 'Vendor Ledger' },
+            { key: 'pending' as const, label: 'Pending' },
+            { key: 'completed' as const, label: 'Completed' },
             { key: 'outstanding' as const, label: 'Outstanding' },
           ]).map(tab => (
             <button key={tab.key} onClick={() => setActiveTab(tab.key)}
@@ -1610,9 +1074,6 @@ export default function PaymentsOut() {
               {tab.label}
               {tab.key === 'pending' && pendingItems.length > 0 && (
                 <span className="ml-1.5 text-[9px] px-1.5 py-0.5 bg-red-600 text-white font-bold">{pendingItems.length}</span>
-              )}
-              {tab.key === 'unmatched' && unmatched.length > 0 && (
-                <span className="ml-1.5 text-[9px] px-1.5 py-0.5 bg-amber-600 text-white font-bold">{unmatched.length}</span>
               )}
             </button>
           ))}
@@ -1842,7 +1303,7 @@ export default function PaymentsOut() {
                                   className="inline-flex items-center gap-1.5 px-3 py-1 bg-purple-700 text-white text-[10px] font-bold uppercase tracking-widest hover:bg-purple-800"
                                   title="Open vendor ledger — upload bills, link GRNs, record payment, view documents"
                                 >
-                                  <Sparkles size={11} /> Open Ledger
+                                  <FileText size={11} /> Open Ledger
                                 </a>
                               </td>
                             </tr>
@@ -2120,87 +1581,6 @@ export default function PaymentsOut() {
         )}
 
         {/* ═══════════════════════════════════════ */}
-        {/* UNMATCHED TAB — bills with no GRN linked yet */}
-        {/* ═══════════════════════════════════════ */}
-        {activeTab === 'unmatched' && (
-          <div className="border-x border-b border-slate-300 -mx-3 md:-mx-6 bg-white">
-            <div className="bg-amber-50 border-b border-amber-200 px-4 py-2 text-[11px] text-amber-800">
-              <strong>Unmatched invoices</strong> — bills booked in the system but not yet linked to any GRN.
-              Click <strong>Link GRN</strong> to pick the GRN(s) this bill covers. Rule: one GRN can only be invoiced once; one invoice can cover many GRNs.
-            </div>
-            {unmatchedLoading ? (
-              <div className="p-8 text-center text-xs text-slate-400 uppercase tracking-widest">Loading...</div>
-            ) : unmatched.length === 0 ? (
-              <div className="p-12 text-center">
-                <FileText size={32} className="mx-auto text-slate-300 mb-3" />
-                <div className="text-xs text-slate-500">No unmatched invoices &mdash; every booked bill has at least one GRN linked.</div>
-              </div>
-            ) : (
-              <div className="overflow-x-auto">
-                <table className="w-full text-xs">
-                  <thead>
-                    <tr className="bg-slate-800 text-white">
-                      <th className="text-left px-3 py-2 font-semibold text-[10px] uppercase tracking-widest border-r border-slate-700">Invoice</th>
-                      <th className="text-left px-3 py-2 font-semibold text-[10px] uppercase tracking-widest border-r border-slate-700">Vendor</th>
-                      <th className="text-left px-3 py-2 font-semibold text-[10px] uppercase tracking-widest border-r border-slate-700">PO</th>
-                      <th className="text-left px-3 py-2 font-semibold text-[10px] uppercase tracking-widest border-r border-slate-700">Date</th>
-                      <th className="text-right px-3 py-2 font-semibold text-[10px] uppercase tracking-widest border-r border-slate-700">Amount</th>
-                      <th className="text-right px-3 py-2 font-semibold text-[10px] uppercase tracking-widest border-r border-slate-700">Balance</th>
-                      <th className="text-left px-3 py-2 font-semibold text-[10px] uppercase tracking-widest border-r border-slate-700">Status</th>
-                      <th className="text-center px-3 py-2 font-semibold text-[10px] uppercase tracking-widest">Actions</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {unmatched.map((inv, i) => (
-                      <tr key={inv.id} className={`border-b border-slate-100 hover:bg-amber-50/40 ${i % 2 ? 'bg-slate-50/70' : ''}`}>
-                        <td className="px-3 py-1.5 border-r border-slate-100 font-mono">
-                          <div className="font-bold text-slate-800">{inv.vendorInvNo || `INV-${inv.invoiceNo}`}</div>
-                          <div className="text-[9px] text-slate-400">INV-{inv.invoiceNo}</div>
-                        </td>
-                        <td className="px-3 py-1.5 border-r border-slate-100 font-medium text-slate-800 max-w-[200px] truncate" title={inv.vendor?.name}>{inv.vendor?.name || '--'}</td>
-                        <td className="px-3 py-1.5 border-r border-slate-100 font-mono text-blue-700">{inv.po ? `PO-${inv.po.poNo}` : <span className="text-slate-400">--</span>}</td>
-                        <td className="px-3 py-1.5 border-r border-slate-100 whitespace-nowrap text-slate-600">{inv.vendorInvDate ? fmtDate(inv.vendorInvDate) : fmtDate(inv.invoiceDate)}</td>
-                        <td className="px-3 py-1.5 border-r border-slate-100 text-right font-mono tabular-nums">{fmt(inv.totalAmount)}</td>
-                        <td className="px-3 py-1.5 border-r border-slate-100 text-right font-mono tabular-nums font-bold text-red-600">{fmt(inv.balanceAmount)}</td>
-                        <td className="px-3 py-1.5 border-r border-slate-100">
-                          <span className="text-[9px] font-bold uppercase px-1.5 py-0.5 border border-amber-400 bg-amber-50 text-amber-700">{inv.status}</span>
-                        </td>
-                        <td className="px-3 py-1.5 text-center">
-                          <div className="flex items-center justify-center gap-1">
-                            {inv.filePath && (
-                              <a href={`/uploads/${inv.filePath}`} target="_blank" rel="noopener noreferrer"
-                                 className="px-2 py-0.5 bg-blue-600 text-white text-[9px] font-bold uppercase hover:bg-blue-700 inline-flex items-center gap-1" title="Open invoice PDF">
-                                <FileText size={10} /> PDF
-                              </a>
-                            )}
-                            <button
-                              onClick={() => openLinkGrnModal({ id: inv.id, invoiceNo: inv.invoiceNo, vendorInvNo: inv.vendorInvNo, vendorId: inv.vendor?.id || '', poId: inv.poId }, inv.vendor?.name || 'Vendor')}
-                              disabled={!inv.vendor}
-                              className="px-2 py-0.5 bg-amber-600 text-white text-[9px] font-bold uppercase hover:bg-amber-700 disabled:opacity-50 inline-flex items-center gap-1"
-                              title="Link GRN(s) to this invoice"
-                            >
-                              <Sparkles size={10} /> Link GRN
-                            </button>
-                          </div>
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                  <tfoot>
-                    <tr className="bg-slate-800 text-white font-semibold">
-                      <td className="px-3 py-2 text-[10px] uppercase tracking-widest" colSpan={4}>Total ({unmatched.length} invoices)</td>
-                      <td className="px-3 py-2 text-right font-mono tabular-nums">{fmt(unmatched.reduce((s, i) => s + (i.totalAmount || 0), 0))}</td>
-                      <td className="px-3 py-2 text-right font-mono tabular-nums">{fmt(unmatched.reduce((s, i) => s + (i.balanceAmount || 0), 0))}</td>
-                      <td colSpan={2}></td>
-                    </tr>
-                  </tfoot>
-                </table>
-              </div>
-            )}
-          </div>
-        )}
-
-        {/* ═══════════════════════════════════════ */}
         {/* COMPLETED TAB */}
         {/* ═══════════════════════════════════════ */}
         {activeTab === 'completed' && (
@@ -2306,11 +1686,6 @@ export default function PaymentsOut() {
                                 <button onClick={(e) => { e.stopPropagation(); window.open(`/api/vendor-payments/${p.id}/pdf?token=${localStorage.getItem('token')}`, '_blank'); }}
                                   className="px-1.5 py-0.5 bg-slate-600 text-white text-[9px] font-bold uppercase hover:bg-slate-700" title="Download Payment Advice">
                                   ADVICE
-                                </button>
-                                <button onClick={(e) => { e.stopPropagation(); setScanTarget({ paymentId: p.id, payee: p.payee, amount: p.amount, existing: p.bankReceiptPath }); setScanFile(null); setScanResult(null); }}
-                                  className={`px-1.5 py-0.5 text-white text-[9px] font-bold uppercase inline-flex items-center gap-0.5 ${p.bankReceiptPath ? 'bg-purple-500 hover:bg-purple-600' : 'bg-purple-700 hover:bg-purple-800'}`}
-                                  title={p.bankReceiptPath ? 'Bank receipt already scanned — click to re-scan or view' : 'Upload bank confirmation (PDF/JPG) for AI extraction'}>
-                                  <Scan size={9} /> {p.bankReceiptPath ? 'RESCAN' : 'SCAN'}
                                 </button>
                                 {p.paymentStatus === 'CONFIRMED' && (
                                   <button
@@ -2663,10 +2038,8 @@ export default function PaymentsOut() {
             <div className="bg-white shadow-2xl w-full max-w-3xl mx-4">
               <div className="bg-slate-800 text-white px-4 py-2.5 flex items-center justify-between">
                 <div className="flex items-center gap-2">
-                  {extracted ? <Sparkles size={14} className="text-amber-300" /> : <FileText size={14} />}
-                  <span className="text-xs font-bold uppercase tracking-widest">
-                    {extracted ? 'AI Smart Upload — review & confirm' : 'Upload Vendor Invoice'}
-                  </span>
+                  <FileText size={14} />
+                  <span className="text-xs font-bold uppercase tracking-widest">Upload Vendor Invoice</span>
                 </div>
                 <button onClick={() => setInvoiceModal(null)} className="text-slate-400 hover:text-white"><X size={16} /></button>
               </div>
@@ -2684,16 +2057,16 @@ export default function PaymentsOut() {
 
                 {/* Step 1: File Upload */}
                 <div className="border-2 border-dashed border-slate-300 bg-slate-50 p-4 text-center">
-                  {extracting ? (
+                  {uploading ? (
                     <div className="py-4">
                       <div className="inline-block w-5 h-5 border-2 border-blue-600 border-t-transparent animate-spin mb-2"></div>
-                      <div className="text-xs text-slate-500 uppercase tracking-widest">Reading invoice with AI...</div>
+                      <div className="text-xs text-slate-500 uppercase tracking-widest">Uploading...</div>
                     </div>
                   ) : invoiceFilePath ? (
                     <div className="flex items-center justify-center gap-3 py-2">
                       <FileText size={16} className="text-green-600" />
                       <span className="text-xs text-green-700 font-medium">File uploaded</span>
-                      <button onClick={() => { setInvoiceFilePath(''); setExtracted(null); }}
+                      <button onClick={() => { setInvoiceFilePath(''); }}
                         className="text-[10px] text-red-500 hover:text-red-700 underline">Remove</button>
                     </div>
                   ) : (
@@ -2706,39 +2079,7 @@ export default function PaymentsOut() {
                   )}
                 </div>
 
-                {/* Comparison: PO vs Extracted */}
-                {extracted && (
-                  <div className="border border-slate-300 bg-slate-50">
-                    <div className="bg-slate-200 px-3 py-1.5 text-[10px] font-bold text-slate-600 uppercase tracking-widest">AI Extracted vs PO</div>
-                    <div className="grid grid-cols-3 text-xs">
-                      <div className="px-3 py-1 font-bold text-[10px] uppercase tracking-widest text-slate-400 border-b border-slate-200">Field</div>
-                      <div className="px-3 py-1 font-bold text-[10px] uppercase tracking-widest text-slate-400 border-b border-l border-slate-200">PO Data</div>
-                      <div className="px-3 py-1 font-bold text-[10px] uppercase tracking-widest text-slate-400 border-b border-l border-slate-200">Invoice Data</div>
-
-                      <div className="px-3 py-1.5 border-b border-slate-200 text-slate-600">Vendor</div>
-                      <div className="px-3 py-1.5 border-b border-l border-slate-200">{invoiceModal.vendorName}</div>
-                      <div className={`px-3 py-1.5 border-b border-l border-slate-200 ${(extracted.vendor_name as string) && !(extracted.vendor_name as string).toLowerCase().includes(invoiceModal.vendorName.toLowerCase().split(' ')[0]) ? 'bg-amber-50 text-amber-700' : ''}`}>
-                        {(extracted.vendor_name as string) || '--'}
-                      </div>
-
-                      <div className="px-3 py-1.5 border-b border-slate-200 text-slate-600">Amount</div>
-                      <div className="px-3 py-1.5 border-b border-l border-slate-200 font-mono">{fmt(invoiceModal.poAmount)}</div>
-                      <div className={`px-3 py-1.5 border-b border-l border-slate-200 font-mono ${(extracted.total_amount as number) && Math.abs((extracted.total_amount as number) - invoiceModal.poAmount) > 1 ? 'bg-red-50 text-red-700 font-bold' : ''}`}>
-                        {(extracted.total_amount as number) ? fmt(extracted.total_amount as number) : '--'}
-                      </div>
-
-                      <div className="px-3 py-1.5 border-b border-slate-200 text-slate-600">Taxable</div>
-                      <div className="px-3 py-1.5 border-b border-l border-slate-200 font-mono">{invoiceModal.poSubtotal ? fmt(invoiceModal.poSubtotal) : '--'}</div>
-                      <div className={`px-3 py-1.5 border-b border-l border-slate-200 font-mono ${(extracted.taxable_amount as number) && invoiceModal.poSubtotal && Math.abs((extracted.taxable_amount as number) - invoiceModal.poSubtotal) > 1 ? 'bg-red-50 text-red-700 font-bold' : ''}`}>{(extracted.taxable_amount as number) ? fmt(extracted.taxable_amount as number) : '--'}</div>
-
-                      <div className="px-3 py-1.5 text-slate-600">GST</div>
-                      <div className="px-3 py-1.5 border-l border-slate-200 font-mono">{invoiceModal.poGst ? fmt(invoiceModal.poGst) : '--'}</div>
-                      <div className="px-3 py-1.5 border-l border-slate-200 font-mono">{(extracted.total_gst as number) ? fmt(extracted.total_gst as number) : '--'}</div>
-                    </div>
-                  </div>
-                )}
-
-                {/* Editable form (pre-filled from AI or manual) */}
+                {/* Editable form — typed by the user */}
                 <form onSubmit={submitInvoice} className="space-y-3">
                   <div className="grid grid-cols-2 gap-3">
                     <div>
@@ -2779,15 +2120,11 @@ export default function PaymentsOut() {
                   </div>
                   <div className="flex gap-2 pt-3 border-t border-slate-200">
                     <button type="submit" disabled={submitting}
-                      className={`px-4 py-1.5 text-white text-[11px] font-bold uppercase tracking-widest disabled:opacity-50 flex items-center gap-1.5 ${extracted ? 'bg-emerald-600 hover:bg-emerald-700' : 'bg-blue-600 hover:bg-blue-700'}`}>
-                      {extracted && !submitting && <Sparkles size={11} />}
-                      {submitting ? 'Saving...' : extracted ? 'Confirm & Save' : 'Save Invoice'}
+                      className="px-4 py-1.5 text-white text-[11px] font-bold uppercase tracking-widest disabled:opacity-50 bg-blue-600 hover:bg-blue-700">
+                      {submitting ? 'Saving...' : 'Save Invoice'}
                     </button>
                     <button type="button" onClick={() => setInvoiceModal(null)}
                       className="px-4 py-1.5 bg-white border border-slate-300 text-slate-600 text-[11px] font-medium hover:bg-slate-50">CANCEL</button>
-                    {extracted && (
-                      <span className="self-center text-[10px] text-slate-500 italic">Fields auto-filled from the bill — review and confirm.</span>
-                    )}
                   </div>
                 </form>
               </div>
@@ -3776,7 +3113,7 @@ export default function PaymentsOut() {
                   })()}
                 </button>
 
-                {/* Pending bank payment — enter UTR to confirm (+ optional: upload bank receipt to auto-fill UTR) */}
+                {/* Pending bank payment — enter UTR to confirm */}
                 {bankPendingPayment && (
                   <div className="bg-yellow-50 border border-yellow-300 p-3 mt-2 space-y-2">
                     <div className="text-[10px] font-bold text-yellow-800 uppercase tracking-widest">
@@ -3796,13 +3133,8 @@ export default function PaymentsOut() {
                         setBankConfirming(true);
                         try {
                           await api.post(`/purchase-orders/payments/${bankPendingPayment.id}/confirm`, { reference: bankUtrInput.trim() });
-                          // If the team also uploaded the bank's receipt, scan+attach it now (best-effort, don't block confirm)
-                          if (bankReceiptFile) {
-                            try { await scanBankReceipt(bankPendingPayment.id, bankReceiptFile); } catch { /* non-fatal */ }
-                          }
                           setBankPendingPayment(null);
                           setBankUtrInput('');
-                          setBankReceiptFile(null);
                           await fetchPending();
                           setPoPayItem(null);
                         } catch (err: unknown) {
@@ -3813,7 +3145,7 @@ export default function PaymentsOut() {
                         {bankConfirming ? '...' : 'Confirm'}
                       </button>
                       <button type="button"
-                        onClick={() => { setBankPendingPayment(null); setBankUtrInput(''); setBankReceiptFile(null); setPoPayItem(null); }}
+                        onClick={() => { setBankPendingPayment(null); setBankUtrInput(''); setPoPayItem(null); }}
                         className="px-3 py-1.5 bg-white border border-slate-300 text-slate-600 text-[11px] font-medium hover:bg-slate-50"
                         title="Close modal. Come back later (open PO Pay again) to enter the UTR.">
                         Confirm Later
@@ -3821,22 +3153,6 @@ export default function PaymentsOut() {
                     </div>
                     <div className="text-[10px] text-slate-500 italic mt-1">
                       No UTR from bank yet? Click "Confirm Later" and come back to this PO when you have it — the yellow block will reappear.
-                    </div>
-                    {/* Optional: upload bank receipt (PDF/JPG) — will auto-scan after confirm */}
-                    <div className="pt-2 border-t border-yellow-200">
-                      <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest block mb-1 flex items-center gap-1">
-                        <Scan size={10} className="text-purple-700" /> Bank Receipt (optional) — PDF / JPG
-                      </label>
-                      <div className="flex items-center gap-2">
-                        <input type="file" accept=".pdf,.jpg,.jpeg,.png" onChange={e => setBankReceiptFile(e.target.files?.[0] || null)}
-                          className="text-[11px] flex-1" />
-                        {bankReceiptFile && (
-                          <button type="button" onClick={() => setBankReceiptFile(null)} className="text-[10px] text-slate-500 hover:text-red-600">&times; remove</button>
-                        )}
-                      </div>
-                      <div className="text-[10px] text-slate-500 mt-1">
-                        If attached, AI will extract UTR + beneficiary + amount from the receipt and attach the file to the Payment Advice email. Confirm still works without it.
-                      </div>
                     </div>
                   </div>
                 )}
@@ -3923,105 +3239,6 @@ export default function PaymentsOut() {
           );
         })()}
 
-        {/* Scan Bank Receipt modal */}
-        {scanTarget && (
-          <div className="fixed inset-0 bg-black/50 flex items-start justify-center z-50 overflow-y-auto py-4" onClick={() => { setScanTarget(null); setScanFile(null); setScanResult(null); }}>
-            <div className="bg-white w-full max-w-2xl my-4 shadow-xl" onClick={e => e.stopPropagation()}>
-              <div className="bg-slate-800 text-white px-4 py-2 flex items-center justify-between">
-                <div className="text-sm font-bold uppercase tracking-widest flex items-center gap-2"><Scan size={14} /> Scan Bank Receipt</div>
-                <button onClick={() => { setScanTarget(null); setScanFile(null); setScanResult(null); }} className="text-slate-400 hover:text-white"><X size={16} /></button>
-              </div>
-              <div className="p-4 space-y-3">
-                <div className="grid grid-cols-2 gap-3 text-xs bg-slate-50 border border-slate-200 px-3 py-2">
-                  <div><span className="text-slate-500 uppercase tracking-widest text-[9px] font-bold">Payee</span><div className="text-slate-800 font-medium">{scanTarget.payee}</div></div>
-                  <div><span className="text-slate-500 uppercase tracking-widest text-[9px] font-bold">Amount on file</span><div className="text-slate-800 font-mono tabular-nums">{fmt(scanTarget.amount)}</div></div>
-                </div>
-
-                {scanTarget.existing && !scanResult && (
-                  <div className="text-[11px] text-blue-800 bg-blue-50 border border-blue-200 px-3 py-2">
-                    A receipt is already on file — <a href={`/uploads/${scanTarget.existing}?token=${localStorage.getItem('token')}`} target="_blank" rel="noopener noreferrer" className="font-bold underline">view existing</a>. Upload a new one to re-scan.
-                  </div>
-                )}
-
-                {!scanResult && (
-                  <>
-                    <div>
-                      <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest block mb-1">Bank Confirmation (PDF / JPG / PNG)</label>
-                      <input type="file" accept=".pdf,.jpg,.jpeg,.png" onChange={e => setScanFile(e.target.files?.[0] || null)}
-                        className="border border-slate-300 px-2 py-1.5 text-xs w-full" />
-                      <div className="text-[10px] text-slate-400 mt-1">AI will read UTR, amount, beneficiary, bank and cross-check against this payment.</div>
-                    </div>
-                    <div className="flex gap-2 pt-2 border-t border-slate-200">
-                      <button type="button" disabled={!scanFile || scanUploading}
-                        onClick={async () => {
-                          if (!scanFile) return;
-                          setScanUploading(true);
-                          const r = await scanBankReceipt(scanTarget.paymentId, scanFile);
-                          setScanUploading(false);
-                          if (r.ok) {
-                            setScanResult({ extracted: r.extracted || null, warnings: r.warnings || [] });
-                            fetchCompleted();
-                            if (selectedPOId) {
-                              try { const ref = await api.get(`/purchase-orders/${selectedPOId}`); setPODetail(ref.data); } catch { /* noop */ }
-                            }
-                          } else {
-                            alert(`Scan failed: ${r.error}`);
-                          }
-                        }}
-                        className="px-4 py-1.5 bg-purple-700 text-white text-[11px] font-bold uppercase hover:bg-purple-800 disabled:bg-slate-300 disabled:cursor-not-allowed inline-flex items-center gap-1">
-                        <Scan size={11} /> {scanUploading ? 'Scanning…' : 'Upload & Scan'}
-                      </button>
-                      <button type="button" onClick={() => { setScanTarget(null); setScanFile(null); setScanResult(null); }}
-                        className="px-4 py-1.5 bg-white border border-slate-300 text-slate-600 text-[11px] font-medium hover:bg-slate-50">Cancel</button>
-                    </div>
-                  </>
-                )}
-
-                {scanResult && (
-                  <div className="space-y-3">
-                    {scanResult.warnings.length > 0 ? (
-                      <div className="border border-amber-300 bg-amber-50 px-3 py-2">
-                        <div className="text-[10px] font-bold text-amber-800 uppercase tracking-widest mb-1">⚠ Cross-check warnings</div>
-                        <ul className="list-disc list-inside text-[11px] text-amber-900 space-y-0.5">
-                          {scanResult.warnings.map((w, i) => <li key={i}>{w}</li>)}
-                        </ul>
-                      </div>
-                    ) : (
-                      <div className="border border-green-300 bg-green-50 px-3 py-2 text-[11px] text-green-800">
-                        ✓ Receipt extracted cleanly and matches the payment record.
-                      </div>
-                    )}
-                    {scanResult.extracted && (
-                      <div className="border border-slate-200">
-                        <div className="bg-slate-800 text-white px-3 py-1.5 text-[10px] font-bold uppercase tracking-widest">Extracted fields</div>
-                        <table className="w-full text-[11px]">
-                          <tbody>
-                            {Object.entries(scanResult.extracted).filter(([, v]) => v !== null && v !== '' && v !== undefined).map(([k, v]) => (
-                              <tr key={k} className="border-b border-slate-100">
-                                <td className="px-3 py-1 text-slate-500 uppercase tracking-widest text-[9px] font-bold w-44">{k.replace(/_/g, ' ')}</td>
-                                <td className="px-3 py-1 text-slate-900 font-mono select-all">{String(v)}</td>
-                              </tr>
-                            ))}
-                          </tbody>
-                        </table>
-                      </div>
-                    )}
-                    <div className="flex gap-2 pt-2 border-t border-slate-200">
-                      <button type="button" onClick={() => { setScanTarget(null); setScanFile(null); setScanResult(null); }}
-                        className="px-4 py-1.5 bg-green-600 text-white text-[11px] font-bold uppercase hover:bg-green-700">Done</button>
-                      <button type="button" onClick={() => { setScanFile(null); setScanResult(null); }}
-                        className="px-4 py-1.5 bg-white border border-slate-300 text-slate-600 text-[11px] font-medium hover:bg-slate-50">Scan another</button>
-                    </div>
-                  </div>
-                )}
-              </div>
-            </div>
-          </div>
-        )}
-
-        {/* ═══════════════════════════════════════ */}
-        {/* SMART BILL UPLOAD — Vendor-scoped, multi-file, AI extract + GRN match + Save All */}
-        {/* ═══════════════════════════════════════ */}
         {/* ═══════════════════════════════════════ */}
         {/* LINK GRN MODAL — manually attach GRN(s) to an existing invoice */}
         {/* ═══════════════════════════════════════ */}
@@ -4106,320 +3323,6 @@ export default function PaymentsOut() {
           </div>
         )}
 
-        {smartUploadOpen && (() => {
-          const pendingCount = smartUploadEntries.filter(e => e.status === 'pending').length;
-          // Ready = extracted + matched vendor + (NOT a duplicate, OR is a duplicate-but-unmatched
-          // — those still save by linking GRNs to the existing invoice).
-          const readyCount = smartUploadEntries.filter(e =>
-            e.status === 'extracted' && e.matchedVendor && (!e.duplicateOf || !e.duplicateOf.isMatched)
-          ).length;
-          const reviewCount = smartUploadEntries.filter(e =>
-            e.status === 'extracted' && e.matchedVendor && !e.duplicateOf && (e.selectedGrnIds?.length || 0) === 0
-          ).length;
-          const dupMatchedCount = smartUploadEntries.filter(e => e.duplicateOf && e.duplicateOf.isMatched).length;
-          const dupUnmatchedCount = smartUploadEntries.filter(e => e.duplicateOf && !e.duplicateOf.isMatched).length;
-          // Locked vendor — preset (from per-PO open) takes priority, otherwise read off the first entry.
-          const lockedVendor = smartPresetVendor || smartUploadEntries.find(e => e.matchedVendor)?.matchedVendor || null;
-          return (
-            <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4" onClick={closeSmartUpload}>
-              <div className="bg-white max-w-4xl w-full max-h-[92vh] flex flex-col" onClick={e => e.stopPropagation()}>
-                {/* Toolbar */}
-                <div className="bg-purple-700 text-white px-4 py-2.5 flex items-center justify-between">
-                  <div className="flex items-center gap-2">
-                    <Sparkles size={14} />
-                    <h2 className="text-sm font-bold uppercase tracking-wide">Smart Bill Upload</h2>
-                    <span className="text-[10px] text-purple-200">|</span>
-                    <span className="text-[10px] text-purple-200">Pick the vendor &middot; drop bills &middot; AI extracts &middot; pick GRNs &middot; save all</span>
-                  </div>
-                  <button onClick={closeSmartUpload} className="text-purple-200 hover:text-white" disabled={smartUploadBusy || smartSavingAll}><X size={16} /></button>
-                </div>
-
-                {/* Vendor + file picker bar */}
-                <div className="px-4 py-3 border-b border-slate-200 bg-slate-50 flex flex-wrap items-center gap-3">
-                  {/* Vendor selector */}
-                  <div className="flex items-center gap-2">
-                    <span className="text-[10px] font-bold text-slate-600 uppercase tracking-widest">Vendor</span>
-                    <select
-                      value={lockedVendor?.id || ''}
-                      onChange={async e => {
-                        const id = e.target.value;
-                        if (!id) {
-                          setSmartPresetVendor(null);
-                          setSmartPresetGrns([]);
-                          setSmartUploadEntries(prev => prev.map(p => ({ ...p, matchedVendor: null, unbilledGrns: undefined, selectedGrnIds: undefined })));
-                          return;
-                        }
-                        let list = vendors;
-                        if (list.length === 0) {
-                          try { const res = await api.get<{ vendors: Vendor[] }>('/vendors'); list = res.data.vendors || []; setVendors(list); } catch { /* ignore */ }
-                        }
-                        const v = list.find(x => x.id === id) || null;
-                        let grns: SmartUnbilledGrn[] = [];
-                        if (v) {
-                          try {
-                            const r = await api.get<{ grns: SmartUnbilledGrn[] }>(`/goods-receipts/unbilled?vendorId=${v.id}`);
-                            grns = r.data.grns || [];
-                          } catch { /* ignore */ }
-                        }
-                        // Persist preset so future "Add Bills" inherit it without re-fetching.
-                        setSmartPresetVendor(v);
-                        setSmartPresetGrns(grns);
-                        setSmartUploadEntries(prev => prev.map(p => ({ ...p, matchedVendor: v, unbilledGrns: grns, selectedGrnIds: p.selectedGrnIds || [] })));
-                      }}
-                      disabled={smartUploadBusy || smartSavingAll}
-                      className="border border-slate-300 px-2 py-1.5 text-xs bg-white min-w-[260px]"
-                    >
-                      <option value="">— Select vendor —</option>
-                      {vendors.map(v => <option key={v.id} value={v.id}>{v.name}</option>)}
-                    </select>
-                    {vendors.length === 0 && (
-                      <button
-                        type="button"
-                        onClick={async () => { try { const res = await api.get<{ vendors: Vendor[] }>('/vendors'); setVendors(res.data.vendors || []); } catch { /* ignore */ } }}
-                        className="text-[10px] text-blue-600 underline"
-                      >Load vendors</button>
-                    )}
-                  </div>
-
-                  {/* File picker */}
-                  <label className={`inline-flex items-center gap-2 px-3 py-1.5 border text-[11px] font-bold uppercase tracking-widest ${lockedVendor ? 'bg-white border-slate-300 hover:bg-slate-100 cursor-pointer text-slate-700' : 'bg-slate-100 border-slate-200 text-slate-400 cursor-not-allowed'}`}>
-                    <Upload size={12} /> Add Bills
-                    <input
-                      type="file"
-                      multiple
-                      accept="application/pdf,image/*"
-                      onChange={e => { onSmartFilesPicked(e.target.files); e.currentTarget.value = ''; }}
-                      className="hidden"
-                      disabled={!lockedVendor || smartUploadBusy || smartSavingAll}
-                    />
-                  </label>
-                  <div className="text-[10px] text-slate-500">PDF / JPG / PNG &middot; up to 20 files &middot; max 10 MB each</div>
-                  <div className="flex-1" />
-                  {smartUploadEntries.length > 0 && (
-                    <div className="text-[10px] text-slate-600 font-bold uppercase tracking-widest">
-                      {smartUploadEntries.length} file{smartUploadEntries.length === 1 ? '' : 's'} &middot; {readyCount} ready
-                      {reviewCount > 0 && <span className="text-amber-700 ml-1">&middot; {reviewCount} need review</span>}
-                      {dupMatchedCount > 0 && <span className="text-violet-700 ml-1">&middot; {dupMatchedCount} already matched</span>}
-                      {dupUnmatchedCount > 0 && <span className="text-fuchsia-700 ml-1">&middot; {dupUnmatchedCount} re-uploaded (link GRN now)</span>}
-                    </div>
-                  )}
-                </div>
-
-                {/* Body */}
-                <div className="flex-1 overflow-auto p-4 space-y-3 bg-slate-100">
-                  {!lockedVendor && (
-                    <div className="border-2 border-dashed border-slate-300 bg-white px-4 py-12 text-center">
-                      <FileText size={32} className="mx-auto text-slate-300 mb-3" />
-                      <div className="text-xs text-slate-500">Pick a <strong>vendor</strong> first &mdash; the GRN search is scoped to that vendor.</div>
-                      <div className="text-[10px] text-slate-400 mt-2">Then click <strong>Add Bills</strong> to upload one or more invoices.</div>
-                    </div>
-                  )}
-
-                  {lockedVendor && smartUploadEntries.length === 0 && (
-                    <div className="border-2 border-dashed border-slate-300 bg-white px-4 py-12 text-center">
-                      <Upload size={32} className="mx-auto text-slate-300 mb-3" />
-                      <div className="text-xs text-slate-500">Click <strong>Add Bills</strong> above to choose one or more invoice files for <strong>{lockedVendor.name}</strong>.</div>
-                    </div>
-                  )}
-
-                  {smartUploadEntries.map(entry => {
-                    const ext = entry.extracted || {};
-                    const grns = entry.unbilledGrns || [];
-                    const selected = new Set(entry.selectedGrnIds || []);
-                    const selectedTotal = grns.filter(g => selected.has(g.id)).reduce((s, g) => s + g.totalAmount, 0);
-                    const taxable = Number(ext.taxable_amount) || 0;
-                    const grandTotal = Number(ext.total_amount) || 0;
-
-                    return (
-                      <div key={entry.id} className={`bg-white border overflow-hidden ${
-                        entry.duplicateOf?.isMatched ? 'border-violet-400 ring-1 ring-violet-200' :
-                        entry.duplicateOf ? 'border-fuchsia-400 ring-1 ring-fuchsia-200' :
-                        entry.status === 'extracted' && (entry.selectedGrnIds?.length || 0) === 0 ? 'border-amber-400 ring-1 ring-amber-200' :
-                        'border-slate-300'
-                      }`}>
-                        {/* Card header */}
-                        <div className="px-3 py-2 border-b border-slate-200 flex items-center gap-2 bg-slate-50">
-                          <FileText size={12} className="text-slate-500" />
-                          <div className="text-xs font-bold text-slate-700 truncate flex-1" title={entry.file.name}>{entry.file.name}</div>
-                          <div className="text-[10px] text-slate-400">{(entry.file.size / 1024).toFixed(1)} KB</div>
-                          <span className={
-                            'text-[9px] font-bold uppercase px-1.5 py-0.5 border ' +
-                            (entry.duplicateOf?.isMatched ? 'border-violet-400 bg-violet-50 text-violet-700' :
-                             entry.duplicateOf ? 'border-fuchsia-400 bg-fuchsia-50 text-fuchsia-700' :
-                             entry.status === 'pending' ? 'border-slate-300 bg-slate-100 text-slate-600' :
-                             entry.status === 'extracting' ? 'border-blue-300 bg-blue-50 text-blue-700 animate-pulse' :
-                             entry.status === 'extracted' ? 'border-emerald-400 bg-emerald-50 text-emerald-700' :
-                             entry.status === 'saving' ? 'border-amber-400 bg-amber-50 text-amber-700 animate-pulse' :
-                             entry.status === 'saved' ? 'border-emerald-500 bg-emerald-100 text-emerald-800' :
-                             'border-red-400 bg-red-50 text-red-700')
-                          }>
-                            {entry.duplicateOf?.isMatched ? `Already matched · INV-${entry.duplicateOf.invoiceNo}`
-                              : entry.duplicateOf ? `In system, no GRN · INV-${entry.duplicateOf.invoiceNo} (link now)`
-                              : entry.status === 'saved' && entry.savedInvoiceNo ? `Saved · INV-${entry.savedInvoiceNo}`
-                              : entry.status}
-                          </span>
-                          {!smartUploadBusy && !smartSavingAll && entry.status !== 'saved' && (
-                            <button onClick={() => removeSmartEntry(entry.id)} className="text-slate-400 hover:text-red-600" title="Remove">
-                              <X size={12} />
-                            </button>
-                          )}
-                        </div>
-
-                        {/* Card body */}
-                        {entry.status === 'error' && (
-                          <div className="px-3 py-2 text-[11px] text-red-700 bg-red-50">{entry.error || 'Something went wrong'}</div>
-                        )}
-
-                        {entry.status === 'extracting' && (
-                          <div className="px-3 py-3 text-[11px] text-blue-700">
-                            <Sparkles size={11} className="inline mr-1" /> AI is reading the bill...
-                          </div>
-                        )}
-
-                        {(entry.status === 'extracted' || entry.status === 'saving' || entry.status === 'saved') && (
-                          <div className="grid grid-cols-1 md:grid-cols-2 divide-x divide-slate-200 text-xs">
-                            {/* Extracted summary */}
-                            <div className="p-3 space-y-1">
-                              <div className="text-[9px] font-bold text-slate-400 uppercase tracking-widest mb-1">Extracted from bill</div>
-                              <div className="text-[10px] text-slate-600">
-                                <span className="text-slate-400">Inv: </span>
-                                <span className="font-mono font-bold">{ext.invoice_number || '--'}</span>
-                                <span className="text-slate-400 ml-2">Date: </span>
-                                <span className="font-mono">{ext.invoice_date || '--'}</span>
-                              </div>
-                              <div className="text-[10px] text-slate-700 pt-1">
-                                <span className="text-slate-400">Taxable: </span>
-                                <span className="font-mono font-bold">{taxable ? '₹' + taxable.toLocaleString('en-IN') : '--'}</span>
-                                <span className="text-slate-400 ml-2">GST: </span>
-                                <span className="font-mono">{ext.total_gst ? '₹' + Number(ext.total_gst).toLocaleString('en-IN') : '--'}</span>
-                              </div>
-                              <div className="text-[11px] text-slate-800 font-bold pt-0.5">
-                                Total: <span className="font-mono">{grandTotal ? '₹' + grandTotal.toLocaleString('en-IN') : '--'}</span>
-                                {ext.supply_type && <span className="ml-2 text-[9px] text-slate-500">({ext.supply_type})</span>}
-                              </div>
-                            </div>
-
-                            {/* GRN picker */}
-                            <div className="p-3">
-                              <div className="text-[9px] font-bold text-slate-400 uppercase tracking-widest mb-1 flex items-center justify-between">
-                                <span>Open GRNs of {entry.matchedVendor?.name || 'vendor'}</span>
-                                {grns.length > 0 && (
-                                  <span className="text-slate-500 font-mono normal-case">
-                                    {selected.size}/{grns.length} &middot; ₹{selectedTotal.toLocaleString('en-IN')}
-                                  </span>
-                                )}
-                              </div>
-                              {grns.length === 0 ? (
-                                <div className="text-[10px] text-amber-700">No unbilled GRNs &mdash; either none received or all already invoiced.</div>
-                              ) : (
-                                <div className="max-h-36 overflow-auto border border-slate-200">
-                                  {grns.map(g => {
-                                    const isSelected = selected.has(g.id);
-                                    const disabled = entry.status !== 'extracted';
-                                    return (
-                                      <label key={g.id} className={`flex items-start gap-2 px-2 py-1.5 border-b border-slate-100 last:border-b-0 cursor-pointer hover:bg-slate-50 ${isSelected ? 'bg-emerald-50' : ''}`}>
-                                        <input
-                                          type="checkbox"
-                                          className="mt-0.5"
-                                          checked={isSelected}
-                                          disabled={disabled}
-                                          onChange={() => {
-                                            const next = new Set(selected);
-                                            if (next.has(g.id)) next.delete(g.id); else next.add(g.id);
-                                            updateSmartEntry(entry.id, { selectedGrnIds: Array.from(next) });
-                                          }}
-                                        />
-                                        <div className="flex-1 min-w-0">
-                                          <div className="text-[11px] font-bold text-slate-700">
-                                            GRN #{g.grnNo}
-                                            {g.po && <span className="text-slate-400 font-normal ml-1.5">&middot; PO {g.po.poNo}</span>}
-                                            <span className="text-slate-400 font-normal ml-1.5">&middot; {new Date(g.grnDate).toLocaleDateString('en-IN', { day: '2-digit', month: 'short' })}</span>
-                                          </div>
-                                          <div className="text-[10px] text-slate-500 truncate" title={g.lines?.[0]?.description}>
-                                            {g.ticketNo ? `T-${String(g.ticketNo).padStart(4, '0')} · ` : ''}
-                                            {g.vehicleNo || ''}
-                                            {g.lines?.[0]?.description ? ` · ${g.lines[0].description}` : ''}
-                                          </div>
-                                        </div>
-                                        <div className="text-right flex-shrink-0">
-                                          <div className="text-[10px] font-mono font-bold text-slate-700">{g.totalQty.toLocaleString('en-IN')} {g.lines?.[0]?.unit || 'KG'}</div>
-                                          <div className="text-[10px] font-mono text-slate-600">{'₹' + g.totalAmount.toLocaleString('en-IN')}</div>
-                                        </div>
-                                      </label>
-                                    );
-                                  })}
-                                </div>
-                              )}
-                              {grns.length > 0 && taxable > 0 && selected.size > 0 && (
-                                <div className={`text-[10px] mt-1 ${Math.abs(selectedTotal - taxable) / Math.max(taxable, 1) < 0.05 ? 'text-emerald-700' : 'text-amber-700'}`}>
-                                  Selected {'₹' + selectedTotal.toLocaleString('en-IN')} vs taxable {'₹' + taxable.toLocaleString('en-IN')}
-                                  {Math.abs(selectedTotal - taxable) / Math.max(taxable, 1) < 0.05 ? ' ✓ matches' : ' — review'}
-                                </div>
-                              )}
-                              {/* AI suggestion (approximate match — needs explicit confirmation) */}
-                              {selected.size === 0 && entry.suggestedGrnIds && entry.suggestedGrnIds.length > 0 && (
-                                <div className="mt-2 border border-amber-300 bg-amber-50 px-2 py-1.5 flex items-start gap-2">
-                                  <Sparkles size={11} className="text-amber-600 mt-0.5" />
-                                  <div className="flex-1 min-w-0">
-                                    <div className="text-[10px] font-bold text-amber-800 uppercase tracking-widest">AI suggestion (not exact)</div>
-                                    <div className="text-[10px] text-amber-900 mt-0.5">{entry.suggestedReason || 'Approximate match'}</div>
-                                  </div>
-                                  <button
-                                    onClick={() => updateSmartEntry(entry.id, { selectedGrnIds: entry.suggestedGrnIds, suggestedGrnIds: undefined, suggestedReason: undefined })}
-                                    disabled={entry.status !== 'extracted'}
-                                    className="px-2 py-0.5 bg-amber-600 text-white text-[10px] font-bold uppercase hover:bg-amber-700 disabled:opacity-50"
-                                  >
-                                    Apply
-                                  </button>
-                                  <button
-                                    onClick={() => updateSmartEntry(entry.id, { suggestedGrnIds: undefined, suggestedReason: undefined })}
-                                    disabled={entry.status !== 'extracted'}
-                                    className="px-2 py-0.5 bg-white border border-slate-300 text-slate-600 text-[10px] font-bold uppercase hover:bg-slate-50 disabled:opacity-50"
-                                  >
-                                    Dismiss
-                                  </button>
-                                </div>
-                              )}
-                            </div>
-                          </div>
-                        )}
-                      </div>
-                    );
-                  })}
-                </div>
-
-                {/* Footer */}
-                <div className="px-4 py-3 border-t border-slate-300 bg-white flex items-center gap-2">
-                  <div className="text-[10px] text-slate-500">
-                    {!lockedVendor ? 'Pick a vendor to start.' :
-                     smartUploadEntries.length === 0 ? 'Add at least one bill.' :
-                     readyCount > 0 ? `${readyCount} bill${readyCount === 1 ? '' : 's'} ready to save.` :
-                     pendingCount > 0 ? `${pendingCount} pending — click Analyze All.` :
-                     'Pick at least one GRN per bill.'}
-                  </div>
-                  <div className="flex-1" />
-                  <button onClick={closeSmartUpload} disabled={smartUploadBusy || smartSavingAll} className="px-3 py-1.5 border border-slate-300 text-slate-600 text-[11px] font-bold uppercase tracking-widest hover:bg-slate-50 disabled:opacity-50">
-                    Close
-                  </button>
-                  <button
-                    onClick={runSmartBulk}
-                    disabled={pendingCount === 0 || smartUploadBusy || smartSavingAll}
-                    className="flex items-center gap-1.5 px-3 py-1.5 bg-purple-600 text-white text-[11px] font-bold uppercase tracking-widest hover:bg-purple-700 disabled:opacity-50"
-                  >
-                    {smartUploadBusy ? 'Analysing...' : <><Sparkles size={11} /> Analyze All ({pendingCount})</>}
-                  </button>
-                  <button
-                    onClick={saveAllSmartEntries}
-                    disabled={readyCount === 0 || smartSavingAll || smartUploadBusy}
-                    className="flex items-center gap-1.5 px-4 py-1.5 bg-emerald-600 text-white text-[11px] font-bold uppercase tracking-widest hover:bg-emerald-700 disabled:opacity-50"
-                  >
-                    {smartSavingAll ? 'Saving...' : `Save All (${readyCount})`}
-                  </button>
-                </div>
-              </div>
-            </div>
-          );
-        })()}
 
       </div>
     </div>
