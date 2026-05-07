@@ -4,9 +4,8 @@ import { useAuth } from '../../context/AuthContext';
 import WeighbridgeTrucksModal from '../../components/WeighbridgeTrucksModal';
 import VendorLedgerModal from '../../components/VendorLedgerModal';
 import PoLedgerPanel from '../../components/payments/PoLedgerPanel';
-import PayDialog from '../../components/payments/PayDialog';
-import InvoiceList from '../../components/payments/InvoiceList';
-import type { PoLedger } from '../../components/payments/types';
+import PaymentsTable from '../../components/payments/PaymentsTable';
+import type { PoLedger, PaymentRow } from '../../components/payments/types';
 
 interface Warehouse {
   id: string;
@@ -98,34 +97,6 @@ interface VendorOption {
   category?: string;
 }
 
-// Payments tab — one row per fuel PO, served by GET /api/fuel/payments.
-interface FuelPaymentRow {
-  id: string;
-  poNo: number;
-  poDate: string;
-  status: string;
-  dealType: string;
-  paymentTerms: string | null;
-  creditDays: number;
-  vendor: { id: string; name: string; phone: string | null; bankName?: string | null; bankAccount?: string | null; bankIfsc?: string | null };
-  fuelName: string;
-  fuelUnit: string;
-  totalReceived: number;
-  poTotal: number;
-  receivedValue: number;
-  totalPaid: number;
-  pendingBank: number;
-  pendingCash: number;
-  outstanding: number;
-  payableBasis: number;
-  basisSource: 'RECEIVED' | 'INVOICED' | 'PLANNED';
-  lastPaymentDate: string | null;
-  grnCount: number;
-  invoiceCount: number;
-  invoicedTotal: number;
-  isFullyPaid: boolean;
-}
-
 // Per-file plan inside the upload staging modal — what the operator wants
 // to record alongside this particular bill.
 interface FilePlanRow {
@@ -170,21 +141,23 @@ export default function FuelManagement() {
   const [expandedDeals, setExpandedDeals] = useState<Set<string>>(new Set());
   const [trucksModal, setTrucksModal] = useState<{ poId: string; title: string; subtitle?: string } | null>(null);
   const [ledgerModal, setLedgerModal] = useState<{ vendorId: string; vendorName: string } | null>(null);
-  const [payments, setPayments] = useState<FuelPaymentRow[]>([]);
-  const [paymentsLoading, setPaymentsLoading] = useState(false);
-  const [paymentsFilter, setPaymentsFilter] = useState<'all' | 'outstanding' | 'paid'>('outstanding');
-  const [paymentsSearch, setPaymentsSearch] = useState('');
-  const [payDialog, setPayDialog] = useState<{ poId: string; poNo: number; vendorId: string; vendorName: string; fuelName: string; outstanding: number } | null>(null);
+  // Upload-staging modal state — kept in FuelManagement because this surface
+  // is richer than what PaymentsTable provides (per-file metadata grid +
+  // optional payment block). PaymentsTable forwards its row "+ Upload" link
+  // to triggerInvoiceUpload via the onTriggerUpload prop.
   const [uploadingPoId, setUploadingPoId] = useState<string | null>(null);
-  const [invoicesModal, setInvoicesModal] = useState<{ poId: string; poNo: number; vendorName: string } | null>(null);
-  // Bumped after a staging-modal upload completes so an open InvoiceList
-  // remounts and re-fetches its invoice rows.
+  // Bumped after a staging-modal upload completes so any open InvoiceList
+  // (rendered inside PaymentsTable) remounts and re-fetches its rows.
   const [invoiceListNonce, setInvoiceListNonce] = useState(0);
+  // Bumped to force PaymentsTable to re-fetch its row list after a staging
+  // upload commits.
+  const [paymentsRefreshKey, setPaymentsRefreshKey] = useState(0);
   const [uploadStaging, setUploadStaging] = useState<UploadStagingState | null>(null);
   const [stagingLedger, setStagingLedger] = useState<PoLedger | null>(null);
   const [stagingLedgerLoading, setStagingLedgerLoading] = useState(false);
   const invoiceFileInputRef = React.useRef<HTMLInputElement | null>(null);
   const pendingUploadPoIdRef = React.useRef<string | null>(null);
+  const pendingUploadRowRef = React.useRef<PaymentRow | null>(null);
   const [expandedFuels, setExpandedFuels] = useState<Set<string>>(new Set());
   const [dealForm, setDealForm] = useState({ vendorId: '', vendorName: '', vendorPhone: '', fuelItemId: '', rate: 0, remarks: '' });
   const [date, setDate] = useState(new Date().toISOString().split('T')[0]);
@@ -234,22 +207,6 @@ export default function FuelManagement() {
     setLoading(true);
     Promise.all([fetchMaster(), fetchSummary(), fetchConsumption(), fetchDeals()]).finally(() => setLoading(false));
   }, [fetchMaster, fetchSummary, fetchConsumption, fetchDeals]);
-
-  const fetchPayments = useCallback(async () => {
-    setPaymentsLoading(true);
-    try {
-      const res = await api.get<FuelPaymentRow[]>('/fuel/payments');
-      setPayments(res.data);
-    } catch (err) {
-      console.error(err);
-    } finally {
-      setPaymentsLoading(false);
-    }
-  }, []);
-
-  useEffect(() => {
-    if (tab === 'payments') fetchPayments();
-  }, [tab, fetchPayments]);
 
   // Group deals by fuel type for fuel-centric view
   interface FuelDealLine {
@@ -512,9 +469,10 @@ export default function FuelManagement() {
 
   const fmtCurrency = (n: number) => n === 0 ? '--' : '₹' + n.toLocaleString('en-IN', { maximumFractionDigits: 0 });
 
-  const triggerInvoiceUpload = (poId: string) => {
+  const triggerInvoiceUpload = (po: PaymentRow) => {
     if (uploadingPoId) return;
-    pendingUploadPoIdRef.current = poId;
+    pendingUploadPoIdRef.current = po.id;
+    pendingUploadRowRef.current = po;
     if (invoiceFileInputRef.current) {
       invoiceFileInputRef.current.value = '';
       invoiceFileInputRef.current.click();
@@ -534,7 +492,9 @@ export default function FuelManagement() {
   const handleInvoiceFileSelected = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const fileList = e.target.files;
     const poId = pendingUploadPoIdRef.current;
+    const row = pendingUploadRowRef.current;
     pendingUploadPoIdRef.current = null;
+    pendingUploadRowRef.current = null;
     if (!fileList || fileList.length === 0 || !poId) return;
     const files = Array.from(fileList);
     const tooBig = files.find(f => f.size > 10 * 1024 * 1024);
@@ -542,7 +502,6 @@ export default function FuelManagement() {
       alert(`"${tooBig.name}" is over the 10 MB limit. Pick smaller files.`);
       return;
     }
-    const row = payments.find(p => p.id === poId);
     const today = new Date().toISOString().slice(0, 10);
     setUploadStaging({
       poId,
@@ -616,11 +575,11 @@ export default function FuelManagement() {
       }
       setUploadStaging(null);
       setStagingLedger(null);
-      await fetchPayments();
-      if (invoicesModal && invoicesModal.poId === uploadStaging.poId) {
-        // Force the open InvoiceList to remount + refetch.
-        setInvoiceListNonce((n) => n + 1);
-      }
+      // Trigger a re-fetch of the row list inside PaymentsTable, plus bump
+      // the invoice-list nonce so an open InvoiceList modal there remounts
+      // and refetches.
+      setPaymentsRefreshKey((k) => k + 1);
+      setInvoiceListNonce((n) => n + 1);
     } catch (err: unknown) {
       const msg = (err as { response?: { data?: { error?: string } } })?.response?.data?.error || 'Upload failed';
       alert(msg);
@@ -1141,220 +1100,27 @@ export default function FuelManagement() {
           </div>
         )}
         {/* ═══ TAB: PAYMENTS ═══ */}
-        {tab === 'payments' && (() => {
-          const q = paymentsSearch.trim().toLowerCase();
-          const matchesSearch = (p: FuelPaymentRow) => {
-            if (!q) return true;
-            return (
-              p.vendor.name.toLowerCase().includes(q) ||
-              `po-${p.poNo}`.includes(q) ||
-              String(p.poNo).includes(q) ||
-              p.fuelName.toLowerCase().includes(q) ||
-              (p.vendor.phone || '').toLowerCase().includes(q)
-            );
-          };
-          const filtered = payments.filter(p => {
-            if (!matchesSearch(p)) return false;
-            if (paymentsFilter === 'outstanding') return p.outstanding > 0.01 || p.pendingBank > 0 || p.pendingCash > 0;
-            if (paymentsFilter === 'paid') return p.outstanding <= 0.01 && p.pendingBank <= 0 && p.pendingCash <= 0 && p.totalPaid > 0;
-            return true;
-          });
-          const sumPoTotal = filtered.reduce((s, p) => s + p.poTotal, 0);
-          const sumReceived = filtered.reduce((s, p) => s + p.receivedValue, 0);
-          const sumPaid = filtered.reduce((s, p) => s + p.totalPaid, 0);
-          const sumPendingBank = filtered.reduce((s, p) => s + p.pendingBank, 0);
-          const sumPendingCash = filtered.reduce((s, p) => s + p.pendingCash, 0);
-          const sumOutstanding = filtered.reduce((s, p) => s + p.outstanding, 0);
-          const vendorsWithDues = new Set(filtered.filter(p => p.outstanding > 0.01).map(p => p.vendor.id)).size;
-          return (
-            <div className="-mx-3 md:-mx-6 border-x border-b border-slate-300 overflow-hidden bg-white">
-              {/* Filter strip */}
-              <div className="bg-slate-50 border-b border-slate-300 px-4 py-2 flex items-center justify-between gap-3 flex-wrap">
-                <div className="flex gap-2 text-[10px] font-bold uppercase tracking-widest">
-                  <button onClick={() => setPaymentsFilter('outstanding')} className={`px-3 py-1 border ${paymentsFilter === 'outstanding' ? 'bg-red-600 text-white border-red-600' : 'bg-white text-slate-600 border-slate-300 hover:border-slate-400'}`}>
-                    Outstanding {payments.filter(p => p.outstanding > 0.01 || p.pendingBank > 0 || p.pendingCash > 0).length > 0 && <span className="ml-1.5 opacity-80">({payments.filter(p => p.outstanding > 0.01 || p.pendingBank > 0 || p.pendingCash > 0).length})</span>}
-                  </button>
-                  <button onClick={() => setPaymentsFilter('paid')} className={`px-3 py-1 border ${paymentsFilter === 'paid' ? 'bg-emerald-600 text-white border-emerald-600' : 'bg-white text-slate-600 border-slate-300 hover:border-slate-400'}`}>
-                    Fully Paid
-                  </button>
-                  <button onClick={() => setPaymentsFilter('all')} className={`px-3 py-1 border ${paymentsFilter === 'all' ? 'bg-slate-800 text-white border-slate-800' : 'bg-white text-slate-600 border-slate-300 hover:border-slate-400'}`}>
-                    All Fuel POs
-                  </button>
-                </div>
-                <div className="flex items-center gap-2 flex-1 max-w-md">
-                  <div className="relative flex-1">
-                    <input
-                      type="search"
-                      value={paymentsSearch}
-                      onChange={(e) => setPaymentsSearch(e.target.value)}
-                      placeholder="Search vendor, PO#, fuel, phone…"
-                      className="w-full border border-slate-300 bg-white pl-7 pr-2 py-1 text-xs focus:outline-none focus:border-slate-500"
-                    />
-                    <span className="absolute left-2 top-1/2 -translate-y-1/2 text-slate-400 text-xs">⌕</span>
-                    {paymentsSearch && (
-                      <button
-                        onClick={() => setPaymentsSearch('')}
-                        className="absolute right-1 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-700 text-xs px-1"
-                        aria-label="Clear search">
-                        ×
-                      </button>
-                    )}
-                  </div>
-                  <button onClick={fetchPayments} disabled={paymentsLoading} className="px-3 py-1 border border-slate-300 bg-white text-slate-600 text-[10px] font-bold uppercase tracking-widest hover:border-slate-400 disabled:opacity-50 whitespace-nowrap">
-                    {paymentsLoading ? 'Loading…' : 'Refresh'}
-                  </button>
-                </div>
-              </div>
-              {/* KPI strip — payments-specific */}
-              <div className="grid grid-cols-5 gap-0 border-b border-slate-300">
-                <div className="px-4 py-3 border-r border-slate-300 border-l-4 border-l-blue-500">
-                  <div className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Fuel POs</div>
-                  <div className="text-xl font-bold text-slate-800 mt-1 font-mono tabular-nums">{filtered.length}</div>
-                </div>
-                <div className="px-4 py-3 border-r border-slate-300 border-l-4 border-l-slate-500">
-                  <div className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Received Value</div>
-                  <div className="text-xl font-bold text-slate-800 mt-1 font-mono tabular-nums">{fmtCurrency(sumReceived)}</div>
-                </div>
-                <div className="px-4 py-3 border-r border-slate-300 border-l-4 border-l-green-500">
-                  <div className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Paid (Confirmed)</div>
-                  <div className="text-xl font-bold text-emerald-700 mt-1 font-mono tabular-nums">{fmtCurrency(sumPaid)}</div>
-                </div>
-                <div className="px-4 py-3 border-r border-slate-300 border-l-4 border-l-amber-500">
-                  <div className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">In-Flight (Bank+Cash)</div>
-                  <div className="text-xl font-bold text-amber-700 mt-1 font-mono tabular-nums">{fmtCurrency(sumPendingBank + sumPendingCash)}</div>
-                </div>
-                <div className="px-4 py-3 border-l-4 border-l-red-600">
-                  <div className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Outstanding · {vendorsWithDues} Vendor{vendorsWithDues !== 1 ? 's' : ''}</div>
-                  <div className="text-xl font-bold text-red-700 mt-1 font-mono tabular-nums">{fmtCurrency(sumOutstanding)}</div>
-                </div>
-              </div>
-              {/* Table */}
-              {paymentsLoading && payments.length === 0 ? (
-                <div className="px-3 py-8 text-center text-xs text-slate-400 uppercase tracking-widest">Loading payments…</div>
-              ) : filtered.length === 0 ? (
-                <div className="px-3 py-8 text-center text-xs text-slate-400 uppercase tracking-widest">
-                  {paymentsFilter === 'outstanding' ? 'No outstanding fuel payments — all caught up.' : paymentsFilter === 'paid' ? 'No fully-paid fuel POs yet.' : 'No fuel POs found.'}
-                </div>
-              ) : (
-                <table className="w-full text-xs">
-                  <thead>
-                    <tr className="bg-slate-800 text-white">
-                      <th className="text-left px-3 py-1.5 font-semibold text-[10px] uppercase tracking-widest border-r border-slate-700">PO#</th>
-                      <th className="text-left px-3 py-1.5 font-semibold text-[10px] uppercase tracking-widest border-r border-slate-700">Vendor</th>
-                      <th className="text-left px-3 py-1.5 font-semibold text-[10px] uppercase tracking-widest border-r border-slate-700">Fuel</th>
-                      <th className="text-right px-3 py-1.5 font-semibold text-[10px] uppercase tracking-widest border-r border-slate-700">PO Total</th>
-                      <th className="text-right px-3 py-1.5 font-semibold text-[10px] uppercase tracking-widest border-r border-slate-700" title="Received value · Billed (when no GRN) · Planned (when no GRN + no invoices)">Payable</th>
-                      <th className="text-right px-3 py-1.5 font-semibold text-[10px] uppercase tracking-widest border-r border-slate-700">Paid</th>
-                      <th className="text-right px-3 py-1.5 font-semibold text-[10px] uppercase tracking-widest border-r border-slate-700">In-Flight</th>
-                      <th className="text-right px-3 py-1.5 font-semibold text-[10px] uppercase tracking-widest border-r border-slate-700">Outstanding</th>
-                      <th className="text-left px-3 py-1.5 font-semibold text-[10px] uppercase tracking-widest border-r border-slate-700">Last Pmt</th>
-                      <th className="text-center px-3 py-1.5 font-semibold text-[10px] uppercase tracking-widest border-r border-slate-700">Invoices</th>
-                      <th className="text-left px-3 py-1.5 font-semibold text-[10px] uppercase tracking-widest">Actions</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {filtered.map((p, i) => {
-                      const inFlight = p.pendingBank + p.pendingCash;
-                      return (
-                        <tr key={p.id} className={`border-b border-slate-100 ${i % 2 ? 'bg-slate-50/70' : ''}`}>
-                          <td className="px-3 py-1.5 font-mono text-slate-500 border-r border-slate-100">PO-{p.poNo}</td>
-                          <td className="px-3 py-1.5 border-r border-slate-100">
-                            <button
-                              onClick={() => setLedgerModal({ vendorId: p.vendor.id, vendorName: p.vendor.name })}
-                              title="Open full vendor ledger across all POs + payments"
-                              className="font-semibold text-slate-800 hover:text-indigo-700 hover:underline text-left">
-                              {p.vendor.name}
-                            </button>
-                            {p.vendor.phone && <div className="text-[9px] text-slate-400">{p.vendor.phone}</div>}
-                          </td>
-                          <td className="px-3 py-1.5 border-r border-slate-100">
-                            <div className="text-slate-700">{p.fuelName}</div>
-                            <div className="text-[9px] text-slate-400 font-mono tabular-nums">{fmtNum(p.totalReceived)} {p.fuelUnit} · {p.grnCount} GRN{p.grnCount !== 1 ? 's' : ''}</div>
-                          </td>
-                          <td className="px-3 py-1.5 text-right font-mono tabular-nums border-r border-slate-100">{fmtCurrency(p.poTotal)}</td>
-                          <td className="px-3 py-1.5 text-right font-mono tabular-nums font-bold border-r border-slate-100">
-                            {p.basisSource === 'RECEIVED' ? (
-                              fmtCurrency(p.receivedValue)
-                            ) : p.basisSource === 'INVOICED' ? (
-                              <>
-                                <div title="No GRNs — basis is the invoiced total">{fmtCurrency(p.invoicedTotal)}</div>
-                                <div className="text-[9px] text-indigo-500 font-bold uppercase tracking-widest">Billed</div>
-                              </>
-                            ) : (
-                              <>
-                                <div className="text-slate-400" title="No GRNs and no invoices — using planned PO total">{fmtCurrency(p.poTotal)}</div>
-                                <div className="text-[9px] text-amber-600 font-bold uppercase tracking-widest">Planned</div>
-                              </>
-                            )}
-                          </td>
-                          <td className="px-3 py-1.5 text-right font-mono tabular-nums text-green-700 border-r border-slate-100">{fmtCurrency(p.totalPaid)}</td>
-                          <td className={`px-3 py-1.5 text-right font-mono tabular-nums border-r border-slate-100 ${inFlight > 0 ? 'text-amber-700' : 'text-slate-400'}`}>{fmtCurrency(inFlight)}</td>
-                          <td className={`px-3 py-1.5 text-right font-mono tabular-nums font-bold border-r border-slate-100 ${p.outstanding > 0.01 ? 'text-red-600' : p.totalPaid > 0 ? 'text-emerald-700' : 'text-slate-400'}`}>
-                            {p.outstanding > 0.01 ? fmtCurrency(p.outstanding) : p.totalPaid > 0 ? '✓ Paid' : '—'}
-                          </td>
-                          <td className="px-3 py-1.5 border-r border-slate-100 text-[10px] text-slate-500 font-mono">
-                            {p.lastPaymentDate ? new Date(p.lastPaymentDate).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: '2-digit' }) : '—'}
-                          </td>
-                          <td className="px-3 py-1.5 border-r border-slate-100 text-center">
-                            <div className="flex items-center justify-center gap-1.5">
-                              <button
-                                onClick={() => setInvoicesModal({ poId: p.id, poNo: p.poNo, vendorName: p.vendor.name })}
-                                disabled={p.invoiceCount === 0}
-                                className={`text-[10px] font-bold font-mono tabular-nums px-1.5 py-0.5 ${p.invoiceCount > 0 ? 'bg-indigo-100 text-indigo-700 hover:bg-indigo-200 cursor-pointer' : 'text-slate-300 cursor-not-allowed'}`}
-                                title={p.invoiceCount > 0 ? `${p.invoiceCount} invoice${p.invoiceCount === 1 ? '' : 's'} attached · ${fmtCurrency(p.invoicedTotal)} billed` : 'No invoices yet'}>
-                                {p.invoiceCount}
-                              </button>
-                              <button
-                                onClick={() => triggerInvoiceUpload(p.id)}
-                                disabled={uploadingPoId === p.id}
-                                title="Upload invoices (PDF or image, max 10 MB each — pick multiple)"
-                                className="text-[10px] font-bold uppercase tracking-widest text-slate-500 hover:text-blue-600 disabled:opacity-50">
-                                {uploadingPoId === p.id ? '…' : '+ Upload'}
-                              </button>
-                            </div>
-                          </td>
-                          <td className="px-3 py-1.5">
-                            <div className="flex gap-1 flex-wrap">
-                              {p.outstanding > 0.01 && (
-                                <button
-                                  onClick={() => setPayDialog({
-                                    poId: p.id, poNo: p.poNo, vendorId: p.vendor.id, vendorName: p.vendor.name, fuelName: p.fuelName,
-                                    outstanding: p.outstanding,
-                                  })}
-                                  className="text-[10px] bg-blue-600 text-white px-2 py-1 font-bold uppercase tracking-widest hover:bg-blue-700">
-                                  Pay
-                                </button>
-                              )}
-                              {p.grnCount > 0 && (
-                                <button onClick={() => setTrucksModal({ poId: p.id, title: `PO-${p.poNo}`, subtitle: `${p.vendor.name} · ${p.fuelName}` })} className="text-[10px] text-purple-600 font-semibold uppercase hover:underline">
-                                  Trucks
-                                </button>
-                              )}
-                              <button onClick={() => setLedgerModal({ vendorId: p.vendor.id, vendorName: p.vendor.name })} className="text-[10px] text-indigo-600 font-semibold uppercase hover:underline">
-                                Ledger
-                              </button>
-                            </div>
-                          </td>
-                        </tr>
-                      );
-                    })}
-                  </tbody>
-                  <tfoot>
-                    <tr className="bg-slate-800 text-white">
-                      <td colSpan={3} className="px-3 py-2 text-[10px] font-bold uppercase tracking-widest">Totals · {filtered.length} PO{filtered.length !== 1 ? 's' : ''}</td>
-                      <td className="px-3 py-2 text-right font-mono tabular-nums font-bold">{fmtCurrency(sumPoTotal)}</td>
-                      <td className="px-3 py-2 text-right font-mono tabular-nums font-bold">{fmtCurrency(sumReceived)}</td>
-                      <td className="px-3 py-2 text-right font-mono tabular-nums text-green-300">{fmtCurrency(sumPaid)}</td>
-                      <td className="px-3 py-2 text-right font-mono tabular-nums text-amber-300">{fmtCurrency(sumPendingBank + sumPendingCash)}</td>
-                      <td className="px-3 py-2 text-right font-mono tabular-nums font-bold text-red-300">{fmtCurrency(sumOutstanding)}</td>
-                      <td colSpan={3}></td>
-                    </tr>
-                  </tfoot>
-                </table>
-              )}
-            </div>
-          );
-        })()}
+        {tab === 'payments' && (
+          <PaymentsTable
+            title="Fuel Payments"
+            defaultCategory="FUEL"
+            invoiceUploadCategories="FUEL"
+            paySurface="fuel"
+            renderToolbar={false}
+            variant="fuel"
+            posLabel="Fuel POs"
+            allStatusLabel="All Fuel POs"
+            emptyCopy={{
+              outstanding: 'No outstanding fuel payments — all caught up.',
+              paid: 'No fully-paid fuel POs yet.',
+              all: 'No fuel POs found.',
+            }}
+            onTriggerUpload={triggerInvoiceUpload}
+            uploadingPoId={uploadingPoId}
+            invoiceListNonce={invoiceListNonce}
+            refreshKey={paymentsRefreshKey}
+          />
+        )}
       </div>
 
       {/* ═══ ADD/EDIT MODAL ═══ */}
@@ -1623,19 +1389,6 @@ export default function FuelManagement() {
         onChange={handleInvoiceFileSelected}
       />
 
-      {invoicesModal && (
-        <InvoiceList
-          key={`invoices-${invoicesModal.poId}-${invoiceListNonce}`}
-          poId={invoicesModal.poId}
-          poNo={invoicesModal.poNo}
-          vendorName={invoicesModal.vendorName}
-          fmtCurrency={fmtCurrency}
-          onClose={() => setInvoicesModal(null)}
-          onChanged={() => { fetchPayments(); }}
-          onTriggerUpload={() => triggerInvoiceUpload(invoicesModal.poId)}
-        />
-      )}
-
       {uploadStaging && (
         <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50">
           <div className="bg-white w-[1080px] max-w-[97vw] max-h-[94vh] shadow-2xl flex flex-col">
@@ -1761,22 +1514,6 @@ export default function FuelManagement() {
         </div>
       )}
 
-      {payDialog && (
-        <PayDialog
-          poId={payDialog.poId}
-          poNo={payDialog.poNo}
-          vendorName={payDialog.vendorName}
-          subtitle={payDialog.fuelName}
-          outstanding={payDialog.outstanding}
-          fmtCurrency={fmtCurrency}
-          onClose={() => setPayDialog(null)}
-          onPaid={() => {
-            setPayDialog(null);
-            void Promise.all([fetchPayments(), fetchDeals()]);
-          }}
-          onOpenVendorLedger={() => setLedgerModal({ vendorId: payDialog.vendorId, vendorName: payDialog.vendorName })}
-        />
-      )}
     </div>
   );
 }
