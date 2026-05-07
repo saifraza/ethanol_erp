@@ -265,6 +265,10 @@ router.get('/', asyncHandler(async (req: AuthRequest, res: Response) => {
         status: true,
         division: true,
         createdAt: true,
+        // manpowerRateCard surfaces in the LaborWorkers form so admins
+        // don't re-type rates per worker -- they're derived from the
+        // selected WO's rate card by skill category.
+        manpowerRateCard: true,
         _count: { select: { lines: true, bills: true, progress: true } },
       },
     }),
