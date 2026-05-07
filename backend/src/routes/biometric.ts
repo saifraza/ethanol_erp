@@ -254,6 +254,16 @@ function safeJsonParse(s: string): unknown {
 router.post('/devices/:id/sync-time', authorize('ADMIN'), asyncHandler(async (req: AuthRequest, res: Response) => {
   const d = await prisma.biometricDevice.findUnique({ where: { id: req.params.id } });
   if (!d) throw new NotFoundError('BiometricDevice', req.params.id);
+
+  if (d.factoryManaged) {
+    const job = await prisma.biometricJob.create({
+      data: {
+        type: 'SYNC_TIME', deviceId: d.id, requestedBy: req.user?.id ?? null,
+        // No payload → factory uses its own clock as the canonical time.
+      },
+    });
+    return res.status(202).json({ ok: true, jobId: job.id, mode: 'factory' });
+  }
   const result = await bridge.syncTime(toBridgeDevice(d));
   res.json(result);
 }));
