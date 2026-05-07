@@ -160,8 +160,55 @@ function DevicesView({ devices, loading, reload, edit }: { devices: BiometricDev
     } finally { setTesting(null); }
   }
 
+  // Health summary across all devices — drives the panel above the table.
+  const factoryDevices = devices.filter(d => d.factoryManaged);
+  const cloudDevices = devices.filter(d => !d.factoryManaged && d.active);
+  const latestFactorySync = factoryDevices.reduce<Date | null>((acc, d) => {
+    if (!d.lastFactorySyncAt) return acc;
+    const t = new Date(d.lastFactorySyncAt);
+    return !acc || t > acc ? t : acc;
+  }, null);
+  const factoryStaleMs = latestFactorySync ? Date.now() - latestFactorySync.getTime() : null;
+  const factoryStatus =
+    factoryDevices.length === 0 ? null
+    : !latestFactorySync ? 'WAITING'
+    : factoryStaleMs! < 5 * 60_000 ? 'OK'
+    : factoryStaleMs! < 30 * 60_000 ? 'STALE'
+    : 'SILENT';
+
   return (
     <div>
+      {factoryDevices.length > 0 && (
+        <div className="bg-violet-50 border-x border-t border-violet-200 px-4 py-2 -mx-3 md:-mx-6 flex items-center gap-3 text-[11px]">
+          <span className="text-[9px] font-bold uppercase tracking-widest px-1.5 py-0.5 border border-violet-400 text-violet-700 bg-white">Factory-led</span>
+          <span className="text-slate-700">
+            <span className="font-mono font-semibold">{factoryDevices.length}</span> device{factoryDevices.length === 1 ? '' : 's'} routed via factory-server
+            {cloudDevices.length > 0 && <span className="text-slate-500"> · {cloudDevices.length} cloud-led</span>}
+          </span>
+          <div className="flex-1" />
+          {factoryStatus === 'OK' && (
+            <span className="text-emerald-700 font-medium">
+              <span className="inline-block w-1.5 h-1.5 rounded-full bg-emerald-500 mr-1" />
+              Last batch {Math.round(factoryStaleMs! / 1000)}s ago
+            </span>
+          )}
+          {factoryStatus === 'STALE' && (
+            <span className="text-amber-700 font-medium" title="Factory hasn't synced in >5 min — investigate">
+              <span className="inline-block w-1.5 h-1.5 rounded-full bg-amber-500 mr-1" />
+              Last batch {Math.round(factoryStaleMs! / 60_000)}m ago
+            </span>
+          )}
+          {factoryStatus === 'SILENT' && (
+            <span className="text-rose-700 font-medium" title="Factory silent >30 min — cloud will resume pulling automatically">
+              <span className="inline-block w-1.5 h-1.5 rounded-full bg-rose-500 mr-1" />
+              Silent {Math.round(factoryStaleMs! / 60_000)}m — cloud takeover active
+            </span>
+          )}
+          {factoryStatus === 'WAITING' && (
+            <span className="text-slate-500 italic">Waiting for first factory sync…</span>
+          )}
+        </div>
+      )}
       <div className="bg-slate-100 border-x border-b border-slate-300 px-4 py-2 -mx-3 md:-mx-6 flex items-center gap-3">
         <span className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">Configured devices on plant LAN</span>
         <div className="flex-1" />

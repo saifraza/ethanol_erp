@@ -243,11 +243,21 @@ async function autoPush(d: CachedDevice): Promise<void> {
   }
 }
 
-export function getBiometricSchedulerStatus() {
+export async function getBiometricSchedulerStatus() {
+  // Queue depth = how many punches haven't reached the cloud yet. Healthy
+  // factory-server should see this drain to 0 within 1-2 sync cycles.
+  const [pending, total, devices] = await Promise.all([
+    prisma.attendancePunch.count({ where: { cloudSynced: false } }).catch(() => 0),
+    prisma.attendancePunch.count().catch(() => 0),
+    prisma.cachedBiometricDevice.count().catch(() => 0),
+  ]);
   return {
     started: _started,
     lastTickAt: _lastTickAt?.toISOString() ?? null,
     lastError: _lastError,
     inFlight: inFlight.size,
+    queueDepth: pending,
+    totalPunches: total,
+    devicesCount: devices,
   };
 }

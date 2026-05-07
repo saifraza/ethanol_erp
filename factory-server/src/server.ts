@@ -34,7 +34,10 @@ app.use('/snapshots', express.static(path.join(__dirname, '..', 'data', 'snapsho
 
 // Health check
 app.get('/api/health', async (_req, res) => {
-  const cameras = await getCameraStatus().catch(() => []);
+  const [cameras, biometric] = await Promise.all([
+    getCameraStatus().catch(() => []),
+    getBiometricSchedulerStatus().catch(() => null),
+  ]);
   res.json({
     status: 'ok',
     server: 'MSPIL Factory Hub',
@@ -43,7 +46,7 @@ app.get('/api/health', async (_req, res) => {
     pcs: getAllPCStatus(),
     cameras,
     sync: getSyncWorkerStatus(),
-    biometric: getBiometricSchedulerStatus(),
+    biometric,
   });
 });
 
