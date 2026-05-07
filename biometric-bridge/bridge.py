@@ -475,6 +475,25 @@ def users_rename(body: RenameUsersReq, x_bridge_key: Optional[str] = Header(None
         by_user_id: dict[str, ZKUser] = {str(u.user_id): u for u in users}
         used_uids: set[int] = {u.uid for u in users}
 
+        # Pull EVERY enrolled fingerprint template up-front in one call.
+        # First version of this endpoint did 10 conn.get_user_template() probes
+        # PER user (0..9), which is ~10 UDP round-trips × 540 users = ~5400
+        # round-trips just to discover that most users have 0 templates. With
+        # eSSL devices that's enough load to drive 50%+ failure rates per chunk.
+        # get_templates() returns the full list in one shot; we slice it locally.
+        templates_by_uid: dict[int, list[tuple[int, object]]] = {}
+        try:
+            for t in (conn.get_templates() or []):
+                tu = getattr(t, "uid", None)
+                tf = getattr(t, "fid", None)
+                tv = getattr(t, "valid", 1)
+                if tu is None or tf is None or not tv:
+                    continue
+                templates_by_uid.setdefault(int(tu), []).append((int(tf), t))
+        except Exception:
+            # Fallback handled per-pair (slower but recoverable)
+            templates_by_uid = None  # type: ignore[assignment]
+
         def alloc_uid() -> int:
             i = 1
             while i in used_uids:
@@ -482,7 +501,23 @@ def users_rename(body: RenameUsersReq, x_bridge_key: Optional[str] = Header(None
             used_uids.add(i)
             return i
 
+        def get_pulled_templates(uid: int) -> list[tuple[int, object]]:
+            if templates_by_uid is not None:
+                return list(templates_by_uid.get(uid, []))
+            # Fallback: per-finger probe
+            pulled: list[tuple[int, object]] = []
+            for finger in range(10):
+                try:
+                    t = conn.get_user_template(uid=uid, temp_id=finger)
+                    if t:
+                        pulled.append((finger, t))
+                except Exception:
+                    pass
+            return pulled
+
         def has_any_template(uid: int) -> bool:
+            if templates_by_uid is not None:
+                return bool(templates_by_uid.get(uid))
             for finger in range(10):
                 try:
                     if conn.get_user_template(uid=uid, temp_id=finger):
@@ -506,21 +541,46 @@ def users_rename(body: RenameUsersReq, x_bridge_key: Optional[str] = Header(None
                     results.append({"old": oid, "new": nid, "status": "old_not_found"})
                     continue
 
-                # 1. Pull all templates from the old user
-                pulled: list[tuple[int, object]] = []
-                for finger in range(10):
-                    try:
-                        t = conn.get_user_template(uid=old_user.uid, temp_id=finger)
-                        if t:
-                            pulled.append((finger, t))
-                    except Exception:
-                        pass
+                # 1. Pull templates from old user (now cached, no round-trips)
+                pulled = get_pulled_templates(old_user.uid)
 
                 # 2. Resolve target user (create if needed)
                 if new_user is not None:
-                    # Refuse to clobber an existing enrolled user
-                    if has_any_template(new_user.uid):
-                        results.append({"old": oid, "new": nid, "status": "new_already_has_templates"})
+                    # If the new user already has templates AND the old user
+                    # has none, we're looking at a half-finished previous run:
+                    # templates were copied but the old user wasn't deleted.
+                    # Complete it by deleting the old user — the rename is
+                    # effectively already done.
+                    new_has = has_any_template(new_user.uid)
+                    old_has = has_any_template(old_user.uid)
+                    if new_has and not old_has:
+                        try:
+                            conn.delete_user(uid=old_user.uid)
+                            used_uids.discard(old_user.uid)
+                            by_user_id.pop(oid, None)
+                            if templates_by_uid is not None:
+                                templates_by_uid.pop(old_user.uid, None)
+                            results.append({"old": oid, "new": nid, "status": "ok_recovered"})
+                        except Exception as e:
+                            results.append({"old": oid, "new": nid, "status": "delete_old_failed_in_recovery", "error": f"{type(e).__name__}: {e}"})
+                        continue
+                    if new_has and old_has:
+                        # Both have templates. The most likely cause is a prior
+                        # rename run that copied templates from old to new, then
+                        # was killed before deleting old, AND a worker scanned
+                        # afterwards (so old got punches that re-confirmed its
+                        # templates). New is the migration target — trust it,
+                        # delete old. The fingerprint is the same person either
+                        # way (it was copied from old in the first place).
+                        try:
+                            conn.delete_user(uid=old_user.uid)
+                            used_uids.discard(old_user.uid)
+                            by_user_id.pop(oid, None)
+                            if templates_by_uid is not None:
+                                templates_by_uid.pop(old_user.uid, None)
+                            results.append({"old": oid, "new": nid, "status": "ok_resolved_conflict"})
+                        except Exception as e:
+                            results.append({"old": oid, "new": nid, "status": "delete_old_failed_in_conflict", "error": f"{type(e).__name__}: {e}"})
                         continue
                     target_user = new_user
                 else:
@@ -542,11 +602,18 @@ def users_rename(body: RenameUsersReq, x_bridge_key: Optional[str] = Header(None
                     except Exception as e:
                         results.append({"old": oid, "new": nid, "status": "create_new_failed", "error": f"{type(e).__name__}: {e}"})
                         continue
-                    refreshed = list(conn.get_users() or [])
-                    target_user = next((u for u in refreshed if str(u.user_id) == nid), None)
-                    if not target_user:
-                        results.append({"old": oid, "new": nid, "status": "create_new_not_visible"})
-                        continue
+                    # No need to re-fetch users — we just told the device the uid,
+                    # and save_user_template only needs the uid and a User-shaped
+                    # object. Saves one full get_users() round-trip per pair.
+                    target_user = ZKUser(
+                        uid=new_uid,
+                        name=safe_name,
+                        privilege=int(old_user.privilege or 0),
+                        password=str(old_user.password or ""),
+                        group_id=str(old_user.group_id or ""),
+                        user_id=nid,
+                        card=int(old_user.card or 0),
+                    )
                     by_user_id[nid] = target_user
 
                 # 3. Save templates under the new user
@@ -573,6 +640,8 @@ def users_rename(body: RenameUsersReq, x_bridge_key: Optional[str] = Header(None
                     conn.delete_user(uid=old_user.uid)
                     used_uids.discard(old_user.uid)
                     by_user_id.pop(oid, None)
+                    if templates_by_uid is not None:
+                        templates_by_uid.pop(old_user.uid, None)
                     results.append({"old": oid, "new": nid, "status": "ok", "fingers": copied})
                 except Exception as e:
                     results.append({"old": oid, "new": nid, "status": "delete_old_failed", "copied": copied, "error": f"{type(e).__name__}: {e}"})
