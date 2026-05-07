@@ -115,7 +115,23 @@ interface FuelPaymentRow {
   outstanding: number;
   lastPaymentDate: string | null;
   grnCount: number;
+  invoiceCount: number;
+  invoicedTotal: number;
   isFullyPaid: boolean;
+}
+
+interface FuelInvoiceRow {
+  id: string;
+  vendorInvNo: string | null;
+  vendorInvDate: string | null;
+  invoiceDate: string;
+  totalAmount: number;
+  paidAmount: number;
+  status: string;
+  filePath: string | null;
+  originalFileName: string | null;
+  remarks: string | null;
+  createdAt: string;
 }
 
 interface PayModalState {
@@ -158,6 +174,10 @@ export default function FuelManagement() {
   const [paymentsLoading, setPaymentsLoading] = useState(false);
   const [paymentsFilter, setPaymentsFilter] = useState<'all' | 'outstanding' | 'paid'>('outstanding');
   const [payModal, setPayModal] = useState<PayModalState | null>(null);
+  const [uploadingPoId, setUploadingPoId] = useState<string | null>(null);
+  const [invoicesModal, setInvoicesModal] = useState<{ poId: string; poNo: number; vendorName: string; invoices: FuelInvoiceRow[]; loading: boolean } | null>(null);
+  const invoiceFileInputRef = React.useRef<HTMLInputElement | null>(null);
+  const pendingUploadPoIdRef = React.useRef<string | null>(null);
   const [expandedFuels, setExpandedFuels] = useState<Set<string>>(new Set());
   const [dealForm, setDealForm] = useState({ vendorId: '', vendorName: '', vendorPhone: '', fuelItemId: '', rate: 0, remarks: '' });
   const [date, setDate] = useState(new Date().toISOString().split('T')[0]);
@@ -501,6 +521,74 @@ export default function FuelManagement() {
       });
       fetchDeals();
     } catch (err) { alert('Payment failed'); }
+  };
+
+  const triggerInvoiceUpload = (poId: string) => {
+    if (uploadingPoId) return;
+    pendingUploadPoIdRef.current = poId;
+    if (invoiceFileInputRef.current) {
+      invoiceFileInputRef.current.value = '';
+      invoiceFileInputRef.current.click();
+    }
+  };
+
+  const handleInvoiceFileSelected = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    const poId = pendingUploadPoIdRef.current;
+    pendingUploadPoIdRef.current = null;
+    if (!file || !poId) return;
+    if (file.size > 10 * 1024 * 1024) {
+      alert('File too large — 10 MB max.');
+      return;
+    }
+    setUploadingPoId(poId);
+    const fd = new FormData();
+    fd.append('file', file);
+    try {
+      const res = await api.post<{ ok: boolean; deduped: boolean; invoice: FuelInvoiceRow }>(
+        `/fuel/payments/${poId}/invoice`,
+        fd,
+        { headers: { 'Content-Type': 'multipart/form-data' } },
+      );
+      if (res.data.deduped) {
+        alert('This file is already attached to this PO — skipped duplicate upload.');
+      }
+      await fetchPayments();
+      // If invoice modal is open for this PO, refresh its list too.
+      if (invoicesModal && invoicesModal.poId === poId) {
+        const list = await api.get<FuelInvoiceRow[]>(`/fuel/payments/${poId}/invoices`);
+        setInvoicesModal((prev) => prev ? { ...prev, invoices: list.data } : prev);
+      }
+    } catch (err: unknown) {
+      const msg = (err as { response?: { data?: { error?: string } } })?.response?.data?.error || 'Upload failed';
+      alert(msg);
+    } finally {
+      setUploadingPoId(null);
+    }
+  };
+
+  const openInvoicesModal = async (row: FuelPaymentRow) => {
+    setInvoicesModal({ poId: row.id, poNo: row.poNo, vendorName: row.vendor.name, invoices: [], loading: true });
+    try {
+      const res = await api.get<FuelInvoiceRow[]>(`/fuel/payments/${row.id}/invoices`);
+      setInvoicesModal((prev) => prev ? { ...prev, invoices: res.data, loading: false } : prev);
+    } catch (err) {
+      console.error(err);
+      setInvoicesModal((prev) => prev ? { ...prev, loading: false } : prev);
+    }
+  };
+
+  const deleteInvoice = async (invoiceId: string) => {
+    if (!invoicesModal) return;
+    if (!window.confirm('Remove this invoice attachment?')) return;
+    try {
+      await api.delete(`/fuel/payments/invoices/${invoiceId}`);
+      setInvoicesModal((prev) => prev ? { ...prev, invoices: prev.invoices.filter((i) => i.id !== invoiceId) } : prev);
+      await fetchPayments();
+    } catch (err: unknown) {
+      const msg = (err as { response?: { data?: { error?: string } } })?.response?.data?.error || 'Delete failed';
+      alert(msg);
+    }
   };
 
   const submitPayModal = async () => {
@@ -1118,6 +1206,7 @@ export default function FuelManagement() {
                       <th className="text-right px-3 py-1.5 font-semibold text-[10px] uppercase tracking-widest border-r border-slate-700">In-Flight</th>
                       <th className="text-right px-3 py-1.5 font-semibold text-[10px] uppercase tracking-widest border-r border-slate-700">Outstanding</th>
                       <th className="text-left px-3 py-1.5 font-semibold text-[10px] uppercase tracking-widest border-r border-slate-700">Last Pmt</th>
+                      <th className="text-center px-3 py-1.5 font-semibold text-[10px] uppercase tracking-widest border-r border-slate-700">Invoices</th>
                       <th className="text-left px-3 py-1.5 font-semibold text-[10px] uppercase tracking-widest">Actions</th>
                     </tr>
                   </thead>
@@ -1144,6 +1233,24 @@ export default function FuelManagement() {
                           </td>
                           <td className="px-3 py-1.5 border-r border-slate-100 text-[10px] text-slate-500 font-mono">
                             {p.lastPaymentDate ? new Date(p.lastPaymentDate).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: '2-digit' }) : '—'}
+                          </td>
+                          <td className="px-3 py-1.5 border-r border-slate-100 text-center">
+                            <div className="flex items-center justify-center gap-1.5">
+                              <button
+                                onClick={() => openInvoicesModal(p)}
+                                disabled={p.invoiceCount === 0}
+                                className={`text-[10px] font-bold font-mono tabular-nums px-1.5 py-0.5 ${p.invoiceCount > 0 ? 'bg-indigo-100 text-indigo-700 hover:bg-indigo-200 cursor-pointer' : 'text-slate-300 cursor-not-allowed'}`}
+                                title={p.invoiceCount > 0 ? `${p.invoiceCount} invoice${p.invoiceCount === 1 ? '' : 's'} attached · ${fmtCurrency(p.invoicedTotal)} billed` : 'No invoices yet'}>
+                                {p.invoiceCount}
+                              </button>
+                              <button
+                                onClick={() => triggerInvoiceUpload(p.id)}
+                                disabled={uploadingPoId === p.id}
+                                title="Upload invoice (PDF or image, max 10 MB)"
+                                className="text-[10px] font-bold uppercase tracking-widest text-slate-500 hover:text-blue-600 disabled:opacity-50">
+                                {uploadingPoId === p.id ? '…' : '+ Upload'}
+                              </button>
+                            </div>
                           </td>
                           <td className="px-3 py-1.5">
                             <div className="flex gap-1 flex-wrap">
@@ -1180,7 +1287,7 @@ export default function FuelManagement() {
                       <td className="px-3 py-2 text-right font-mono tabular-nums text-green-300">{fmtCurrency(sumPaid)}</td>
                       <td className="px-3 py-2 text-right font-mono tabular-nums text-amber-300">{fmtCurrency(sumPendingBank + sumPendingCash)}</td>
                       <td className="px-3 py-2 text-right font-mono tabular-nums font-bold text-red-300">{fmtCurrency(sumOutstanding)}</td>
-                      <td colSpan={2}></td>
+                      <td colSpan={3}></td>
                     </tr>
                   </tfoot>
                 </table>
@@ -1445,6 +1552,91 @@ export default function FuelManagement() {
           vendorName={ledgerModal.vendorName}
           onClose={() => setLedgerModal(null)}
         />
+      )}
+
+      <input
+        ref={invoiceFileInputRef}
+        type="file"
+        accept="application/pdf,image/png,image/jpeg,image/jpg,image/webp"
+        className="hidden"
+        onChange={handleInvoiceFileSelected}
+      />
+
+      {invoicesModal && (
+        <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50">
+          <div className="bg-white w-[640px] max-w-[95vw] shadow-2xl">
+            <div className="bg-slate-800 text-white px-4 py-2.5 flex items-center justify-between">
+              <div>
+                <div className="text-xs font-bold uppercase tracking-widest">Invoices · PO-{invoicesModal.poNo}</div>
+                <div className="text-[10px] text-slate-300">{invoicesModal.vendorName}</div>
+              </div>
+              <button onClick={() => setInvoicesModal(null)} className="text-slate-300 hover:text-white text-lg leading-none">×</button>
+            </div>
+            <div className="p-4 space-y-3 max-h-[70vh] overflow-y-auto">
+              {invoicesModal.loading ? (
+                <div className="text-xs text-slate-400 uppercase tracking-widest text-center py-6">Loading…</div>
+              ) : invoicesModal.invoices.length === 0 ? (
+                <div className="text-xs text-slate-400 uppercase tracking-widest text-center py-6">No invoices attached yet.</div>
+              ) : (
+                <table className="w-full text-xs">
+                  <thead>
+                    <tr className="bg-slate-100 border-b border-slate-300">
+                      <th className="text-left px-2 py-1.5 font-bold uppercase tracking-widest text-[10px] text-slate-600">File</th>
+                      <th className="text-left px-2 py-1.5 font-bold uppercase tracking-widest text-[10px] text-slate-600">Inv No.</th>
+                      <th className="text-left px-2 py-1.5 font-bold uppercase tracking-widest text-[10px] text-slate-600">Uploaded</th>
+                      <th className="text-right px-2 py-1.5 font-bold uppercase tracking-widest text-[10px] text-slate-600">Amount</th>
+                      <th className="text-left px-2 py-1.5 font-bold uppercase tracking-widest text-[10px] text-slate-600">Status</th>
+                      <th className="px-2 py-1.5"></th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {invoicesModal.invoices.map((inv, i) => (
+                      <tr key={inv.id} className={`border-b border-slate-100 ${i % 2 ? 'bg-slate-50/70' : ''}`}>
+                        <td className="px-2 py-1.5">
+                          {inv.filePath ? (
+                            <a href={`/uploads/${inv.filePath}`} target="_blank" rel="noopener noreferrer" className="text-blue-600 hover:underline truncate max-w-[200px] inline-block align-middle">
+                              {inv.originalFileName || 'Invoice'}
+                            </a>
+                          ) : (
+                            <span className="text-slate-400">{inv.originalFileName || '—'}</span>
+                          )}
+                        </td>
+                        <td className="px-2 py-1.5 font-mono text-slate-600">{inv.vendorInvNo || '—'}</td>
+                        <td className="px-2 py-1.5 text-slate-500 font-mono text-[10px]">
+                          {new Date(inv.createdAt).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: '2-digit' })}
+                        </td>
+                        <td className="px-2 py-1.5 text-right font-mono tabular-nums">{inv.totalAmount > 0 ? fmtCurrency(inv.totalAmount) : '—'}</td>
+                        <td className="px-2 py-1.5">
+                          <span className={`text-[9px] font-bold uppercase tracking-widest px-1.5 py-0.5 ${inv.status === 'PAID' ? 'bg-emerald-100 text-emerald-700' : inv.status === 'PARTIAL_PAID' ? 'bg-amber-100 text-amber-700' : inv.status === 'CANCELLED' ? 'bg-slate-100 text-slate-500' : 'bg-blue-100 text-blue-700'}`}>
+                            {inv.status}
+                          </span>
+                        </td>
+                        <td className="px-2 py-1.5 text-right">
+                          {(inv.paidAmount || 0) === 0 && (
+                            <button onClick={() => deleteInvoice(inv.id)} className="text-[10px] text-red-600 font-semibold uppercase hover:underline">
+                              Delete
+                            </button>
+                          )}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              )}
+            </div>
+            <div className="bg-slate-50 border-t border-slate-200 px-4 py-2.5 flex justify-between items-center">
+              <button
+                onClick={() => triggerInvoiceUpload(invoicesModal.poId)}
+                disabled={uploadingPoId === invoicesModal.poId}
+                className="px-3 py-1.5 text-[11px] font-bold uppercase tracking-widest bg-blue-600 text-white hover:bg-blue-700 disabled:opacity-50">
+                {uploadingPoId === invoicesModal.poId ? 'Uploading…' : '+ Upload Another'}
+              </button>
+              <button onClick={() => setInvoicesModal(null)} className="px-3 py-1.5 text-[11px] font-bold uppercase tracking-widest text-slate-600 border border-slate-300 hover:bg-slate-100">
+                Close
+              </button>
+            </div>
+          </div>
+        </div>
       )}
 
       {payModal && (
