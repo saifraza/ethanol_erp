@@ -4,6 +4,7 @@ import api from '../../services/api';
 import { useAuth } from '../../context/AuthContext';
 import WeighbridgeTrucksModal from '../../components/WeighbridgeTrucksModal';
 import VendorLedgerModal from '../../components/VendorLedgerModal';
+import PaymentsTable from '../../components/payments/PaymentsTable';
 
 interface FarmerWithBalance {
   id: string;
@@ -103,7 +104,7 @@ const EMPTY_FORM: Partial<MaterialItem> = {
 export default function RawMaterialPurchase() {
   const { user } = useAuth();
   const isAdmin = user?.role === 'ADMIN' || user?.role === 'SUPER_ADMIN';
-  const [tab, setTab] = useState<'master' | 'daily' | 'deals' | 'farmers'>('deals');
+  const [tab, setTab] = useState<'master' | 'daily' | 'deals' | 'farmers' | 'payments'>('deals');
   const [farmers, setFarmers] = useState<FarmerWithBalance[]>([]);
   const [materials, setMaterials] = useState<MaterialItem[]>([]);
   const [rows, setRows] = useState<ConsumptionRow[]>([]);
@@ -535,6 +536,9 @@ export default function RawMaterialPurchase() {
           <button onClick={() => setTab('master')} className={`px-5 py-2.5 text-[11px] font-bold uppercase tracking-widest border-b-2 ${tab === 'master' ? 'border-blue-600 text-slate-800' : 'border-transparent text-slate-400 hover:text-slate-600'}`}>
             Materials
           </button>
+          <button onClick={() => setTab('payments')} className={`px-5 py-2.5 text-[11px] font-bold uppercase tracking-widest border-b-2 ${tab === 'payments' ? 'border-blue-600 text-slate-800' : 'border-transparent text-slate-400 hover:text-slate-600'}`}>
+            Payments
+          </button>
         </div>
 
         {/* KPI Strip */}
@@ -910,6 +914,29 @@ export default function RawMaterialPurchase() {
                 </div>
               </>
             )}
+          </div>
+        )}
+
+        {/* TAB: PAYMENTS — uses the shared PaymentsTable, locked to RM */}
+        {tab === 'payments' && (
+          <div className="-mx-3 md:-mx-6 border-x border-b border-slate-300 overflow-hidden bg-white">
+            <PaymentsTable
+              title="Raw Material Payments"
+              apiBase="/raw-material-purchase/payments"
+              defaultCategory="RAW_MATERIAL"
+              invoiceUploadCategories="RAW_MATERIAL"
+              paySurface="generic"
+              renderToolbar={false}
+              variant="generic"
+              posLabel="RM POs"
+              allStatusLabel="All RM POs"
+              searchPlaceholder="Search vendor, PO#, material…"
+              emptyCopy={{
+                outstanding: 'No outstanding RM payments — all caught up.',
+                paid: 'No fully-paid RM POs yet.',
+                all: 'No RM POs found.',
+              }}
+            />
           </div>
         )}
       </div>
