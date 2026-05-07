@@ -455,16 +455,22 @@ export default function PaymentsTable({
                           <div className="text-[9px] text-indigo-500 font-bold uppercase tracking-widest">Billed</div>
                         </>
                       ) : (
+                        // PLANNED basis — no GRN, no filled invoice totals.
+                        // Don't display the planned PO total as if it were owed;
+                        // hint at what's missing instead so the operator knows
+                        // to confirm receipt or fill in invoice amounts.
                         <>
-                          <div className="text-slate-400" title="No GRNs and no invoices — using planned PO total">{fmtCurrency(p.poTotal)}</div>
-                          <div className="text-[9px] text-amber-600 font-bold uppercase tracking-widest">Planned</div>
+                          <div className="text-slate-400" title="No GRNs and no invoice totals filled in">—</div>
+                          <div className="text-[9px] text-amber-600 font-bold uppercase tracking-widest">
+                            {p.invoiceCount > 0 ? 'Fill totals' : 'Awaiting'}
+                          </div>
                         </>
                       )}
                     </td>
                     <td className="px-3 py-1.5 text-right font-mono tabular-nums text-green-700 border-r border-slate-100">{fmtCurrency(p.totalPaid)}</td>
                     <td className={`px-3 py-1.5 text-right font-mono tabular-nums border-r border-slate-100 ${inFlight > 0 ? 'text-amber-700' : 'text-slate-400'}`}>{fmtCurrency(inFlight)}</td>
-                    <td className={`px-3 py-1.5 text-right font-mono tabular-nums font-bold border-r border-slate-100 ${p.outstanding > 0.01 ? 'text-red-600' : p.totalPaid > 0 ? 'text-emerald-700' : 'text-slate-400'}`}>
-                      {p.outstanding > 0.01 ? fmtCurrency(p.outstanding) : p.totalPaid > 0 ? '✓ Paid' : '—'}
+                    <td className={`px-3 py-1.5 text-right font-mono tabular-nums font-bold border-r border-slate-100 ${p.basisSource === 'PLANNED' ? 'text-slate-400' : p.outstanding > 0.01 ? 'text-red-600' : p.totalPaid > 0 ? 'text-emerald-700' : 'text-slate-400'}`}>
+                      {p.basisSource === 'PLANNED' ? '—' : p.outstanding > 0.01 ? fmtCurrency(p.outstanding) : p.totalPaid > 0 ? '✓ Paid' : '—'}
                     </td>
                     <td className="px-3 py-1.5 border-r border-slate-100 text-[10px] text-slate-500 font-mono">
                       {p.lastPaymentDate ? new Date(p.lastPaymentDate).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: '2-digit' }) : '—'}
@@ -498,7 +504,10 @@ export default function PaymentsTable({
                     </td>
                     <td className="px-3 py-1.5">
                       <div className="flex gap-1 flex-wrap">
-                        {p.outstanding > 0.01 && (
+                        {/* Hide Pay on PLANNED basis — there's no evidence of
+                            delivery or billing yet. Operator should confirm
+                            GRN or fill invoice totals first. */}
+                        {p.outstanding > 0.01 && p.basisSource !== 'PLANNED' && (
                           <button
                             onClick={() => setPayDialog({
                               poId: p.id, poNo: p.poNo, vendorId: p.vendor.id,
