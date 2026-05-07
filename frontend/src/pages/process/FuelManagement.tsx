@@ -1766,7 +1766,7 @@ export default function FuelManagement() {
           poId={payDialog.poId}
           poNo={payDialog.poNo}
           vendorName={payDialog.vendorName}
-          fuelName={payDialog.fuelName}
+          subtitle={payDialog.fuelName}
           outstanding={payDialog.outstanding}
           fmtCurrency={fmtCurrency}
           onClose={() => setPayDialog(null)}
