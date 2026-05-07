@@ -3224,6 +3224,12 @@ model WorkOrder {
   creditDays       Int        @default(30)
   // Refs
   remarks          String?
+  // Terms & Conditions (added 2026-05-07) — JSON array of { title, body }
+  // Body is multi-line text (newlines preserved on PDF). For new MANPOWER_SUPPLY
+  // WOs the form pre-fills with the 7 standard sections (Labor Deployment, Work
+  // Responsibility, Safety & Compliance, Damage & Liability, Termination,
+  // Dispute Resolution, Duties & Taxes) which the user can edit per WO.
+  termsAndConditions Json? // [{ title: string, body: string }]
   userId           String // created by
   createdAt        DateTime   @default(now())
   updatedAt        DateTime   @updatedAt

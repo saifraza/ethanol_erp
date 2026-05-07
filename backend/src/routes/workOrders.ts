@@ -7,6 +7,7 @@ import { NotFoundError, ValidationError } from '../shared/errors';
 import { renderDocumentPdf } from '../services/documentRenderer';
 import { sendThreadEmail, syncAndListReplies, latestThreadFor } from '../services/emailService';
 import { z } from 'zod';
+import { DEFAULT_MANPOWER_TERMS } from '../data/manpowerWoTerms';
 
 const router = Router();
 router.use(authenticate);
@@ -67,6 +68,14 @@ const createSchema = z.object({
   creditDays: z.number().int().min(0).max(365).default(30),
   remarks: z.string().nullable().optional(),
   division: z.string().optional(),
+  // 2026-05-07 — editable T&C list. Each section: { title, body (multi-line) }.
+  // Pre-filled with DEFAULT_MANPOWER_TERMS for MANPOWER_SUPPLY WOs at the
+  // form-load step (frontend); the user can edit/add/remove sections before
+  // saving. Render order = array order (PDF numbers them 1..N).
+  termsAndConditions: z.array(z.object({
+    title: z.string().min(1).max(120),
+    body: z.string().max(4000),
+  })).max(30).nullable().optional(),
   lines: z.array(lineSchema).min(1),
 });
 
@@ -359,6 +368,15 @@ router.post('/', canWrite, validate(createSchema), asyncHandler(async (req: Auth
       paymentTerms: body.paymentTerms ?? null,
       creditDays: body.creditDays ?? 30,
       remarks: body.remarks ?? null,
+      // T&C: use what frontend sent. If empty AND it's manpower-supply, fall
+      // back to the default 7 sections so a half-finished form still produces
+      // a valid PDF. Frontend pre-fills the same default at form-load, so this
+      // is just a server-side safety net.
+      termsAndConditions: body.termsAndConditions
+        ? (body.termsAndConditions as Prisma.InputJsonValue)
+        : (body.contractType === 'MANPOWER_SUPPLY'
+          ? (DEFAULT_MANPOWER_TERMS as unknown as Prisma.InputJsonValue)
+          : Prisma.JsonNull),
       division: body.division ?? 'ETHANOL',
       userId: req.user!.id,
       companyId: getActiveCompanyId(req),
@@ -429,6 +447,11 @@ router.put('/:id', canWrite, validate(updateSchema), asyncHandler(async (req: Au
         paymentTerms: req.body.paymentTerms !== undefined ? req.body.paymentTerms : existing.paymentTerms,
         creditDays: req.body.creditDays ?? existing.creditDays,
         remarks: req.body.remarks !== undefined ? req.body.remarks : existing.remarks,
+        termsAndConditions: req.body.termsAndConditions !== undefined
+          ? (req.body.termsAndConditions === null
+            ? Prisma.JsonNull
+            : (req.body.termsAndConditions as Prisma.InputJsonValue))
+          : (existing.termsAndConditions as Prisma.InputJsonValue ?? Prisma.JsonNull),
         division: req.body.division ?? existing.division,
         lines: {
           create: computed.map((c, idx) => ({ ...c, lineNo: idx + 1 })),
@@ -671,6 +694,11 @@ async function loadWoForPdf(id: string) {
     remarks: wo.remarks,
     contractor: wo.contractor,
     lines: wo.lines,
+    // T&C list — array of { title, body }. Body's newlines are converted
+    // to <br/> in the template via the standard `nl2br` helper.
+    termsAndConditions: Array.isArray(wo.termsAndConditions)
+      ? (wo.termsAndConditions as unknown as Array<{ title: string; body: string }>)
+      : [],
     preparedBy: creator?.name || creator?.email || '',
     _raw: wo,
   };

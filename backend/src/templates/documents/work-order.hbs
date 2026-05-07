@@ -112,6 +112,20 @@
   <div class="remarks-section"><div class="label">Remarks:</div><div class="text">{{remarks}}</div></div>
   {{/if}}
 
+  {{#if termsAndConditions.length}}
+  <div class="terms-section" style="margin-top:18px;page-break-inside:avoid;">
+    <div class="terms-title" style="font-weight:600;font-size:11px;text-transform:uppercase;letter-spacing:.04em;border-bottom:1px solid #cbd5e1;padding-bottom:4px;margin-bottom:8px;">Terms &amp; Conditions</div>
+    <ol style="margin:0;padding-left:18px;font-size:10px;line-height:1.5;">
+      {{#each termsAndConditions}}
+      <li style="margin-bottom:6px;page-break-inside:avoid;">
+        <span style="font-weight:600;">{{this.title}}</span>
+        {{#if this.body}}<div style="white-space:pre-line;color:#334155;margin-top:2px;">{{this.body}}</div>{{/if}}
+      </li>
+      {{/each}}
+    </ol>
+  </div>
+  {{/if}}
+
   {{> terms-footer}}
   {{> signatures sigCount=3 sigLabels=(list "Prepared By" "Approved By" "Authorized Signatory") sigNames=(list preparedBy "" "")}}
 
