@@ -16,6 +16,8 @@ Endpoints (all require X-Bridge-Key header matching BIOMETRIC_BRIDGE_KEY env):
   POST /devices/time/sync        — set device clock to now (UTC ⇄ device TZ)
   POST /devices/templates/copy   — pull fingerprint template from src device,
                                     push to dst device (multi-device replication)
+  POST /devices/templates/list   — return per-user enrolled finger ids on device
+                                    (used by factory-server's auto-replicator)
 
 Body for every endpoint:
   { "device": { "ip": "...", "port": 4370, "password": 0 }, ... }
@@ -437,3 +439,37 @@ def template_copy(body: TemplateCopyReq, x_bridge_key: Optional[str] = Header(No
                 return {"ok": False, "copied": [f for f, _ in pulled[:pulled.index((finger, template))]], "error": str(e)}
 
     return {"ok": True, "copied_fingers": [f for f, _ in pulled]}
+
+
+class TemplatesListReq(BaseModel):
+    device: DeviceRef
+
+
+@app.post("/devices/templates/list")
+def templates_list(body: TemplatesListReq, x_bridge_key: Optional[str] = Header(None)):
+    """Return a map of user_id -> list of enrolled finger ids on this device.
+
+    Used by the factory-server's auto-replicator to detect which devices are
+    missing templates for which users, without doing N x M get_user_template()
+    probes. One round-trip to get_users() + one to get_templates() per device.
+    """
+    _check_key(x_bridge_key)
+    with _Conn(body.device) as conn:
+        users = conn.get_users() or []
+        uid_to_user_id: dict[int, str] = {u.uid: str(u.user_id) for u in users}
+        templates = conn.get_templates() or []
+        result: dict[str, list[int]] = {}
+        for t in templates:
+            uid = getattr(t, "uid", None)
+            fid = getattr(t, "fid", None)
+            valid = getattr(t, "valid", 1)
+            if uid is None or fid is None or not valid:
+                continue
+            user_id = uid_to_user_id.get(uid)
+            if user_id is None:
+                continue
+            result.setdefault(user_id, []).append(int(fid))
+        # Sort finger lists for deterministic output
+        for user_id in result:
+            result[user_id] = sorted(set(result[user_id]))
+        return {"ok": True, "user_count": len(result), "templates": result}

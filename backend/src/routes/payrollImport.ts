@@ -362,7 +362,7 @@ router.post('/commit', upload.array('files', 10), asyncHandler(async (req: AuthR
     const tokens = sample.name.replace(/^(shri\.?|smt\.?|mr\.?|mrs\.?|ms\.?|sri\.?)\s+/i, '').trim().split(/\s+/);
     const e = await prisma.employee.create({
       data: {
-        empCode: `MSPIL-${String(nextEmpNo).padStart(3, '0')}`,
+        empCode: `MS-${String(nextEmpNo).padStart(3, '0')}`,
         firstName: tokens[0] || sample.name,
         lastName: tokens.slice(1).join(' ') || '',
         dateOfJoining: new Date(`${year}-${String(month).padStart(2, '0')}-01`),

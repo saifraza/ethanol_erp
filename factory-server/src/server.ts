@@ -20,6 +20,7 @@ import { initMasterDataCache, getCacheStats } from './services/masterDataCache';
 import { startWeightTriggeredCapture } from './services/weightTriggeredCapture';
 import { startBiometricScheduler, getBiometricSchedulerStatus } from './services/biometricScheduler';
 import { startBiometricJobRunner, getBiometricJobRunnerStatus } from './services/biometricJobRunner';
+import { startFingerprintReplicator, getFingerprintReplicatorStatus } from './services/fingerprintReplicator';
 
 const app = express();
 
@@ -40,6 +41,7 @@ app.get('/api/health', async (_req, res) => {
     getBiometricSchedulerStatus().catch(() => null),
   ]);
   const biometricJobs = getBiometricJobRunnerStatus();
+  const fingerprintReplicator = getFingerprintReplicatorStatus();
   res.json({
     status: 'ok',
     server: 'MSPIL Factory Hub',
@@ -50,6 +52,7 @@ app.get('/api/health', async (_req, res) => {
     sync: getSyncWorkerStatus(),
     biometric,
     biometricJobs,
+    fingerprintReplicator,
   });
 });
 
@@ -267,6 +270,11 @@ app.listen(config.port, '0.0.0.0', () => {
   // ad-hoc admin operations (Test, Pull Users, etc.). Same direction as
   // the weighbridge sync: factory-server initiates every cloud call.
   startBiometricJobRunner();
+
+  // Fingerprint replicator — every 10 minutes, walks every factory-managed
+  // device and copies any missing fingerprint template from a device that
+  // has it. The "magic": enroll once on any device, all devices get it.
+  startFingerprintReplicator();
 
   // Weight-triggered video/photo capture for ML training corpus.
   // PAUSED 2026-05-03 — corpus is sufficient (38.6 GB / 51k clips on factory disk).

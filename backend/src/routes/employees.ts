@@ -109,7 +109,7 @@ router.post('/', asyncHandler(async (req: AuthRequest, res: Response) => {
   // Auto-generate empCode
   const lastEmp = await prisma.employee.findFirst({ orderBy: { empNo: 'desc' } });
   const nextNo = lastEmp ? lastEmp.empNo + 1 : 1;
-  const empCode = `MSPIL-${String(nextNo).padStart(3, '0')}`;
+  const empCode = `MS-${String(nextNo).padStart(3, '0')}`;
 
   const employee = await prisma.employee.create({
     data: {

@@ -94,4 +94,17 @@ export const bridge = {
   ): Promise<{ ok: boolean; deleted_uid?: number; skipped?: string }> {
     return call('/devices/users/delete', { device, user_id });
   },
+  async templatesList(
+    device: DeviceRef,
+  ): Promise<{ ok: boolean; user_count: number; templates: Record<string, number[]> }> {
+    return call('/devices/templates/list', { device }, 60_000);
+  },
+  async templatesCopy(
+    src_device: DeviceRef,
+    dst_device: DeviceRef,
+    user_id: string,
+    finger_ids: number[],
+  ): Promise<{ ok: boolean; copied_fingers?: number[]; reason?: string; error?: string }> {
+    return call('/devices/templates/copy', { src_device, dst_device, user_id, finger_ids }, 60_000);
+  },
 };

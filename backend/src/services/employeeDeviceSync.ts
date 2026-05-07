@@ -39,10 +39,12 @@ async function runSync(employeeId: string, op: Op): Promise<void> {
   });
   if (!employee) return;
 
-  // Auto-assign deviceUserId if missing — try empNo first, fall back to a
-  // high-range slot if there's collision so we never silently skip pushing.
+  // Auto-assign deviceUserId if missing — prefer empCode (e.g. "MS-457") so
+  // the device shows the same human-readable id as the ERP. Falls back to
+  // empNo, then to a high-range numeric slot on collision.
   if (op === 'UPSERT' && !employee.deviceUserId) {
-    const allocated = await findAvailableDeviceUserId(String(employee.empNo), 'EMPLOYEE', employee.id);
+    const preferred = employee.empCode?.trim() || String(employee.empNo);
+    const allocated = await findAvailableDeviceUserId(preferred, 'EMPLOYEE', employee.id);
     if (!allocated) {
       console.warn(`[employeeDeviceSync] could not allocate deviceUserId for ${employee.empCode}`);
       return;

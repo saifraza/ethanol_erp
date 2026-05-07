@@ -4,8 +4,9 @@
  * LaborWorker.deviceUserId.
  *
  * Strategy:
- *   1. Try the preferred candidate (typically empNo for employees, "L<workerNo>"
- *      for labor) — that gives clean small numbers when there's no clash.
+ *   1. Try the preferred candidate (empCode "MS-XXX" for employees, workerCode
+ *      "LW-XXX" for labor) — that gives the device the same human-readable id
+ *      as the ERP when there's no clash.
  *   2. On collision, allocate from a high range (≥ 10001) so we never overwrite
  *      a manually-enrolled fingerprint slot on the device. Max existing
  *      numeric deviceUserId + 1 (or 10001, whichever is larger) wins.
@@ -61,9 +62,10 @@ export async function findAvailableDeviceUserId(
   const numerics: number[] = [];
   for (const r of [...emps, ...labors]) {
     if (!r.deviceUserId) continue;
-    // Strip optional 'L' prefix used by LaborWorker for the original-empNo path
-    const cleaned = r.deviceUserId.replace(/^L/i, '');
-    const n = parseInt(cleaned, 10);
+    // Pull the first numeric run out of the id — handles "457", "L42",
+    // "MS-457", "LW-001" all the same way for max-numeric calculation.
+    const m = r.deviceUserId.match(/(\d+)/);
+    const n = m ? parseInt(m[1], 10) : NaN;
     if (Number.isFinite(n) && n > 0) numerics.push(n);
   }
   const max = numerics.length > 0 ? Math.max(...numerics) : 0;

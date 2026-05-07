@@ -497,7 +497,7 @@ router.post('/devices/:id/create-employees', authorize('ADMIN'), validate(create
     // Auto-generate empCode like the existing employees.ts POST does
     const lastEmp = await prisma.employee.findFirst({ orderBy: { empNo: 'desc' }, select: { empNo: true } });
     const nextNo = lastEmp ? lastEmp.empNo + 1 : 1;
-    const empCode = `MSPIL-${String(nextNo).padStart(3, '0')}`;
+    const empCode = `MS-${String(nextNo).padStart(3, '0')}`;
 
     try {
       const emp = await prisma.employee.create({

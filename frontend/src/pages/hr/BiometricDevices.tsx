@@ -579,7 +579,7 @@ function MappingView({ devices }: { devices: BiometricDevice[] }) {
       name: r.deviceUser.name,
       card: r.deviceUser.card || undefined,
     }));
-    if (!confirm(`Create ${entries.length} new ERP Employee(s) from device data?\n\nEach will get a fresh empCode (MSPIL-NNN), today's joining date, and the device user_id mapping. Aadhaar/PAN/salary stay blank — fill later in HR > Employees.`)) return;
+    if (!confirm(`Create ${entries.length} new ERP Employee(s) from device data?\n\nEach will get a fresh empCode (MS-NNN), today's joining date, and the device user_id mapping. Aadhaar/PAN/salary stay blank — fill later in HR > Employees.`)) return;
     try {
       const r = await api.post(`/biometric/devices/${deviceId}/create-employees`, { entries });
       alert(`✓ Created ${r.data.created} employees${r.data.skipped ? `, skipped ${r.data.skipped}` : ''}`);
