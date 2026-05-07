@@ -180,11 +180,30 @@ async function recomputeDay(employeeId: string, dateStr: string, companyId: stri
   const dayStartUtc = istToUtc(dateStr, '00:00');
   const dayEndUtc = new Date(dayStartUtc.getTime() + 24 * 60 * 60 * 1000 - 1);
 
-  const punches = await prisma.attendancePunch.findMany({
+  const rawPunches = await prisma.attendancePunch.findMany({
     where: { employeeId, punchAt: { gte: dayStartUtc, lte: dayEndUtc } },
     orderBy: { punchAt: 'asc' },
-    select: { id: true, punchAt: true },
+    select: { id: true, punchAt: true, deviceId: true },
   });
+  // Dedupe re-taps: same employee, same device, within 30s of the prior
+  // accepted punch -> drop. eSSL devices register every successful match
+  // so a worker pressing twice (or the device beeping a confirmation)
+  // produces 2-3 rows in 5-10s. The raw rows stay in AttendancePunch
+  // (preserve audit trail / device data); the daily computation just
+  // ignores the dupes when deriving first-in / last-out / count.
+  const DEDUP_WINDOW_MS = 30_000;
+  const punches: typeof rawPunches = [];
+  for (const p of rawPunches) {
+    const last = punches[punches.length - 1];
+    if (
+      last &&
+      last.deviceId === p.deviceId &&
+      p.punchAt.getTime() - last.punchAt.getTime() < DEDUP_WINDOW_MS
+    ) {
+      continue;
+    }
+    punches.push(p);
+  }
 
   // Existing day — preserve manual overrides
   const dateOnly = new Date(dayStartUtc); // stored as DATE, time portion irrelevant
@@ -316,7 +335,7 @@ router.post('/recompute', authorize('ADMIN'), asyncHandler(async (req: AuthReque
   const [allPunches, approvedLeaves, existingDays] = await Promise.all([
     prisma.attendancePunch.findMany({
       where: { employeeId: { in: empIds }, punchAt: { gte: startUtc, lt: endUtc } },
-      select: { employeeId: true, punchAt: true },
+      select: { employeeId: true, punchAt: true, deviceId: true },
       orderBy: { punchAt: 'asc' },
     }),
     prisma.leaveApplication.findMany({
@@ -334,12 +353,21 @@ router.post('/recompute', authorize('ADMIN'), asyncHandler(async (req: AuthReque
     }),
   ]);
 
-  // Index for fast lookup
+  // Index for fast lookup, dedupe re-taps on same employee+device within
+  // 30s. Keep raw rows in DB but ignore dupes here. Punches are already
+  // sorted asc, so we just compare to the immediately-previous entry.
+  const DEDUP_WINDOW_MS = 30_000;
   const punchesByEmpDate = new Map<string, Date[]>(); // key: empId|YYYY-MM-DD
+  const lastByEmpDate = new Map<string, { at: Date; deviceId: string | null }>();
   for (const p of allPunches) {
     const k = `${p.employeeId}|${istDateStr(p.punchAt)}`;
+    const last = lastByEmpDate.get(k);
+    if (last && last.deviceId === p.deviceId && p.punchAt.getTime() - last.at.getTime() < DEDUP_WINDOW_MS) {
+      continue; // re-tap on same device within 30s; ignore for daily roll-up
+    }
     const arr = punchesByEmpDate.get(k);
     if (arr) arr.push(p.punchAt); else punchesByEmpDate.set(k, [p.punchAt]);
+    lastByEmpDate.set(k, { at: p.punchAt, deviceId: p.deviceId });
   }
 
   const overrideSet = new Set<string>(); // empId|YYYY-MM-DD
