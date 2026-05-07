@@ -5644,6 +5644,38 @@ model BiometricDevice {
 }
 
 // ══════════════════════════════════════════════════════════════
+// BIOMETRIC JOBS — added 2026-05-07 (factory-led job queue)
+//
+// Cloud admin clicks "Test", "Pull Users", "Sync Employees" etc. on
+// a factoryManaged device → cloud writes a row here. Factory-server
+// polls every 3s, claims pending jobs, executes against local bridge,
+// posts result back. Mirrors the weighbridge factory→cloud-only pattern
+// so the system never depends on a cloud→factory inbound path.
+// ══════════════════════════════════════════════════════════════
+
+model BiometricJob {
+  id           String   @id @default(cuid())
+  type         String   // TEST | PULL_USERS | PULL_PUNCHES | SYNC_EMPLOYEES | SYNC_TIME | UPSERT_USER | DELETE_USER
+  deviceId     String   // BiometricDevice.id
+  payload      String?  // JSON, type-specific params (e.g. since timestamp for PULL_PUNCHES)
+  status       String   @default("PENDING") // PENDING | CLAIMED | DONE | FAILED | EXPIRED
+  // Auth + lineage
+  requestedBy  String?  // User.id of admin who clicked
+  requestedAt  DateTime @default(now())
+  claimedAt    DateTime?
+  completedAt  DateTime?
+  // Result / error
+  result       String?  // JSON, type-specific shape
+  error        String?  // human-readable failure reason
+  // Retry control
+  attempts     Int      @default(0)
+  maxAttempts  Int      @default(3)
+
+  @@index([status, requestedAt])
+  @@index([deviceId])
+}
+
+// ══════════════════════════════════════════════════════════════
 // LABOR WORKERS — added 2026-05-06 (Phase 2)
 //
 // Distinct from Employee (different lifecycle: turnover, paid via

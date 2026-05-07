@@ -452,6 +452,30 @@ const EXPECTED_TABLES: TableCheck[] = [
       CREATE INDEX IF NOT EXISTS "BiometricDevice_companyId_idx" ON "BiometricDevice"("companyId");
     `,
   },
+  // 2026-05-07 — BiometricJob (factory-led job queue: cloud writes, factory polls)
+  {
+    table: 'BiometricJob',
+    sql: `
+      CREATE TABLE IF NOT EXISTS "BiometricJob" (
+        "id" TEXT NOT NULL,
+        "type" TEXT NOT NULL,
+        "deviceId" TEXT NOT NULL,
+        "payload" TEXT,
+        "status" TEXT NOT NULL DEFAULT 'PENDING',
+        "requestedBy" TEXT,
+        "requestedAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        "claimedAt" TIMESTAMP(3),
+        "completedAt" TIMESTAMP(3),
+        "result" TEXT,
+        "error" TEXT,
+        "attempts" INTEGER NOT NULL DEFAULT 0,
+        "maxAttempts" INTEGER NOT NULL DEFAULT 3,
+        CONSTRAINT "BiometricJob_pkey" PRIMARY KEY ("id")
+      );
+      CREATE INDEX IF NOT EXISTS "BiometricJob_status_requestedAt_idx" ON "BiometricJob"("status", "requestedAt");
+      CREATE INDEX IF NOT EXISTS "BiometricJob_deviceId_idx" ON "BiometricJob"("deviceId");
+    `,
+  },
   // 2026-05-06 — LaborWorker (Phase 2 — labor supplier workers, separate from Employee)
   {
     table: 'LaborWorker',

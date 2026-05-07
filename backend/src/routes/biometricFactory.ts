@@ -238,4 +238,110 @@ router.get('/master-data', asyncHandler(async (req: Request, res: Response) => {
   });
 }));
 
+// ════════════════════════════════════════════════════════════════
+// JOB QUEUE — cloud→factory ad-hoc operations
+// ════════════════════════════════════════════════════════════════
+//
+// The factory-server polls /jobs/claim every few seconds. Cloud admin
+// "Test", "Pull Users", "Sync Employees" buttons enqueue jobs here
+// (see backend/src/routes/biometric.ts). Factory executes against the
+// local bridge and posts results back. Same direction as weighbridge
+// sync (factory → cloud only) — zero inbound dependency.
+
+const claimSchema = z.object({
+  max: z.number().int().min(1).max(20).default(5),
+  factoryNode: z.string().optional(),
+});
+
+router.post('/jobs/claim', asyncHandler(async (req: Request, res: Response) => {
+  if (!checkWBKey(req, res)) return;
+  const parse = claimSchema.safeParse(req.body ?? {});
+  if (!parse.success) {
+    res.status(400).json({ error: 'Invalid payload', issues: parse.error.issues });
+    return;
+  }
+  const { max } = parse.data;
+
+  const claimed = await prisma.$transaction(async (tx) => {
+    const pending = await tx.biometricJob.findMany({
+      where: { status: 'PENDING' },
+      orderBy: { requestedAt: 'asc' },
+      take: max,
+      select: {
+        id: true, type: true, deviceId: true, payload: true,
+        attempts: true, maxAttempts: true,
+      },
+    });
+    if (pending.length === 0) return [];
+    const ids = pending.map(p => p.id);
+    await tx.biometricJob.updateMany({
+      where: { id: { in: ids } },
+      data: { status: 'CLAIMED', claimedAt: new Date(), attempts: { increment: 1 } },
+    });
+    const devices = await tx.biometricDevice.findMany({
+      where: { id: { in: pending.map(p => p.deviceId) } },
+      select: { id: true, code: true, ip: true, port: true, password: true },
+    });
+    const devMap = new Map(devices.map(d => [d.id, d]));
+    return pending.map(p => ({
+      ...p,
+      device: devMap.get(p.deviceId) ?? null,
+    }));
+  });
+
+  res.json({ ok: true, jobs: claimed });
+}));
+
+const resultSchema = z.object({
+  status: z.enum(['DONE', 'FAILED']),
+  result: z.unknown().optional(),
+  error: z.string().nullable().optional(),
+});
+
+router.post('/jobs/:id/result', asyncHandler(async (req: Request, res: Response) => {
+  if (!checkWBKey(req, res)) return;
+  const parse = resultSchema.safeParse(req.body);
+  if (!parse.success) {
+    res.status(400).json({ error: 'Invalid payload', issues: parse.error.issues });
+    return;
+  }
+  const job = await prisma.biometricJob.findUnique({
+    where: { id: req.params.id },
+    select: { id: true, type: true, deviceId: true, status: true },
+  });
+  if (!job) {
+    res.status(404).json({ error: 'job not found' });
+    return;
+  }
+  await prisma.biometricJob.update({
+    where: { id: job.id },
+    data: {
+      status: parse.data.status,
+      completedAt: new Date(),
+      result: parse.data.result !== undefined ? JSON.stringify(parse.data.result) : null,
+      error: parse.data.error ?? null,
+    },
+  });
+
+  // Side-effect for TEST jobs: stamp the device with firmware/serial/etc.
+  if (parse.data.status === 'DONE' && parse.data.result && typeof parse.data.result === 'object') {
+    const r = parse.data.result as Record<string, unknown>;
+    if (job.type === 'TEST' && (r.firmware || r.serial)) {
+      await prisma.biometricDevice.update({
+        where: { id: job.deviceId },
+        data: {
+          firmware: typeof r.firmware === 'string' ? r.firmware : undefined,
+          serialNumber: typeof r.serial === 'string' ? r.serial : undefined,
+          platform: typeof r.platform === 'string' ? r.platform : undefined,
+          lastSyncAt: new Date(),
+          lastSyncStatus: 'OK',
+          lastSyncError: null,
+        },
+      }).catch(() => {});
+    }
+  }
+
+  res.json({ ok: true });
+}));
+
 export default router;

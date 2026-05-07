@@ -153,11 +153,42 @@ function DevicesView({ devices, loading, reload, edit }: { devices: BiometricDev
     setTesting(d.id);
     try {
       const r = await api.post(`/biometric/devices/${d.id}/test`);
-      alert(`✓ Connected\nFirmware: ${r.data.info.firmware}\nSerial: ${r.data.info.serial}\nUsers on device: ${r.data.info.user_count}\nLogs on device: ${r.data.info.log_count}`);
-      reload();
+      // Factory-led path: cloud queues a job, factory-server picks it up
+      // within ~3s and runs it locally. Poll until DONE/FAILED (max 30s).
+      if (r.status === 202 && r.data.jobId) {
+        const result = await pollJob(r.data.jobId);
+        if (result.status === 'DONE' && result.result) {
+          const info = result.result;
+          alert(`✓ Connected (via factory)\nFirmware: ${info.firmware}\nSerial: ${info.serial}\nUsers on device: ${info.user_count}\nLogs on device: ${info.log_count}`);
+          reload();
+        } else if (result.status === 'FAILED') {
+          alert(`✗ ${result.error || 'job failed'}`);
+        } else {
+          alert('✗ Test timed out — factory-server did not respond within 30s. Check factory health.');
+        }
+      } else {
+        // Cloud-led path: synchronous response
+        alert(`✓ Connected\nFirmware: ${r.data.info.firmware}\nSerial: ${r.data.info.serial}\nUsers on device: ${r.data.info.user_count}\nLogs on device: ${r.data.info.log_count}`);
+        reload();
+      }
     } catch (e: any) {
       alert(`✗ ${e?.response?.data?.error || e?.message || 'Failed'}`);
     } finally { setTesting(null); }
+  }
+
+  // Poll /jobs/:id every 1s for up to 30s. Returns { status, result, error }.
+  async function pollJob(jobId: string): Promise<{ status: string; result?: any; error?: string | null }> {
+    const start = Date.now();
+    while (Date.now() - start < 30_000) {
+      try {
+        const r = await api.get(`/biometric/jobs/${jobId}`);
+        if (r.data.status === 'DONE' || r.data.status === 'FAILED') {
+          return r.data;
+        }
+      } catch { /* keep polling */ }
+      await new Promise(resolve => setTimeout(resolve, 1000));
+    }
+    return { status: 'TIMEOUT' };
   }
 
   // Health summary across all devices — drives the panel above the table.

@@ -19,6 +19,7 @@ import { startSyncWorker, getSyncWorkerStatus } from './services/syncWorker';
 import { initMasterDataCache, getCacheStats } from './services/masterDataCache';
 import { startWeightTriggeredCapture } from './services/weightTriggeredCapture';
 import { startBiometricScheduler, getBiometricSchedulerStatus } from './services/biometricScheduler';
+import { startBiometricJobRunner, getBiometricJobRunnerStatus } from './services/biometricJobRunner';
 
 const app = express();
 
@@ -38,6 +39,7 @@ app.get('/api/health', async (_req, res) => {
     getCameraStatus().catch(() => []),
     getBiometricSchedulerStatus().catch(() => null),
   ]);
+  const biometricJobs = getBiometricJobRunnerStatus();
   res.json({
     status: 'ok',
     server: 'MSPIL Factory Hub',
@@ -47,6 +49,7 @@ app.get('/api/health', async (_req, res) => {
     cameras,
     sync: getSyncWorkerStatus(),
     biometric,
+    biometricJobs,
   });
 });
 
@@ -259,6 +262,11 @@ app.listen(config.port, '0.0.0.0', () => {
   // every minute and pushes the cached employee list back. Self-disables
   // if BIOMETRIC_BRIDGE_KEY isn't configured.
   startBiometricScheduler();
+
+  // Biometric job runner — polls cloud's BiometricJob queue every 3s for
+  // ad-hoc admin operations (Test, Pull Users, etc.). Same direction as
+  // the weighbridge sync: factory-server initiates every cloud call.
+  startBiometricJobRunner();
 
   // Weight-triggered video/photo capture for ML training corpus.
   // PAUSED 2026-05-03 — corpus is sufficient (38.6 GB / 51k clips on factory disk).
