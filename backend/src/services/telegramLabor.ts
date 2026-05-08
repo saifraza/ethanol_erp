@@ -35,8 +35,6 @@ const SESSION_TIMEOUT_MS = 30 * 60_000; // abandoned sessions expire after 30 mi
 type Mode = 'menu' | 'add' | 'list';
 
 type AddStep =
-  | 'pick_contractor'
-  | 'confirm_contractor'
   | 'pick_wo'
   | 'pick_skill'
   | 'first_name'
@@ -154,108 +152,50 @@ async function startListWOs(chatId: string): Promise<void> {
 }
 
 async function startAdd(chatId: string, session: LaborSession): Promise<void> {
-  session.mode = 'add';
-  session.step = 'pick_contractor';
-  await send(chatId, [
-    '➕ *Add new labor*',
-    '',
-    'Which contractor? Type a part of the name.',
-    '_e.g. "abc" matches "ABC Contractors"_',
-  ].join('\n'));
-}
-
-async function handlePickContractor(session: LaborSession, text: string): Promise<void> {
-  const q = text.trim();
-  if (q.length < 2) {
-    await send(session.chatId, 'Type at least 2 characters of the contractor name.');
-    return;
-  }
-  const matches = await prisma.contractor.findMany({
-    where: {
-      OR: [
-        { name: { contains: q, mode: 'insensitive' } },
-        { contractorCode: { contains: q, mode: 'insensitive' } },
-      ],
-      isActive: true,
-    },
-    orderBy: { name: 'asc' },
-    select: { id: true, name: true, contractorCode: true },
-    take: 10,
-  });
-
-  if (matches.length === 0) {
-    await send(session.chatId, `No contractor matches "${q}". Try a different name, or type cancel.`);
-    return;
-  }
-
-  if (matches.length === 1) {
-    session.draft.contractorId = matches[0].id;
-    session.draft.contractorName = matches[0].name;
-    await proceedToWO(session);
-    return;
-  }
-
-  session.draft.contractorChoices = matches.map(m => ({ id: m.id, name: m.name, code: m.contractorCode }));
-  session.step = 'confirm_contractor';
-  const lines = [`Multiple contractors match "${q}":`, ''];
-  matches.forEach((m, i) => lines.push(`${i + 1}. ${m.name}${m.contractorCode ? ` (${m.contractorCode})` : ''}`));
-  lines.push('', '_Reply with the number._');
-  await send(session.chatId, lines.join('\n'));
-}
-
-async function handleConfirmContractor(session: LaborSession, text: string): Promise<void> {
-  const idx = parseInt(text.trim(), 10) - 1;
-  const choices = session.draft.contractorChoices ?? [];
-  if (isNaN(idx) || idx < 0 || idx >= choices.length) {
-    await send(session.chatId, 'Reply with one of the listed numbers.');
-    return;
-  }
-  session.draft.contractorId = choices[idx].id;
-  session.draft.contractorName = choices[idx].name;
-  await proceedToWO(session);
-}
-
-async function proceedToWO(session: LaborSession): Promise<void> {
+  // Pull every active manpower-supply WO with contractor inline + active count.
+  // Faster than asking the supervisor to type a contractor name first — they
+  // know which WO they're hiring labor for, not which contractor in isolation.
   const wos = await prisma.workOrder.findMany({
     where: {
-      contractorId: session.draft.contractorId!,
       contractType: 'MANPOWER_SUPPLY',
       status: { in: ['APPROVED', 'IN_PROGRESS', 'OPEN'] },
     },
     orderBy: { woNo: 'desc' },
-    select: { id: true, woNo: true, title: true, manpowerRateCard: true },
-    take: 10,
+    select: {
+      id: true, woNo: true, title: true, manpowerRateCard: true,
+      contractor: { select: { id: true, name: true } },
+      laborWorkers: { where: { isActive: true }, select: { id: true } },
+    },
+    take: 30,
   });
 
   if (wos.length === 0) {
-    await send(session.chatId, [
-      `❌ No active manpower-supply work order found for *${session.draft.contractorName}*.`,
+    await send(chatId, [
+      '❌ No active manpower-supply work orders found.',
       '',
-      'Create the WO in the ERP first, then come back here.',
+      'Create one in the ERP (Store > Work Orders, contractType = Manpower Supply) and come back.',
       '',
       '_Type cancel to exit._',
     ].join('\n'));
-    sessions.delete(session.chatId);
+    sessions.delete(chatId);
     return;
   }
 
-  if (wos.length === 1) {
-    session.draft.workOrderId = wos[0].id;
-    session.draft.woNo = wos[0].woNo;
-    session.draft.woTitle = wos[0].title;
-    await proceedToSkill(session, wos[0].manpowerRateCard);
-    return;
-  }
-
-  session.draft.woChoices = wos.map(w => ({ id: w.id, woNo: w.woNo, title: w.title }));
-  // Stash rate cards by WO id for the next step
-  (session.draft as any).rateCardsByWoId = Object.fromEntries(wos.map(w => [w.id, w.manpowerRateCard]));
+  session.mode = 'add';
   session.step = 'pick_wo';
+  session.draft.woChoices = wos.map(w => ({ id: w.id, woNo: w.woNo, title: w.title }));
+  // Stash extra detail keyed by WO id for the next step
+  (session.draft as any).rateCardsByWoId = Object.fromEntries(wos.map(w => [w.id, w.manpowerRateCard]));
+  (session.draft as any).contractorByWoId = Object.fromEntries(wos.map(w => [w.id, w.contractor]));
 
-  const lines = [`*${session.draft.contractorName}* — pick a WO:`, ''];
-  wos.forEach((w, i) => lines.push(`${i + 1}. WO-${w.woNo} ${w.title}`));
+  const lines = ['➕ *Add new labor*', '', 'Pick the work order:', ''];
+  wos.forEach((w, i) => {
+    const count = w.laborWorkers.length;
+    lines.push(`${i + 1}. WO-${w.woNo} · ${w.title}`);
+    lines.push(`   ${w.contractor.name} · ${count} active`);
+  });
   lines.push('', '_Reply with the number._');
-  await send(session.chatId, lines.join('\n'));
+  await send(chatId, lines.join('\n'));
 }
 
 async function handlePickWO(session: LaborSession, text: string): Promise<void> {
@@ -266,10 +206,13 @@ async function handlePickWO(session: LaborSession, text: string): Promise<void> 
     return;
   }
   const picked = choices[idx];
+  const rateCards = (session.draft as any).rateCardsByWoId as Record<string, unknown>;
+  const contractors = (session.draft as any).contractorByWoId as Record<string, { id: string; name: string }>;
   session.draft.workOrderId = picked.id;
   session.draft.woNo = picked.woNo;
   session.draft.woTitle = picked.title;
-  const rateCards = (session.draft as any).rateCardsByWoId as Record<string, unknown>;
+  session.draft.contractorId = contractors[picked.id]?.id;
+  session.draft.contractorName = contractors[picked.id]?.name;
   await proceedToSkill(session, rateCards[picked.id]);
 }
 
@@ -509,14 +452,12 @@ async function handleLaborMessage(chatId: string, text: string, _name: string | 
   if (session.mode === 'add' && session.step) {
     try {
       switch (session.step) {
-        case 'pick_contractor':    await handlePickContractor(session, trimmed); return true;
-        case 'confirm_contractor': await handleConfirmContractor(session, trimmed); return true;
-        case 'pick_wo':            await handlePickWO(session, trimmed); return true;
-        case 'pick_skill':         await handlePickSkill(session, trimmed); return true;
-        case 'first_name':         await handleName(session, trimmed); return true;
-        case 'father_name':        await handleFatherName(session, trimmed); return true;
-        case 'phone':              await handlePhone(session, trimmed); return true;
-        case 'confirm_save':       await handleConfirmSave(session, trimmed); return true;
+        case 'pick_wo':      await handlePickWO(session, trimmed); return true;
+        case 'pick_skill':   await handlePickSkill(session, trimmed); return true;
+        case 'first_name':   await handleName(session, trimmed); return true;
+        case 'father_name':  await handleFatherName(session, trimmed); return true;
+        case 'phone':        await handlePhone(session, trimmed); return true;
+        case 'confirm_save': await handleConfirmSave(session, trimmed); return true;
       }
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
