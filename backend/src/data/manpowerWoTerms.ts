@@ -31,7 +31,7 @@ export const DEFAULT_MANPOWER_TERMS: WoTermSection[] = [
     body:
       'Contractor must ensure safety equipment where required.\n' +
       'Client shall not be held liable for any injury or accident of the labor during work.\n' +
-      'All statutory compliances including PF, ESI, etc. shall be shared on a 50:50 basis, wherein 50% shall be borne by the contractor and the remaining 50% shall be borne by the company, as per applicable rules and regulations.',
+      'EPF @ 13% and ESI @ 3.25% shall be paid extra by the Company to the Contractor against monthly billing, subject to submission of valid EPF ECR and ESI payment challan receipts along with the invoice. In case the required challans/documents are not submitted, the respective payment shall remain on hold until verification and submission of the same.',
   },
   {
     title: 'Damage & Liability',
