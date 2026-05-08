@@ -82,7 +82,17 @@ function todayStr(): string {
 function fmtTime(iso: string | null): string {
   if (!iso) return '--';
   const d = new Date(iso);
-  return d.toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', hour12: false });
+  // 12-hour with AM/PM — operators kept misreading "01:24" as 1:24 PM
+  // when it was actually 1:24 AM (overnight overflow).
+  return d.toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', hour12: true });
+}
+
+function fmtDate(iso: string | null): string {
+  if (!iso) return '';
+  const d = new Date(iso);
+  // "08 May" — short, locale-friendly. Times alone were ambiguous when a
+  // worker punched just past midnight (still felt like the prior day's shift).
+  return d.toLocaleDateString('en-IN', { day: '2-digit', month: 'short' });
 }
 
 export default function Attendance() {
@@ -231,6 +241,7 @@ function DailyView({ employees }: { employees: EmployeeRef[] }) {
                     <td className="px-3 py-1.5 border-r border-slate-100">{g.emp.firstName} {g.emp.lastName}</td>
                     <td className="px-3 py-1.5 border-r border-slate-100 font-mono tabular-nums text-center">
                       <div>{fmtTime(firstIn.punchAt)}</div>
+                      <div className="text-[9px] text-slate-500 font-normal">{fmtDate(firstIn.punchAt)}</div>
                       <div className="text-[9px] text-slate-400 font-normal">{deviceLabel(firstIn)}</div>
                     </td>
                     <td className="px-3 py-1.5 border-r border-slate-100 font-mono tabular-nums text-center">
@@ -239,6 +250,7 @@ function DailyView({ employees }: { employees: EmployeeRef[] }) {
                       ) : (
                         <>
                           <div>{fmtTime(lastOut.punchAt)}</div>
+                          <div className="text-[9px] text-slate-500 font-normal">{fmtDate(lastOut.punchAt)}</div>
                           <div className="text-[9px] text-slate-400 font-normal">{deviceLabel(lastOut)}</div>
                         </>
                       )}
@@ -251,14 +263,15 @@ function DailyView({ employees }: { employees: EmployeeRef[] }) {
                       {deduped.map(p => (
                         <span
                           key={p.id}
-                          title={`${p.source}${deviceLabel(p) ? ` · ${deviceLabel(p)}` : ''} · ${p.deviceCode ?? ''}`}
-                          className={`inline-flex items-center gap-1 mr-1 px-1.5 py-0.5 border text-[10px] font-mono ${
+                          title={`${fmtDate(p.punchAt)} ${fmtTime(p.punchAt)} · ${p.source}${deviceLabel(p) ? ` · ${deviceLabel(p)}` : ''} · ${p.deviceCode ?? ''}`}
+                          className={`inline-flex items-center gap-1 mr-1 mb-1 px-1.5 py-0.5 border text-[10px] font-mono ${
                             p.source === 'DEVICE' ? 'border-emerald-300 bg-emerald-50' :
                             p.source === 'MANUAL' ? 'border-amber-300 bg-amber-50' :
                             'border-slate-300 bg-slate-50'
                           }`}
                         >
-                          {fmtTime(p.punchAt)}
+                          <span>{fmtTime(p.punchAt)}</span>
+                          <span className="text-[9px] text-slate-500">{fmtDate(p.punchAt)}</span>
                           {deviceLabel(p) && (
                             <span className="text-[9px] text-slate-500 font-semibold">{deviceLabel(p)}</span>
                           )}
