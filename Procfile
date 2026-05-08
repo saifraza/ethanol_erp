@@ -5,4 +5,4 @@
 # so the team committed to SchemaDriftGuard as the only schema mechanism.
 # Don't add `prisma db push` back here — register new columns/tables in
 # EXPECTED_COLUMNS / EXPECTED_TABLES instead.
-web: cd backend && node dist/server.js
+web: sh -c "cd backend && node dist/server.js"
