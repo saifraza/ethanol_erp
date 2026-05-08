@@ -1084,9 +1084,14 @@ router.get('/payments', authenticate, asyncHandler(async (req: AuthRequest, res:
     ? rawCategory.split(',').map(c => c.trim().toUpperCase()).filter(Boolean)
     : ['FUEL'];
 
+  // Store payments page (non-fuel/non-RM) opts in to also receive
+  // ContractorBill rows so a single PaymentsTable shows POs + WOs together.
+  const includeContractorBills = String(req.query.includeContractorBills || '').toLowerCase() === 'true';
+
   const result = await listPaymentRows({
     companyFilter: getCompanyFilter(req),
     categories,
+    includeContractorBills,
   });
   res.json(result);
 }));
