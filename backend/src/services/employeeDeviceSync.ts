@@ -39,14 +39,17 @@ async function runSync(employeeId: string, op: Op): Promise<void> {
   });
   if (!employee) return;
 
-  // Auto-assign deviceUserId if missing — use the bare empNo as a string
-  // (e.g. "457"). Field reverted from "MS-457" on 2026-05-08 because typing
-  // "MS-" on the eSSL device's tiny keypad to find a user was painful for
-  // supervisors. ERP-side empCode stays "MS-457" — only the device id is short.
-  // Falls back to a high-range numeric slot if the empNo string collides with
-  // another worker's existing deviceUserId.
+  // Auto-assign deviceUserId if missing — derive the numeric part of empCode
+  // (e.g. "MS-308" → "308"). Source-of-truth alignment fix from 2026-05-08:
+  // empNo and empCode-numeric drifted apart over time (336/544 active rows
+  // were off-by-one), so when supervisors saw "309" on the device they'd
+  // search "MS-309" in the ERP and land on the wrong person. Now device id
+  // matches what the employee remembers ("MS-308" → 308).
+  // Falls back to empNo if empCode doesn't match the MS-NNN format.
   if (op === 'UPSERT' && !employee.deviceUserId) {
-    const allocated = await findAvailableDeviceUserId(String(employee.empNo), 'EMPLOYEE', employee.id);
+    const codeMatch = employee.empCode?.match(/^MS-(\d+)$/);
+    const preferred = codeMatch ? String(parseInt(codeMatch[1], 10)) : String(employee.empNo);
+    const allocated = await findAvailableDeviceUserId(preferred, 'EMPLOYEE', employee.id);
     if (!allocated) {
       console.warn(`[employeeDeviceSync] could not allocate deviceUserId for ${employee.empCode}`);
       return;
