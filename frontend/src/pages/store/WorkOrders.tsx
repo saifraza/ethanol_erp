@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
 import api from '../../services/api';
 import EmailThreadDrawer, { EmailThreadQuery } from '../../components/EmailThreadDrawer';
 import { FileText, Send, RefreshCw, Inbox, Mail, Paperclip, HardHat } from 'lucide-react';
@@ -267,6 +267,63 @@ const linesToRoster = (lines: WorkOrderLine[] | undefined): ManpowerRosterRow[] 
       remarks: l.remarks ?? '',
     }));
 };
+
+/* ------------------------------------------------------------------ */
+/*  Today's labor attendance strip — only on Manpower Supply tab       */
+/* ------------------------------------------------------------------ */
+
+interface DailyLaborRow {
+  laborWorkerId: string;
+  workerCode: string;
+  firstName: string;
+  lastName: string | null;
+  firstIn: string;
+  lastOut: string | null;
+  hoursWorked: number;
+}
+
+function ManpowerAttendanceStrip() {
+  const [rows, setRows] = useState<DailyLaborRow[] | null>(null);
+  const [loading, setLoading] = useState(false);
+  const todayStr = useMemo(() => {
+    const d = new Date();
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+  }, []);
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      setLoading(true);
+      try {
+        const r = await api.get<{ date: string; rows: DailyLaborRow[] }>(`/attendance/labor-daily?date=${todayStr}`);
+        if (!cancelled) setRows(r.data.rows);
+      } catch {
+        if (!cancelled) setRows([]);
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [todayStr]);
+
+  const present = rows?.length ?? 0;
+  const totalHours = rows ? Math.round(rows.reduce((s, r) => s + r.hoursWorked, 0) * 10) / 10 : 0;
+
+  return (
+    <div className="bg-indigo-50 border-x border-b border-slate-300 -mx-3 md:-mx-6 px-4 py-2 flex items-center gap-4 text-[11px]">
+      <div className="font-bold text-indigo-900 uppercase tracking-widest">Today's Labor Attendance</div>
+      <div className="text-slate-700">
+        Present: <span className="font-mono font-bold text-indigo-700">{loading ? '…' : present}</span>
+      </div>
+      <div className="text-slate-700">
+        Hours: <span className="font-mono font-bold text-indigo-700">{loading ? '…' : totalHours.toFixed(1)}</span>
+      </div>
+      <Link to="/hr/labor-attendance" className="ml-auto text-indigo-700 hover:underline font-semibold">
+        View full →
+      </Link>
+    </div>
+  );
+}
 
 /* ------------------------------------------------------------------ */
 /*  Component                                                          */
@@ -902,6 +959,8 @@ export default function WorkOrders() {
             <div className="text-xl font-bold text-slate-800 mt-1 font-mono tabular-nums">{fmtCurrency(stats.totalUnbilled)}</div>
           </div>
         </div>
+
+        {contractTab === 'MANPOWER_SUPPLY' && <ManpowerAttendanceStrip />}
 
         {/* Table */}
         <div className="-mx-3 md:-mx-6 border-x border-b border-slate-300 overflow-x-auto">

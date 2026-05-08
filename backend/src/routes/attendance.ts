@@ -142,6 +142,134 @@ router.get('/punches', asyncHandler(async (req: AuthRequest, res: Response) => {
   res.json(enriched);
 }));
 
+/**
+ * Labor-side equivalent of /punches. Same enrichment shape, but joins
+ * LaborWorker instead of Employee. Mirrors the employee endpoint so the
+ * frontend can render with the same component shell.
+ *
+ * Filters: laborWorkerId, from, to (ISO instants).
+ */
+router.get('/labor-punches', asyncHandler(async (req: AuthRequest, res: Response) => {
+  const { laborWorkerId, from, to, source } = req.query as Record<string, string | undefined>;
+  const where: any = { ...getCompanyFilter(req), laborWorkerId: { not: null } };
+  if (laborWorkerId) where.laborWorkerId = laborWorkerId;
+  if (source) where.source = source;
+  if (from || to) {
+    where.punchAt = {};
+    if (from) where.punchAt.gte = new Date(from);
+    if (to) where.punchAt.lte = new Date(to);
+  }
+
+  const take = Math.min(parseInt(req.query.limit as string) || 200, 1000);
+  const punches = await prisma.attendancePunch.findMany({
+    where,
+    orderBy: { punchAt: 'desc' },
+    take,
+    select: {
+      id: true, laborWorkerId: true, punchAt: true, direction: true, source: true,
+      deviceId: true, notes: true, createdAt: true,
+      laborWorker: { select: { id: true, workerCode: true, firstName: true, lastName: true } },
+    },
+  });
+
+  // deviceId stores the device CODE (e.g. "MSPIL"), not a cuid — see
+  // biometricFactory.ts where punches are inserted. Look up by code.
+  const deviceCodes = [...new Set(punches.map(p => p.deviceId).filter((x): x is string => Boolean(x)))];
+  const devices = deviceCodes.length > 0
+    ? await prisma.biometricDevice.findMany({
+        where: { code: { in: deviceCodes } },
+        select: { code: true, name: true, location: true },
+      })
+    : [];
+  const devMap = new Map(devices.map(d => [d.code, d]));
+  const enriched = punches.map(p => ({
+    ...p,
+    deviceCode: p.deviceId ?? null,
+    deviceLocation: p.deviceId ? devMap.get(p.deviceId)?.location ?? null : null,
+    deviceName: p.deviceId ? devMap.get(p.deviceId)?.name ?? null : null,
+  }));
+  res.json(enriched);
+}));
+
+/**
+ * Daily labor attendance: one row per active labor worker for the given date
+ * (default = today IST), with first IN, last OUT, and total hours derived
+ * from the dedup'd same-day punches. Used by the HR Labor Attendance page
+ * and the Manpower Supply WO tab widget.
+ *
+ * Only labor with at least one punch in the day window are returned.
+ *
+ * Filters: date (YYYY-MM-DD, IST), workOrderId (when embedded in WO tab —
+ * filters to labor whose Employee.contractorId matches the contract's vendor;
+ * deferred until LaborWorker.contractorId / workOrderId is wired through).
+ */
+router.get('/labor-daily', asyncHandler(async (req: AuthRequest, res: Response) => {
+  const dateStr = (req.query.date as string) || istDateStr(new Date());
+  // Day window in IST → UTC
+  const dayStartUtc = istToUtc(dateStr, '00:00');
+  const dayEndUtc = new Date(dayStartUtc.getTime() + 24 * 60 * 60_000);
+
+  const punches = await prisma.attendancePunch.findMany({
+    where: {
+      ...getCompanyFilter(req),
+      laborWorkerId: { not: null },
+      punchAt: { gte: dayStartUtc, lt: dayEndUtc },
+    },
+    orderBy: { punchAt: 'asc' },
+    select: {
+      id: true, punchAt: true, direction: true, deviceId: true,
+      laborWorker: { select: { id: true, workerCode: true, firstName: true, lastName: true } },
+    },
+  });
+
+  // Group by labor + dedup same-device re-taps within 30s
+  const DEDUP_MS = 30_000;
+  const byLabor = new Map<string, typeof punches>();
+  for (const p of punches) {
+    if (!p.laborWorker) continue;
+    const arr = byLabor.get(p.laborWorker.id) ?? [];
+    const prev = arr[arr.length - 1];
+    if (prev && prev.deviceId === p.deviceId
+        && p.punchAt.getTime() - prev.punchAt.getTime() < DEDUP_MS) {
+      continue;
+    }
+    arr.push(p);
+    byLabor.set(p.laborWorker.id, arr);
+  }
+
+  // Device code → location map for nicer rendering
+  const deviceCodes = [...new Set(punches.map(p => p.deviceId).filter((x): x is string => Boolean(x)))];
+  const devices = deviceCodes.length > 0
+    ? await prisma.biometricDevice.findMany({
+        where: { code: { in: deviceCodes } },
+        select: { code: true, name: true, location: true },
+      })
+    : [];
+  const devMap = new Map(devices.map(d => [d.code, d]));
+
+  const rows = [...byLabor.entries()].map(([laborWorkerId, arr]) => {
+    const first = arr[0];
+    const last = arr[arr.length - 1];
+    const hoursWorked = arr.length > 1
+      ? Math.round(((last.punchAt.getTime() - first.punchAt.getTime()) / 3_600_000) * 10) / 10
+      : 0;
+    return {
+      laborWorkerId,
+      workerCode: first.laborWorker!.workerCode,
+      firstName: first.laborWorker!.firstName,
+      lastName: first.laborWorker!.lastName,
+      firstIn: first.punchAt.toISOString(),
+      lastOut: arr.length > 1 ? last.punchAt.toISOString() : null,
+      punchCount: arr.length,
+      hoursWorked,
+      firstDevice: first.deviceId ? (devMap.get(first.deviceId)?.location ?? first.deviceId) : null,
+      lastDevice: last.deviceId ? (devMap.get(last.deviceId)?.location ?? last.deviceId) : null,
+    };
+  }).sort((a, b) => a.workerCode.localeCompare(b.workerCode));
+
+  res.json({ date: dateStr, rows });
+}));
+
 router.post('/punches', validate(punchSchema), asyncHandler(async (req: AuthRequest, res: Response) => {
   const { employeeId, punchAt, direction, notes, source } = req.body as z.infer<typeof punchSchema>;
   const employee = await prisma.employee.findUnique({ where: { id: employeeId }, select: { id: true, empCode: true } });
