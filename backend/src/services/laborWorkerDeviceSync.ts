@@ -34,12 +34,15 @@ async function runSync(laborWorkerId: string, op: Op): Promise<void> {
   });
   if (!w) return;
 
-  // Auto-assign deviceUserId — use 'L<workerNo>' on the device (e.g. "L1")
-  // so labor doesn't collide with employees' bare-numeric ids and supervisors
-  // only have to press one prefix key when searching. ERP-side workerCode
-  // stays "LW-001" — only the device id changes.
+  // Auto-assign deviceUserId — derive the numeric part of workerCode and
+  // prefix with "L" (e.g. "LW-014" → "L14"). Mirrors employee logic so the
+  // device id always matches what's printed on the ERP. ERP-side workerCode
+  // stays "LW-014" — only the keypad-typed id is short. Falls back to
+  // workerNo if workerCode doesn't match the LW-NNN format.
   if (op === 'UPSERT' && !w.deviceUserId) {
-    const allocated = await findAvailableDeviceUserId(`L${w.workerNo}`, 'LABOR', w.id);
+    const codeMatch = w.workerCode?.match(/^LW-(\d+)$/);
+    const preferred = codeMatch ? `L${parseInt(codeMatch[1], 10)}` : `L${w.workerNo}`;
+    const allocated = await findAvailableDeviceUserId(preferred, 'LABOR', w.id);
     if (!allocated) {
       console.warn(`[laborWorkerDeviceSync] could not allocate deviceUserId for ${w.workerCode}`);
       return;
