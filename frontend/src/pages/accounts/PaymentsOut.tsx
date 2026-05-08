@@ -43,6 +43,13 @@ interface VendorLedgerEntry {
 interface PendingPayable {
   poId: string;
   poNo: number;
+  // `kind` discriminates raw vendor POs from contractor bills (which can be
+  // backed by a Work Order or an indent-spawned PO). `sourceLabel` is the
+  // pre-formatted "PO-1234" / "WO-21" / "BILL-7" string ready for display.
+  kind: 'PO' | 'CONTRACTOR_BILL';
+  sourceLabel: string;
+  workOrderId: string | null;
+  workOrderNo: number | null;
   poDate: string;
   poAmount: number;
   poStatus: string;
@@ -136,6 +143,7 @@ export default function PaymentsOut() {
   const [pendingSummary, setPendingSummary] = useState<PendingSummary | null>(null);
   const [pendingLoading, setPendingLoading] = useState(false);
   const [pendingCategory, setPendingCategory] = useState<'ALL' | 'FUEL' | 'RAW_MATERIAL' | 'GENERAL'>('ALL');
+  const [pendingKind, setPendingKind] = useState<'ALL' | 'PO' | 'CONTRACTOR_BILL'>('ALL');
   const [pendingSearch, setPendingSearch] = useState('');
   const [pendingFrom, setPendingFrom] = useState('');
   const [pendingTo, setPendingTo] = useState('');
@@ -309,21 +317,25 @@ export default function PaymentsOut() {
 
   const filteredPending = useMemo(() => {
     const q = pendingSearch.trim().toLowerCase();
-    const stripped = q.replace(/^po-?/, '');
+    const stripped = q.replace(/^(po|wo|bill)-?/, '');
     return pending
       .filter(p => {
-        if (pendingCategory !== 'ALL' && (p.category || 'GENERAL') !== pendingCategory) return false;
+        if (pendingKind !== 'ALL' && p.kind !== pendingKind) return false;
+        // Inventory category filter only applies to vendor POs — contractor bills
+        // don't carry an InventoryItem.category and would otherwise be hidden by
+        // any non-ALL choice except GENERAL.
+        if (pendingCategory !== 'ALL' && p.kind === 'PO' && (p.category || 'GENERAL') !== pendingCategory) return false;
         if (pendingFrom && p.poDate < pendingFrom) return false;
         if (pendingTo && p.poDate > pendingTo + 'T23:59:59') return false;
         if (q) {
-          const haystack = `${p.vendorName} ${p.material || ''} ${p.poNo}`.toLowerCase();
+          const haystack = `${p.vendorName} ${p.material || ''} ${p.sourceLabel}`.toLowerCase();
           if (!haystack.includes(q) && !String(p.poNo).includes(stripped)) return false;
         }
         return true;
       })
       .slice()
       .sort((a, b) => sortCompare(a, b, pendingSortKey, pendingSortDir));
-  }, [pending, pendingCategory, pendingSearch, pendingFrom, pendingTo, pendingSortKey, pendingSortDir]);
+  }, [pending, pendingKind, pendingCategory, pendingSearch, pendingFrom, pendingTo, pendingSortKey, pendingSortDir]);
 
   const filteredCompleted = useMemo(() => {
     return completed.slice().sort((a, b) => sortCompare(a, b, completedSortKey, completedSortDir));
@@ -508,11 +520,23 @@ export default function PaymentsOut() {
           <>
             {/* Filter strip */}
             <div className="bg-slate-100 border-x border-b border-slate-300 px-4 py-2.5 -mx-3 md:-mx-6 flex items-center gap-3 flex-wrap">
+              <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">Type</label>
+              <select
+                value={pendingKind}
+                onChange={(e) => setPendingKind(e.target.value as typeof pendingKind)}
+                className="border border-slate-300 px-2 py-1.5 text-xs focus:outline-none focus:ring-1 focus:ring-slate-400"
+              >
+                <option value="ALL">All</option>
+                <option value="PO">PO (Vendor)</option>
+                <option value="CONTRACTOR_BILL">WO / Contractor</option>
+              </select>
               <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">Category</label>
               <select
                 value={pendingCategory}
                 onChange={(e) => setPendingCategory(e.target.value as typeof pendingCategory)}
                 className="border border-slate-300 px-2 py-1.5 text-xs focus:outline-none focus:ring-1 focus:ring-slate-400"
+                disabled={pendingKind === 'CONTRACTOR_BILL'}
+                title={pendingKind === 'CONTRACTOR_BILL' ? 'Category filter applies only to vendor POs' : undefined}
               >
                 <option value="ALL">All</option>
                 <option value="FUEL">Fuel</option>
@@ -525,7 +549,7 @@ export default function PaymentsOut() {
                   type="text"
                   value={pendingSearch}
                   onChange={(e) => setPendingSearch(e.target.value)}
-                  placeholder="Vendor, PO# or material..."
+                  placeholder="Vendor, PO/WO/Bill# or material..."
                   className="border border-slate-300 pl-7 pr-2 py-1.5 text-xs w-64 focus:outline-none focus:ring-1 focus:ring-slate-400"
                 />
               </div>
@@ -536,13 +560,13 @@ export default function PaymentsOut() {
               <input type="date" value={pendingTo} onChange={(e) => setPendingTo(e.target.value)} max={todayStr()}
                 className="border border-slate-300 px-2 py-1.5 text-xs focus:outline-none focus:ring-1 focus:ring-slate-400" />
               <span className="text-[10px] text-slate-400 uppercase tracking-widest ml-auto">
-                {pendingLoading ? 'Loading...' : `${filteredPending.length} of ${pending.length} POs`}
+                {pendingLoading ? 'Loading...' : `${filteredPending.length} of ${pending.length} payables`}
               </span>
             </div>
 
             {/* KPI strip */}
             <div className="grid grid-cols-4 gap-0 border-x border-b border-slate-300 -mx-3 md:-mx-6">
-              <KpiCard label="Total Pending POs" value={String(pending.length)} accent="border-l-blue-500" mono />
+              <KpiCard label="Total Pending" value={String(pending.length)} accent="border-l-blue-500" mono />
               <KpiCard label="Total Outstanding" value={fmtCurrency(pendingSummary?.totalPayable || 0)} accent="border-l-amber-500" />
               <KpiCard label="Overdue" value={String(overdueCount)} accent="border-l-red-500" mono valueClass="text-red-700" />
               <KpiCard label="Vendors" value={String(pendingVendorCount)} accent="border-l-slate-400" mono />
@@ -553,12 +577,13 @@ export default function PaymentsOut() {
               <table className="w-full text-xs">
                 <thead>
                   <tr className="bg-slate-800 text-white">
-                    <SortTh active={pendingSortKey === 'poNo'} dir={pendingSortDir} onClick={() => togglePendingSort('poNo')}>PO#</SortTh>
+                    <SortTh active={pendingSortKey === 'kind'} dir={pendingSortDir} onClick={() => togglePendingSort('kind')}>Type</SortTh>
+                    <SortTh active={pendingSortKey === 'sourceLabel'} dir={pendingSortDir} onClick={() => togglePendingSort('sourceLabel')}>Ref</SortTh>
                     <SortTh active={pendingSortKey === 'vendorName'} dir={pendingSortDir} onClick={() => togglePendingSort('vendorName')}>Vendor</SortTh>
                     <Th>Material</Th>
-                    <SortTh active={pendingSortKey === 'poDate'} dir={pendingSortDir} onClick={() => togglePendingSort('poDate')}>PO Date</SortTh>
+                    <SortTh active={pendingSortKey === 'poDate'} dir={pendingSortDir} onClick={() => togglePendingSort('poDate')}>Date</SortTh>
                     <Th>Terms</Th>
-                    <SortTh align="right" active={pendingSortKey === 'poAmount'} dir={pendingSortDir} onClick={() => togglePendingSort('poAmount')}>PO Amount</SortTh>
+                    <SortTh align="right" active={pendingSortKey === 'poAmount'} dir={pendingSortDir} onClick={() => togglePendingSort('poAmount')}>Amount</SortTh>
                     <Th>GRN Date</Th>
                     <SortTh align="right" active={pendingSortKey === 'daysOverdue'} dir={pendingSortDir} onClick={() => togglePendingSort('daysOverdue')}>Days Over</SortTh>
                     <SortTh align="right" active={pendingSortKey === 'balance'} dir={pendingSortDir} onClick={() => togglePendingSort('balance')}>Outstanding</SortTh>
@@ -567,14 +592,20 @@ export default function PaymentsOut() {
                 </thead>
                 <tbody>
                   {filteredPending.length === 0 ? (
-                    <tr><td colSpan={10} className="px-3 py-10 text-center text-xs text-slate-400 uppercase tracking-widest">
-                      {pendingLoading ? 'Loading...' : 'No pending POs match these filters.'}
+                    <tr><td colSpan={11} className="px-3 py-10 text-center text-xs text-slate-400 uppercase tracking-widest">
+                      {pendingLoading ? 'Loading...' : 'No pending payables match these filters.'}
                     </td></tr>
                   ) : filteredPending.map((p, i) => {
                     const overdue = (p.daysOverdue || 0) > 0;
+                    const isContractor = p.kind === 'CONTRACTOR_BILL';
                     return (
                       <tr key={p.poId} className={`border-b border-slate-100 hover:bg-blue-50/60 ${i % 2 ? 'bg-slate-50/70' : ''}`}>
-                        <td className="px-3 py-1.5 font-mono tabular-nums text-slate-600 border-r border-slate-100">PO-{p.poNo}</td>
+                        <td className="px-3 py-1.5 border-r border-slate-100">
+                          <span className={`inline-block px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-widest ${isContractor ? 'bg-purple-100 text-purple-800' : 'bg-blue-100 text-blue-800'}`}>
+                            {isContractor ? (p.workOrderNo != null ? 'WO' : 'BILL') : 'PO'}
+                          </span>
+                        </td>
+                        <td className="px-3 py-1.5 font-mono tabular-nums text-slate-600 border-r border-slate-100">{p.sourceLabel}</td>
                         <td className="px-3 py-1.5 border-r border-slate-100">
                           <button onClick={() => setVendorModalId(p.vendorId)} className="text-blue-700 hover:underline font-semibold text-left">
                             {p.vendorName}

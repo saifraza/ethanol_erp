@@ -354,13 +354,14 @@ export default function ContractorIssues() {
                 <th className="text-right px-3 py-2 font-semibold text-[10px] uppercase tracking-widest border-r border-slate-700">Charge Amt</th>
                 <th className="text-right px-3 py-2 font-semibold text-[10px] uppercase tracking-widest border-r border-slate-700">Total</th>
                 <th className="text-center px-3 py-2 font-semibold text-[10px] uppercase tracking-widest border-r border-slate-700">Status</th>
+                <th className="text-center px-3 py-2 font-semibold text-[10px] uppercase tracking-widest border-r border-slate-700">Payment</th>
                 <th className="text-center px-3 py-2 font-semibold text-[10px] uppercase tracking-widest">Actions</th>
               </tr>
             </thead>
             <tbody>
               {data.length === 0 ? (
                 <tr>
-                  <td colSpan={10} className="px-3 py-8 text-center text-xs text-slate-400 uppercase tracking-widest">
+                  <td colSpan={11} className="px-3 py-8 text-center text-xs text-slate-400 uppercase tracking-widest">
                     No issues found
                   </td>
                 </tr>
@@ -393,6 +394,17 @@ export default function ContractorIssues() {
                       <span className={`text-[9px] font-bold uppercase px-1.5 py-0.5 border ${statusColor[row.status] ?? statusColor.DRAFT}`}>
                         {row.status}
                       </span>
+                    </td>
+                    <td className="px-3 py-1.5 text-center border-r border-slate-100">
+                      <a
+                        href={`/accounts/payments-out?contractorId=${row.contractorId}`}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        onClick={(e) => e.stopPropagation()}
+                        className="inline-block px-2 py-0.5 bg-blue-50 border border-blue-200 text-blue-700 text-[10px] font-medium hover:bg-blue-100"
+                      >
+                        Update
+                      </a>
                     </td>
                     <td className="px-3 py-1.5 text-center">
                       <button

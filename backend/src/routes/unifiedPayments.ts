@@ -789,6 +789,13 @@ router.get('/outgoing/pending', asyncHandler(async (req: AuthRequest, res: Respo
   interface PendingPayable {
     poId: string;
     poNo: number;
+    // kind discriminates the row's source. Lets the UI render a Type chip and
+    // filter PO vs WO/contractor-bill payables separately. ContractorBill rows
+    // re-use poId/poNo/vendorName to keep the existing UI/sort code happy.
+    kind: 'PO' | 'CONTRACTOR_BILL';
+    sourceLabel: string; // 'PO-1234' | 'WO-21' | 'BILL-7'
+    workOrderId: string | null;
+    workOrderNo: number | null;
     poDate: string;
     poAmount: number;
     poSubtotal: number;
@@ -974,6 +981,10 @@ router.get('/outgoing/pending', asyncHandler(async (req: AuthRequest, res: Respo
     pending.push({
       poId: po.id,
       poNo: po.poNo,
+      kind: 'PO',
+      sourceLabel: `PO-${po.poNo}`,
+      workOrderId: null,
+      workOrderNo: null,
       poDate: po.poDate.toISOString(),
       poAmount: effectivePoAmount,
       poSubtotal: isOpenDeal ? grnTotalValue : (po.subtotal || 0),
@@ -1067,12 +1078,18 @@ router.get('/outgoing/pending', asyncHandler(async (req: AuthRequest, res: Respo
   }
 
   // ── Contractor bills (confirmed, unpaid) ──
+  // These cover both work-order bills (workOrderId set) and indent-PO bills
+  // (purchaseOrderId set). The `kind: 'CONTRACTOR_BILL'` flag lets the UI
+  // tag them distinctly from raw vendor POs; sourceLabel prefers the WO/PO
+  // number when present so the user sees "WO-21" instead of "BILL-7".
   const contractorBills = await prisma.contractorBill.findMany({
     where: { status: { in: ['CONFIRMED', 'PARTIAL_PAID'] }, balanceAmount: { gt: 0 } },
     select: {
       id: true, billNo: true, billDate: true, description: true,
       subtotal: true, totalAmount: true, tdsAmount: true, tdsPercent: true,
       netPayable: true, paidAmount: true, balanceAmount: true, status: true,
+      workOrderId: true,
+      workOrder: { select: { id: true, woNo: true } },
       contractor: {
         select: {
           id: true, name: true, contractorCode: true, tdsPercent: true, tdsSection: true,
@@ -1085,9 +1102,15 @@ router.get('/outgoing/pending', asyncHandler(async (req: AuthRequest, res: Respo
   });
 
   for (const cb of contractorBills) {
+    const woNo = cb.workOrder?.woNo ?? null;
+    const sourceLabel = woNo != null ? `WO-${woNo}` : `BILL-${cb.billNo}`;
     pending.push({
       poId: cb.id, // reuse field as source ID
       poNo: cb.billNo,
+      kind: 'CONTRACTOR_BILL',
+      sourceLabel,
+      workOrderId: cb.workOrder?.id ?? cb.workOrderId ?? null,
+      workOrderNo: woNo,
       poDate: cb.billDate.toISOString(),
       poAmount: cb.totalAmount,
       poSubtotal: cb.subtotal,
