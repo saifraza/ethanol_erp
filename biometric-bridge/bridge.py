@@ -719,6 +719,61 @@ def users_rename(body: RenameUsersReq, x_bridge_key: Optional[str] = Header(None
     }
 
 
+class ClearTemplatesReq(BaseModel):
+    device: DeviceRef
+
+
+@app.post("/devices/templates/clear-all")
+def templates_clear_all(body: ClearTemplatesReq, x_bridge_key: Optional[str] = Header(None)):
+    """Wipe every enrolled fingerprint template on this device.
+
+    Keeps user records intact — so when workers re-enrol tomorrow, the user_id
+    + name are already there and only the new template gets stored. Does NOT
+    touch face templates (those use a different storage region).
+
+    Implementation: enumerate all templates via get_templates(), call
+    delete_user_template(uid, temp_id) per (uid, finger), then refresh_data()
+    to force the device to commit to flash. Verify by re-listing.
+    """
+    _check_key(x_bridge_key)
+    deleted = 0
+    failed = 0
+    errors: list[dict] = []
+    with _Conn(body.device) as conn:
+        templates = list(conn.get_templates() or [])
+        before = len(templates)
+        for t in templates:
+            uid = getattr(t, "uid", None)
+            fid = getattr(t, "fid", None)
+            if uid is None or fid is None:
+                continue
+            try:
+                conn.delete_user_template(uid=int(uid), temp_id=int(fid))
+                deleted += 1
+            except Exception as e:
+                failed += 1
+                if len(errors) < 10:
+                    errors.append({"uid": uid, "fid": fid, "error": f"{type(e).__name__}: {e}"})
+
+        try:
+            conn.refresh_data()
+        except Exception:
+            pass
+
+        after_templates = list(conn.get_templates() or [])
+        after = len(after_templates)
+
+    return {
+        "ok": True,
+        "templates_before": before,
+        "deleted_acked": deleted,
+        "failed": failed,
+        "templates_after": after,
+        "actually_removed": before - after,
+        "errors": errors,
+    }
+
+
 class TemplatesListReq(BaseModel):
     device: DeviceRef
 
