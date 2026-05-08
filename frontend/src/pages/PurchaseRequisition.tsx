@@ -169,6 +169,9 @@ export default function PurchaseRequisition() {
   const [loading, setLoading] = useState(true);
   const [tab, setTab] = useState<'list' | 'new'>(searchParams.get('new') ? 'new' : 'list');
   const [filterStatus, setFilterStatus] = useState<string>('ALL');
+  // Quick category chip — 'ALL' shows everything, 'TRANSPORT_SERVICE' filters
+  // to transport indents so the user can pull up routes that need a freight WO.
+  const [filterCategory, setFilterCategory] = useState<'ALL' | 'TRANSPORT_SERVICE'>('ALL');
   const [search, setSearch] = useState('');
   const [expanded, setExpanded] = useState<string | null>(null);
 
@@ -820,6 +823,7 @@ export default function PurchaseRequisition() {
   // remove the visual noise of unrelated rows below the open detail.
   const filtered = reqs.filter(pr => {
     if (expanded && pr.id !== expanded) return false;
+    if (filterCategory !== 'ALL' && pr.category !== filterCategory) return false;
     if (!search.trim()) return true;
     const q = search.toLowerCase();
     return pr.itemName.toLowerCase().includes(q) || pr.title.toLowerCase().includes(q) || String(pr.reqNo).includes(q) || (pr.department || '').toLowerCase().includes(q) || (pr.vendor?.name || '').toLowerCase().includes(q);
@@ -881,8 +885,16 @@ export default function PurchaseRequisition() {
           })()}
         </div>
         {tab === 'list' && (
-          <input type="text" value={search} onChange={e => setSearch(e.target.value)} placeholder="Search item, req#, vendor, dept..."
-            className="border border-slate-300 px-2.5 py-1 text-xs w-64 focus:outline-none focus:ring-1 focus:ring-blue-500" />
+          <div className="flex items-center gap-2">
+            <button
+              onClick={() => setFilterCategory(filterCategory === 'TRANSPORT_SERVICE' ? 'ALL' : 'TRANSPORT_SERVICE')}
+              className={`px-2.5 py-1 text-[10px] font-bold uppercase tracking-widest border ${filterCategory === 'TRANSPORT_SERVICE' ? 'bg-amber-500 text-white border-amber-600' : 'bg-white text-slate-600 border-slate-300 hover:bg-amber-50'}`}
+              title="Toggle: show only Transport Service indents">
+              {filterCategory === 'TRANSPORT_SERVICE' ? '✕ Transport' : '🚚 Transport'}
+            </button>
+            <input type="text" value={search} onChange={e => setSearch(e.target.value)} placeholder="Search item, req#, vendor, dept..."
+              className="border border-slate-300 px-2.5 py-1 text-xs w-64 focus:outline-none focus:ring-1 focus:ring-blue-500" />
+          </div>
         )}
       </div>
 
@@ -1072,6 +1084,9 @@ export default function PurchaseRequisition() {
                       <td className="px-3 py-1.5 text-slate-500 border-r border-slate-100 font-mono tabular-nums">{pr.reqNo}</td>
                       <td className="px-3 py-1.5 text-slate-500 border-r border-slate-100 text-[10px]">{fmtDate(pr.createdAt)}</td>
                       <td className="px-3 py-1.5 text-slate-800 font-medium border-r border-slate-100 truncate max-w-[360px]" title={pr.lines.length > 1 ? pr.lines.map(l => `${l.itemName} (${l.quantity} ${l.unit})`).join(', ') : pr.itemName}>
+                        {pr.category === 'TRANSPORT_SERVICE' && (
+                          <span className="inline-block mr-1.5 px-1 py-0.5 text-[8px] font-bold uppercase tracking-widest bg-amber-100 text-amber-800 border border-amber-200 align-middle" title="Transport service indent">🚚 TRANSPORT</span>
+                        )}
                         {pr.itemName}
                         {pr.lines.length > 1 && <span className="ml-1 text-[10px] text-blue-600 font-bold">+ {pr.lines.length - 1} more</span>}
                       </td>

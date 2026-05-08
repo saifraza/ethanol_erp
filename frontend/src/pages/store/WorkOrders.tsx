@@ -9,7 +9,30 @@ import { FileText, Send, RefreshCw, Inbox, Mail, Paperclip, HardHat } from 'luci
 /* ------------------------------------------------------------------ */
 
 type SupplyType = 'INTRA_STATE' | 'INTER_STATE' | 'NON_GST';
-type ContractType = 'GENERAL' | 'MANPOWER_SUPPLY';
+type ContractType = 'GENERAL' | 'MANPOWER_SUPPLY' | 'TRANSPORT';
+
+// One row of the freight rate card on a transport WO. At least one of
+// perKm / perTon / perTrip should be filled so the contractor knows how to
+// bill — UI enforces it, backend stores whichever the user chose.
+interface TransportRateEntry {
+  material: string;
+  destination: string;
+  vehicleType: string;
+  perKm: number;
+  perTon: number;
+  perTrip: number;
+  notes: string;
+}
+
+const emptyTransportRate = (): TransportRateEntry => ({
+  material: '',
+  destination: '',
+  vehicleType: '',
+  perKm: 0,
+  perTon: 0,
+  perTrip: 0,
+  notes: '',
+});
 type SkillCategory = 'SKILLED' | 'SEMI_SKILLED' | 'UNSKILLED' | 'SUPERVISOR';
 type ShiftHours = 8 | 12;
 
@@ -87,6 +110,7 @@ interface WorkOrder {
   description?: string | null;
   contractType?: ContractType;
   manpowerRateCard?: RateCardEntry[] | null;
+  transportRateCard?: TransportRateEntry[] | null;
   contractorId: string;
   contractor: { id: string; name: string; contractorCode?: string; gstin?: string | null; email?: string | null; phone?: string | null; tdsSection?: string; tdsPercent?: number };
   startDate?: string | null;
@@ -220,6 +244,30 @@ const DEFAULT_MANPOWER_TERMS: Array<{ title: string; body: string }> = [
     body: 'Any dispute will be settled amicably.\nIf unresolved, the jurisdiction shall be Narsinghpur courts only.' },
   { title: 'Duties & Taxes',
     body: 'Taxes and duties, PF, ESI etc. extra as applicable according to law, at the time of billing.' },
+];
+
+// Default Terms & Conditions for new TRANSPORT work orders. Backend keeps
+// the canonical copy at data/transportWoTerms.ts — this mirror lets the form
+// pre-fill instantly without a server round-trip.
+const DEFAULT_TRANSPORT_TERMS: Array<{ title: string; body: string }> = [
+  { title: 'Scope of Transport',
+    body: 'Transporter shall move the agreed material from the loading point at MSPIL to the destination(s) listed in the rate card.\nLoading and unloading arrangements are as per the per-trip understanding unless agreed otherwise in writing.' },
+  { title: 'Vehicle & Driver Compliance',
+    body: 'Transporter shall deploy roadworthy vehicles with valid RC, fitness, insurance, PUC, and permit covering the destination route.\nDrivers must hold a valid commercial licence appropriate to the vehicle class and follow MSPIL gate, PPE, and safety norms.' },
+  { title: 'Loading & Weighment',
+    body: 'Net weight at MSPIL\'s certified weighbridge is the basis for billing — both empty and loaded weights must be captured at the gate.\nAny tarp, lashing, or load-securing arrangement is the transporter\'s responsibility.' },
+  { title: 'Transit & Delivery',
+    body: 'Material shall reach the destination in the same condition it left the gate. Transit losses, pilferage, or contamination are the transporter\'s liability and will be recovered from the freight bill.\nProof of delivery (signed POD / unloading acknowledgement) must accompany every freight invoice.' },
+  { title: 'Rates & Billing',
+    body: 'Freight rates per tonne / per km / per trip are as set out in the rate card attached. Rates are inclusive of driver bhatta, halting, and standard detention; any deviation must be pre-approved in writing.\nGST, toll, and statutory levies are extra against valid documents.' },
+  { title: 'Statutory Compliance',
+    body: 'Transporter is responsible for vehicle taxes, RTO compliance, GST registration, and e-way bill generation where applicable.\nTDS under Section 194C will be deducted by the Company at applicable rates against PAN.' },
+  { title: 'Insurance & Liability',
+    body: 'The transporter\'s goods-in-transit insurance covers material from gate-out to destination. The Company is not liable for any accident, damage, theft, or loss during transit.' },
+  { title: 'Termination',
+    body: 'This work order is valid for the period agreed at the time of issue and may be terminated by either party with 7 days written notice or for cause without notice.' },
+  { title: 'Dispute Resolution',
+    body: 'Any dispute will be settled amicably.\nIf unresolved, the jurisdiction shall be Narsinghpur courts only.' },
 ];
 
 const emptyRosterRow = (categoryKey = 'SKILLED'): ManpowerRosterRow => ({
@@ -359,6 +407,7 @@ export default function WorkOrders() {
   // Manpower form state
   const [formRateCard, setFormRateCard] = useState<RateCardEntry[]>(DEFAULT_RATE_CARD);
   const [formRoster, setFormRoster] = useState<ManpowerRosterRow[]>([emptyRosterRow()]);
+  const [formTransportRates, setFormTransportRates] = useState<TransportRateEntry[]>([emptyTransportRate()]);
   const [saving, setSaving] = useState(false);
 
   // detail modal
@@ -490,12 +539,17 @@ export default function WorkOrders() {
     setFormCreditDays(30);
     setFormPaymentTerms('');
     setFormTerms(
-      kind === 'MANPOWER_SUPPLY' ? DEFAULT_MANPOWER_TERMS.map(t => ({ ...t })) : [],
+      kind === 'MANPOWER_SUPPLY'
+        ? DEFAULT_MANPOWER_TERMS.map(t => ({ ...t }))
+        : kind === 'TRANSPORT'
+          ? DEFAULT_TRANSPORT_TERMS.map(t => ({ ...t }))
+          : [],
     );
     setFormRemarks('');
     setFormLines([emptyLine()]);
     setFormRateCard(DEFAULT_RATE_CARD.map((e) => ({ ...e })));
     setFormRoster([emptyRosterRow()]);
+    setFormTransportRates([emptyTransportRate()]);
   };
 
   const openCreate = () => {
@@ -524,7 +578,11 @@ export default function WorkOrders() {
     setFormTerms(
       Array.isArray(wo.termsAndConditions) && wo.termsAndConditions.length > 0
         ? wo.termsAndConditions.map(t => ({ ...t }))
-        : (kind === 'MANPOWER_SUPPLY' ? DEFAULT_MANPOWER_TERMS.map(t => ({ ...t })) : []),
+        : (kind === 'MANPOWER_SUPPLY'
+          ? DEFAULT_MANPOWER_TERMS.map(t => ({ ...t }))
+          : kind === 'TRANSPORT'
+            ? DEFAULT_TRANSPORT_TERMS.map(t => ({ ...t }))
+            : []),
     );
     setFormRemarks(wo.remarks ?? '');
     if (kind === 'MANPOWER_SUPPLY') {
@@ -532,6 +590,23 @@ export default function WorkOrders() {
       setFormRateCard(card.map((e) => ({ ...e })));
       setFormRoster(linesToRoster(wo.lines));
       setFormLines([emptyLine()]); // unused in this mode
+    } else if (kind === 'TRANSPORT') {
+      const card = (wo.transportRateCard && wo.transportRateCard.length > 0)
+        ? wo.transportRateCard
+        : [emptyTransportRate()];
+      setFormTransportRates(card.map((e) => ({ ...e })));
+      setFormLines(
+        (wo.lines ?? []).map((l) => ({
+          description: l.description,
+          hsnSac: l.hsnSac ?? '',
+          quantity: l.quantity,
+          unit: l.unit,
+          rate: l.rate,
+          discountPercent: l.discountPercent,
+          gstPercent: l.gstPercent,
+          remarks: l.remarks ?? '',
+        })) || [emptyLine()],
+      );
     } else {
       setFormLines(
         (wo.lines ?? []).map((l) => ({
@@ -590,6 +665,40 @@ export default function WorkOrders() {
           shiftCount: r.shiftCount,
         };
       });
+    } else if (formContractType === 'TRANSPORT') {
+      // Transport WO is a framework agreement — the rate card carries the
+      // commercial detail. The user can leave the lines table empty (we'll
+      // inject a placeholder so the API still gets >=1 line) or add a
+      // lump-sum / advance line if they want a contract value.
+      const validRateCard = formTransportRates.filter(r => r.material.trim() && r.destination.trim());
+      if (validRateCard.length === 0) {
+        alert('Add at least one rate card row (material + destination).');
+        return;
+      }
+      const validLines = formLines.filter((l) => l.description.trim() && l.quantity > 0 && l.rate > 0);
+      payloadLines = validLines.length > 0
+        ? validLines.map((l) => ({
+            description: l.description,
+            hsnSac: l.hsnSac || null,
+            quantity: l.quantity,
+            unit: l.unit || 'NOS',
+            rate: l.rate,
+            discountPercent: l.discountPercent,
+            gstPercent: l.gstPercent,
+            remarks: l.remarks || null,
+            lineKind: 'GENERAL',
+          }))
+        : [{
+            description: 'Freight as per attached rate card',
+            hsnSac: '996791', // GTA SAC
+            quantity: 1,
+            unit: 'LUMP',
+            rate: 0,
+            discountPercent: 0,
+            gstPercent: 0,
+            remarks: null,
+            lineKind: 'GENERAL',
+          }];
     } else {
       const validLines = formLines.filter((l) => l.description.trim() && l.quantity > 0 && l.rate > 0);
       if (validLines.length === 0) return;
@@ -612,6 +721,20 @@ export default function WorkOrders() {
         contractorId: formContractorId,
         contractType: formContractType,
         manpowerRateCard: formContractType === 'MANPOWER_SUPPLY' ? formRateCard : null,
+        transportRateCard: formContractType === 'TRANSPORT'
+          ? formTransportRates
+              .map(r => ({
+                ...r,
+                material: r.material.trim(),
+                destination: r.destination.trim(),
+                vehicleType: r.vehicleType.trim() || null,
+                notes: r.notes.trim() || null,
+                perKm: r.perKm > 0 ? r.perKm : null,
+                perTon: r.perTon > 0 ? r.perTon : null,
+                perTrip: r.perTrip > 0 ? r.perTrip : null,
+              }))
+              .filter(r => r.material && r.destination)
+          : null,
         title: formTitle.trim(),
         description: formDesc || null,
         startDate: formStart || null,
@@ -881,20 +1004,22 @@ export default function WorkOrders() {
         <div className="bg-slate-800 text-white px-4 py-2.5 -mx-3 md:-mx-6 -mt-3 md:-mt-6 flex items-center justify-between">
           <div className="flex items-center gap-3">
             <h1 className="text-sm font-bold tracking-wide uppercase">
-              {contractTab === 'MANPOWER_SUPPLY' ? 'Manpower Supply Contracts' : 'Contractor Work Orders'}
+              {contractTab === 'MANPOWER_SUPPLY' ? 'Manpower Supply Contracts' : contractTab === 'TRANSPORT' ? 'Transport Contracts' : 'Contractor Work Orders'}
             </h1>
             <span className="text-[10px] text-slate-400">|</span>
             <span className="text-[10px] text-slate-400">
               {contractTab === 'MANPOWER_SUPPLY'
                 ? 'Rate card · 8hr / 12hr shift · people × days · GST + TDS'
-                : 'PO-style scope authorisation, GST + TDS, progress & billing'}
+                : contractTab === 'TRANSPORT'
+                  ? 'Freight rate card · per km / per ton / per trip · GST + TDS'
+                  : 'PO-style scope authorisation, GST + TDS, progress & billing'}
             </span>
           </div>
           <button
             onClick={openCreate}
             className="px-3 py-1 bg-blue-600 text-white text-[11px] font-medium hover:bg-blue-700"
           >
-            {contractTab === 'MANPOWER_SUPPLY' ? '+ New Manpower Contract' : '+ New Work Order'}
+            {contractTab === 'MANPOWER_SUPPLY' ? '+ New Manpower Contract' : contractTab === 'TRANSPORT' ? '+ New Transport Contract' : '+ New Work Order'}
           </button>
         </div>
 
@@ -903,6 +1028,7 @@ export default function WorkOrders() {
           {([
             { key: 'GENERAL', label: 'Work Orders', hint: 'civil / fab / repair scope' },
             { key: 'MANPOWER_SUPPLY', label: 'Manpower Supply', hint: 'people × days × shift rate' },
+            { key: 'TRANSPORT', label: 'Transport', hint: 'freight rates by material × destination' },
           ] as Array<{ key: ContractType; label: string; hint: string }>).map((t) => (
             <button
               key={t.key}
@@ -1042,8 +1168,8 @@ export default function WorkOrders() {
             <div className="bg-slate-800 text-white px-4 py-2.5 flex items-center justify-between">
               <span className="text-xs font-bold uppercase tracking-widest">
                 {editId
-                  ? (formContractType === 'MANPOWER_SUPPLY' ? 'Edit Manpower Contract' : 'Edit Work Order')
-                  : (formContractType === 'MANPOWER_SUPPLY' ? 'New Manpower Supply Contract' : 'New Work Order')}
+                  ? (formContractType === 'MANPOWER_SUPPLY' ? 'Edit Manpower Contract' : formContractType === 'TRANSPORT' ? 'Edit Transport Contract' : 'Edit Work Order')
+                  : (formContractType === 'MANPOWER_SUPPLY' ? 'New Manpower Supply Contract' : formContractType === 'TRANSPORT' ? 'New Transport Contract' : 'New Work Order')}
               </span>
               <button onClick={() => setShowForm(false)} className="text-slate-400 hover:text-white text-sm">X</button>
             </div>
@@ -1188,8 +1314,9 @@ export default function WorkOrders() {
                 )}
               </div>
 
-              {/* Lines table — GENERAL contracts only */}
-              {formContractType === 'GENERAL' && (
+              {/* Lines table — GENERAL & TRANSPORT contracts. Transport WOs can leave
+                  this blank (use the rate card below) or add a summary/lump-sum line. */}
+              {formContractType !== 'MANPOWER_SUPPLY' && (
               <div className="border border-slate-300 overflow-x-auto">
                 <table className="w-full text-xs min-w-[900px]">
                   <thead>
@@ -1249,6 +1376,101 @@ export default function WorkOrders() {
                   >
                     + Add Line
                   </button>
+                </div>
+              </div>
+              )}
+
+              {/* Transport rate card — TRANSPORT only.
+                  Material × Destination × (per km / per ton / per trip).
+                  Vehicle type and notes are optional. */}
+              {formContractType === 'TRANSPORT' && (
+              <div className="border border-slate-300">
+                <div className="bg-slate-200 border-b border-slate-300 px-3 py-1.5 flex items-center justify-between">
+                  <span className="text-[10px] font-bold uppercase tracking-widest text-slate-700">Freight Rate Card</span>
+                  <span className="text-[9px] text-slate-500">Material × destination × per-km / per-ton / per-trip</span>
+                </div>
+                <table className="w-full text-xs min-w-[1100px]">
+                  <thead>
+                    <tr className="bg-slate-100 border-b border-slate-300">
+                      <th className="text-left px-2 py-2 font-semibold text-[10px] uppercase tracking-widest border-r border-slate-200 w-8">#</th>
+                      <th className="text-left px-2 py-2 font-semibold text-[10px] uppercase tracking-widest border-r border-slate-200 w-40">Material</th>
+                      <th className="text-left px-2 py-2 font-semibold text-[10px] uppercase tracking-widest border-r border-slate-200">Destination</th>
+                      <th className="text-left px-2 py-2 font-semibold text-[10px] uppercase tracking-widest border-r border-slate-200 w-32">Vehicle</th>
+                      <th className="text-right px-2 py-2 font-semibold text-[10px] uppercase tracking-widest border-r border-slate-200 w-24">Rate / Km</th>
+                      <th className="text-right px-2 py-2 font-semibold text-[10px] uppercase tracking-widest border-r border-slate-200 w-24">Rate / Ton</th>
+                      <th className="text-right px-2 py-2 font-semibold text-[10px] uppercase tracking-widest border-r border-slate-200 w-24">Rate / Trip</th>
+                      <th className="text-left px-2 py-2 font-semibold text-[10px] uppercase tracking-widest border-r border-slate-200">Notes</th>
+                      <th className="text-center px-2 py-2 font-semibold text-[10px] uppercase tracking-widest w-10"></th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {formTransportRates.map((row, idx) => (
+                      <tr key={idx} className={`border-b border-slate-100 ${idx % 2 ? 'bg-slate-50/70' : ''}`}>
+                        <td className="px-2 py-1 text-slate-400 border-r border-slate-100">{idx + 1}</td>
+                        <td className="px-1 py-1 border-r border-slate-100">
+                          <input list="transport-materials" type="text" value={row.material}
+                            onChange={(e) => setFormTransportRates(prev => prev.map((r, i) => i === idx ? { ...r, material: e.target.value } : r))}
+                            placeholder="ETHANOL / DDGS WET CAKE / RAW GRAIN"
+                            className="w-full border border-slate-300 px-2 py-1 text-xs" />
+                        </td>
+                        <td className="px-1 py-1 border-r border-slate-100">
+                          <input type="text" value={row.destination}
+                            onChange={(e) => setFormTransportRates(prev => prev.map((r, i) => i === idx ? { ...r, destination: e.target.value } : r))}
+                            placeholder="Destination depot / OMC"
+                            className="w-full border border-slate-300 px-2 py-1 text-xs" />
+                        </td>
+                        <td className="px-1 py-1 border-r border-slate-100">
+                          <input type="text" value={row.vehicleType}
+                            onChange={(e) => setFormTransportRates(prev => prev.map((r, i) => i === idx ? { ...r, vehicleType: e.target.value } : r))}
+                            placeholder="Truck 16T"
+                            className="w-full border border-slate-300 px-2 py-1 text-xs" />
+                        </td>
+                        <td className="px-1 py-1 border-r border-slate-100">
+                          <input type="number" min="0" step="0.01" value={row.perKm || ''}
+                            onChange={(e) => setFormTransportRates(prev => prev.map((r, i) => i === idx ? { ...r, perKm: parseFloat(e.target.value) || 0 } : r))}
+                            className="w-full border border-slate-300 px-2 py-1 text-xs text-right" />
+                        </td>
+                        <td className="px-1 py-1 border-r border-slate-100">
+                          <input type="number" min="0" step="0.01" value={row.perTon || ''}
+                            onChange={(e) => setFormTransportRates(prev => prev.map((r, i) => i === idx ? { ...r, perTon: parseFloat(e.target.value) || 0 } : r))}
+                            className="w-full border border-slate-300 px-2 py-1 text-xs text-right" />
+                        </td>
+                        <td className="px-1 py-1 border-r border-slate-100">
+                          <input type="number" min="0" step="0.01" value={row.perTrip || ''}
+                            onChange={(e) => setFormTransportRates(prev => prev.map((r, i) => i === idx ? { ...r, perTrip: parseFloat(e.target.value) || 0 } : r))}
+                            className="w-full border border-slate-300 px-2 py-1 text-xs text-right" />
+                        </td>
+                        <td className="px-1 py-1 border-r border-slate-100">
+                          <input type="text" value={row.notes}
+                            onChange={(e) => setFormTransportRates(prev => prev.map((r, i) => i === idx ? { ...r, notes: e.target.value } : r))}
+                            placeholder="optional"
+                            className="w-full border border-slate-300 px-2 py-1 text-xs" />
+                        </td>
+                        <td className="px-1 py-1 text-center">
+                          <button
+                            onClick={() => setFormTransportRates(prev => prev.length === 1 ? [emptyTransportRate()] : prev.filter((_, i) => i !== idx))}
+                            className="text-red-500 hover:text-red-700 text-[10px] font-bold">DEL</button>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+                <datalist id="transport-materials">
+                  <option value="ETHANOL" />
+                  <option value="DDGS WET CAKE" />
+                  <option value="DDGS DRY" />
+                  <option value="RAW GRAIN" />
+                  <option value="MOLASSES" />
+                  <option value="SUGAR" />
+                  <option value="BAGASSE" />
+                </datalist>
+                <div className="px-3 py-1.5 bg-slate-50 border-t border-slate-200">
+                  <button
+                    onClick={() => setFormTransportRates(prev => [...prev, emptyTransportRate()])}
+                    className="px-3 py-1 bg-white border border-slate-300 text-slate-600 text-[11px] font-medium hover:bg-slate-50">
+                    + Add Rate Row
+                  </button>
+                  <span className="ml-3 text-[10px] text-slate-400">Lines above (optional) capture lump-sum / advance; rate card here drives per-trip freight billing.</span>
                 </div>
               </div>
               )}

@@ -3186,10 +3186,13 @@ model WorkOrder {
   supplyType       String     @default("INTRA_STATE") // INTRA_STATE (CGST+SGST) | INTER_STATE (IGST)
   placeOfSupply    String? // state code
   // Contract type — drives form layout / list tab
-  contractType     String     @default("GENERAL") // GENERAL | MANPOWER_SUPPLY
+  contractType     String     @default("GENERAL") // GENERAL | MANPOWER_SUPPLY | TRANSPORT
   // Manpower supply contract — header-level rate card snapshot (JSON array of skill categories with 8h / 12h rates).
   // Only populated when contractType = 'MANPOWER_SUPPLY'. Used to render the rate card on print / re-edit.
   manpowerRateCard Json?
+  // Transport contracts — array of { material, destination, perKm?, perTon?, vehicleType?, notes? }
+  // entries snapshotted at order time. Drives the rate card on the WO PDF + freight billing.
+  transportRateCard Json?
   // Header totals (denormalised from lines)
   subtotal         Float      @default(0) // sum of (qty × rate)
   discountAmount   Float      @default(0)
