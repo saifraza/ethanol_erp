@@ -121,7 +121,25 @@ router.get('/punches', asyncHandler(async (req: AuthRequest, res: Response) => {
       employee: { select: { id: true, empCode: true, firstName: true, lastName: true } },
     },
   });
-  res.json(punches);
+
+  // Enrich with device code + location so the daily page can show
+  // "Main gate" instead of a raw cuid. The deviceId field is a string
+  // (no Prisma relation), so do the lookup separately.
+  const deviceIds = [...new Set(punches.map(p => p.deviceId).filter((x): x is string => Boolean(x)))];
+  const devices = deviceIds.length > 0
+    ? await prisma.biometricDevice.findMany({
+        where: { id: { in: deviceIds } },
+        select: { id: true, code: true, name: true, location: true },
+      })
+    : [];
+  const devMap = new Map(devices.map(d => [d.id, d]));
+  const enriched = punches.map(p => ({
+    ...p,
+    deviceCode: p.deviceId ? devMap.get(p.deviceId)?.code ?? null : null,
+    deviceLocation: p.deviceId ? devMap.get(p.deviceId)?.location ?? null : null,
+    deviceName: p.deviceId ? devMap.get(p.deviceId)?.name ?? null : null,
+  }));
+  res.json(enriched);
 }));
 
 router.post('/punches', validate(punchSchema), asyncHandler(async (req: AuthRequest, res: Response) => {
@@ -231,7 +249,7 @@ async function recomputeDay(employeeId: string, dateStr: string, companyId: stri
   const dow = new Date(Date.UTC(dy, dm - 1, dd)).getUTCDay(); // 0 = Sunday
   const isSunday = dow === 0;
 
-  // Compute status from punches
+  // Compute status from punches (already deduped above — see DEDUP_WINDOW_MS block)
   let status: string;
   let firstPunchAt: Date | null = null;
   let lastPunchAt: Date | null = null;

@@ -16,7 +16,34 @@ interface Shift {
 interface Punch {
   id: string; employeeId: string; punchAt: string; direction: 'IN' | 'OUT' | 'AUTO';
   source: 'DEVICE' | 'MANUAL' | 'IMPORT'; deviceId: string | null; notes: string | null;
+  // Backend enrichment — populated by /attendance/punches via BiometricDevice lookup
+  deviceCode?: string | null; deviceLocation?: string | null; deviceName?: string | null;
   employee: EmployeeRef;
+}
+
+// Same-device re-tap dedup window (matches backend recomputeDay).
+// eSSL devices fire a fresh punch on every successful match — a single
+// scan often produces 2-3 hits a few seconds apart. Without dedup, the
+// daily view shows "First In = 08:58, Last Out = 08:58" for someone
+// who only tapped once. We collapse runs of <30s same-device hits into
+// the FIRST hit (the actual moment the worker tapped).
+const DEDUP_WINDOW_MS = 30_000;
+function dedupePunches(sorted: Punch[]): Punch[] {
+  const out: Punch[] = [];
+  for (const p of sorted) {
+    const prev = out[out.length - 1];
+    if (prev && prev.deviceId === p.deviceId
+        && new Date(p.punchAt).getTime() - new Date(prev.punchAt).getTime() < DEDUP_WINDOW_MS) {
+      continue;
+    }
+    out.push(p);
+  }
+  return out;
+}
+
+function deviceLabel(p: Punch): string {
+  // Prefer the human-readable location, fall back to code, then name, then "?"
+  return p.deviceLocation || p.deviceCode || p.deviceName || (p.deviceId ? p.deviceId.slice(0, 6) : '');
 }
 interface DayCell {
   id: string; status: Status;
@@ -193,18 +220,38 @@ function DailyView({ employees }: { employees: EmployeeRef[] }) {
               )}
               {!loading && grouped.map(g => {
                 const sorted = [...g.punches].sort((a, b) => new Date(a.punchAt).getTime() - new Date(b.punchAt).getTime());
+                const deduped = dedupePunches(sorted);
+                const firstIn = deduped[0];
+                const lastOut = deduped[deduped.length - 1];
+                const onlyOneEffective = deduped.length === 1;
+                const dropped = sorted.length - deduped.length;
                 return (
                   <tr key={g.emp.id} className="border-b border-slate-100 even:bg-slate-50/70">
                     <td className="px-3 py-1.5 border-r border-slate-100 font-mono">{g.emp.empCode}</td>
                     <td className="px-3 py-1.5 border-r border-slate-100">{g.emp.firstName} {g.emp.lastName}</td>
-                    <td className="px-3 py-1.5 border-r border-slate-100 font-mono tabular-nums text-center">{fmtTime(sorted[0].punchAt)}</td>
-                    <td className="px-3 py-1.5 border-r border-slate-100 font-mono tabular-nums text-center">{fmtTime(sorted[sorted.length - 1].punchAt)}</td>
-                    <td className="px-3 py-1.5 border-r border-slate-100 font-mono tabular-nums text-center">{sorted.length}</td>
+                    <td className="px-3 py-1.5 border-r border-slate-100 font-mono tabular-nums text-center">
+                      <div>{fmtTime(firstIn.punchAt)}</div>
+                      <div className="text-[9px] text-slate-400 font-normal">{deviceLabel(firstIn)}</div>
+                    </td>
+                    <td className="px-3 py-1.5 border-r border-slate-100 font-mono tabular-nums text-center">
+                      {onlyOneEffective ? (
+                        <span className="text-amber-600 font-semibold">--</span>
+                      ) : (
+                        <>
+                          <div>{fmtTime(lastOut.punchAt)}</div>
+                          <div className="text-[9px] text-slate-400 font-normal">{deviceLabel(lastOut)}</div>
+                        </>
+                      )}
+                    </td>
+                    <td className="px-3 py-1.5 border-r border-slate-100 font-mono tabular-nums text-center">
+                      {deduped.length}
+                      {dropped > 0 && <span className="text-[9px] text-slate-400 ml-1">(+{dropped} re-tap)</span>}
+                    </td>
                     <td className="px-3 py-1.5 text-[11px] text-slate-500">
-                      {sorted.map(p => (
+                      {deduped.map(p => (
                         <span
                           key={p.id}
-                          title={`${p.source}${p.deviceId ? ` · ${p.deviceId}` : ''}`}
+                          title={`${p.source}${deviceLabel(p) ? ` · ${deviceLabel(p)}` : ''} · ${p.deviceCode ?? ''}`}
                           className={`inline-flex items-center gap-1 mr-1 px-1.5 py-0.5 border text-[10px] font-mono ${
                             p.source === 'DEVICE' ? 'border-emerald-300 bg-emerald-50' :
                             p.source === 'MANUAL' ? 'border-amber-300 bg-amber-50' :
@@ -212,8 +259,8 @@ function DailyView({ employees }: { employees: EmployeeRef[] }) {
                           }`}
                         >
                           {fmtTime(p.punchAt)}
-                          {p.deviceId && (
-                            <span className="text-[9px] text-slate-400 font-semibold">{p.deviceId}</span>
+                          {deviceLabel(p) && (
+                            <span className="text-[9px] text-slate-500 font-semibold">{deviceLabel(p)}</span>
                           )}
                         </span>
                       ))}
