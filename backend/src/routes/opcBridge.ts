@@ -108,7 +108,7 @@ async function saveAlarmState(): Promise<void> {
 loadAlarmState().catch(() => {});
 
 // ==========================================================================
-// ALARM CHECKING — compare readings against HH/LL limits, WhatsApp alert
+// ALARM CHECKING — compare readings against HH/LL limits, Telegram alert
 // ==========================================================================
 
 // Track last alarm time per tag to avoid spamming (max once per 15 min)

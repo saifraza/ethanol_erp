@@ -24,7 +24,6 @@ router.use((req: AuthRequest, res, next) => {
 });
 
 // ─── Configuration ───────────────────────────────
-// Direct AI provider config (no OpenClaw — removed 2026-04-21)
 interface AIConfig {
   provider: 'gemini' | 'openai' | 'anthropic';
   baseUrl: string;
@@ -38,11 +37,7 @@ async function getAIConfig(): Promise<AIConfig | null> {
   if (row?.value) {
     try {
       const parsed = JSON.parse(row.value);
-      // Migrate legacy openclaw config to gemini
-      if (parsed.provider === 'openclaw' && process.env.GEMINI_API_KEY) {
-        return { provider: 'gemini', baseUrl: 'https://generativelanguage.googleapis.com', apiKey: process.env.GEMINI_API_KEY, model: 'gemini-2.5-flash' };
-      }
-      if (parsed.provider !== 'openclaw') return parsed as AIConfig;
+      return parsed as AIConfig;
     } catch { /* fall through */ }
   }
 

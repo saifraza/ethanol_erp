@@ -1,7 +1,5 @@
 /**
- * Telegram Client — proxy layer (replaces whatsappClient.ts)
- *
- * Simple wrapper around telegramBot.ts.
+ * Telegram Client — thin wrapper around telegramBot.ts.
  * No worker proxy needed — Telegram Bot API is stateless HTTPS.
  *
  * Usage: import { tgSend, tgSendGroup, tgStatus } from './telegramClient';

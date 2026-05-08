@@ -10,7 +10,6 @@ import fs from 'fs';
 import path from 'path';
 import crypto from 'crypto';
 import prisma from '../config/prisma';
-import { lightragInsertText, isRagEnabled } from './lightragClient';
 
 const GEMINI_KEY = process.env.GEMINI_API_KEY;
 
@@ -324,18 +323,6 @@ export async function generateVaultNote(opts: {
       });
     } else {
       await prisma.vaultNote.create({ data: noteData });
-    }
-
-    // Also index the summary into LightRAG for enriched search
-    if (isRagEnabled()) {
-      try {
-        await lightragInsertText(`[Vault Summary] ${opts.title}\n\n${markdown}`, {
-          sourceType: 'VaultNote',
-          sourceId: opts.sourceId,
-        });
-      } catch (err) {
-        console.error('[VaultWriter] LightRAG summary indexing failed:', err);
-      }
     }
 
     console.log('[VaultWriter] Generated vault note:', vaultPath);

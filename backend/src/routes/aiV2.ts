@@ -195,7 +195,6 @@ router.get('/features', asyncHandler(async (_req: AuthRequest, res: Response) =>
     gemini: !!process.env.GEMINI_API_KEY,
     anthropic: !!process.env.ANTHROPIC_API_KEY,
     openai: !!process.env.OPENAI_API_KEY,
-    // openclaw removed 2026-04-21
   };
 
   res.json({ counts, providers, features });

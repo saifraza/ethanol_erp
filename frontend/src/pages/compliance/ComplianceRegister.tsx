@@ -271,7 +271,7 @@ export default function ComplianceRegister() {
     setUploading(true);
 
     const steps: Record<string, 'pending' | 'running' | 'done' | 'error'> = {
-      upload: 'running', link: 'pending', rag: 'pending', summary: 'pending',
+      upload: 'running', link: 'pending', summary: 'pending',
     };
     setUploadProgress({ docId: '', step: 'Uploading file...', steps: { ...steps } });
 
@@ -302,7 +302,7 @@ export default function ComplianceRegister() {
       await api.post(`/compliance/${oblId}/documents`, { documentId: docId, isFulfilling: true });
 
       steps.link = 'done';
-      steps.rag = 'running';
+      steps.summary = 'running';
 
       // Close the modal — show progress as bottom bar instead
       setShowUpload(false);
@@ -310,61 +310,15 @@ export default function ComplianceRegister() {
       setUploading(false);
       openDetail(oblId);
       fetchList();
-      setUploadProgress({ docId, step: 'RAG indexing...', steps: { ...steps } });
+      setUploadProgress({ docId, step: 'AI extracting summary...', steps: { ...steps } });
 
-      // Poll for RAG completion in background (non-blocking, bottom bar)
-      let pollCount = 0;
-      const maxPolls = 30;
-      const pollInterval = setInterval(async () => {
-        pollCount++;
-        try {
-          const docRes = await api.get(`/company-documents/${docId}`);
-          const doc = docRes.data;
-
-          if (doc.ragIndexed) {
-            steps.rag = 'done';
-            steps.summary = 'running';
-            setUploadProgress({ docId, step: 'AI extracting summary...', steps: { ...steps } });
-
-            // Give Gemini a few more seconds for VaultNote
-            setTimeout(() => {
-              steps.summary = 'done';
-              setUploadProgress({ docId, step: 'All done', steps: { ...steps } });
-              openDetail(oblId);
-              setTimeout(() => setUploadProgress(null), 3000);
-            }, 5000);
-
-            clearInterval(pollInterval);
-            return;
-          }
-
-          if (doc.ragTrackId) {
-            try {
-              const statusRes = await api.get(`/document-search/status/${doc.ragTrackId}`);
-              if (statusRes.data?.status === 'completed' || statusRes.data?.status === 'indexed') {
-                steps.rag = 'done';
-                steps.summary = 'running';
-                setUploadProgress({ docId, step: 'AI extracting summary...', steps: { ...steps } });
-              }
-            } catch { /* ignore */ }
-          }
-
-          setUploadProgress({ docId, step: 'RAG indexing...', steps: { ...steps } });
-
-          if (pollCount >= maxPolls) {
-            clearInterval(pollInterval);
-            steps.rag = 'done';
-            steps.summary = 'done';
-            setUploadProgress({ docId, step: 'All done', steps: { ...steps } });
-            setTimeout(() => setUploadProgress(null), 3000);
-          }
-        } catch {
-          if (pollCount >= maxPolls) {
-            clearInterval(pollInterval);
-            setUploadProgress(null);
-          }
-        }
-      }, 2000);
+      // Vault summary generation runs server-side via setImmediate; give it a few seconds then close
+      setTimeout(() => {
+        steps.summary = 'done';
+        setUploadProgress({ docId, step: 'All done', steps: { ...steps } });
+        openDetail(oblId);
+        setTimeout(() => setUploadProgress(null), 3000);
+      }, 6000);
 
     } catch (err) {
       console.error('Upload failed:', err);
@@ -527,7 +481,7 @@ export default function ComplianceRegister() {
                     {detail.notes && (
                       <div>
                         <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">
-                          {detail.notes.startsWith('[AI]') ? 'AI Insights (from RAG)' : 'Notes'}
+                          {detail.notes.startsWith('[AI]') ? 'AI Insights' : 'Notes'}
                         </span>
                         <p className="text-slate-700 whitespace-pre-wrap leading-relaxed mt-0.5">
                           {detail.notes.startsWith('[AI]') ? detail.notes.slice(5) : detail.notes}
@@ -583,7 +537,7 @@ export default function ComplianceRegister() {
                     )}
                   </div>
 
-                  {/* Document Insights (from RAG/Gemini — no extra API cost) */}
+                  {/* Document Insights (Gemini-extracted from VaultNote) */}
                   {detail.insights && detail.insights.length > 0 && (
                     <div className="px-4 py-3 border-b border-slate-200">
                       <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Document Insights (AI-Extracted)</span>
@@ -916,9 +870,9 @@ export default function ComplianceRegister() {
                 <span className="text-xs font-medium truncate">{uploadProgress.step}</span>
               </div>
               <div className="flex items-center gap-3 flex-shrink-0">
-                {(['upload', 'link', 'rag', 'summary'] as string[]).map(key => {
+                {(['upload', 'link', 'summary'] as string[]).map(key => {
                   const s = uploadProgress.steps[key];
-                  const labels: Record<string, string> = { upload: 'Upload', link: 'Link', rag: 'RAG', summary: 'AI' };
+                  const labels: Record<string, string> = { upload: 'Upload', link: 'Link', summary: 'AI' };
                   return (
                     <div key={key} className="flex items-center gap-1">
                       {s === 'done' ? (

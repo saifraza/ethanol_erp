@@ -154,7 +154,6 @@ async function pushTelegramNotification(shiftDate: string, entry: any): Promise<
     `*Today Total: ${totalBags} bags (${totalMT.toFixed(2)} MT)*`,
   ].filter(Boolean).join('\n');
 
-  // Broadcast to all configured private recipients (Telegram + WhatsApp)
   broadcastToPrivate(msg, 'ddgs').catch(err =>
     console.error(`[DDGS] Broadcast failed:`, (err as Error).message)
   );

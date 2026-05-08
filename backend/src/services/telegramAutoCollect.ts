@@ -4,14 +4,12 @@
  * Sends scheduled Telegram messages to operators asking for field readings,
  * parses their replies, and saves data to the ERP database.
  *
- * Adapted from whatsappAutoCollect.ts — same module interface, no module changes needed.
- * Session keys use Telegram chatId instead of phone numbers.
+ * Telegram-only. Session keys are Telegram chatIds.
  */
 
 import prisma from '../config/prisma';
 import { registerIncomingHandler } from './telegramBot';
 import { tgSend, tgSendGroup } from './telegramClient';
-import { waSend, waSendGroup } from './whatsappClient';
 import { MODULE_REGISTRY } from './autoCollectModules';
 import { setDdgsLanguage } from './autoCollectModules/ddgsProduction';
 
@@ -172,14 +170,6 @@ async function handleIncoming(chatId: string, text: string, _name: string | null
             if (allRecipients.length > 0) {
               console.log(`[TG-AutoCollect] Shared ${config.module} report to ${allRecipients.length} private chats`);
             }
-            // WhatsApp parallel push (fire-and-forget)
-            if ((settings as any)?.whatsappEnabled) {
-              const waPhones = ((settings as any)?.whatsappPrivatePhones || '')
-                .split(',').map((p: string) => p.trim()).filter((p: string) => p.length > 0);
-              for (const phone of waPhones) {
-                waSend(phone, fullReport, config.module).catch(() => {});
-              }
-            }
           } else {
             const groupChatId = moduleTarget === 'group2'
               ? (settings as any)?.telegramGroup2ChatId
@@ -187,15 +177,6 @@ async function handleIncoming(chatId: string, text: string, _name: string | null
             if (groupChatId) {
               await tgSendGroup(groupChatId, fullReport, config.module);
               console.log(`[TG-AutoCollect] Shared ${config.module} report to ${moduleTarget}`);
-            }
-            // WhatsApp parallel push (fire-and-forget)
-            if ((settings as any)?.whatsappEnabled) {
-              const waJid = moduleTarget === 'group2'
-                ? (settings as any)?.whatsappGroup2Jid
-                : (settings as any)?.whatsappGroupJid;
-              if (waJid) {
-                waSendGroup(waJid, fullReport, config.module).catch(() => {});
-              }
             }
           }
         } catch (shareErr) {

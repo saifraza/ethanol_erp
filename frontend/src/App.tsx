@@ -62,7 +62,6 @@ const ABCAnalysis = React.lazy(() => import('./pages/inventory/ABCAnalysis'));
 const PlantIssues = React.lazy(() => import('./pages/PlantIssues'));
 const Approvals = React.lazy(() => import('./pages/admin/Approvals'));
 const CompanyDocuments = React.lazy(() => import('./pages/admin/CompanyDocuments'));
-const DocumentSearch = React.lazy(() => import('./pages/admin/DocumentSearch'));
 const WeighmentCorrections = React.lazy(() => import('./pages/admin/WeighmentCorrections'));
 const WeighbridgeAudit = React.lazy(() => import('./pages/admin/WeighbridgeAudit'));
 const ActivityLog = React.lazy(() => import('./pages/admin/ActivityLog'));
@@ -72,7 +71,6 @@ const Companies = React.lazy(() => import('./pages/admin/Companies'));
 // Compliance
 const ComplianceDashboard = React.lazy(() => import('./pages/compliance/ComplianceDashboard'));
 const ComplianceRegister = React.lazy(() => import('./pages/compliance/ComplianceRegister'));
-const ComplianceAI = React.lazy(() => import('./pages/compliance/ComplianceAI'));
 // Tax & Compliance Phase 1
 const TaxComplianceConfigPage = React.lazy(() => import('./pages/tax/ComplianceConfigPage'));
 const TaxFiscalYearsPage = React.lazy(() => import('./pages/tax/FiscalYearsPage'));
@@ -247,7 +245,6 @@ export default function App() {
         <Route path="plant-issues" element={<PlantIssues />} />
         <Route path="admin/approvals" element={<Approvals />} />
         <Route path="admin/documents" element={<CompanyDocuments />} />
-        <Route path="admin/document-search" element={<DocumentSearch />} />
         <Route path="admin/weighment-corrections" element={<WeighmentCorrections />} />
         <Route path="admin/weighbridge-audit" element={<WeighbridgeAudit />} />
         <Route path="admin/activity-log" element={<ActivityLog />} />
@@ -257,7 +254,6 @@ export default function App() {
         {/* Compliance */}
         <Route path="compliance" element={<ComplianceDashboard />} />
         <Route path="compliance/register" element={<ComplianceRegister />} />
-        <Route path="compliance/ai" element={<ComplianceAI />} />
         {/* Tax & Compliance Phase 1 — Tax Rules Reference + Admin Masters */}
         <Route path="compliance/tax-rules" element={<TaxRulesReferencePage />} />
         <Route path="admin/tax/config" element={<TaxComplianceConfigPage />} />
