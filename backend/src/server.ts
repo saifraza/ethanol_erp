@@ -4,6 +4,7 @@ import prisma from './config/prisma';
 import bcrypt from 'bcryptjs';
 import { initTelegram } from './services/telegramBot';
 import { initTelegramAutoCollect } from './services/telegramAutoCollect';
+import { initTelegramLabor } from './services/telegramLabor';
 import { initImageHandler } from './services/telegramImageHandler';
 import { initTelegramAiChat } from './services/telegramAiChat';
 import { runSchemaDriftGuard } from './services/schemaDriftGuard';
@@ -106,6 +107,7 @@ const server = app.listen(PORT, HOST, async () => {
   // Initialize Telegram Bot
   initTelegram().then(() => {
     initTelegramAutoCollect().catch((err) => console.error('[TG-AutoCollect] Init error:', err));
+    initTelegramLabor();
     initImageHandler();
     initTelegramAiChat();
   }).catch((err) => console.error('[Telegram] Init error:', err));
