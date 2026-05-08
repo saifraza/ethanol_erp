@@ -1,7 +1,7 @@
 /**
  * Auto-Collect Module Types
  *
- * Each module that supports WhatsApp auto-collection must implement ModuleConfig.
+ * Each module that supports Telegram auto-collection must implement ModuleConfig.
  * See _template.ts for a starter template.
  */
 
@@ -16,7 +16,7 @@ export interface CollectStep {
 
 /** Full module configuration for auto-collection */
 export interface ModuleConfig {
-  /** Module identifier (must match whatsapp routing module name) */
+  /** Module identifier (must match telegram routing module name) */
   module: string;
 
   /** Display name for UI */
@@ -25,7 +25,7 @@ export interface ModuleConfig {
   /** Collection steps — bot asks one step at a time */
   steps: CollectStep[];
 
-  /** Build the WhatsApp prompt message for a step */
+  /** Build the Telegram prompt message for a step */
   buildPrompt: (step: CollectStep) => string;
 
   /** Parse operator's reply into field→value map. Return null if unparseable. */

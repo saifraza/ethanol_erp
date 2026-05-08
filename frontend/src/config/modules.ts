@@ -11,7 +11,7 @@ import {
   Store, Tractor, Scale, Handshake,
   BookOpen, Calculator, TrendingUp, Landmark,
   PackageSearch, ArrowRightLeft, ClipboardCheck, BarChart2, Banknote, PieChart, HardHat,
-  FolderArchive, Search, ShieldCheck, ListChecks, BotMessageSquare,
+  FolderArchive, Search, ShieldCheck, ListChecks,
   UserCheck as UserCheckIcon, Network, Wallet, CircleDollarSign, LayoutGrid, Sparkles, Plus,
   Calendar as CalendarIcon, Clock as ClockIcon, Fingerprint, HardDrive
 } from 'lucide-react';
@@ -102,7 +102,6 @@ export const MODULE_DEFS: ModuleDef[] = [
   // ── COMPLIANCE ─���
   { key: 'compliance-dashboard', label: 'Compliance', to: '/compliance', icon: ShieldCheck, group: 'compliance' },
   { key: 'compliance-register', label: 'Register', to: '/compliance/register', icon: ListChecks, group: 'compliance' },
-  { key: 'compliance-ai', label: 'Compliance AI', to: '/compliance/ai', icon: BotMessageSquare, group: 'compliance' },
 
   // ── TAX & STATUTORY ──
   { key: 'taxes', label: 'Tax Dashboard', to: '/accounts/taxes', icon: PieChart, group: 'tax' },
@@ -125,7 +124,6 @@ export const MODULE_DEFS: ModuleDef[] = [
   { key: 'users', label: 'Users', to: '/users', icon: Users, group: 'admin', adminOnly: true },
   { key: 'weighment-system', label: 'Factory Linkage', to: '/weighment-system', icon: Radio, group: 'admin' },
   { key: 'company-documents', label: 'Document Vault', to: '/admin/documents', icon: FolderArchive, group: 'admin' },
-  { key: 'document-search', label: 'Doc Search (AI)', to: '/admin/document-search', icon: Search, group: 'admin' },
   { key: 'weighment-corrections', label: 'Weighment Corrections', to: '/admin/weighment-corrections', icon: ClipboardCheck, group: 'admin', adminOnly: true },
   { key: 'weighbridge-audit', label: 'Weighbridge Audit', to: '/admin/weighbridge-audit', icon: ClipboardCheck, group: 'admin', adminOnly: true },
   { key: 'activity-log', label: 'Activity Log', to: '/admin/activity-log', icon: ClipboardCheck, group: 'admin', adminOnly: true },

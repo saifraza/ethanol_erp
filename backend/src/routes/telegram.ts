@@ -1,7 +1,7 @@
 /**
- * Telegram Bot API routes — replaces whatsapp.ts
+ * Telegram Bot API routes — primary outbound messaging
  *
- * Simpler than WhatsApp: no QR, no connect/disconnect, no worker proxy.
+ * No QR, no connect/disconnect, no worker proxy — bot uses long-polling in-process.
  * Just bot token + chat IDs in Settings.
  */
 
@@ -94,9 +94,8 @@ const sendReportSchema = z.object({
 
 router.post('/send-report', validate(sendReportSchema), asyncHandler(async (req: AuthRequest, res: Response) => {
   const { module, message } = req.body;
-  // Broadcast to both Telegram + WhatsApp via gateway
   const result = await broadcast(module, message);
-  res.json({ success: result.telegram.success, telegram: result.telegram, whatsapp: result.whatsapp });
+  res.json({ success: result.telegram.success, telegram: result.telegram });
 }));
 
 // ── Config / Routing ──

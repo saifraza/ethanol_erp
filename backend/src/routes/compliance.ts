@@ -4,7 +4,6 @@ import { authenticate, AuthRequest } from '../middleware/auth';
 import { asyncHandler, validate } from '../shared/middleware';
 import { NotFoundError } from '../shared/errors';
 import { z } from 'zod';
-import { lightragQuery, isRagEnabled } from '../services/lightragClient';
 import { COMPLIANCE_SEED } from '../data/complianceSeed';
 
 const router = Router();
@@ -46,10 +45,6 @@ const linkDocSchema = z.object({
   documentId: z.string().min(1),
   isFulfilling: z.boolean().optional(),
   notes: z.string().optional(),
-});
-
-const askSchema = z.object({
-  question: z.string().min(1).max(2000),
 });
 
 // ── Dashboard KPIs ───────────────────────────────────────
@@ -257,25 +252,6 @@ router.get('/:id', asyncHandler(async (req: AuthRequest, res: Response) => {
     };
   });
 
-  // Fallback: if no VaultNotes but docs are linked and RAG is enabled,
-  // do a one-time RAG query and cache result in obligation notes
-  if (insights.length === 0 && docIds.length > 0 && isRagEnabled() && !item.notes?.startsWith('[AI]')) {
-    setImmediate(async () => {
-      try {
-        const result = await lightragQuery(
-          `Summarize key details about: ${item.title}. Include dates, parties, obligations, and important conditions.`,
-          'hybrid'
-        );
-        if (result.success && result.answer) {
-          await prisma.complianceObligation.update({
-            where: { id: item.id },
-            data: { notes: `[AI] ${result.answer}` },
-          });
-        }
-      } catch { /* ignore */ }
-    });
-  }
-
   res.json({ ...item, insights });
 }));
 
@@ -458,19 +434,11 @@ router.post('/seed', asyncHandler(async (req: AuthRequest, res: Response) => {
   res.json({ created: result.count, skipped: COMPLIANCE_SEED.length - result.count, total: COMPLIANCE_SEED.length });
 }));
 
-// ── RAG: Auto-link documents for an obligation ───────────
+// ── Auto-link documents for an obligation (keyword match) ───
 
 router.post('/:id/auto-link', asyncHandler(async (req: AuthRequest, res: Response) => {
-  if (!isRagEnabled()) {
-    res.status(503).json({ error: 'RAG service not configured' });
-    return;
-  }
-
   const obligation = await prisma.complianceObligation.findUnique({ where: { id: req.params.id } });
   if (!obligation) throw new NotFoundError('ComplianceObligation', req.params.id);
-
-  const query = `${obligation.title} ${obligation.actOrRegulation || ''} ${obligation.authority || ''}`.trim();
-  const ragResult = await lightragQuery(query, 'hybrid');
 
   // Extract abbreviations in parentheses like (CTE), (CTO), (EC) + regular keywords
   const abbrMatch = obligation.title.match(/\(([A-Z]{2,})\)/g);
@@ -514,28 +482,7 @@ router.post('/:id/auto-link', asyncHandler(async (req: AuthRequest, res: Respons
 
   const suggestions = matchingDocs.filter(d => !linkedSet.has(d.id));
 
-  res.json({
-    ragAnswer: ragResult.answer || ragResult.error || '',
-    suggestedDocuments: suggestions,
-  });
-}));
-
-// ── RAG: Compliance Q&A ──────────────────────────────────
-
-router.post('/ask', validate(askSchema), asyncHandler(async (req: AuthRequest, res: Response) => {
-  if (!isRagEnabled()) {
-    res.status(503).json({ error: 'RAG service not configured' });
-    return;
-  }
-
-  const { question } = req.body;
-
-  const result = await lightragQuery(
-    `Compliance question for MSPIL (distillery, sugar mill, cogen power plant, listed company): ${question}`,
-    'hybrid'
-  );
-
-  res.json({ question, answer: result.answer || result.error || 'No answer found.' });
+  res.json({ suggestedDocuments: suggestions });
 }));
 
 export default router;

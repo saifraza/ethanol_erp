@@ -7,7 +7,6 @@ import { z } from 'zod';
 import multer from 'multer';
 import path from 'path';
 import fs from 'fs';
-import { lightragUpload, lightragClassify, isRagEnabled } from '../services/lightragClient';
 import { generateVaultNote } from '../services/vaultWriter';
 import { mirrorToS3 } from '../shared/s3Storage';
 
@@ -226,27 +225,6 @@ router.post('/', upload.single('file'), mirrorToS3('company-documents'), asyncHa
     },
   });
 
-  // Fire-and-forget: send to LightRAG for indexing
-  if (isRagEnabled()) {
-    setImmediate(() => {
-      lightragUpload(`company-documents/${req.file!.filename}`, {
-        sourceType: 'CompanyDocument',
-        sourceId: doc.id,
-        title: doc.title,
-        deepScan: body.deepScan === 'true',
-      })
-        .then(result => {
-          if (result.success) {
-            prisma.companyDocument.update({
-              where: { id: doc.id },
-              data: { ragIndexed: true, ragTrackId: result.trackId },
-            }).catch(() => {});
-          }
-        })
-        .catch(err => console.error('[CompanyDoc] LightRAG indexing failed:', err));
-    });
-  }
-
   // Fire-and-forget: generate vault note (Obsidian knowledge base)
   setImmediate(() => {
     generateVaultNote({
@@ -298,27 +276,6 @@ router.post('/', upload.single('file'), mirrorToS3('company-documents'), asyncHa
   }
 
   res.status(201).json(doc);
-}));
-
-// ═══════════════════════════════════════════════════════════
-// POST /classify — Auto-categorize an uploaded file using AI
-// ═══════════════════════════════════════════════════════════
-router.post('/classify', upload.single('file'), mirrorToS3('company-documents'), asyncHandler(async (req: AuthRequest, res: Response) => {
-  if (!req.file) { res.status(400).json({ error: 'No file uploaded' }); return; }
-  if (!isRagEnabled()) { res.status(503).json({ error: 'RAG service not configured' }); return; }
-
-  const result = await lightragClassify(`company-documents/${req.file.filename}`);
-
-  // Clean up temp file after classification
-  const filePath = path.resolve(__dirname, '../../uploads/company-documents', req.file.filename);
-  if (fs.existsSync(filePath)) fs.unlinkSync(filePath);
-
-  if (!result.success) {
-    res.status(502).json({ error: result.error || 'Classification failed' });
-    return;
-  }
-
-  res.json(result.metadata);
 }));
 
 // ═══════════════════════════════════════════════════════════

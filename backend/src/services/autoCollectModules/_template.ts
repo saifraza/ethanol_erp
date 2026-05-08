@@ -7,7 +7,7 @@
  * Then register it in ./index.ts.
  *
  * HOW IT WORKS:
- * 1. Bot sends a WhatsApp message asking for readings (buildPrompt)
+ * 1. Bot sends a Telegram message asking for readings (buildPrompt)
  * 2. Operator replies with values
  * 3. Bot parses the reply (parseReply) → shows confirmation (buildConfirmation)
  * 4. If multiple steps, bot asks next step
@@ -46,9 +46,9 @@ import { ModuleConfig, CollectStep } from './types';
 const STEPS: CollectStep[] = [
   {
     key: 'step1',                          // unique step ID
-    label: 'Section A (Item 1, Item 2)',   // shown in WhatsApp message header
+    label: 'Section A (Item 1, Item 2)',   // shown in Telegram message header
     fields: ['item1', 'item2'],            // field prefixes → become DB column prefixes
-    fieldLabels: ['Item 1', 'Item 2'],     // human-readable labels for WhatsApp
+    fieldLabels: ['Item 1', 'Item 2'],     // human-readable labels for Telegram
     subFields: ['Value1', 'Value2'],       // sub-fields per item → item1Value1, item1Value2
   },
   // Add more steps if needed...

@@ -146,10 +146,6 @@ export default function ComplianceDashboard() {
                 {seeding ? 'Seeding...' : 'Seed Default Obligations'}
               </button>
             )}
-            <button onClick={() => navigate('/compliance/ai')}
-              className="px-3 py-1 bg-white/10 text-white text-[11px] font-medium hover:bg-white/20">
-              Compliance AI
-            </button>
             <button onClick={() => navigate('/compliance/register')}
               className="px-3 py-1 bg-blue-600 text-white text-[11px] font-medium hover:bg-blue-700">
               View Register

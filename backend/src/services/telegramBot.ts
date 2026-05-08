@@ -1,7 +1,7 @@
 /**
  * Telegram Bot API client
  *
- * Replaces WhatsApp Baileys — uses official Telegram Bot API (simple HTTPS).
+ * Uses the official Telegram Bot API (simple HTTPS, long-polling).
  * No QR auth, no session persistence, no fragile WebSocket connections.
  *
  * Usage: import { initTelegram, sendTelegramMessage, sendTelegramGroup } from './telegramBot';
