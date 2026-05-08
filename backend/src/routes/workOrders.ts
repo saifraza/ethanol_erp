@@ -8,6 +8,7 @@ import { renderDocumentPdf } from '../services/documentRenderer';
 import { sendThreadEmail, syncAndListReplies, latestThreadFor } from '../services/emailService';
 import { z } from 'zod';
 import { DEFAULT_MANPOWER_TERMS } from '../data/manpowerWoTerms';
+import { DEFAULT_TRANSPORT_TERMS } from '../data/transportWoTerms';
 
 const router = Router();
 router.use(authenticate);
@@ -52,10 +53,23 @@ const rateCardEntrySchema = z.object({
   rate12h: z.number().min(0),
 });
 
+// Transport rate card row — captures the freight matrix for a transport WO.
+// At least one of perKm / perTon / perTrip should be set; UI enforces it.
+const transportRateEntrySchema = z.object({
+  material: z.string().min(1),         // e.g. ETHANOL, DDGS_WET_CAKE, RAW_GRAIN
+  destination: z.string().min(1),      // e.g. "Bharat Petroleum Bina"
+  vehicleType: z.string().nullable().optional(), // e.g. "Truck 16T", "Tanker 28KL"
+  perKm: z.number().min(0).nullable().optional(),
+  perTon: z.number().min(0).nullable().optional(),
+  perTrip: z.number().min(0).nullable().optional(),
+  notes: z.string().max(500).nullable().optional(),
+});
+
 const createSchema = z.object({
   contractorId: z.string().min(1),
-  contractType: z.enum(['GENERAL', 'MANPOWER_SUPPLY']).default('GENERAL'),
+  contractType: z.enum(['GENERAL', 'MANPOWER_SUPPLY', 'TRANSPORT']).default('GENERAL'),
   manpowerRateCard: z.array(rateCardEntrySchema).nullable().optional(),
+  transportRateCard: z.array(transportRateEntrySchema).nullable().optional(),
   title: z.string().min(1),
   description: z.string().nullable().optional(),
   startDate: z.string().nullable().optional(),
@@ -269,6 +283,7 @@ router.get('/', asyncHandler(async (req: AuthRequest, res: Response) => {
         // don't re-type rates per worker -- they're derived from the
         // selected WO's rate card by skill category.
         manpowerRateCard: true,
+        transportRateCard: true,
         _count: { select: { lines: true, bills: true, progress: true } },
       },
     }),
@@ -354,6 +369,9 @@ router.post('/', canWrite, validate(createSchema), asyncHandler(async (req: Auth
       manpowerRateCard: body.contractType === 'MANPOWER_SUPPLY'
         ? (body.manpowerRateCard ?? [])
         : Prisma.JsonNull,
+      transportRateCard: body.contractType === 'TRANSPORT'
+        ? (body.transportRateCard ?? [])
+        : Prisma.JsonNull,
       subtotal: header.subtotal,
       discountAmount: header.discountAmount,
       taxableAmount: header.taxableAmount,
@@ -380,7 +398,9 @@ router.post('/', canWrite, validate(createSchema), asyncHandler(async (req: Auth
         ? (body.termsAndConditions as Prisma.InputJsonValue)
         : (body.contractType === 'MANPOWER_SUPPLY'
           ? (DEFAULT_MANPOWER_TERMS as unknown as Prisma.InputJsonValue)
-          : Prisma.JsonNull),
+          : body.contractType === 'TRANSPORT'
+            ? (DEFAULT_TRANSPORT_TERMS as unknown as Prisma.InputJsonValue)
+            : Prisma.JsonNull),
       division: body.division ?? 'ETHANOL',
       userId: req.user!.id,
       companyId: getActiveCompanyId(req),
@@ -431,9 +451,14 @@ router.put('/:id', canWrite, validate(updateSchema), asyncHandler(async (req: Au
         contractType: req.body.contractType ?? existing.contractType,
         manpowerRateCard: req.body.contractType === 'MANPOWER_SUPPLY'
           ? (req.body.manpowerRateCard ?? (existing.manpowerRateCard as Prisma.InputJsonValue) ?? [])
-          : (req.body.contractType === 'GENERAL'
+          : (req.body.contractType && req.body.contractType !== 'MANPOWER_SUPPLY'
             ? Prisma.JsonNull
             : (existing.manpowerRateCard as Prisma.InputJsonValue ?? Prisma.JsonNull)),
+        transportRateCard: req.body.contractType === 'TRANSPORT'
+          ? (req.body.transportRateCard ?? (existing.transportRateCard as Prisma.InputJsonValue) ?? [])
+          : (req.body.contractType && req.body.contractType !== 'TRANSPORT'
+            ? Prisma.JsonNull
+            : (existing.transportRateCard as Prisma.InputJsonValue ?? Prisma.JsonNull)),
         subtotal: header.subtotal,
         discountAmount: header.discountAmount,
         taxableAmount: header.taxableAmount,
@@ -703,6 +728,12 @@ async function loadWoForPdf(id: string) {
     termsAndConditions: Array.isArray(wo.termsAndConditions)
       ? (wo.termsAndConditions as unknown as Array<{ title: string; body: string }>)
       : [],
+    manpowerRateCard: Array.isArray(wo.manpowerRateCard)
+      ? (wo.manpowerRateCard as unknown as Array<{ category: string; label: string; rate8h: number; rate12h: number }>)
+      : [],
+    transportRateCard: Array.isArray(wo.transportRateCard)
+      ? (wo.transportRateCard as unknown as Array<{ material: string; destination: string; vehicleType?: string | null; perKm?: number | null; perTon?: number | null; perTrip?: number | null; notes?: string | null }>)
+      : [],
     preparedBy: creator?.name || creator?.email || '',
     _raw: wo,
   };
@@ -814,7 +845,11 @@ router.post('/:id/send-email', canWrite, asyncHandler(async (req: AuthRequest, r
     : data;
   const pdf = await renderDocumentPdf({ docType: 'WORK_ORDER', data: pdfData, verifyId: req.params.id });
 
-  const typeLabel = data.contractType === 'MANPOWER_SUPPLY' ? 'Manpower Supply Contract' : 'Work Order';
+  const typeLabel = data.contractType === 'MANPOWER_SUPPLY'
+    ? 'Manpower Supply Contract'
+    : data.contractType === 'TRANSPORT'
+      ? 'Transport Contract'
+      : 'Work Order';
   const subject = `WO-${data.woNo} — ${typeLabel} from MSPIL`;
   const linesSummary = data.lines.map((l: { lineNo: number; description: string; quantity: number; unit: string }) =>
     `  ${l.lineNo}. ${l.description} — ${l.quantity} ${l.unit}`

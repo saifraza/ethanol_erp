@@ -64,6 +64,8 @@ const EXPECTED_COLUMNS: ColumnCheck[] = [
   // 2026-05-06 — Manpower supply contracts (new tab on Work Orders page)
   { table: 'WorkOrder',     column: 'contractType',     sql: `ALTER TABLE "WorkOrder" ADD COLUMN IF NOT EXISTS "contractType" TEXT NOT NULL DEFAULT 'GENERAL'` },
   { table: 'WorkOrder',     column: 'manpowerRateCard', sql: `ALTER TABLE "WorkOrder" ADD COLUMN IF NOT EXISTS "manpowerRateCard" JSONB` },
+  // 2026-05-08 — Transport contracts (third tab on Work Orders page)
+  { table: 'WorkOrder',     column: 'transportRateCard', sql: `ALTER TABLE "WorkOrder" ADD COLUMN IF NOT EXISTS "transportRateCard" JSONB` },
   { table: 'WorkOrderLine', column: 'lineKind',         sql: `ALTER TABLE "WorkOrderLine" ADD COLUMN IF NOT EXISTS "lineKind" TEXT NOT NULL DEFAULT 'GENERAL'` },
   { table: 'WorkOrderLine', column: 'skillCategory',    sql: `ALTER TABLE "WorkOrderLine" ADD COLUMN IF NOT EXISTS "skillCategory" TEXT` },
   { table: 'WorkOrderLine', column: 'shiftHours',       sql: `ALTER TABLE "WorkOrderLine" ADD COLUMN IF NOT EXISTS "shiftHours" INTEGER` },

@@ -42,7 +42,7 @@
 <body>
 <div class="page">
   {{> letterhead}}
-  <div class="doc-title">{{#if (eq contractType 'MANPOWER_SUPPLY')}}MANPOWER SUPPLY CONTRACT{{else}}WORK ORDER{{/if}}</div>
+  <div class="doc-title">{{#if (eq contractType 'MANPOWER_SUPPLY')}}MANPOWER SUPPLY CONTRACT{{else}}{{#if (eq contractType 'TRANSPORT')}}TRANSPORT CONTRACT{{else}}WORK ORDER{{/if}}{{/if}}</div>
 
   <div class="details-grid">
     <div class="detail-row"><span class="detail-label">WO Number</span><span class="detail-value bold">WO-{{woNo}}</span></div>
@@ -148,6 +148,40 @@
 
   {{#if remarks}}
   <div class="remarks-section"><div class="label">Remarks:</div><div class="text">{{remarks}}</div></div>
+  {{/if}}
+
+  {{#if (eq contractType 'TRANSPORT')}}
+  {{#if transportRateCard.length}}
+  <div class="terms-section" style="margin-top:18px;page-break-inside:avoid;">
+    <div class="terms-title" style="font-weight:600;font-size:11px;text-transform:uppercase;letter-spacing:.04em;border-bottom:1px solid #cbd5e1;padding-bottom:4px;margin-bottom:8px;">Freight Rate Card</div>
+    <table style="width:100%;border-collapse:collapse;font-size:10px;">
+      <thead>
+        <tr style="background:#f1f5f9;">
+          <th style="text-align:left;padding:5px 6px;border:1px solid #cbd5e1;">Material</th>
+          <th style="text-align:left;padding:5px 6px;border:1px solid #cbd5e1;">Destination</th>
+          <th style="text-align:left;padding:5px 6px;border:1px solid #cbd5e1;">Vehicle</th>
+          <th style="text-align:right;padding:5px 6px;border:1px solid #cbd5e1;">Rate / Km</th>
+          <th style="text-align:right;padding:5px 6px;border:1px solid #cbd5e1;">Rate / Ton</th>
+          <th style="text-align:right;padding:5px 6px;border:1px solid #cbd5e1;">Rate / Trip</th>
+          <th style="text-align:left;padding:5px 6px;border:1px solid #cbd5e1;">Notes</th>
+        </tr>
+      </thead>
+      <tbody>
+        {{#each transportRateCard}}
+        <tr>
+          <td style="padding:5px 6px;border:1px solid #e2e8f0;">{{this.material}}</td>
+          <td style="padding:5px 6px;border:1px solid #e2e8f0;">{{this.destination}}</td>
+          <td style="padding:5px 6px;border:1px solid #e2e8f0;">{{#if this.vehicleType}}{{this.vehicleType}}{{else}}—{{/if}}</td>
+          <td style="text-align:right;padding:5px 6px;border:1px solid #e2e8f0;">{{#if this.perKm}}Rs. {{formatAmount this.perKm}}{{else}}—{{/if}}</td>
+          <td style="text-align:right;padding:5px 6px;border:1px solid #e2e8f0;">{{#if this.perTon}}Rs. {{formatAmount this.perTon}}{{else}}—{{/if}}</td>
+          <td style="text-align:right;padding:5px 6px;border:1px solid #e2e8f0;">{{#if this.perTrip}}Rs. {{formatAmount this.perTrip}}{{else}}—{{/if}}</td>
+          <td style="padding:5px 6px;border:1px solid #e2e8f0;color:#475569;">{{#if this.notes}}{{this.notes}}{{else}}—{{/if}}</td>
+        </tr>
+        {{/each}}
+      </tbody>
+    </table>
+  </div>
+  {{/if}}
   {{/if}}
 
   {{#if termsAndConditions.length}}
