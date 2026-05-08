@@ -151,10 +151,13 @@ function DailyView({ employees }: { employees: EmployeeRef[] }) {
 
   useEffect(() => { fetchPunches(); }, [fetchPunches]);
 
-  // Group by employee
+  // Group by employee. Skip any row without an employee join (defensive —
+  // labor-only punches now exist and could leak in if backend filtering ever
+  // regresses; sorting on a null .emp.empCode crashed the page on 2026-05-08).
   const grouped = useMemo(() => {
     const byEmp: Record<string, { emp: EmployeeRef; punches: Punch[] }> = {};
     for (const p of punches) {
+      if (!p.employee || !p.employeeId) continue;
       if (!byEmp[p.employeeId]) byEmp[p.employeeId] = { emp: p.employee, punches: [] };
       byEmp[p.employeeId].punches.push(p);
     }

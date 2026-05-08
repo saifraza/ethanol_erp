@@ -101,7 +101,10 @@ const punchSchema = z.object({
 
 router.get('/punches', asyncHandler(async (req: AuthRequest, res: Response) => {
   const { employeeId, from, to, source } = req.query as Record<string, string | undefined>;
-  const where: any = { ...getCompanyFilter(req) };
+  // employeeId: { not: null } excludes labor-only punches — without it, the
+  // employee Attendance.tsx crashes sorting on `p.employee.empCode` when the
+  // joined employee is null.
+  const where: any = { ...getCompanyFilter(req), employeeId: { not: null } };
   if (employeeId) where.employeeId = employeeId;
   if (source) where.source = source;
   if (from || to) {
