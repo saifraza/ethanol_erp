@@ -29,6 +29,7 @@
 import prisma from '../config/prisma';
 import { registerIncomingHandler } from './telegramBot';
 import { tgSend } from './telegramClient';
+import { fireSyncLaborToDevices } from './laborWorkerDeviceSync';
 
 const SESSION_TIMEOUT_MS = 30 * 60_000; // abandoned sessions expire after 30 min
 
@@ -360,6 +361,16 @@ async function handleConfirmSave(session: LaborSession, text: string): Promise<v
         companyId: wo?.companyId ?? null,
       },
     });
+
+    // Allocates LaborWorker.deviceUserId (matches workerCode for new rows
+    // per the allocator) and pushes to non-factoryManaged devices. For
+    // factoryManaged devices it's a no-op cloud-side; the factory-server's
+    // master-data sync (5-min tick) picks the new row up via cloud's
+    // /api/biometric-factory/master-data endpoint, then autoPush sends it
+    // to each device on its next cycle. Without this call, deviceUserId
+    // stays null, the master-data endpoint filters it out, and devices
+    // never see the new worker.
+    fireSyncLaborToDevices(created.id, 'UPSERT');
 
     // Show running totals for context
     const woStats = await prisma.workOrder.findUnique({
