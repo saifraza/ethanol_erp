@@ -95,6 +95,7 @@ import labTestingRoutes from './routes/labTesting';
 import weighbridgeRoutes from './routes/weighbridge';
 import weighbridgeAdminRoutes from './routes/weighbridgeAdmin';
 import uploadBackupAdminRoutes from './routes/uploadBackupAdmin';
+import emailDiagnosticRoutes from './routes/emailDiagnostic';
 import uploadServeRoutes from './routes/uploadServe';
 import weighbridgeAuditRoutes from './routes/weighbridgeAudit';
 import activityLogRoutes from './routes/activityLog';
@@ -327,6 +328,7 @@ app.use('/api/weighbridge', weighbridgeRoutes);
 // don't collide with anything existing. See .claude/skills/weighment-corrections.md
 app.use('/api/weighbridge/admin', weighbridgeAdminRoutes);
 app.use('/api/admin/backup-uploads', uploadBackupAdminRoutes);
+app.use('/api/admin/email-diagnostic', emailDiagnosticRoutes);
 // Weighbridge audit events (cross-system safety log: scale-zero overrides,
 // delta-confirms, interval/duplicate overrides). Factory pushes via X-WB-Key,
 // admins read via JWT. See .claude/skills/weighbridge.md.
