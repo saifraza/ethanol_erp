@@ -8,6 +8,7 @@ import { Router, Response } from 'express';
 import nodemailer from 'nodemailer';
 import { AuthRequest, authenticate, authorize } from '../middleware/auth';
 import { asyncHandler } from '../shared/middleware';
+import { renderPdf } from '../services/pdfRenderer';
 
 const router = Router();
 
@@ -63,7 +64,21 @@ router.get('/', authenticate, authorize('SUPER_ADMIN', 'ADMIN'), asyncHandler(as
     }
   }
 
-  res.json({ env, verify: verifyResult, send: sendResult });
+  // Test the PDF pipeline — work-order/PO send-email both render a PDF before SMTP.
+  // If this fails, the 500 in the store module is a Chromium issue, not SMTP.
+  let pdfResult: { ok: boolean; bytes?: number; error?: string; stack?: string } = { ok: false };
+  try {
+    const buf = await renderPdf('<html><body><h1>PDF diagnostic</h1><p>If you can read this, puppeteer + Chromium are working.</p></body></html>');
+    pdfResult = { ok: true, bytes: buf.length };
+  } catch (err) {
+    pdfResult = {
+      ok: false,
+      error: err instanceof Error ? err.message : String(err),
+      stack: err instanceof Error ? (err.stack || '').split('\n').slice(0, 5).join('\n') : undefined,
+    };
+  }
+
+  res.json({ env, verify: verifyResult, send: sendResult, pdf: pdfResult });
 }));
 
 export default router;
