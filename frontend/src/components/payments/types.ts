@@ -8,6 +8,14 @@
 export interface PaymentRow {
   id: string;
   poNo: number;
+  // Optional discriminator: 'PO' for vendor purchase orders, 'CONTRACTOR_BILL'
+  // for work-order / indent-PO contractor bills surfaced alongside POs on the
+  // store payments page. Older endpoints don't set these — UI falls back to
+  // legacy "PO-{poNo}" display when sourceLabel is absent.
+  kind?: 'PO' | 'CONTRACTOR_BILL';
+  sourceLabel?: string;
+  workOrderId?: string | null;
+  workOrderNo?: number | null;
   poDate: string;
   status: string;
   dealType: string;

@@ -84,6 +84,13 @@ export interface PaymentsTableProps {
    */
   refreshKey?: number;
   /**
+   * When true, the fetch sends `includeContractorBills=true` so the listing
+   * endpoint also returns open ContractorBills (work-order or indent-PO
+   * backed) as additional rows. Used by the store payments page so the user
+   * sees POs and WOs in a single table.
+   */
+  includeContractorBills?: boolean;
+  /**
    * Variant tweaks the few visual differences between the three pages
    * without expanding the prop surface:
    *  - 'fuel': fixed (no sortable headers), shows the extra "PO Total"
@@ -128,6 +135,7 @@ export default function PaymentsTable({
   uploadingPoId,
   invoiceListNonce: invoiceListNonceProp,
   refreshKey,
+  includeContractorBills,
   variant = 'generic',
   posLabel = 'POs',
   allStatusLabel,
@@ -172,14 +180,17 @@ export default function PaymentsTable({
   const fetchPayments = useCallback(async () => {
     setLoading(true);
     try {
-      const res = await api.get<PaymentRow[]>(apiBase, usesCategoryParam ? { params: { category: activeCategoryParam } } : undefined);
+      const params: Record<string, string> = {};
+      if (usesCategoryParam) params.category = activeCategoryParam;
+      if (includeContractorBills) params.includeContractorBills = 'true';
+      const res = await api.get<PaymentRow[]>(apiBase, Object.keys(params).length > 0 ? { params } : undefined);
       setPayments(res.data);
     } catch (err) {
       console.error(err);
     } finally {
       setLoading(false);
     }
-  }, [apiBase, usesCategoryParam, activeCategoryParam]);
+  }, [apiBase, usesCategoryParam, activeCategoryParam, includeContractorBills]);
 
   useEffect(() => { fetchPayments(); }, [fetchPayments]);
   // External refresh hook — parents that mutate the dataset can bump
@@ -209,7 +220,7 @@ export default function PaymentsTable({
       if (!q) return true;
       return (
         p.vendor.name.toLowerCase().includes(q) ||
-        `po-${p.poNo}`.includes(q) ||
+        (p.sourceLabel || `po-${p.poNo}`).toLowerCase().includes(q) ||
         String(p.poNo).includes(q) ||
         (p.fuelName || '').toLowerCase().includes(q) ||
         (p.vendor.phone || '').toLowerCase().includes(q)
@@ -419,9 +430,17 @@ export default function PaymentsTable({
             <tbody>
               {filtered.map((p, i) => {
                 const inFlight = p.pendingBank + p.pendingCash;
+                const isContractorBill = p.kind === 'CONTRACTOR_BILL';
                 return (
                   <tr key={p.id} className={`border-b border-slate-100 ${i % 2 ? 'bg-slate-50/70' : ''}`}>
-                    <td className="px-3 py-1.5 font-mono text-slate-500 border-r border-slate-100">PO-{p.poNo}</td>
+                    <td className="px-3 py-1.5 font-mono text-slate-500 border-r border-slate-100">
+                      {p.kind === 'CONTRACTOR_BILL' && (
+                        <span className="inline-block mr-1.5 px-1 py-0.5 text-[8px] font-bold uppercase tracking-widest bg-purple-100 text-purple-800 align-middle">
+                          {p.workOrderNo != null ? 'WO' : 'BILL'}
+                        </span>
+                      )}
+                      {p.sourceLabel ?? `PO-${p.poNo}`}
+                    </td>
                     <td className="px-3 py-1.5 border-r border-slate-100">
                       <button
                         onClick={() => setLedgerModal({ vendorId: p.vendor.id, vendorName: p.vendor.name })}
@@ -476,60 +495,81 @@ export default function PaymentsTable({
                       {p.lastPaymentDate ? new Date(p.lastPaymentDate).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: '2-digit' }) : '—'}
                     </td>
                     <td className="px-3 py-1.5 border-r border-slate-100 text-center">
-                      <div className="flex items-center justify-center gap-1.5">
-                        <button
-                          onClick={() => setInvoicesModal({ poId: p.id, poNo: p.poNo, vendorName: p.vendor.name })}
-                          disabled={p.invoiceCount === 0}
-                          className={`text-[10px] font-bold font-mono tabular-nums px-1.5 py-0.5 ${p.invoiceCount > 0 ? 'bg-indigo-100 text-indigo-700 hover:bg-indigo-200 cursor-pointer' : 'text-slate-300 cursor-not-allowed'}`}
-                          title={p.invoiceCount > 0 ? `${p.invoiceCount} invoice${p.invoiceCount === 1 ? '' : 's'} attached · ${fmtCurrency(p.invoicedTotal)} billed` : 'No invoices yet'}>
-                          {p.invoiceCount}
-                        </button>
-                        {onTriggerUpload ? (
-                          <button
-                            onClick={() => onTriggerUpload(p)}
-                            disabled={uploadingPoId === p.id}
-                            title="Upload invoices (PDF or image, max 10 MB each — pick multiple)"
-                            className="text-[10px] font-bold uppercase tracking-widest text-slate-500 hover:text-blue-600 disabled:opacity-50">
-                            {uploadingPoId === p.id ? '…' : '+ Upload'}
-                          </button>
-                        ) : (
+                      {isContractorBill ? (
+                        <span className="text-[10px] text-slate-400" title="Contractor bills don't use the vendor-invoice flow — see the bill record on the Work Order or Bills page.">—</span>
+                      ) : (
+                        <div className="flex items-center justify-center gap-1.5">
                           <button
                             onClick={() => setInvoicesModal({ poId: p.id, poNo: p.poNo, vendorName: p.vendor.name })}
-                            title="Open invoice list — use the + Upload Files button inside to attach bills"
-                            className="text-[10px] font-bold uppercase tracking-widest text-slate-500 hover:text-blue-600">
-                            + Upload
+                            disabled={p.invoiceCount === 0}
+                            className={`text-[10px] font-bold font-mono tabular-nums px-1.5 py-0.5 ${p.invoiceCount > 0 ? 'bg-indigo-100 text-indigo-700 hover:bg-indigo-200 cursor-pointer' : 'text-slate-300 cursor-not-allowed'}`}
+                            title={p.invoiceCount > 0 ? `${p.invoiceCount} invoice${p.invoiceCount === 1 ? '' : 's'} attached · ${fmtCurrency(p.invoicedTotal)} billed` : 'No invoices yet'}>
+                            {p.invoiceCount}
                           </button>
-                        )}
-                      </div>
+                          {onTriggerUpload ? (
+                            <button
+                              onClick={() => onTriggerUpload(p)}
+                              disabled={uploadingPoId === p.id}
+                              title="Upload invoices (PDF or image, max 10 MB each — pick multiple)"
+                              className="text-[10px] font-bold uppercase tracking-widest text-slate-500 hover:text-blue-600 disabled:opacity-50">
+                              {uploadingPoId === p.id ? '…' : '+ Upload'}
+                            </button>
+                          ) : (
+                            <button
+                              onClick={() => setInvoicesModal({ poId: p.id, poNo: p.poNo, vendorName: p.vendor.name })}
+                              title="Open invoice list — use the + Upload Files button inside to attach bills"
+                              className="text-[10px] font-bold uppercase tracking-widest text-slate-500 hover:text-blue-600">
+                              + Upload
+                            </button>
+                          )}
+                        </div>
+                      )}
                     </td>
                     <td className="px-3 py-1.5">
                       <div className="flex gap-1 flex-wrap">
-                        {/* Hide Pay on PLANNED basis — there's no evidence of
-                            delivery or billing yet. Operator should confirm
-                            GRN or fill invoice totals first. */}
-                        {p.outstanding > 0.01 && p.basisSource !== 'PLANNED' && (
-                          <button
-                            onClick={() => setPayDialog({
-                              poId: p.id, poNo: p.poNo, vendorId: p.vendor.id,
-                              vendorName: p.vendor.name, material: p.fuelName,
-                              outstanding: p.outstanding,
-                            })}
+                        {isContractorBill ? (
+                          // Contractor bills carry their own pay surface (POST
+                          // /api/contractor-bills/:id/pay → ContractorPayment).
+                          // Route the user to the unified PaymentsOut Pending
+                          // tab where that flow + the vendor ledger already
+                          // work, instead of duplicating the dialog here.
+                          <a
+                            href={`/accounts/payments-out?contractorId=${p.vendor.id}`}
+                            target="_blank"
+                            rel="noopener noreferrer"
                             className="text-[10px] bg-blue-600 text-white px-2 py-1 font-bold uppercase tracking-widest hover:bg-blue-700">
                             Pay
-                          </button>
+                          </a>
+                        ) : (
+                          <>
+                            {/* Hide Pay on PLANNED basis — there's no evidence of
+                                delivery or billing yet. Operator should confirm
+                                GRN or fill invoice totals first. */}
+                            {p.outstanding > 0.01 && p.basisSource !== 'PLANNED' && (
+                              <button
+                                onClick={() => setPayDialog({
+                                  poId: p.id, poNo: p.poNo, vendorId: p.vendor.id,
+                                  vendorName: p.vendor.name, material: p.fuelName,
+                                  outstanding: p.outstanding,
+                                })}
+                                className="text-[10px] bg-blue-600 text-white px-2 py-1 font-bold uppercase tracking-widest hover:bg-blue-700">
+                                Pay
+                              </button>
+                            )}
+                            {p.grnCount > 0 && (
+                              <button
+                                onClick={() => setTrucksModal({ poId: p.id, title: `PO-${p.poNo}`, subtitle: `${p.vendor.name} · ${p.fuelName}` })}
+                                className="text-[10px] text-purple-600 font-semibold uppercase hover:underline">
+                                Trucks
+                              </button>
+                            )}
+                            <button
+                              onClick={() => setLedgerModal({ vendorId: p.vendor.id, vendorName: p.vendor.name })}
+                              className="text-[10px] text-indigo-600 font-semibold uppercase hover:underline">
+                              Ledger
+                            </button>
+                          </>
                         )}
-                        {p.grnCount > 0 && (
-                          <button
-                            onClick={() => setTrucksModal({ poId: p.id, title: `PO-${p.poNo}`, subtitle: `${p.vendor.name} · ${p.fuelName}` })}
-                            className="text-[10px] text-purple-600 font-semibold uppercase hover:underline">
-                            Trucks
-                          </button>
-                        )}
-                        <button
-                          onClick={() => setLedgerModal({ vendorId: p.vendor.id, vendorName: p.vendor.name })}
-                          className="text-[10px] text-indigo-600 font-semibold uppercase hover:underline">
-                          Ledger
-                        </button>
                       </div>
                     </td>
                   </tr>

@@ -481,12 +481,52 @@ export async function deleteInvoice(req: AuthRequest, res: Response): Promise<vo
 //  surface (categories=['FUEL'] when `?category=` not passed) and the
 //  Raw Material surface (categories=['RAW_MATERIAL'], no override).
 // --------------------------------------------------------------------------
+// Row shape returned by listPaymentRows. Mirrors the PaymentRow type the
+// frontend uses (in components/payments/types.ts) — kind/sourceLabel/workOrderNo
+// are optional carriers added so the same component renders WO/contractor
+// payables alongside vendor POs without a second listing endpoint.
+interface PaymentRowOut {
+  id: string;
+  poNo: number;
+  kind: 'PO' | 'CONTRACTOR_BILL';
+  sourceLabel: string;
+  workOrderId: string | null;
+  workOrderNo: number | null;
+  poDate: Date;
+  status: string;
+  dealType: string;
+  paymentTerms: string | null;
+  creditDays: number;
+  vendor: { id: string; name: string; phone: string | null; bankName: string | null; bankAccount: string | null; bankIfsc: string | null };
+  fuelName: string;
+  fuelUnit: string;
+  totalReceived: number;
+  poTotal: number;
+  receivedValue: number;
+  totalPaid: number;
+  pendingBank: number;
+  pendingCash: number;
+  outstanding: number;
+  payableBasis: number;
+  basisSource: 'RECEIVED' | 'INVOICED' | 'PLANNED';
+  lastPaymentDate: Date | null;
+  grnCount: number;
+  invoiceCount: number;
+  invoicedTotal: number;
+  isFullyPaid: boolean;
+}
+
 export interface ListPaymentRowsOptions {
   companyFilter: Prisma.PurchaseOrderWhereInput;
   categories: string[]; // upper-cased InventoryItem.category values
+  // When true, append open ContractorBills (work-order or indent-PO backed)
+  // as additional rows with kind='CONTRACTOR_BILL'. The store payments page
+  // wants WO/contractor payables alongside its category POs; fuel and raw-
+  // material surfaces leave the flag off.
+  includeContractorBills?: boolean;
 }
 
-export async function listPaymentRows({ companyFilter, categories }: ListPaymentRowsOptions) {
+export async function listPaymentRows({ companyFilter, categories, includeContractorBills }: ListPaymentRowsOptions) {
   const fuelPos = await prisma.purchaseOrder.findMany({
     where: {
       ...companyFilter,
@@ -521,7 +561,7 @@ export async function listPaymentRows({ companyFilter, categories }: ListPayment
     if (row.poId) invoicedByPo.set(row.poId, row._sum.totalAmount || 0);
   }
 
-  const result = await Promise.all(fuelPos.map(async (po) => {
+  const result: Array<PaymentRowOut> = await Promise.all(fuelPos.map(async (po): Promise<PaymentRowOut> => {
     // Pick the first line whose inventory item matches the requested category
     // for the row label + unit. Legacy fallback: any line if none match.
     const matchingLines = po.lines.filter(l => l.inventoryItem && categories.includes(l.inventoryItem.category));
@@ -590,6 +630,10 @@ export async function listPaymentRows({ companyFilter, categories }: ListPayment
     return {
       id: po.id,
       poNo: po.poNo,
+      kind: 'PO' as const,
+      sourceLabel: `PO-${po.poNo}`,
+      workOrderId: null as string | null,
+      workOrderNo: null as number | null,
       poDate: po.poDate,
       status: po.status,
       dealType: po.dealType,
@@ -614,6 +658,68 @@ export async function listPaymentRows({ companyFilter, categories }: ListPayment
       isFullyPaid: payableBasis > 0 && (totalPaid + pendingBank + pendingCash) >= payableBasis - 0.01,
     };
   }));
+
+  if (!includeContractorBills) return result;
+
+  // ── Append open contractor bills (WO + indent-PO backed) ──────────────
+  // The store payments surface wants WO and contractor payables alongside
+  // its category POs. We re-shape ContractorBill into the PaymentRow shape
+  // so PaymentsTable can render them without a separate code path. The
+  // `kind` discriminator + sourceLabel (`WO-N` / `BILL-N`) tell the UI to
+  // gate features that only make sense for vendor POs (e.g. invoice upload).
+  const bills = await prisma.contractorBill.findMany({
+    where: {
+      // Surface every active bill so the store team can chase invoices through
+      // their full lifecycle (DRAFT → CONFIRMED → PARTIAL_PAID → PAID),
+      // not just the unpaid balance phase.
+      status: { in: ['DRAFT', 'CONFIRMED', 'PARTIAL_PAID', 'PAID'] },
+    },
+    select: {
+      id: true, billNo: true, billDate: true, description: true, status: true,
+      subtotal: true, totalAmount: true, netPayable: true, paidAmount: true, balanceAmount: true,
+      workOrderId: true,
+      workOrder: { select: { id: true, woNo: true } },
+      contractor: { select: { id: true, name: true, phone: true, bankName: true, bankAccount: true, bankIfsc: true } },
+    },
+    orderBy: { billDate: 'desc' },
+    take: 500,
+  });
+
+  for (const cb of bills) {
+    const woNo = cb.workOrder?.woNo ?? null;
+    const sourceLabel = woNo != null ? `WO-${woNo}` : `BILL-${cb.billNo}`;
+    const isFullyPaid = cb.balanceAmount <= 0.01 && cb.netPayable > 0;
+    result.push({
+      id: cb.id,
+      poNo: cb.billNo,
+      kind: 'CONTRACTOR_BILL' as const,
+      sourceLabel,
+      workOrderId: cb.workOrder?.id ?? cb.workOrderId ?? null,
+      workOrderNo: woNo,
+      poDate: cb.billDate,
+      status: cb.status,
+      dealType: 'CONTRACTOR',
+      paymentTerms: null,
+      creditDays: 0,
+      vendor: { id: cb.contractor.id, name: cb.contractor.name, phone: cb.contractor.phone, bankName: cb.contractor.bankName, bankAccount: cb.contractor.bankAccount, bankIfsc: cb.contractor.bankIfsc },
+      fuelName: cb.description,
+      fuelUnit: '',
+      totalReceived: 0,
+      poTotal: cb.totalAmount,
+      receivedValue: cb.totalAmount,
+      totalPaid: cb.paidAmount,
+      pendingBank: 0,
+      pendingCash: 0,
+      outstanding: cb.balanceAmount,
+      payableBasis: cb.netPayable,
+      basisSource: 'INVOICED' as const,
+      lastPaymentDate: null,
+      grnCount: 0,
+      invoiceCount: 0,
+      invoicedTotal: cb.netPayable,
+      isFullyPaid,
+    });
+  }
 
   return result;
 }
