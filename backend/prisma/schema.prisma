@@ -217,6 +217,7 @@ model Settings {
   opcAlarmsEnabled       Boolean  @default(true) // OPC alarm toggle (persists across deploys)
   inventoryAlertsEnabled Boolean  @default(true) // Inventory low stock alert toggle
   opcWatchdogState       String? // JSON state for opcHealthWatchdog (survives Railway restarts) — added 2026-04-08
+  factoryCacheState      String? // JSON state for factoryCacheWatchdog (survives Railway restarts) — added 2026-05-09 after 48h silent stale-cache outage
   createdAt              DateTime @default(now())
   updatedAt              DateTime @updatedAt
 }
