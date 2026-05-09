@@ -35,12 +35,24 @@ router.get('/item-lookup', asyncHandler(async (req: AuthRequest, res: Response) 
 router.get('/items', asyncHandler(async (req: AuthRequest, res: Response) => {
   const category = req.query.category as string | undefined;
   const division = req.query.division as string | undefined;
+  const search = (req.query.search as string | undefined)?.trim();
   const where: any = { ...getCompanyFilter(req) };
   if (category) where.category = category;
   if (division) where.division = division;
+  // Server-side search across name, code, hsnCode — previously the backend
+  // ignored search and the frontend filtered the first-500-page client-side,
+  // so any item beyond the alphabetical 500-row cap (e.g. "Gitti") was
+  // unreachable when total inventory exceeded 500.
+  if (search) {
+    where.OR = [
+      { name: { contains: search, mode: 'insensitive' } },
+      { code: { contains: search, mode: 'insensitive' } },
+      { hsnCode: { contains: search, mode: 'insensitive' } },
+    ];
+  }
   const items = await prisma.inventoryItem.findMany({
     where,
-    take: 500,
+    take: 5000,
     orderBy: { name: 'asc' },
     include: { transactions: { orderBy: { createdAt: 'desc' }, take: 5 } },
   });
