@@ -210,8 +210,18 @@ export default function MaterialMaster() {
       setForm(emptyForm);
       setEditId(null);
       fetchItems();
-    } catch {
-      setMsg({ type: 'err', text: 'Failed to save item' });
+    } catch (err: unknown) {
+      // Surface the actual cause — was previously a generic "Failed to save"
+      // that hid 403s and validation errors. A teammate tried to create
+      // "Sand" and gave up because the message was useless.
+      const e = err as { response?: { status?: number; data?: { error?: string } }; message?: string };
+      const status = e.response?.status;
+      const detail = e.response?.data?.error || e.message || 'unknown';
+      const text = status === 401 ? 'Not signed in — please log in again'
+                 : status === 403 ? 'Permission denied — you need ADMIN role to create or edit items'
+                 : status === 400 ? `Validation error: ${detail}`
+                 : `Failed to save item (${status ?? '?'}): ${detail}`;
+      setMsg({ type: 'err', text });
     } finally {
       setSaving(false);
     }
