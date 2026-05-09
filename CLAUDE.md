@@ -108,13 +108,21 @@ Same shape now drives biometric: eSSL devices → Biometric Bridge → Factory S
 | OPC/DCS bridge | `.claude/skills/opc-bridge.md` |
 | Sales / dispatch / invoice | `backend/src/routes/salesOrders.ts`, `shipments.ts`, `invoices.ts` |
 | Procurement PO → GRN → payment | `backend/src/routes/purchaseOrders.ts`, `goodsReceipts.ts`, `vendorPayments.ts` |
+| GRN page (auto vs manual split) | `.claude/skills/grn-split-auto-vs-store.md` |
+| Payments-out / vendor / contractor / cash | `.claude/skills/payments-architecture.md` — **READ FIRST** before touching `unifiedPayments.ts`, `paymentsByPo.ts`, `vendorPayments.ts`, `contractorBills.ts`, or PaymentsOut/StorePayments pages |
+| Email / SMTP / IMAP / RFQ threading | `.claude/skills/email-pipeline.md` (covers `emailService.ts`, `emailReader.ts`, `messaging.ts`, `EmailThread`/`EmailReply`, RFQ→PO Gmail thread continuation) |
 | Accounts / journal / bank | `backend/src/routes/chartOfAccounts.ts`, `journalEntries.ts`, `bankPayments.ts` |
 | Inventory | `backend/src/routes/inventory*.ts` |
 | Fuel | `backend/src/routes/fuel.ts` |
+| Ethanol job-work billing (TWO docs / GST) | `.claude/skills/ethanol-jobwork-billing.md` |
 | Telegram auto-collect | `backend/src/services/telegramAutoCollect.ts`, `autoCollectModules/` |
 | Biometric devices / attendance / fingerprint | Cloud admin UI: `frontend/src/pages/hr/BiometricDevices.tsx`. Cloud routes: `backend/src/routes/biometric.ts` (admin) + `biometricFactory.ts` (machine-to-machine). Bridge: `biometric-bridge/bridge.py`. Factory-led pull/sync: `factory-server/src/services/biometricScheduler.ts` + `biometricSync.ts`. Architecture: `biometric-bridge/DEPLOY.md` |
 | E-invoice / e-way bill | `backend/src/services/eInvoice.ts`, `ewayBill.ts` |
 | UBI bank payments | `.claude/skills/ubi-h2h-banking.md` |
+| Uploads / S3 mirror / Storage Health | `.claude/skills/uploads-s3-mirror.md` (covers `mirrorToS3` middleware, `uploadServe.ts`, `uploadBackupJob.ts`, `StorageHealth.tsx`) |
+| Deploy / Dockerfile / Chromium for puppeteer | `.claude/skills/deploy-dockerfile-railway.md` (read before any Dockerfile / Procfile / build-system change) |
+| WB vision / truck-identity verification | `.claude/skills/wb-vision-anti-cheat.md` |
+| Ticket lookup (CLI) | `.claude/skills/ticket-lookup.md` |
 | Module list / maturity | `.claude/skills/module-index.md` |
 | Code templates | `.claude/skills/code-templates.md` |
 | SAP design tokens | `.claude/skills/sap-design-tokens.md` |

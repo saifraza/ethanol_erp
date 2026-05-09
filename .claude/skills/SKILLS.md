@@ -12,15 +12,21 @@
 - **[factory-operations.md](factory-operations.md)** — **READ FIRST before ANY factory work.** Incidents postmortem (Part A) + architecture + deploy runbook (Part B). All 7 factory outages documented.
 - **[weighbridge.md](weighbridge.md)** — Hardware, serial protocol, 3-step workflow (Part A) + adding new products (Part B) + weighment corrections (Part C).
 - **[opc-bridge.md](opc-bridge.md)** — **READ FIRST before ANY OPC work.** Incidents (Part A) + architecture (Part B) + cloud backend (Part C) + frontend (Part D) + deploy/ops (Part E) + robustness comparison (Part G) + troubleshooting (Part H). Lab PC creds, DCS connection, 4-layer watchdog.
+- **[wb-vision-anti-cheat.md](wb-vision-anti-cheat.md)** — Truck-identity verification at the weighbridge. Step 1 (side-by-side photo viewer) deployed. Step 2 (model + score) design only. Camera details, RTSP URLs, training-data flow.
 
 ## Process / Plant Operations
 - **[process-production.md](process-production.md)** — Master grain-to-ethanol-to-DDGS pipeline. Sub-sections: grain intake (B), fermentation (C), distillation (D).
+- **[ethanol-supply-postmortem.md](ethanol-supply-postmortem.md)** — 2026-04-11 postmortem: 19 ethanol liftings showed "GEN INVOICE" despite IRN+EWB existing. Root cause + fix in ethanolContracts.ts / ethanolGatePass.ts.
 
 ## Business Modules (cloud ERP)
 - **[sister-companies.md](sister-companies.md)** — Multi-company tenancy. MAEL/MGAL sister LLPs buy corn through MSPIL plant. Company selector at gate, companyId scoping, inter-company procurement.
 - **[accounts-module.md](accounts-module.md)** — Full double-entry spec. Chart of accounts, journals, P&L, balance sheet, bank recon, GST.
+- **[payments-architecture.md](payments-architecture.md)** — How vendor / contractor / transporter / cash-voucher payments interlock. listPaymentRows + unifiedPayments + the kind discriminator. **Read before any payments-out work.**
+- **[email-pipeline.md](email-pipeline.md)** — Outbound SMTP + inbound IMAP polling, EmailThread / EmailReply, RFQ → vendor reply → PO threading on the same Gmail conversation.
 - **[sales-module.md](sales-module.md)** — Order-to-cash, e-invoice, e-way bill, dispatch.
+- **[ethanol-jobwork-billing.md](ethanol-jobwork-billing.md)** — Ethanol job-work billing: TWO documents per truck (Sales Invoice + Job Charges), DIFFERENT rates, HSN codes, GST treatments per state (Odisha IGST 18% vs MP CGST+SGST). Never mix them up.
 - **[procurement-module.md](procurement-module.md)** — Procure-to-pay, PO lifecycle, GRN.
+- **[grn-split-auto-vs-store.md](grn-split-auto-vs-store.md)** — Design proposal: split the single GRN page into Auto (weighbridge) and Store (manual) workflows. Read before changing GRN UI.
 - **[inventory-module.md](inventory-module.md)** — SAP-style warehouse, stock levels, movements, cycle counts.
 - **[trade-inventory.md](trade-inventory.md)** — Direct trade purchases/sales.
 - **[contractors-thakedar.md](contractors-thakedar.md)** — Contractor (thakedar) management.
@@ -33,6 +39,12 @@
 
 ## Operations (Saif-only CLI)
 - **[correct-weighment.md](correct-weighment.md)** — Weighment correction skill. Edit/cancel any weighment (grain, fuel, ethanol, DDGS) via CLI. Full guard checks, factory push, audit trail, admin notifications. **PAYMENT_MADE = hard alarm, never bypass.**
+- **[ticket-lookup.md](ticket-lookup.md)** — Full 360° lookup for any weighment ticket. Trigger: "check ticket N" / "pull ticket N info". Pulls weighment, GRN, PO, invoice, payment.
+- **[wb-training-viewer.md](wb-training-viewer.md)** — SSH into factory server and pull training events captured by the WB vision pipeline. Trigger: "show training data".
+
+## Infrastructure / Deploy
+- **[deploy-dockerfile-railway.md](deploy-dockerfile-railway.md)** — Why the cloud uses a root Dockerfile (Chromium libs for puppeteer). Build chain, when to add libs, Railpack vs Docker.
+- **[uploads-s3-mirror.md](uploads-s3-mirror.md)** — Dual-write upload pattern: every multer route mirrors to the neat-shelf bucket. Storage Health dashboard, recovery via `aws s3 sync`, nightly reconciliation.
 
 ## System-wide / Reference
 - **[charts-graphs.md](charts-graphs.md)** — Chart design system (Recharts + OPC Live pattern). **All charts must follow this.**
@@ -41,6 +53,7 @@
 - **[code-templates.md](code-templates.md)** — Backend route + frontend page templates, IST timezone pattern.
 - **[sap-design-tokens.md](sap-design-tokens.md)** — SAP Tier 2 Tailwind classes (exact copy-paste tokens). **For full brand + voice + 4 HTML page mockups see [design-system-kit/](design-system-kit/) (README.md + ui_kits/erp/*.html + colors_and_type.css).**
 - **[module-index.md](module-index.md)** — All modules: routes, pages, models, Telegram status, maturity tracker.
+- **[video-generation.md](video-generation.md)** — Google Veo via Gemini API for promotional / factory documentation videos. API patterns, model choices.
 
 ---
 
