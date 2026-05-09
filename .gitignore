@@ -3,6 +3,9 @@ dist/
 frontend/public/
 backend/public/
 .env
+.env.bak.*
+.env.backup
+.env.local
 *.db
 *.db-journal
 .DS_Store
