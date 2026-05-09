@@ -149,8 +149,8 @@ Plant operators submit readings via Telegram, not web UI. Bot runs in-process (l
 ### IST Timezone
 Server runs UTC. Use `nowIST()` pattern from `.claude/skills/code-templates.md`. **NEVER** use `toLocaleTimeString()` on server.
 
-### RAG Document Indexing
-RAG = compliance/company docs ONLY. NOT for ERP transactional data (POs, invoices, GRNs). Uses RAG-Anything microservice (`LIGHTRAG_URL`). Always call `generateVaultNote()` for Obsidian sync.
+### Document Vault (Gemini summaries, no RAG)
+LightRAG was removed on 2026-05-08 (PR #77). Compliance / company doc summarisation now goes through `generateVaultNote()` only — Gemini extracts a summary + entities and writes a `VaultNote` row for Obsidian sync. No external RAG service. The `Settings.whatsapp*`, `CompanyDocument.ragTrackId / ragIndexed`, and `VaultNote.ragIndexed` columns are unused but kept (no destructive migration).
 
 ### UI Design System — Two Tiers
 - **Tier 1 (Plant/Process)**: Rounded, colorful, emoji-friendly — for operators on phones
