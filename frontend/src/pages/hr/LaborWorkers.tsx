@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
-import { useSearchParams } from 'react-router-dom';
+import { Link, useSearchParams } from 'react-router-dom';
 import { HardHat, Loader2, Plus, RefreshCw, Save, X, Search } from 'lucide-react';
 import api from '../../services/api';
 
@@ -135,6 +135,13 @@ export default function LaborWorkers() {
             <RefreshCw className="w-3 h-3" /> Refresh
           </button>
           <div className="flex-1" />
+          <Link
+            to="/hr/labor-quick-add"
+            className="px-3 py-1 bg-emerald-600 text-white text-[11px] font-medium hover:bg-emerald-700 inline-flex items-center gap-1"
+            title="Excel-style fast entry — name + Aadhaar only"
+          >
+            <Plus className="w-3 h-3" /> Quick Add (bulk)
+          </Link>
           <button
             onClick={() => setEditing({
               firstName: '',

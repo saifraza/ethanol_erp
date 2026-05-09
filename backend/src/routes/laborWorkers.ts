@@ -31,7 +31,7 @@ router.get('/', asyncHandler(async (req: AuthRequest, res: Response) => {
   const workers = await prisma.laborWorker.findMany({
     where,
     orderBy: { workerNo: 'asc' },
-    take: 1000,
+    take: 5000,
     include: {
       contractor: { select: { id: true, name: true, contractorCode: true } },
       workOrder: { select: { id: true, woNo: true, title: true, contractType: true } },
@@ -102,6 +102,61 @@ router.post('/', authorize('ADMIN'), validate(createSchema), asyncHandler(async 
   fireSyncLaborToDevices(w.id, 'UPSERT');
 
   res.status(201).json({ worker: w });
+}));
+
+// ════════════════════════════════════════════════════════════════
+// BULK CREATE — Excel-style quick add (just name + aadhaar per row,
+// shared contractor / workOrder / skill at the top). Allocates
+// workerCodes sequentially in one transaction so two parallel
+// callers can't race to the same workerNo.
+// ════════════════════════════════════════════════════════════════
+
+const bulkCreateSchema = z.object({
+  contractorId: z.string().min(1),
+  workOrderId: z.string().nullable().optional(),
+  skillCategory: z.string().nullable().optional(),
+  workers: z.array(z.object({
+    firstName: z.string().min(1).max(80),
+    lastName: z.string().nullable().optional(),
+    aadhaar: z.string().nullable().optional(),
+  })).min(1).max(200),
+});
+
+router.post('/bulk', authorize('ADMIN'), validate(bulkCreateSchema), asyncHandler(async (req: AuthRequest, res: Response) => {
+  const b = req.body as z.infer<typeof bulkCreateSchema>;
+  const companyId = getActiveCompanyId(req);
+
+  const created = await prisma.$transaction(async (tx) => {
+    const last = await tx.laborWorker.findFirst({ orderBy: { workerNo: 'desc' }, select: { workerNo: true } });
+    let nextNo = (last?.workerNo ?? 0) + 1;
+    const out: Array<{ id: string; workerCode: string; firstName: string; lastName: string | null }> = [];
+    for (const row of b.workers) {
+      const workerCode = `LW-${String(nextNo).padStart(3, '0')}`;
+      const w = await tx.laborWorker.create({
+        data: {
+          workerCode,
+          firstName: row.firstName.trim(),
+          lastName: row.lastName?.trim() || null,
+          aadhaar: row.aadhaar?.trim() || null,
+          contractorId: b.contractorId,
+          workOrderId: b.workOrderId ?? null,
+          skillCategory: b.skillCategory ?? null,
+          joinedAt: new Date(),
+          companyId,
+        },
+        select: { id: true, workerCode: true, firstName: true, lastName: true },
+      });
+      out.push(w);
+      nextNo++;
+    }
+    return out;
+  });
+
+  // Push every new worker to devices outside the transaction —
+  // fire-and-forget so the HTTP response isn't blocked on bridge calls.
+  for (const w of created) fireSyncLaborToDevices(w.id, 'UPSERT');
+
+  res.status(201).json({ created, count: created.length });
 }));
 
 // ════════════════════════════════════════════════════════════════

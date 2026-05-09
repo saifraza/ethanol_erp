@@ -99,6 +99,7 @@ const HrAttendance = React.lazy(() => import('./pages/hr/Attendance'));
 const HrLeave = React.lazy(() => import('./pages/hr/Leave'));
 const HrBiometricDevices = React.lazy(() => import('./pages/hr/BiometricDevices'));
 const HrLaborWorkers = React.lazy(() => import('./pages/hr/LaborWorkers'));
+const HrLaborQuickAdd = React.lazy(() => import('./pages/hr/LaborQuickAdd'));
 const HrLaborAttendance = React.lazy(() => import('./pages/hr/LaborAttendance'));
 
 const PurchaseRequisition = React.lazy(() => import('./pages/PurchaseRequisition'));
@@ -274,6 +275,7 @@ export default function App() {
         <Route path="hr/leave" element={<HrLeave />} />
         <Route path="hr/biometric-devices" element={<HrBiometricDevices />} />
         <Route path="hr/labor-workers" element={<HrLaborWorkers />} />
+        <Route path="hr/labor-quick-add" element={<HrLaborQuickAdd />} />
         <Route path="hr/labor-attendance" element={<HrLaborAttendance />} />
         <Route path="hr/salary-structure" element={<HrSalaryStructure />} />
         <Route path="hr/payroll" element={<HrPayrollHub />}>
