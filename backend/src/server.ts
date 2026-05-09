@@ -136,6 +136,13 @@ const server = app.listen(PORT, HOST, async () => {
     // boilerCombustionAlarm moved to bridge-local — see C:\mspil\sugar-opc\fuel_starvation.py
   }
 
+  // Factory cache watchdog — monitors factory-server master-data cache freshness,
+  // alerts the WEIGHBRIDGE Telegram group (only) when cache goes stale or the
+  // factory-server stops heartbeating. Closes the 2026-05-07 → 05-09 silent
+  // outage gap (factory PC's CLOUD_DATABASE_URL drifted, banner shown but
+  // unmonitored for 48h).
+  import('./services/factoryCacheWatchdog').then(m => m.startFactoryCacheWatchdog()).catch(() => {});
+
   // Fermenter fill event detector — runs every 5 min; works OPC-first, falls back to lab
   import('./services/fermentation/fillLive').then(m => m.startFillLive()).catch(() => {});
 

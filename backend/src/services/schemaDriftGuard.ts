@@ -97,6 +97,10 @@ const EXPECTED_COLUMNS: ColumnCheck[] = [
   // running ledger can interleave bank + cash events with running balance.
   // Replaces legacy `purpose contains "PO-{n}"` matcher.
   { table: 'CashVoucher', column: 'purchaseOrderId', sql: `ALTER TABLE "CashVoucher" ADD COLUMN IF NOT EXISTS "purchaseOrderId" TEXT` },
+  // 2026-05-09 — Factory cache watchdog state (Telegram alerts to weighbridge group
+  // when factory-server's master-data cache goes stale). Added after 48h silent
+  // outage where factory PC's CLOUD_DATABASE_URL pointed at a deleted DB host.
+  { table: 'Settings', column: 'factoryCacheState', sql: `ALTER TABLE "Settings" ADD COLUMN IF NOT EXISTS "factoryCacheState" TEXT` },
 ];
 
 const EXPECTED_TABLES: TableCheck[] = [

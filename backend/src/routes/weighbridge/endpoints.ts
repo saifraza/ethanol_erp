@@ -32,9 +32,26 @@ interface PCHeartbeat {
     hostname?: string;
     os?: string;
   };
+  // Factory-server-only: master-data cache health (populated when pcId === 'factory-server')
+  cacheAgeMs?: number;
+  cacheIsStale?: boolean;
+  cacheSource?: string;
+  cacheCounts?: {
+    suppliers?: number;
+    materials?: number;
+    pos?: number;
+    customers?: number;
+    vehicles?: number;
+  };
 }
 
 const pcHeartbeats = new Map<string, PCHeartbeat>();
+
+/** Get the factory-server's latest heartbeat (or null if never seen).
+ *  Used by factoryCacheWatchdog to detect stale master-data cache. */
+export function getFactoryHeartbeat(): PCHeartbeat | null {
+  return pcHeartbeats.get('factory-server') || null;
+}
 
 // ==========================================================================
 //  PUT /weighment/:wbId — update a previously pushed weighment
@@ -744,6 +761,11 @@ export function registerOtherRoutes(router: Router): void {
       lastTicket: req.body.lastTicket,
       version: req.body.version,
       system: req.body.system,
+      // Factory-server cache health — only populated when factory POSTs them
+      cacheAgeMs: typeof req.body.cacheAgeMs === 'number' ? req.body.cacheAgeMs : undefined,
+      cacheIsStale: typeof req.body.cacheIsStale === 'boolean' ? req.body.cacheIsStale : undefined,
+      cacheSource: typeof req.body.cacheSource === 'string' ? req.body.cacheSource : undefined,
+      cacheCounts: req.body.cacheCounts && typeof req.body.cacheCounts === 'object' ? req.body.cacheCounts : undefined,
     };
     pcHeartbeats.set(pcId, hb);
     res.json({ ok: true });

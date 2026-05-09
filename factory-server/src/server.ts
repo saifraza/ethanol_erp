@@ -218,9 +218,36 @@ app.use((err: Error, req: express.Request, res: express.Response, _next: express
   });
 });
 
-// Send factory server's own heartbeat to cloud ERP
+// Send factory server's own heartbeat to cloud ERP. Includes master-data cache
+// health so cloud's factoryCacheWatchdog can alert the weighbridge Telegram
+// group when the cache goes stale (closes 2026-05-09 silent-outage gap).
 async function sendHeartbeatToCloud() {
   try {
+    // Inline import to avoid pulling masterDataCache into module-eval order.
+    // Falls back to no-op if module not loaded yet (first 100ms of startup).
+    let cacheStats: {
+      ageMs: number | null;
+      isStale: boolean;
+      source: string;
+      counts: { suppliers?: number; materials?: number; pos?: number; customers?: number; vehicles?: number };
+    } | null = null;
+    try {
+      const { getCacheStats } = await import('./services/masterDataCache');
+      const s = getCacheStats();
+      cacheStats = {
+        ageMs: s.ageMs,
+        isStale: s.isStale,
+        source: s.source,
+        counts: {
+          suppliers: s.suppliers,
+          materials: s.materials,
+          pos: s.pos,
+          customers: s.customers,
+          vehicles: s.vehicles,
+        },
+      };
+    } catch { /* cache module not ready — heartbeat continues without it */ }
+
     await fetch(`${config.cloudErpUrl}/weighbridge/heartbeat`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', 'X-WB-Key': config.cloudApiKey },
@@ -241,6 +268,12 @@ async function sendHeartbeatToCloud() {
           hostname: 'WIN-PBMJ9RMTO6L',
           os: `Windows Server 2019 (${os.totalmem() > 0 ? Math.round(os.totalmem() / 1024 / 1024 / 1024) + 'GB RAM' : ''})`,
         },
+        // Master-data cache health (ignored by cloud's heartbeat handler if
+        // unrecognized; consumed by factoryCacheWatchdog for Telegram alerts).
+        cacheAgeMs: cacheStats?.ageMs ?? undefined,
+        cacheIsStale: cacheStats?.isStale,
+        cacheSource: cacheStats?.source,
+        cacheCounts: cacheStats?.counts,
       }),
     });
   } catch (err) {
