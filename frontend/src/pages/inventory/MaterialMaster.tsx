@@ -125,8 +125,9 @@ export default function MaterialMaster() {
   const fetchItems = useCallback(async () => {
     try {
       setLoading(true);
-      const params: Record<string, string> = { limit: '500' };
+      const params: Record<string, string> = {};
       if (categoryFilter) params.category = categoryFilter;
+      if (searchQuery.trim()) params.search = searchQuery.trim();
       const res = await api.get('/inventory/items', { params });
       setItems(Array.isArray(res.data) ? res.data : res.data.items ?? []);
     } catch {
@@ -134,7 +135,7 @@ export default function MaterialMaster() {
     } finally {
       setLoading(false);
     }
-  }, [categoryFilter]);
+  }, [categoryFilter, searchQuery]);
 
   useEffect(() => { fetchItems(); }, [fetchItems]);
 
