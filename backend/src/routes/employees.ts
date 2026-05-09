@@ -33,7 +33,7 @@ router.get('/', asyncHandler(async (req: AuthRequest, res: Response) => {
   const employees = await prisma.employee.findMany({
     where,
     orderBy: { empNo: 'asc' },
-    take: 500,
+    take: 5000,
     include: {
       designation: { select: { id: true, title: true, grade: true, band: true } },
       department: { select: { id: true, name: true } },
@@ -56,7 +56,7 @@ router.get('/org-chart', asyncHandler(async (req: AuthRequest, res: Response) =>
     },
     orderBy: { empNo: 'asc' },
   
-    take: 500,
+    take: 5000,
   });
 
   // Build tree: find roots (no reportingTo) and recursively attach children
