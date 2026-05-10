@@ -133,6 +133,7 @@ export const MODULE_DEFS: ModuleDef[] = [
   // ── HR & PAYROLL ──
   { key: 'hr-dashboard', label: 'HR Dashboard', to: '/hr/dashboard', icon: LayoutGrid, group: 'hr' },
   { key: 'employees', label: 'Employees', to: '/hr/employees', icon: Users, group: 'hr' },
+  { key: 'departments', label: 'Departments', to: '/inventory/masters?tab=departments', icon: Network, group: 'hr' },
   { key: 'designations', label: 'Designations', to: '/hr/designations', icon: UserCheckIcon, group: 'hr' },
   { key: 'org-chart', label: 'Org Chart', to: '/hr/org-chart', icon: Network, group: 'hr' },
   { key: 'attendance', label: 'Attendance', to: '/hr/attendance', icon: CalendarIcon, group: 'hr' },
