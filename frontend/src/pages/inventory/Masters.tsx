@@ -47,6 +47,7 @@ export default function Masters() {
   const [editDeptCode, setEditDeptCode] = useState('');
   const [editDeptDivisionId, setEditDeptDivisionId] = useState<string>('');
   const [savingDept, setSavingDept] = useState(false);
+  const [deptError, setDeptError] = useState<string | null>(null);
 
   // Business Division form state
   const [showDivForm, setShowDivForm] = useState(false);
@@ -114,6 +115,7 @@ export default function Masters() {
     if (!deptName.trim()) return;
     try {
       setSavingDept(true);
+      setDeptError(null);
       await api.post('/departments', {
         name: deptName.trim(),
         code: deptCode.trim() || null,
@@ -124,8 +126,16 @@ export default function Masters() {
       setDeptDivisionId('');
       setShowDeptForm(false);
       await fetchDepartments();
-    } catch (err) {
-      console.error('Failed to create department:', err);
+    } catch (err: unknown) {
+      const e = err as { response?: { status?: number; data?: { error?: string } }; message?: string };
+      const status = e.response?.status;
+      const detail = e.response?.data?.error || e.message || 'unknown';
+      const text = status === 401 ? 'Not signed in — please log in again'
+                 : status === 403 ? 'Permission denied'
+                 : detail.includes('Unique') || detail.includes('already exists') ? `A department with this name already exists`
+                 : status === 400 ? `Validation error: ${detail}`
+                 : `Failed to save (${status ?? '?'}): ${detail}`;
+      setDeptError(text);
     } finally {
       setSavingDept(false);
     }
@@ -255,7 +265,13 @@ export default function Masters() {
     setEditWhAddress(wh.address || '');
   };
 
-  const [activeTab, setActiveTab] = useState<'divisions' | 'departments' | 'warehouses'>('divisions');
+  // Honor ?tab=departments|divisions|warehouses so links from other modules
+  // (e.g. HR sidebar's "Departments" entry) land on the right tab directly.
+  const initialTab = (() => {
+    const t = new URLSearchParams(window.location.search).get('tab');
+    return t === 'departments' || t === 'warehouses' ? t : 'divisions';
+  })();
+  const [activeTab, setActiveTab] = useState<'divisions' | 'departments' | 'warehouses'>(initialTab);
 
   if (loadingDepts && loadingWh) {
     return (
@@ -452,6 +468,11 @@ export default function Masters() {
             >
               Cancel
             </button>
+            {deptError && (
+              <div className="basis-full mt-1 text-[11px] text-rose-700 bg-rose-50 border border-rose-200 px-3 py-1.5">
+                {deptError}
+              </div>
+            )}
           </div>
         )}
 
