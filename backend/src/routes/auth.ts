@@ -64,7 +64,7 @@ router.post('/login', asyncHandler(async (req: AuthRequest, res: Response) => {
   const token = jwt.sign(
     { id: user.id, email: user.email, role: user.role, name: user.name, allowedModules: user.allowedModules, paymentRole: user.paymentRole, companyId: user.companyId, companyCode: user.company?.code || 'MSPIL' },
     config.jwtSecret,
-    { expiresIn: '7d' }
+    { expiresIn: '30d' }
   );
 
   res.json({
