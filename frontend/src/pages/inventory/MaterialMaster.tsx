@@ -219,7 +219,7 @@ export default function MaterialMaster() {
       const status = e.response?.status;
       const detail = e.response?.data?.error || e.message || 'unknown';
       const text = status === 401 ? 'Not signed in — please log in again'
-                 : status === 403 ? 'Permission denied — you need ADMIN role to create or edit items'
+                 : status === 403 ? 'Permission denied. If your role was changed recently, log out and log back in so the new permission takes effect.'
                  : status === 400 ? `Validation error: ${detail}`
                  : `Failed to save item (${status ?? '?'}): ${detail}`;
       setMsg({ type: 'err', text });
