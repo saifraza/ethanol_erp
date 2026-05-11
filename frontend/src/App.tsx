@@ -53,6 +53,7 @@ const StoreDeals = React.lazy(() => import('./pages/inventory/StoreDeals'));
 // Inventory (SAP-style)
 const StockDashboard = React.lazy(() => import('./pages/inventory/StockDashboard'));
 const MaterialMaster = React.lazy(() => import('./pages/inventory/MaterialMaster'));
+const InventoryChemicals = React.lazy(() => import('./pages/inventory/Chemicals'));
 const WarehousesPage = React.lazy(() => import('./pages/inventory/Warehouses'));
 const StockMovements = React.lazy(() => import('./pages/inventory/StockMovements'));
 const StockLedger = React.lazy(() => import('./pages/inventory/StockLedger'));
@@ -239,6 +240,7 @@ export default function App() {
         {/* Inventory (SAP-style) */}
         <Route path="inventory/dashboard" element={<StockDashboard />} />
         <Route path="inventory/items" element={<MaterialMaster />} />
+        <Route path="inventory/chemicals" element={<InventoryChemicals />} />
         <Route path="inventory/warehouses" element={<WarehousesPage />} />
         <Route path="inventory/movements" element={<StockMovements />} />
         <Route path="inventory/ledger" element={<StockLedger />} />
