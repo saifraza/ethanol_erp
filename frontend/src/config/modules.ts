@@ -93,6 +93,7 @@ export const MODULE_DEFS: ModuleDef[] = [
 
   // ── INVENTORY / STORE ──
   { key: 'inventory-store', label: 'Inventory & Store', to: '/inventory', icon: Warehouse, group: 'inventory' },
+  { key: 'chemicals', label: 'Chemicals', to: '/inventory/chemicals', icon: Beaker, group: 'inventory' },
   { key: 'store-module', label: 'Store (PO & GRN)', to: '/store/receipts', icon: PackageCheck, group: 'inventory' },
   { key: 'indents', label: 'Indents', to: '/inventory/indents', icon: ShoppingCart, group: 'inventory' },
   { key: 'store-payments', label: 'Payments', to: '/store/payments', icon: Wallet, group: 'inventory' },
