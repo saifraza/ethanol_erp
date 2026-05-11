@@ -255,6 +255,40 @@ router.get('/master-data', asyncHandler(async (req: Request, res: Response) => {
 // local bridge and posts results back. Same direction as weighbridge
 // sync (factory → cloud only) — zero inbound dependency.
 
+/**
+ * Factory-server pushes the enrollment snapshot — which device user_ids have
+ * at least one fingerprint template on each device. Polled by the factory's
+ * scheduler ~every 10 min. Cloud has no path back to the bridge, so this push
+ * is the only way the cloud knows enrollment status.
+ *
+ * Payload: { snapshots: [ { deviceCode, enrolledUserIds: [...] } ] }
+ */
+const enrollmentSnapshotSchema = z.object({
+  snapshots: z.array(z.object({
+    deviceCode: z.string().min(1),
+    enrolledUserIds: z.array(z.string()),
+  })).min(1).max(50),
+});
+
+router.post('/enrollment-snapshot', asyncHandler(async (req: Request, res: Response) => {
+  if (!checkWBKey(req, res)) return;
+  const parse = enrollmentSnapshotSchema.safeParse(req.body ?? {});
+  if (!parse.success) {
+    res.status(400).json({ error: 'Invalid payload', issues: parse.error.issues });
+    return;
+  }
+  const now = new Date();
+  const results: Array<{ deviceCode: string; updated: boolean; count: number }> = [];
+  for (const s of parse.data.snapshots) {
+    const upd = await prisma.biometricDevice.updateMany({
+      where: { code: s.deviceCode },
+      data: { enrolledUserIds: s.enrolledUserIds, enrolledUpdatedAt: now },
+    });
+    results.push({ deviceCode: s.deviceCode, updated: upd.count > 0, count: s.enrolledUserIds.length });
+  }
+  res.json({ ok: true, at: now.toISOString(), results });
+}));
+
 const claimSchema = z.object({
   max: z.number().int().min(1).max(20).default(5),
   factoryNode: z.string().optional(),

@@ -5657,6 +5657,12 @@ model BiometricDevice {
   // every batch the factory-server posts to /api/biometric/factory-push.
   factoryManaged     Boolean   @default(false)
   lastFactorySyncAt  DateTime?
+  // Enrollment snapshot — factory-server pushes the list of deviceUserIds
+  // that currently have at least one fingerprint template on this device,
+  // every 10 minutes. HR uses it to see who still owes a fingerprint without
+  // having to reach the bridge directly (cloud has no network path to it).
+  enrolledUserIds    Json?     // string[] of deviceUserIds enrolled on this device
+  enrolledUpdatedAt  DateTime?
   notes           String?
   createdAt       DateTime  @default(now())
   updatedAt       DateTime  @updatedAt

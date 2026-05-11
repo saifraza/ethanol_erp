@@ -17,7 +17,7 @@ interface Row {
   enrolledDevices: string[];
   enrolled: boolean;
 }
-interface ByDevice { code: string; ok: boolean; error: string | null; enrolled: number; }
+interface ByDevice { code: string; ok: boolean; error: string | null; enrolled: number; lastPushedAt: string | null; stale: boolean; }
 interface Resp {
   refreshedAt: string;
   totals: { employees: number; labor: number; all: number };
@@ -113,10 +113,18 @@ export default function BiometricEnrollment() {
             </div>
             <div className="bg-white border-x border-b border-slate-300 -mx-3 md:-mx-6 grid gap-0" style={{gridTemplateColumns:`repeat(${data.byDevice.length || 1}, minmax(0, 1fr))`}}>
               {data.byDevice.map(d => (
-                <div key={d.code} className={`px-4 py-3 border-r border-slate-200 border-l-4 ${d.ok ? 'border-l-blue-500' : 'border-l-rose-500'}`}>
+                <div key={d.code} className={`px-4 py-3 border-r border-slate-200 border-l-4 ${
+                  d.ok ? (d.stale ? 'border-l-amber-500' : 'border-l-blue-500') : 'border-l-rose-500'
+                }`}>
                   <div className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">{d.code}</div>
                   <div className="text-xl font-bold text-slate-800 mt-1 font-mono tabular-nums">{d.enrolled}</div>
-                  <div className="text-[10px] text-slate-500 mt-0.5">{d.ok ? 'enrolled on this device' : `unreachable: ${d.error ?? 'timeout'}`}</div>
+                  <div className="text-[10px] text-slate-500 mt-0.5">
+                    {d.ok
+                      ? d.stale
+                        ? `stale snapshot — last pushed ${d.lastPushedAt ? new Date(d.lastPushedAt).toLocaleTimeString() : '?'}`
+                        : `as of ${d.lastPushedAt ? new Date(d.lastPushedAt).toLocaleTimeString() : 'now'}`
+                      : d.error ?? 'no snapshot'}
+                  </div>
                 </div>
               ))}
             </div>
