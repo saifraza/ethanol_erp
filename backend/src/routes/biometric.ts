@@ -92,36 +92,22 @@ router.get('/devices', asyncHandler(async (req: AuthRequest, res: Response) => {
 }));
 
 /**
- * Enrollment progress across all active devices. Queries each device's
- * /templates/list in parallel via the bridge, aggregates which deviceUserIds
- * have at least one fingerprint anywhere, joins to Employee + LaborWorker,
- * and returns a flat list with enrollment booleans plus per-device counts.
- *
- * Live query (5-15s) — surfaces a "Pending" list with phone numbers so HR can
- * call the holdouts directly.
+ * Enrollment progress across all active devices. Reads the snapshot pushed
+ * by the factory-server (BiometricDevice.enrolledUserIds, refreshed ~every
+ * 10 min) — cloud has no network path to the bridge, so live queries are
+ * impossible from Railway. Snapshot freshness is shown in the UI.
  */
 router.get('/enrollment-status', asyncHandler(async (req: AuthRequest, res: Response) => {
   const devices = await prisma.biometricDevice.findMany({
     where: { active: true, ...getCompanyFilter(req) },
-    select: { code: true, ip: true, port: true, password: true },
+    select: { code: true, enrolledUserIds: true, enrolledUpdatedAt: true },
   });
 
-  // Per-device { user_id -> [finger ids] } maps, run in parallel.
-  // Bridge response shape: { ok, user_count, templates: { user_id: [fids] } }.
-  const perDevice = await Promise.all(devices.map(async d => {
-    try {
-      const r = await bridge.listTemplates({ ip: d.ip, port: d.port, password: d.password, timeout: 60 });
-      return { code: d.code, ok: true as const, templates: r.templates ?? {} };
-    } catch (e: unknown) {
-      return { code: d.code, ok: false as const, error: e instanceof Error ? e.message : String(e), templates: {} as Record<string, number[]> };
-    }
-  }));
-
-  // Build deviceUserId → set of device codes where they have a template
+  // Build deviceUserId → list of device codes that have a template for them
   const enrolledOn = new Map<string, string[]>();
-  for (const d of perDevice) {
-    for (const [userId, fingerIds] of Object.entries(d.templates)) {
-      if (fingerIds.length === 0) continue;
+  for (const d of devices) {
+    const ids = Array.isArray(d.enrolledUserIds) ? (d.enrolledUserIds as unknown as string[]) : [];
+    for (const userId of ids) {
       const list = enrolledOn.get(userId) ?? [];
       list.push(d.code);
       enrolledOn.set(userId, list);
@@ -170,12 +156,19 @@ router.get('/enrollment-status', asyncHandler(async (req: AuthRequest, res: Resp
   const enrolledCount = all.filter(r => r.enrolled).length;
   const pendingCount = all.length - enrolledCount;
 
-  const byDevice = perDevice.map(d => ({
-    code: d.code,
-    ok: d.ok,
-    error: 'error' in d ? d.error : null,
-    enrolled: Object.values(d.templates).filter(fingers => fingers.length > 0).length,
-  }));
+  const byDevice = devices.map(d => {
+    const ids = Array.isArray(d.enrolledUserIds) ? (d.enrolledUserIds as unknown as string[]) : [];
+    const isStale = !d.enrolledUpdatedAt
+      || (Date.now() - d.enrolledUpdatedAt.getTime()) > 30 * 60_000;
+    return {
+      code: d.code,
+      ok: !!d.enrolledUpdatedAt,
+      error: !d.enrolledUpdatedAt ? 'no snapshot yet — factory will push within ~10 min' : null,
+      enrolled: ids.length,
+      lastPushedAt: d.enrolledUpdatedAt?.toISOString() ?? null,
+      stale: isStale,
+    };
+  });
 
   res.json({
     refreshedAt: new Date().toISOString(),

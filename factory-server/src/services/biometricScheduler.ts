@@ -53,6 +53,13 @@ export function startBiometricScheduler(): void {
   }, 30_000);
 }
 
+// Enrollment-snapshot push interval (10 min). The replicator copies templates
+// across devices on a similar cadence, so this is fresh enough to drive the
+// cloud HR enrollment-tracker without being chatty.
+const ENROLLMENT_PUSH_INTERVAL_MS = 10 * 60_000;
+let _lastEnrollmentPushAt: Date | null = null;
+let _enrollmentPushInFlight = false;
+
 async function tick(): Promise<void> {
   _lastTickAt = new Date();
   try {
@@ -65,6 +72,16 @@ async function tick(): Promise<void> {
     // accurate). Pushes its own clock to every device every hour, keeping
     // all devices within ~1 second of each other.
     const TIME_SYNC_INTERVAL_MS = 60 * 60_000;
+
+    // Enrollment snapshot — one push covers all devices.
+    const enrollmentDue = !_lastEnrollmentPushAt
+      || (Date.now() - _lastEnrollmentPushAt.getTime()) >= ENROLLMENT_PUSH_INTERVAL_MS;
+    if (enrollmentDue && !_enrollmentPushInFlight) {
+      _enrollmentPushInFlight = true;
+      pushEnrollmentSnapshot(devices).catch(err => {
+        console.warn(`[biometric enrollment-push] ${err instanceof Error ? err.message : err}`);
+      }).finally(() => { _enrollmentPushInFlight = false; });
+    }
 
     for (const d of devices) {
       if (d.autoPullMinutes > 0) {
@@ -102,6 +119,56 @@ async function tick(): Promise<void> {
   } catch (err) {
     _lastError = err instanceof Error ? err.message : String(err);
     console.warn(`[biometric] tick failed: ${_lastError}`);
+  }
+}
+
+/**
+ * Query each device's enrolled fingerprint templates via the bridge and
+ * push one snapshot to the cloud so the HR enrollment-tracker page can
+ * tell who still owes a fingerprint. Cloud has no path back to the bridge,
+ * so this push is the only way it learns about enrollments.
+ */
+async function pushEnrollmentSnapshot(devices: CachedDevice[]): Promise<void> {
+  const snapshots = await Promise.all(devices.map(async d => {
+    try {
+      const r = await bridge.templatesList(toRef(d));
+      const enrolledUserIds = Object.entries(r.templates ?? {})
+        .filter(([_, fingers]) => Array.isArray(fingers) && fingers.length > 0)
+        .map(([uid]) => uid);
+      return { deviceCode: d.code, enrolledUserIds, ok: true as const };
+    } catch (err) {
+      console.warn(`[biometric enrollment-push ${d.code}] templatesList failed: ${err instanceof Error ? err.message : err}`);
+      return { deviceCode: d.code, enrolledUserIds: [] as string[], ok: false as const };
+    }
+  }));
+
+  // Only push the device entries that returned successfully — sending a
+  // zero-length list for a device that just had a connection blip would
+  // wipe its cached enrollment in the cloud.
+  const payload = {
+    snapshots: snapshots
+      .filter(s => s.ok)
+      .map(({ deviceCode, enrolledUserIds }) => ({ deviceCode, enrolledUserIds })),
+  };
+  if (payload.snapshots.length === 0) return;
+
+  try {
+    const res = await fetch(`${config.cloudErpUrl}/biometric-factory/enrollment-snapshot`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'X-WB-Key': config.cloudApiKey },
+      body: JSON.stringify(payload),
+      signal: AbortSignal.timeout(60_000),
+    });
+    if (!res.ok) {
+      const txt = await res.text().catch(() => '');
+      console.warn(`[biometric enrollment-push] cloud ${res.status}: ${txt.slice(0, 200)}`);
+      return;
+    }
+    _lastEnrollmentPushAt = new Date();
+    const total = payload.snapshots.reduce((s, x) => s + x.enrolledUserIds.length, 0);
+    console.log(`[biometric enrollment-push] pushed ${payload.snapshots.length} devices · ${total} total enrolled`);
+  } catch (err) {
+    console.warn(`[biometric enrollment-push] threw: ${err instanceof Error ? err.message : err}`);
   }
 }
 

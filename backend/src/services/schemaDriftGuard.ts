@@ -88,6 +88,10 @@ const EXPECTED_COLUMNS: ColumnCheck[] = [
   // pulls punches into its own DB, batches to cloud every minute).
   { table: 'BiometricDevice', column: 'factoryManaged',    sql: `ALTER TABLE "BiometricDevice" ADD COLUMN IF NOT EXISTS "factoryManaged" BOOLEAN NOT NULL DEFAULT false` },
   { table: 'BiometricDevice', column: 'lastFactorySyncAt', sql: `ALTER TABLE "BiometricDevice" ADD COLUMN IF NOT EXISTS "lastFactorySyncAt" TIMESTAMP(3)` },
+  // 2026-05-11 — enrollment snapshot pushed by factory-server every ~10 min so
+  // the HR enrollment-tracker page can read it without reaching the bridge.
+  { table: 'BiometricDevice', column: 'enrolledUserIds',   sql: `ALTER TABLE "BiometricDevice" ADD COLUMN IF NOT EXISTS "enrolledUserIds" JSONB` },
+  { table: 'BiometricDevice', column: 'enrolledUpdatedAt', sql: `ALTER TABLE "BiometricDevice" ADD COLUMN IF NOT EXISTS "enrolledUpdatedAt" TIMESTAMP(3)` },
   // 2026-05-07 — Fuel Payments tab + bulletproof PO ↔ payment join.
   // Replaces the broken `remarks contains "PO-{poNo}"` matcher (PO-1 vs PO-10 collided).
   { table: 'VendorPayment', column: 'purchaseOrderId', sql: `ALTER TABLE "VendorPayment" ADD COLUMN IF NOT EXISTS "purchaseOrderId" TEXT` },
