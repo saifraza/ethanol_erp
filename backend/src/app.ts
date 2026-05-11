@@ -80,6 +80,7 @@ import farmerRoutes from './routes/farmers';
 import ethanolContractRoutes from './routes/ethanolContracts';
 import ethanolGatePassRoutes from './routes/ethanolGatePass';
 import ddgsContractRoutes from './routes/ddgsContracts';
+import wgsContractRoutes from './routes/wgsContracts';
 import sugarContractRoutes from './routes/sugarContracts';
 // Accounts (Payment Desk)
 import accountsRoutes from './routes/accounts';
@@ -300,6 +301,7 @@ app.use('/api/farmers', farmerRoutes);
 app.use('/api/ethanol-contracts', ethanolContractRoutes);
 app.use('/api/ethanol-gate-pass', ethanolGatePassRoutes);
 app.use('/api/ddgs-contracts', ddgsContractRoutes);
+app.use('/api/wgs-contracts', wgsContractRoutes);
 app.use('/api/sugar-contracts', sugarContractRoutes);
 // Accounts (Payment Desk)
 app.use('/api/accounts', accountsRoutes);
