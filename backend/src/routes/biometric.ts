@@ -106,20 +106,21 @@ router.get('/enrollment-status', asyncHandler(async (req: AuthRequest, res: Resp
     select: { code: true, ip: true, port: true, password: true },
   });
 
-  // Per-device { user_id -> [finger ids] } maps, run in parallel
+  // Per-device { user_id -> [finger ids] } maps, run in parallel.
+  // Bridge response shape: { ok, user_count, templates: { user_id: [fids] } }.
   const perDevice = await Promise.all(devices.map(async d => {
     try {
-      const r = await bridge.listTemplates({ ip: d.ip, port: d.port, password: d.password, timeout: 30 });
-      return { code: d.code, ok: true as const, users: r.users ?? {} };
+      const r = await bridge.listTemplates({ ip: d.ip, port: d.port, password: d.password, timeout: 60 });
+      return { code: d.code, ok: true as const, templates: r.templates ?? {} };
     } catch (e: unknown) {
-      return { code: d.code, ok: false as const, error: e instanceof Error ? e.message : String(e), users: {} as Record<string, number[]> };
+      return { code: d.code, ok: false as const, error: e instanceof Error ? e.message : String(e), templates: {} as Record<string, number[]> };
     }
   }));
 
   // Build deviceUserId → set of device codes where they have a template
   const enrolledOn = new Map<string, string[]>();
   for (const d of perDevice) {
-    for (const [userId, fingerIds] of Object.entries(d.users)) {
+    for (const [userId, fingerIds] of Object.entries(d.templates)) {
       if (fingerIds.length === 0) continue;
       const list = enrolledOn.get(userId) ?? [];
       list.push(d.code);
@@ -173,7 +174,7 @@ router.get('/enrollment-status', asyncHandler(async (req: AuthRequest, res: Resp
     code: d.code,
     ok: d.ok,
     error: 'error' in d ? d.error : null,
-    enrolled: Object.values(d.users).filter(fingers => fingers.length > 0).length,
+    enrolled: Object.values(d.templates).filter(fingers => fingers.length > 0).length,
   }));
 
   res.json({

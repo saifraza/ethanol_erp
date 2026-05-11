@@ -122,8 +122,9 @@ export const bridge = {
     return call('/devices/templates/copy', { src_device: src, dst_device: dst, user_id, finger_ids }, 60_000);
   },
   /** Map of user_id → enrolled finger ids for every user on the device. Used by
-   *  the enrollment-progress page to compute who still owes a fingerprint. */
-  async listTemplates(device: DeviceRef): Promise<{ users: Record<string, number[]> }> {
-    return call('/devices/templates/list', { device }, 60_000);
+   *  the enrollment-progress page to compute who still owes a fingerprint.
+   *  Bridge returns the map under `templates` (not `users` — easy mix-up). */
+  async listTemplates(device: DeviceRef): Promise<{ ok: boolean; user_count: number; templates: Record<string, number[]> }> {
+    return call('/devices/templates/list', { device }, 120_000);
   },
 };

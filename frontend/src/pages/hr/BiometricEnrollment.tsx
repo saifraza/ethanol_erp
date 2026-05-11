@@ -93,30 +93,34 @@ export default function BiometricEnrollment() {
 
         {/* Summary strip */}
         {data && (
-          <div className="bg-white border-x border-b border-slate-300 -mx-3 md:-mx-6 grid grid-cols-2 md:grid-cols-5 gap-0">
-            <div className="px-4 py-3 border-r border-slate-200 border-l-4 border-l-slate-500">
-              <div className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Total</div>
-              <div className="text-xl font-bold text-slate-800 mt-1 font-mono tabular-nums">{data.totals.all}</div>
-              <div className="text-[10px] text-slate-500 mt-0.5">{data.totals.employees} emp · {data.totals.labor} labor</div>
-            </div>
-            <div className="px-4 py-3 border-r border-slate-200 border-l-4 border-l-emerald-500">
-              <div className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Enrolled</div>
-              <div className="text-xl font-bold text-emerald-700 mt-1 font-mono tabular-nums">{data.enrolledCount}</div>
-              <div className="text-[10px] text-slate-500 mt-0.5">{pct}% complete</div>
-            </div>
-            <div className="px-4 py-3 border-r border-slate-200 border-l-4 border-l-amber-500">
-              <div className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Pending</div>
-              <div className="text-xl font-bold text-amber-700 mt-1 font-mono tabular-nums">{data.pendingCount}</div>
-              <div className="text-[10px] text-slate-500 mt-0.5">to be called</div>
-            </div>
-            {data.byDevice.slice(0, 2).map(d => (
-              <div key={d.code} className={`px-4 py-3 border-r border-slate-200 border-l-4 ${d.ok ? 'border-l-blue-500' : 'border-l-rose-500'}`}>
-                <div className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">{d.code}</div>
-                <div className="text-xl font-bold text-slate-800 mt-1 font-mono tabular-nums">{d.enrolled}</div>
-                <div className="text-[10px] text-slate-500 mt-0.5">{d.ok ? 'enrolled on this device' : 'device unreachable'}</div>
+          <>
+            <div className="bg-white border-x border-b border-slate-300 -mx-3 md:-mx-6 grid grid-cols-3 gap-0">
+              <div className="px-4 py-3 border-r border-slate-200 border-l-4 border-l-slate-500">
+                <div className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Total</div>
+                <div className="text-xl font-bold text-slate-800 mt-1 font-mono tabular-nums">{data.totals.all}</div>
+                <div className="text-[10px] text-slate-500 mt-0.5">{data.totals.employees} emp · {data.totals.labor} labor</div>
               </div>
-            ))}
-          </div>
+              <div className="px-4 py-3 border-r border-slate-200 border-l-4 border-l-emerald-500">
+                <div className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Enrolled</div>
+                <div className="text-xl font-bold text-emerald-700 mt-1 font-mono tabular-nums">{data.enrolledCount}</div>
+                <div className="text-[10px] text-slate-500 mt-0.5">{pct}% complete</div>
+              </div>
+              <div className="px-4 py-3 border-l-4 border-l-amber-500">
+                <div className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Pending</div>
+                <div className="text-xl font-bold text-amber-700 mt-1 font-mono tabular-nums">{data.pendingCount}</div>
+                <div className="text-[10px] text-slate-500 mt-0.5">to be called</div>
+              </div>
+            </div>
+            <div className="bg-white border-x border-b border-slate-300 -mx-3 md:-mx-6 grid gap-0" style={{gridTemplateColumns:`repeat(${data.byDevice.length || 1}, minmax(0, 1fr))`}}>
+              {data.byDevice.map(d => (
+                <div key={d.code} className={`px-4 py-3 border-r border-slate-200 border-l-4 ${d.ok ? 'border-l-blue-500' : 'border-l-rose-500'}`}>
+                  <div className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">{d.code}</div>
+                  <div className="text-xl font-bold text-slate-800 mt-1 font-mono tabular-nums">{d.enrolled}</div>
+                  <div className="text-[10px] text-slate-500 mt-0.5">{d.ok ? 'enrolled on this device' : `unreachable: ${d.error ?? 'timeout'}`}</div>
+                </div>
+              ))}
+            </div>
+          </>
         )}
 
         {/* Filters */}
