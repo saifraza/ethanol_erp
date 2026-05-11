@@ -139,6 +139,7 @@ export const MODULE_DEFS: ModuleDef[] = [
   { key: 'attendance', label: 'Attendance', to: '/hr/attendance', icon: CalendarIcon, group: 'hr' },
   { key: 'leave', label: 'Leave', to: '/hr/leave', icon: ClockIcon, group: 'hr' },
   { key: 'biometric-devices', label: 'Biometric Devices', to: '/hr/biometric-devices', icon: Fingerprint, group: 'hr', adminOnly: true },
+  { key: 'biometric-enrollment', label: 'Biometric Enrollment', to: '/hr/biometric-enrollment', icon: Fingerprint, group: 'hr' },
   { key: 'labor-workers', label: 'Labor Workers', to: '/hr/labor-workers', icon: HardHat, group: 'hr' },
   { key: 'labor-attendance', label: 'Labor Attendance', to: '/hr/labor-attendance', icon: CalendarIcon, group: 'hr' },
   { key: 'salary-structure', label: 'Salary Structure', to: '/hr/salary-structure', icon: Wallet, group: 'hr' },
