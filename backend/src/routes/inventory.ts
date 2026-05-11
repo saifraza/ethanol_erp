@@ -164,7 +164,7 @@ async function generateItemCode(): Promise<string> {
 }
 
 // POST /items — create new item
-router.post('/items', authorize('ADMIN'), asyncHandler(async (req: AuthRequest, res: Response) => {
+router.post('/items', authorize('ADMIN', 'STORE'), asyncHandler(async (req: AuthRequest, res: Response) => {
   const b = req.body;
   const code = await generateItemCode();
   const item = await prisma.inventoryItem.create({
@@ -197,7 +197,7 @@ router.post('/items', authorize('ADMIN'), asyncHandler(async (req: AuthRequest, 
 }));
 
 // PUT /items/:id — update item
-router.put('/items/:id', authorize('ADMIN'), asyncHandler(async (req: AuthRequest, res: Response) => {
+router.put('/items/:id', authorize('ADMIN', 'STORE'), asyncHandler(async (req: AuthRequest, res: Response) => {
   const b = req.body;
   const item = await prisma.inventoryItem.update({
     where: { id: req.params.id },
