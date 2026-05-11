@@ -74,6 +74,7 @@ model Company {
   dispatchRequests      DispatchRequest[]
   ethanolContracts      EthanolContract[]
   ddgsContracts         DDGSContract[]
+  wgsContracts          WGSContract[]
   sugarContracts        SugarContract[]
   warehouses            Warehouse[]
   // Back-relations for previously orphaned companyId fields
@@ -1893,6 +1894,7 @@ model Customer {
   payments                 Payment[]
   ethanolContracts         EthanolContract[]
   ddgsContracts            DDGSContract[]
+  wgsContracts             WGSContract[]
   ddgsDispatchTrucks       DDGSDispatchTruck[]  @relation("DDGSDispatchBillTo")
   ddgsDispatchTrucksShipTo DDGSDispatchTruck[]  @relation("DDGSDispatchShipTo")
   dispatchTrucksShipTo     DispatchTruck[]      @relation("DispatchTruckShipTo")
@@ -2340,6 +2342,7 @@ model Invoice {
   payments                Payment[]
   ethanolLiftings         EthanolLifting[]
   ddgsContractDispatches  DDGSContractDispatch[]
+  wgsContractDispatches   WGSContractDispatch[]
   sugarContractDispatches SugarContractDispatch[]
 
   // Snapshot — frozen at IRN-generation time. See .claude/skills/invoice-snapshot-immutability.md
@@ -4412,6 +4415,94 @@ model DDGSContractDispatch {
 
   ddgsDispatchTruckId String?            @unique
   ddgsDispatchTruck   DDGSDispatchTruck? @relation(fields: [ddgsDispatchTruckId], references: [id])
+
+  status    String   @default("DISPATCHED")
+  remarks   String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([contractId])
+  @@index([dispatchDate])
+}
+
+// ═══════════════════════════════════════════════
+// WGS — Wet Grain Solubles (sister sales channel to DDGS;
+// no weighbridge truck integration yet — dispatches are entered manually)
+// ═══════════════════════════════════════════════
+
+model WGSContract {
+  id                    String   @id @default(uuid())
+  contractNo            String   @unique
+  status                String   @default("ACTIVE") // DRAFT, ACTIVE, EXPIRED, TERMINATED
+  dealType              String   @default("FIXED_RATE") // FIXED_RATE, JOB_WORK, SPOT
+  processingChargePerMT Float? // job work only
+  principalName         String? // job work only
+  customerId            String
+  customer              Customer @relation(fields: [customerId], references: [id])
+  buyerName             String
+  buyerAddress          String?
+  buyerGstin            String?
+  buyerState            String?
+  buyerContact          String?
+  buyerPhone            String?
+  buyerEmail            String?
+  supplyType            String? // INTRA_STATE, INTER_STATE
+  startDate             DateTime
+  endDate               DateTime
+  quantityType          String   @default("FIXED") // FIXED, OPEN
+  contractQtyMT         Float    @default(0) // 0 when quantityType=OPEN
+  rate                  Float    @default(0) // ₹/MT
+  gstPercent            Float    @default(5)
+  paymentTermsDays      Int?
+  paymentMode           String?
+  logisticsBy           String   @default("BUYER")
+  remarks               String?
+  contractPdf           String? // base64
+  contractPdfName       String?
+  autoGenerateEInvoice  Boolean  @default(false)
+
+  totalSuppliedMT  Float @default(0)
+  totalInvoicedAmt Float @default(0)
+  totalReceivedAmt Float @default(0)
+
+  userId    String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  dispatches WGSContractDispatch[]
+  companyId  String? // FK → Company (null = MSPIL default)
+  company    Company?              @relation(fields: [companyId], references: [id])
+
+  @@index([customerId])
+  @@index([status])
+  @@index([companyId])
+  @@index([startDate])
+  @@index([endDate])
+}
+
+model WGSContractDispatch {
+  id              String      @id @default(uuid())
+  contractId      String
+  contract        WGSContract @relation(fields: [contractId], references: [id])
+  dispatchDate    DateTime
+  vehicleNo       String
+  driverName      String?
+  driverPhone     String?
+  transporterName String?
+  destination     String?
+  bags            Int         @default(0)
+  weightPerBag    Float       @default(50)
+  weightGrossMT   Float       @default(0)
+  weightTareMT    Float       @default(0)
+  weightNetMT     Float       @default(0)
+  rate            Float       @default(0)
+  amount          Float       @default(0)
+  distanceKm      Float?
+  challanNo       String?
+  gatePassNo      String?
+
+  invoiceId String?
+  invoice   Invoice? @relation(fields: [invoiceId], references: [id])
 
   status    String   @default("DISPATCHED")
   remarks   String?

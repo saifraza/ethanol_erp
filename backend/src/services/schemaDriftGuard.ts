@@ -532,6 +532,90 @@ const EXPECTED_TABLES: TableCheck[] = [
       CREATE INDEX IF NOT EXISTS "LaborWorker_skillCategory_idx" ON "LaborWorker"("skillCategory");
     `,
   },
+  // 2026-05-11 — WGS sales contracts (sister channel to DDGS, no weighbridge truck flow)
+  {
+    table: 'WGSContract',
+    sql: `
+      CREATE TABLE IF NOT EXISTS "WGSContract" (
+        "id" TEXT NOT NULL,
+        "contractNo" TEXT NOT NULL,
+        "status" TEXT NOT NULL DEFAULT 'ACTIVE',
+        "dealType" TEXT NOT NULL DEFAULT 'FIXED_RATE',
+        "processingChargePerMT" DOUBLE PRECISION,
+        "principalName" TEXT,
+        "customerId" TEXT NOT NULL,
+        "buyerName" TEXT NOT NULL,
+        "buyerAddress" TEXT,
+        "buyerGstin" TEXT,
+        "buyerState" TEXT,
+        "buyerContact" TEXT,
+        "buyerPhone" TEXT,
+        "buyerEmail" TEXT,
+        "supplyType" TEXT,
+        "startDate" TIMESTAMP(3) NOT NULL,
+        "endDate" TIMESTAMP(3) NOT NULL,
+        "quantityType" TEXT NOT NULL DEFAULT 'FIXED',
+        "contractQtyMT" DOUBLE PRECISION NOT NULL DEFAULT 0,
+        "rate" DOUBLE PRECISION NOT NULL DEFAULT 0,
+        "gstPercent" DOUBLE PRECISION NOT NULL DEFAULT 5,
+        "paymentTermsDays" INTEGER,
+        "paymentMode" TEXT,
+        "logisticsBy" TEXT NOT NULL DEFAULT 'BUYER',
+        "remarks" TEXT,
+        "contractPdf" TEXT,
+        "contractPdfName" TEXT,
+        "autoGenerateEInvoice" BOOLEAN NOT NULL DEFAULT false,
+        "totalSuppliedMT" DOUBLE PRECISION NOT NULL DEFAULT 0,
+        "totalInvoicedAmt" DOUBLE PRECISION NOT NULL DEFAULT 0,
+        "totalReceivedAmt" DOUBLE PRECISION NOT NULL DEFAULT 0,
+        "userId" TEXT,
+        "companyId" TEXT,
+        "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        "updatedAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        CONSTRAINT "WGSContract_pkey" PRIMARY KEY ("id")
+      );
+      CREATE UNIQUE INDEX IF NOT EXISTS "WGSContract_contractNo_key" ON "WGSContract"("contractNo");
+      CREATE INDEX IF NOT EXISTS "WGSContract_customerId_idx" ON "WGSContract"("customerId");
+      CREATE INDEX IF NOT EXISTS "WGSContract_status_idx" ON "WGSContract"("status");
+      CREATE INDEX IF NOT EXISTS "WGSContract_companyId_idx" ON "WGSContract"("companyId");
+      CREATE INDEX IF NOT EXISTS "WGSContract_startDate_idx" ON "WGSContract"("startDate");
+      CREATE INDEX IF NOT EXISTS "WGSContract_endDate_idx" ON "WGSContract"("endDate");
+    `,
+  },
+  {
+    table: 'WGSContractDispatch',
+    sql: `
+      CREATE TABLE IF NOT EXISTS "WGSContractDispatch" (
+        "id" TEXT NOT NULL,
+        "contractId" TEXT NOT NULL,
+        "dispatchDate" TIMESTAMP(3) NOT NULL,
+        "vehicleNo" TEXT NOT NULL,
+        "driverName" TEXT,
+        "driverPhone" TEXT,
+        "transporterName" TEXT,
+        "destination" TEXT,
+        "bags" INTEGER NOT NULL DEFAULT 0,
+        "weightPerBag" DOUBLE PRECISION NOT NULL DEFAULT 50,
+        "weightGrossMT" DOUBLE PRECISION NOT NULL DEFAULT 0,
+        "weightTareMT" DOUBLE PRECISION NOT NULL DEFAULT 0,
+        "weightNetMT" DOUBLE PRECISION NOT NULL DEFAULT 0,
+        "rate" DOUBLE PRECISION NOT NULL DEFAULT 0,
+        "amount" DOUBLE PRECISION NOT NULL DEFAULT 0,
+        "distanceKm" DOUBLE PRECISION,
+        "challanNo" TEXT,
+        "gatePassNo" TEXT,
+        "invoiceId" TEXT,
+        "status" TEXT NOT NULL DEFAULT 'DISPATCHED',
+        "remarks" TEXT,
+        "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        "updatedAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        CONSTRAINT "WGSContractDispatch_pkey" PRIMARY KEY ("id")
+      );
+      CREATE INDEX IF NOT EXISTS "WGSContractDispatch_contractId_idx" ON "WGSContractDispatch"("contractId");
+      CREATE INDEX IF NOT EXISTS "WGSContractDispatch_dispatchDate_idx" ON "WGSContractDispatch"("dispatchDate");
+      CREATE INDEX IF NOT EXISTS "WGSContractDispatch_invoiceId_idx" ON "WGSContractDispatch"("invoiceId");
+    `,
+  },
 ];
 
 async function checkAndCreateTables(): Promise<void> {

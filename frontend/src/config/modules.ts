@@ -58,6 +58,7 @@ export const MODULE_DEFS: ModuleDef[] = [
   { key: 'sales-orders', label: 'Sales Orders', to: '/sales/orders', icon: ClipboardList, group: 'sales' },
   { key: 'ethanol-contracts', label: 'Ethanol Supply', to: '/sales/ethanol-contracts', icon: Handshake, group: 'sales' },
   { key: 'ddgs-contracts', label: 'DDGS Supply', to: '/sales/ddgs-contracts', icon: Package, group: 'sales' },
+  { key: 'wgs-contracts', label: 'WGS Supply', to: '/sales/wgs-contracts', icon: Package, group: 'sales' },
   { key: 'sugar-contracts', label: 'Sugar Supply', to: '/sales/sugar-contracts', icon: Package, group: 'sales' },
   { key: 'scrap-sales', label: 'Scrap / Misc Sales', to: '/trade/sales', icon: Store, group: 'sales' },
 

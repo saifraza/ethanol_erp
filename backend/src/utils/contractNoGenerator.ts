@@ -33,6 +33,16 @@ export async function nextEthanolContractNo(): Promise<string> {
   return nextSeq(prefix, last?.contractNo);
 }
 
+export async function nextWGSContractNo(): Promise<string> {
+  const prefix = `WGS/${currentFY()}/`;
+  const last = await prisma.wGSContract.findFirst({
+    where: { contractNo: { startsWith: prefix } },
+    orderBy: { contractNo: 'desc' },
+    select: { contractNo: true },
+  });
+  return nextSeq(prefix, last?.contractNo);
+}
+
 export async function nextSugarContractNo(): Promise<string> {
   const prefix = `SUG/${currentFY()}/`;
   const last = await prisma.sugarContract.findFirst({
