@@ -91,6 +91,101 @@ router.get('/devices', asyncHandler(async (req: AuthRequest, res: Response) => {
   res.json(devices);
 }));
 
+/**
+ * Enrollment progress across all active devices. Queries each device's
+ * /templates/list in parallel via the bridge, aggregates which deviceUserIds
+ * have at least one fingerprint anywhere, joins to Employee + LaborWorker,
+ * and returns a flat list with enrollment booleans plus per-device counts.
+ *
+ * Live query (5-15s) — surfaces a "Pending" list with phone numbers so HR can
+ * call the holdouts directly.
+ */
+router.get('/enrollment-status', asyncHandler(async (req: AuthRequest, res: Response) => {
+  const devices = await prisma.biometricDevice.findMany({
+    where: { active: true, ...getCompanyFilter(req) },
+    select: { code: true, ip: true, port: true, password: true },
+  });
+
+  // Per-device { user_id -> [finger ids] } maps, run in parallel
+  const perDevice = await Promise.all(devices.map(async d => {
+    try {
+      const r = await bridge.listTemplates({ ip: d.ip, port: d.port, password: d.password, timeout: 30 });
+      return { code: d.code, ok: true as const, users: r.users ?? {} };
+    } catch (e: unknown) {
+      return { code: d.code, ok: false as const, error: e instanceof Error ? e.message : String(e), users: {} as Record<string, number[]> };
+    }
+  }));
+
+  // Build deviceUserId → set of device codes where they have a template
+  const enrolledOn = new Map<string, string[]>();
+  for (const d of perDevice) {
+    for (const [userId, fingerIds] of Object.entries(d.users)) {
+      if (fingerIds.length === 0) continue;
+      const list = enrolledOn.get(userId) ?? [];
+      list.push(d.code);
+      enrolledOn.set(userId, list);
+    }
+  }
+
+  const [employees, labors] = await Promise.all([
+    prisma.employee.findMany({
+      where: { isActive: true, deviceUserId: { not: null }, ...getCompanyFilter(req) },
+      select: {
+        id: true, empCode: true, empNo: true, firstName: true, lastName: true,
+        phone: true, deviceUserId: true,
+        department: { select: { name: true } },
+        designation: { select: { title: true } },
+      },
+      orderBy: { empNo: 'asc' },
+    }),
+    prisma.laborWorker.findMany({
+      where: { isActive: true, deviceUserId: { not: null }, ...getCompanyFilter(req) },
+      select: { id: true, workerCode: true, workerNo: true, firstName: true, lastName: true, phone: true, deviceUserId: true },
+      orderBy: { workerNo: 'asc' },
+    }),
+  ]);
+
+  const empRows = employees.map(e => ({
+    kind: 'EMPLOYEE' as const,
+    id: e.id, code: e.empCode, no: e.empNo,
+    firstName: e.firstName, lastName: e.lastName,
+    phone: e.phone, deviceUserId: e.deviceUserId!,
+    department: e.department?.name ?? null,
+    designation: e.designation?.title ?? null,
+    enrolledDevices: enrolledOn.get(e.deviceUserId!) ?? [],
+    enrolled: (enrolledOn.get(e.deviceUserId!) ?? []).length > 0,
+  }));
+  const labRows = labors.map(l => ({
+    kind: 'LABOR' as const,
+    id: l.id, code: l.workerCode, no: l.workerNo,
+    firstName: l.firstName, lastName: l.lastName,
+    phone: l.phone, deviceUserId: l.deviceUserId!,
+    department: null, designation: null,
+    enrolledDevices: enrolledOn.get(l.deviceUserId!) ?? [],
+    enrolled: (enrolledOn.get(l.deviceUserId!) ?? []).length > 0,
+  }));
+
+  const all = [...empRows, ...labRows];
+  const enrolledCount = all.filter(r => r.enrolled).length;
+  const pendingCount = all.length - enrolledCount;
+
+  const byDevice = perDevice.map(d => ({
+    code: d.code,
+    ok: d.ok,
+    error: 'error' in d ? d.error : null,
+    enrolled: Object.values(d.users).filter(fingers => fingers.length > 0).length,
+  }));
+
+  res.json({
+    refreshedAt: new Date().toISOString(),
+    totals: { employees: empRows.length, labor: labRows.length, all: all.length },
+    enrolledCount,
+    pendingCount,
+    byDevice,
+    rows: all,
+  });
+}));
+
 router.post('/devices', authorize('ADMIN'), validate(deviceSchema), asyncHandler(async (req: AuthRequest, res: Response) => {
   const created = await prisma.biometricDevice.create({
     data: { ...req.body, companyId: getActiveCompanyId(req) },

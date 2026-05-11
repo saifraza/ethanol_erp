@@ -121,4 +121,9 @@ export const bridge = {
   async copyTemplate(src: DeviceRef, dst: DeviceRef, user_id: string, finger_ids?: number[]): Promise<{ ok: boolean; copied_fingers?: number[]; reason?: string }> {
     return call('/devices/templates/copy', { src_device: src, dst_device: dst, user_id, finger_ids }, 60_000);
   },
+  /** Map of user_id → enrolled finger ids for every user on the device. Used by
+   *  the enrollment-progress page to compute who still owes a fingerprint. */
+  async listTemplates(device: DeviceRef): Promise<{ users: Record<string, number[]> }> {
+    return call('/devices/templates/list', { device }, 60_000);
+  },
 };
