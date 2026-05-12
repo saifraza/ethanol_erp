@@ -598,8 +598,40 @@ router.put('/deals/:id', authenticate, asyncHandler(async (req: AuthRequest, res
       gstPercent = materialItem.gstPercent ?? 0;
     }
 
-    const isRealQty = line.quantity < 900000;
-    const amount = isRealQty ? Math.round(line.quantity * rate * 100) / 100 : 0;
+    // Allow changing the deal type (OPEN ↔ STANDARD ↔ JOB_WORK).
+    // The frontend sends `quantityType` which maps to dealType:
+    //   OPEN     → dealType=OPEN,     line.quantity=999999 (sentinel)
+    //   FIXED    → dealType=STANDARD, line.quantity=<user value>
+    //   JOB_WORK → dealType=JOB_WORK, line.quantity=0
+    // Block the change once GRNs exist — quantity / rate math would diverge.
+    let dealTypeChange: 'OPEN' | 'STANDARD' | 'JOB_WORK' | null = null;
+    let newLineQty: number | null = null;
+    if (b.quantityType && ['OPEN', 'FIXED', 'JOB_WORK'].includes(b.quantityType)) {
+      const target = b.quantityType === 'OPEN' ? 'OPEN' : b.quantityType === 'JOB_WORK' ? 'JOB_WORK' : 'STANDARD';
+      if (target !== deal.dealType) {
+        if (hasGrns) {
+          return res.status(400).json({ error: 'Cannot change deal type after receipts have been recorded' });
+        }
+        dealTypeChange = target;
+        if (target === 'OPEN') newLineQty = 999999;
+        else if (target === 'JOB_WORK') newLineQty = 0;
+        else {
+          const q = b.quantity !== undefined ? parseFloat(String(b.quantity)) : NaN;
+          if (!Number.isFinite(q) || q <= 0) {
+            return res.status(400).json({ error: 'Switching to a fixed-quantity deal requires a quantity > 0' });
+          }
+          newLineQty = q;
+        }
+      }
+    }
+    // Allow plain quantity edit when staying on STANDARD with no GRNs
+    if (newLineQty === null && b.quantity !== undefined && !hasGrns && deal.dealType === 'STANDARD') {
+      const q = parseFloat(String(b.quantity));
+      if (Number.isFinite(q) && q > 0) newLineQty = q;
+    }
+    const effectiveQty = newLineQty ?? line.quantity;
+    const isRealQty = effectiveQty < 900000;
+    const amount = isRealQty ? Math.round(effectiveQty * rate * 100) / 100 : 0;
     const totalGst = isRealQty ? Math.round(amount * gstPercent / 100 * 100) / 100 : 0;
     const cgstAmount = isRealQty ? Math.round(totalGst / 2 * 100) / 100 : 0;
     const sgstAmount = isRealQty ? Math.round(totalGst / 2 * 100) / 100 : 0;
@@ -616,6 +648,7 @@ router.put('/deals/:id', authenticate, asyncHandler(async (req: AuthRequest, res
           hsnCode,
           gstPercent,
           rate,
+          ...(newLineQty !== null && { quantity: newLineQty }),
           amount,
           taxableAmount: amount,
           cgstAmount,
@@ -634,6 +667,7 @@ router.put('/deals/:id', authenticate, asyncHandler(async (req: AuthRequest, res
           totalIgst: igstAmount,
           totalGst,
           grandTotal: lineTotal,
+          ...(dealTypeChange && { dealType: dealTypeChange }),
         },
       }),
     ]);
