@@ -388,6 +388,10 @@ export default function RawMaterialPurchase() {
           remarks: rParts.filter(Boolean).join(' | '),
           vendorId: dealForm.vendorId === '__new' ? undefined : dealForm.vendorId,
           materialItemId: dealForm.materialItemId,
+          // Pass quantityType + quantity so the backend can switch
+          // OPEN↔STANDARD↔JOB_WORK and update line.quantity accordingly.
+          quantityType: (dealForm as unknown as Record<string, string>).quantityType,
+          quantity: (dealForm as unknown as Record<string, number>).quantity,
           paymentTerms: (dealForm as unknown as Record<string, string>).paymentTerms,
           validUntil: (dealForm as unknown as Record<string, string>).validUntil || undefined,
           deliveryPoint: (dealForm as unknown as Record<string, string>).deliveryPoint,
