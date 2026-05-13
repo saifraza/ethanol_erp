@@ -121,6 +121,12 @@ const server = app.listen(PORT, HOST, async () => {
   // Daily weighment report email at 9:05 AM IST
   startDailyWeighmentReport();
 
+  // Orphan-GRN watchdog: catches the failure mode that produced the Apr-2026
+  // missing GRNs — COMPLETE inbound Weighment with no matching GoodsReceipt.
+  // Creates a HIGH PlantIssue per orphan and Telegrams the weighbridge group
+  // when new ones appear.
+  import('./services/orphanGrnWatchdog').then(m => m.startOrphanGrnWatchdog()).catch(() => {});
+
   // Webhook delivery processor (cloud → factory server)
   startWebhookProcessor();
 
