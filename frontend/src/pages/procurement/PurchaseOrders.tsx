@@ -341,6 +341,15 @@ const PurchaseOrders: React.FC = () => {
 
   useEffect(() => { fetchData(); }, [categoryFilter]);
 
+  // Server-side search refetch (debounced) — without this the client-side filter
+  // only sees the first `limit` POs from page 1, so older vendors never match.
+  const [debouncedSearch, setDebouncedSearch] = useState('');
+  useEffect(() => {
+    const id = setTimeout(() => setDebouncedSearch(searchTerm.trim()), 250);
+    return () => clearTimeout(id);
+  }, [searchTerm]);
+  useEffect(() => { fetchData(); }, [debouncedSearch]);
+
   // Close action menu on outside click
   useEffect(() => {
     if (!actionMenuId) return;
@@ -399,8 +408,15 @@ const PurchaseOrders: React.FC = () => {
   const fetchData = async () => {
     try {
       setLoading(true);
+      const poParams = new URLSearchParams();
+      if (categoryFilter !== 'ALL') poParams.set('category', categoryFilter);
+      if (debouncedSearch) poParams.set('search', debouncedSearch);
+      // Wider window when no search is active — the page has no pagination UI,
+      // so the default 50 was hiding everything older than the most recent batch.
+      poParams.set('limit', '500');
+      const qs = poParams.toString();
       const [posResponse, vendorsResponse, materialsResponse, contractorsResponse] = await Promise.all([
-        api.get(`/purchase-orders${categoryFilter !== 'ALL' ? `?category=${categoryFilter}` : ''}`),
+        api.get(`/purchase-orders${qs ? `?${qs}` : ''}`),
         api.get('/vendors'),
         api.get('/materials'),
         api.get('/contractors?active=true'),

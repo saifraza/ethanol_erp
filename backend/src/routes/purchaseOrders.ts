@@ -245,6 +245,7 @@ router.get('/', asyncHandler(async (req: AuthRequest, res: Response) => {
     const status = req.query.status as string | undefined;
     const vendorId = req.query.vendorId as string | undefined;
     const category = req.query.category as string | undefined; // FUEL, RAW_MATERIAL, etc.
+    const search = (req.query.search as string | undefined)?.trim();
     const page = parseInt(req.query.page as string) || 1;
     const limit = Math.min(parseInt(req.query.limit as string) || 50, 500);
 
@@ -254,6 +255,18 @@ router.get('/', asyncHandler(async (req: AuthRequest, res: Response) => {
       where.status = statuses.length === 1 ? statuses[0] : { in: statuses };
     }
     if (vendorId) where.vendorId = vendorId;
+    // Server-side search by PO number or vendor name (case-insensitive contains).
+    // Without this the frontend was matching against only the most recent `limit`
+    // POs already in memory, so anything older than the page-1 window was invisible.
+    if (search) {
+      const poNoNum = Number.parseInt(search, 10);
+      const orClauses: any[] = [
+        { vendor: { name: { contains: search, mode: 'insensitive' } } },
+        { contractor: { name: { contains: search, mode: 'insensitive' } } },
+      ];
+      if (Number.isFinite(poNoNum)) orClauses.push({ poNo: poNoNum });
+      where.OR = orClauses;
+    }
     // Filter by inventory item category on PO lines (not vendor category — those don't match)
     // FUEL = any PO with a line whose inventoryItem.category is 'FUEL'
     // RAW_MATERIAL = lines with category 'RAW_MATERIAL' or 'CHEMICAL' or 'GRAIN'
