@@ -166,6 +166,111 @@ router.get('/:id', asyncHandler(async (req: AuthRequest, res: Response) => {
     });
 }));
 
+// GET /:id/ledger — full vendor dossier: POs + GRNs + orphan weighments + invoices + payments
+router.get('/:id/ledger', asyncHandler(async (req: AuthRequest, res: Response) => {
+    const vendorId = req.params.id;
+    const vendor = await prisma.vendor.findUnique({
+      where: { id: vendorId },
+      select: { id: true, name: true, gstin: true, phone: true, email: true, address: true, paymentTerms: true, isMSME: true, msmeCategory: true, tdsApplicable: true, tdsPercent: true, isActive: true },
+    });
+    if (!vendor) return res.status(404).json({ error: 'Vendor not found' });
+
+    const [pos, grns, invoices, payments, orphanWeighments] = await Promise.all([
+      prisma.purchaseOrder.findMany({
+        where: { vendorId },
+        select: {
+          id: true, poNo: true, status: true, poDate: true, dealType: true, grandTotal: true,
+          lines: { select: { description: true, quantity: true, receivedQty: true, unit: true, rate: true } },
+        },
+        orderBy: { poNo: 'desc' },
+        take: 500,
+      }),
+      prisma.goodsReceipt.findMany({
+        where: { vendorId },
+        select: {
+          id: true, grnNo: true, ticketNo: true, grnDate: true, status: true,
+          vehicleNo: true, totalQty: true, totalAmount: true, netWeight: true,
+          poId: true,
+          po: { select: { poNo: true } },
+          lines: { select: { description: true, receivedQty: true, unit: true, rate: true, amount: true } },
+        },
+        orderBy: { grnDate: 'desc' },
+        take: 500,
+      }),
+      prisma.vendorInvoice.findMany({
+        where: { vendorId },
+        select: {
+          id: true, invoiceNo: true, invoiceDate: true, status: true,
+          totalAmount: true, balanceAmount: true,
+          payments: { select: { amount: true, tdsDeducted: true } },
+        },
+        orderBy: { invoiceDate: 'desc' },
+        take: 500,
+      }),
+      prisma.vendorPayment.findMany({
+        where: { vendorId },
+        select: {
+          id: true, paymentDate: true, amount: true, mode: true, reference: true,
+          paymentStatus: true, tdsDeducted: true, remarks: true,
+        },
+        orderBy: { paymentDate: 'desc' },
+        take: 500,
+      }),
+      // Orphan weighments: COMPLETE inbound for this vendor with no matching GRN.
+      // Matches by supplierId (preferred) OR supplierName (loose) since legacy
+      // factory rows may not have supplierId populated.
+      prisma.$queryRaw<Array<Record<string, unknown>>>`
+        SELECT w."ticketNo", w."localId", w."vehicleNo", w."materialName",
+               w."firstWeightAt", w."secondWeightAt", w."netWeight",
+               w."purchaseType", w."poId", w."labStatus"
+        FROM "Weighment" w
+        WHERE w.direction = 'INBOUND' AND w.status = 'COMPLETE'
+          AND COALESCE(w.cancelled, false) = false
+          AND (w."supplierId" = ${vendorId} OR w."supplierName" ILIKE ${'%' + vendor.name + '%'})
+          AND NOT EXISTS (
+            SELECT 1 FROM "GoodsReceipt" g
+            WHERE g."vendorId" = ${vendorId}
+              AND (
+                g."ticketNo" = w."ticketNo"
+                OR g.remarks ILIKE '%' || w."localId" || '%'
+                OR g.remarks ILIKE '%Ticket #' || w."ticketNo" || ' %'
+              )
+          )
+        ORDER BY w."secondWeightAt" DESC NULLS LAST
+        LIMIT 200
+      `,
+    ]);
+
+    // Totals (computed server-side so the page never has to add money client-side)
+    const totalInvoiced = invoices.reduce((s, i) => s + (i.totalAmount || 0), 0);
+    const totalPaid = invoices.reduce(
+      (s, i) => s + (i.payments || []).reduce((ps, p) => ps + (p.amount || 0) + (p.tdsDeducted || 0), 0),
+      0,
+    );
+    const outstanding = invoices.reduce((s, i) => s + (i.balanceAmount || 0), 0);
+    const grnQty = grns.filter(g => g.status === 'CONFIRMED').reduce((s, g) => s + (g.totalQty || 0), 0);
+    const grnValue = grns.filter(g => g.status === 'CONFIRMED').reduce((s, g) => s + (g.totalAmount || 0), 0);
+
+    res.json({
+      vendor,
+      summary: {
+        poCount: pos.length,
+        grnCount: grns.length,
+        orphanCount: orphanWeighments.length,
+        grnTotalQty: Math.round(grnQty * 100) / 100,
+        grnTotalValue: Math.round(grnValue * 100) / 100,
+        totalInvoiced: Math.round(totalInvoiced * 100) / 100,
+        totalPaid: Math.round(totalPaid * 100) / 100,
+        outstanding: Math.round(outstanding * 100) / 100,
+      },
+      pos,
+      grns,
+      orphanWeighments,
+      invoices,
+      payments,
+    });
+}));
+
 // POST / — create vendor
 router.post('/', asyncHandler(async (req: AuthRequest, res: Response) => {
     const b = req.body;
