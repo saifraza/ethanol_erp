@@ -8,6 +8,11 @@ import { broadcast } from '../services/messagingGateway';
 import { asyncHandler } from '../shared/middleware';
 import { triggerRecompute as triggerFillRecompute } from '../services/fermentation/fillLive';
 import { mirrorToS3 } from '../shared/s3Storage';
+import {
+  issueChemicalForDosing,
+  reverseChemicalForDosing,
+  adjustChemicalForDosing,
+} from '../services/chemicalDosingInventory';
 
 const router = Router();
 
@@ -278,8 +283,25 @@ router.post('/batches/from-pf', asyncHandler(async (req: AuthRequest, res: Respo
 /* ═══════ DOSING ═══════ */
 router.post('/batches/:id/dosing', asyncHandler(async (req: AuthRequest, res: Response) => {
   const { chemicalName, quantity, unit, level } = req.body;
-  await prisma.fermDosing.create({
-    data: { batchId: req.params.id, chemicalName, quantity: parseFloat(quantity) || 0, unit: unit || 'kg', level: level ? parseFloat(level) : null }
+  const userId = req.user?.id || 'unknown';
+  const qtyNum = parseFloat(quantity) || 0;
+  const unitStr = unit || 'kg';
+  const dosing = await prisma.fermDosing.create({
+    data: { batchId: req.params.id, chemicalName, quantity: qtyNum, unit: unitStr, level: level ? parseFloat(level) : null }
+  });
+  const batch = await prisma.fermentationBatch.findUnique({
+    where: { id: req.params.id },
+    select: { batchNo: true, fermenterNo: true },
+  });
+  await issueChemicalForDosing(prisma, {
+    chemicalName,
+    quantity: qtyNum,
+    unit: unitStr,
+    source: 'FERM_DOSING',
+    refId: dosing.id,
+    batchNo: batch?.batchNo,
+    fermenterNo: batch?.fermenterNo,
+    userId,
   });
   const updated = await prisma.fermentationBatch.findUnique({ where: { id: req.params.id }, include: { dosings: true } });
   res.status(201).json(updated);
@@ -287,17 +309,30 @@ router.post('/batches/:id/dosing', asyncHandler(async (req: AuthRequest, res: Re
 
 router.patch('/dosing/:id', asyncHandler(async (req: AuthRequest, res: Response) => {
   const { quantity, unit } = req.body;
+  const userId = req.user?.id || 'unknown';
   const data: any = {};
   if (quantity !== undefined) data.quantity = parseFloat(quantity);
   if (unit !== undefined) data.unit = unit;
   const dosing = await prisma.fermDosing.update({ where: { id: req.params.id }, data });
+  if (quantity !== undefined) {
+    await adjustChemicalForDosing(prisma, {
+      source: 'FERM_DOSING',
+      refId: dosing.id,
+      newQuantity: parseFloat(quantity),
+      chemicalName: dosing.chemicalName,
+      unit: dosing.unit,
+      userId,
+    });
+  }
   res.json(dosing);
 }));
 
-router.delete('/dosing/:id', authorize('ADMIN'), async (req: Request, res: Response) => {
+router.delete('/dosing/:id', authorize('ADMIN'), asyncHandler(async (req: AuthRequest, res: Response) => {
+  const userId = req.user?.id || 'unknown';
+  await reverseChemicalForDosing(prisma, { source: 'FERM_DOSING', refId: req.params.id, userId });
   await prisma.fermDosing.delete({ where: { id: req.params.id } });
   res.json({ ok: true });
-});
+}));
 
 /* ═══════ LAB READINGS (FermentationEntry) ═══════ */
 // GET all

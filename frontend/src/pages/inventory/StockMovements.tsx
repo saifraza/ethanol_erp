@@ -1,4 +1,5 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useMemo } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import {
   ArrowDownRight, ArrowUpRight, ArrowLeftRight, Sliders,
   Plus, X, Save, Loader2, Search, Filter,
@@ -9,19 +10,20 @@ interface Movement {
   id: string;
   movementNo: number;
   date: string;
-  type: string;
-  direction: string;
+  movementType: string;
+  direction: 'IN' | 'OUT';
   quantity: number;
-  rate: number;
-  totalValue: number;
-  batchNo?: string;
+  unit?: string;
+  costRate?: number;
+  totalValue?: number;
+  warehouseId?: string;
+  toWarehouseId?: string;
   refType?: string;
   refNo?: string;
   narration?: string;
-  item: { id: string; name: string; code: string };
-  warehouse: { id: string; name: string };
-  toWarehouse?: { id: string; name: string };
-  createdBy?: { name: string };
+  item: { id: string; name: string; code: string; unit?: string; category?: string };
+  warehouse?: { id: string; name: string };
+  batch?: { id: string; batchNo: string };
 }
 
 interface WarehouseOption {
@@ -36,6 +38,7 @@ interface ItemOption {
   code: string;
   name: string;
   unit: string;
+  category?: string;
 }
 
 const TABS = [
@@ -76,9 +79,17 @@ const emptyForm = {
 };
 
 export default function StockMovements() {
+  const [searchParams, setSearchParams] = useSearchParams();
+  const urlType = searchParams.get('type'); // 'IN' | 'OUT' | null
+  const urlCategory = searchParams.get('category'); // 'CHEMICAL' etc.
+
   const [movements, setMovements] = useState<Movement[]>([]);
   const [loading, setLoading] = useState(true);
-  const [tab, setTab] = useState('');
+  const [tab, setTab] = useState(() => {
+    if (urlType === 'IN') return 'RECEIPT';
+    if (urlType === 'OUT') return 'ISSUE';
+    return '';
+  });
   const [searchQuery, setSearchQuery] = useState('');
   const [warehouseFilter, setWarehouseFilter] = useState('');
   const [dateFrom, setDateFrom] = useState('');
@@ -98,10 +109,11 @@ export default function StockMovements() {
     try {
       setLoading(true);
       const params: Record<string, string> = { limit: '100' };
-      if (tab) params.type = tab;
+      if (tab) params.bucket = tab;
+      if (urlCategory) params.category = urlCategory;
       if (warehouseFilter) params.warehouseId = warehouseFilter;
-      if (dateFrom) params.dateFrom = dateFrom;
-      if (dateTo) params.dateTo = dateTo;
+      if (dateFrom) params.from = dateFrom;
+      if (dateTo) params.to = dateTo;
       if (searchQuery) params.search = searchQuery;
       const res = await api.get('/inventory/movements', { params });
       setMovements(Array.isArray(res.data) ? res.data : res.data.movements ?? []);
@@ -110,23 +122,38 @@ export default function StockMovements() {
     } finally {
       setLoading(false);
     }
-  }, [tab, warehouseFilter, dateFrom, dateTo, searchQuery]);
+  }, [tab, urlCategory, warehouseFilter, dateFrom, dateTo, searchQuery]);
 
   const fetchLookups = useCallback(async () => {
     try {
+      const itemParams: Record<string, string | number> = { limit: 500 };
+      if (urlCategory) itemParams.category = urlCategory;
       const [whRes, itemRes] = await Promise.all([
         api.get('/inventory/warehouses'),
-        api.get('/inventory/items', { params: { limit: 500, select: 'id,code,name,unit' } }),
+        api.get('/inventory/items', { params: itemParams }),
       ]);
       setWarehouses(Array.isArray(whRes.data) ? whRes.data : whRes.data.warehouses ?? []);
       setItems(Array.isArray(itemRes.data) ? itemRes.data : itemRes.data.items ?? []);
     } catch {
       // non-critical
     }
-  }, []);
+  }, [urlCategory]);
 
   useEffect(() => { fetchMovements(); }, [fetchMovements]);
   useEffect(() => { fetchLookups(); }, [fetchLookups]);
+
+  // Open the form drawer when the user lands here from a "Stock IN" / "Issue OUT" button.
+  useEffect(() => {
+    if (urlType === 'IN' || urlType === 'OUT') {
+      setForm({ ...emptyForm, type: urlType === 'IN' ? 'RECEIPT' : 'ISSUE' });
+      setShowForm(true);
+      // Consume the param so subsequent edits / refreshes don't re-open it
+      const next = new URLSearchParams(searchParams);
+      next.delete('type');
+      setSearchParams(next, { replace: true });
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [urlType]);
 
   useEffect(() => {
     if (msg) {
@@ -144,6 +171,11 @@ export default function StockMovements() {
       setSelectedWarehouseBins([]);
     }
   }, [form.warehouseId, warehouses]);
+
+  const formItems = useMemo(
+    () => (urlCategory ? items.filter(i => !i.category || i.category === urlCategory) : items),
+    [items, urlCategory],
+  );
 
   const openForm = () => {
     setForm(emptyForm);
@@ -168,7 +200,7 @@ export default function StockMovements() {
             warehouseId: form.warehouseId,
             binId: form.binId || undefined,
             quantity: parseFloat(form.quantity),
-            rate: form.rate ? parseFloat(form.rate) : undefined,
+            costRate: form.rate ? parseFloat(form.rate) : 0,
             batchNo: form.batchNo || undefined,
             refType: form.refType,
             refNo: form.refNo || undefined,
@@ -198,11 +230,12 @@ export default function StockMovements() {
         case 'ADJUSTMENT':
           endpoint = '/inventory/movements/adjust';
           if (!form.newQty) { setMsg({ type: 'err', text: 'Enter new quantity' }); setSaving(false); return; }
+          if (!form.reason.trim()) { setMsg({ type: 'err', text: 'Enter a reason for the adjustment' }); setSaving(false); return; }
           payload = {
             itemId: form.itemId,
             warehouseId: form.warehouseId,
             newQty: parseFloat(form.newQty),
-            reason: form.reason || undefined,
+            reason: form.reason.trim(),
           };
           break;
       }
@@ -211,8 +244,10 @@ export default function StockMovements() {
       setMsg({ type: 'ok', text: `${form.type} recorded successfully` });
       setShowForm(false);
       fetchMovements();
-    } catch {
-      setMsg({ type: 'err', text: 'Failed to record movement' });
+    } catch (err) {
+      const apiMsg = (err as { response?: { data?: { error?: string; formErrors?: string[] } } })?.response?.data;
+      const text = apiMsg?.formErrors?.[0] || apiMsg?.error || 'Failed to record movement';
+      setMsg({ type: 'err', text });
     } finally {
       setSaving(false);
     }
@@ -224,7 +259,8 @@ export default function StockMovements() {
   const formatDate = (d: string) =>
     new Date(d).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' });
 
-  const typeLabel = (type: string) => {
+  const typeLabel = (type?: string | null) => {
+    if (!type) return '—';
     const labels: Record<string, string> = {
       'GRN_RECEIPT': 'GRN Receipt',
       'PRODUCTION_RECEIPT': 'From Production',
@@ -240,17 +276,16 @@ export default function StockMovements() {
     return labels[type] || type.replace(/_/g, ' ');
   };
 
-  const typeIcon = (type: string) => {
-    switch (type) {
-      case 'RECEIPT': case 'GRN_RECEIPT': case 'PRODUCTION_RECEIPT': return <ArrowDownRight className="w-3.5 h-3.5" />;
-      case 'ISSUE': case 'PRODUCTION_ISSUE': case 'SALES_ISSUE': return <ArrowUpRight className="w-3.5 h-3.5" />;
-      case 'TRANSFER': return <ArrowLeftRight className="w-3.5 h-3.5" />;
-      case 'ADJUSTMENT': case 'RETURN': case 'SCRAP': return <Sliders className="w-3.5 h-3.5" />;
-      default: return null;
-    }
+  const typeIcon = (type?: string | null) => {
+    if (!type) return null;
+    if (type.includes('RECEIPT')) return <ArrowDownRight className="w-3.5 h-3.5" />;
+    if (type.includes('ISSUE')) return <ArrowUpRight className="w-3.5 h-3.5" />;
+    if (type === 'TRANSFER') return <ArrowLeftRight className="w-3.5 h-3.5" />;
+    if (type === 'ADJUSTMENT' || type === 'RETURN' || type === 'SCRAP') return <Sliders className="w-3.5 h-3.5" />;
+    return null;
   };
 
-  const typeBadge = (type: string) => {
+  const typeBadge = (type?: string | null) => {
     if (!type) return 'border-slate-300 bg-slate-50 text-slate-700';
     if (type.includes('RECEIPT') || type === 'RETURN') return 'border-emerald-300 bg-emerald-50 text-emerald-700';
     if (type.includes('ISSUE') || type === 'SCRAP') return 'border-red-300 bg-red-50 text-red-700';
@@ -261,14 +296,17 @@ export default function StockMovements() {
     }
   };
 
-  const selectedItem = items.find(i => i.id === form.itemId);
+  const selectedItem = formItems.find(i => i.id === form.itemId);
 
   return (
     <div className="min-h-screen bg-slate-50">
       <div className="p-3 md:p-6 space-y-0">
         {/* Page Toolbar */}
         <div className="bg-slate-800 text-white px-4 py-2.5 -mx-3 md:-mx-6 -mt-3 md:-mt-6 flex items-center justify-between">
-          <h1 className="text-sm font-bold tracking-wide uppercase">STOCK MOVEMENTS</h1>
+          <h1 className="text-sm font-bold tracking-wide uppercase">
+            STOCK MOVEMENTS
+            {urlCategory && <span className="ml-2 text-[10px] text-slate-300">· {urlCategory}</span>}
+          </h1>
           <div className="flex items-center gap-2">
             <button onClick={openForm} className="flex items-center gap-1.5 px-3 py-1 bg-blue-600 text-white text-[11px] font-medium hover:bg-blue-700">
               <Plus className="w-3.5 h-3.5" /> New Movement
@@ -374,8 +412,7 @@ export default function StockMovements() {
                     <th className="text-right px-3 py-2 font-medium text-[11px] uppercase tracking-wider border-r border-slate-700">Rate</th>
                     <th className="text-right px-3 py-2 font-medium text-[11px] uppercase tracking-wider border-r border-slate-700">Value</th>
                     <th className="text-left px-3 py-2 font-medium text-[11px] uppercase tracking-wider border-r border-slate-700">Warehouse</th>
-                    <th className="text-left px-3 py-2 font-medium text-[11px] uppercase tracking-wider border-r border-slate-700">Ref</th>
-                    <th className="text-left px-3 py-2 font-medium text-[11px] uppercase tracking-wider">User</th>
+                    <th className="text-left px-3 py-2 font-medium text-[11px] uppercase tracking-wider">Ref</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -388,8 +425,8 @@ export default function StockMovements() {
                         <span className="text-[11px] text-slate-400 ml-1">{m.item?.code}</span>
                       </td>
                       <td className="px-3 py-1.5 border-r border-slate-100">
-                        <span className={`inline-flex items-center gap-1 text-[9px] font-bold uppercase px-1.5 py-0.5 border ${typeBadge(m.type)}`}>
-                          {typeIcon(m.type)} {typeLabel(m.type)}
+                        <span className={`inline-flex items-center gap-1 text-[9px] font-bold uppercase px-1.5 py-0.5 border ${typeBadge(m.movementType)}`}>
+                          {typeIcon(m.movementType)} {typeLabel(m.movementType)}
                         </span>
                       </td>
                       <td className="px-3 py-1.5 border-r border-slate-100">
@@ -402,16 +439,14 @@ export default function StockMovements() {
                         </span>
                       </td>
                       <td className="px-3 py-1.5 text-right font-medium font-mono tabular-nums text-slate-800 border-r border-slate-100">{m.quantity}</td>
-                      <td className="px-3 py-1.5 text-right font-mono tabular-nums text-slate-600 border-r border-slate-100">{m.rate ? formatCurrency(m.rate) : '-'}</td>
+                      <td className="px-3 py-1.5 text-right font-mono tabular-nums text-slate-600 border-r border-slate-100">{m.costRate ? formatCurrency(m.costRate) : '-'}</td>
                       <td className="px-3 py-1.5 text-right font-medium font-mono tabular-nums text-slate-800 border-r border-slate-100">{m.totalValue ? formatCurrency(m.totalValue) : '-'}</td>
                       <td className="px-3 py-1.5 text-slate-600 text-xs border-r border-slate-100">
                         {m.warehouse?.name ?? '-'}
-                        {m.toWarehouse && <span className="text-slate-400"> &rarr; {m.toWarehouse.name}</span>}
                       </td>
-                      <td className="px-3 py-1.5 text-xs text-slate-500 border-r border-slate-100">
+                      <td className="px-3 py-1.5 text-xs text-slate-500">
                         {m.refType && m.refNo ? `${m.refType}: ${m.refNo}` : m.refType ?? '-'}
                       </td>
-                      <td className="px-3 py-1.5 text-xs text-slate-500">{m.createdBy?.name ?? '-'}</td>
                     </tr>
                   ))}
                 </tbody>
@@ -457,11 +492,13 @@ export default function StockMovements() {
 
                 {/* Item Select */}
                 <div>
-                  <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-0.5">Item *</label>
+                  <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-0.5">
+                    Item * {urlCategory && <span className="text-slate-400 normal-case tracking-normal">(filtered to {urlCategory})</span>}
+                  </label>
                   <select value={form.itemId} onChange={(e) => setForm({ ...form, itemId: e.target.value })}
                     className="w-full border border-slate-300 px-2.5 py-1.5 text-xs text-slate-700 bg-white focus:outline-none focus:ring-1 focus:ring-blue-400 focus:border-blue-400">
                     <option value="">Select item...</option>
-                    {items.map(i => <option key={i.id} value={i.id}>{i.code} - {i.name} ({i.unit})</option>)}
+                    {formItems.map(i => <option key={i.id} value={i.id}>{i.code} - {i.name} ({i.unit})</option>)}
                   </select>
                 </div>
 
@@ -569,7 +606,7 @@ export default function StockMovements() {
                 {/* Reason (adjustment) */}
                 {form.type === 'ADJUSTMENT' && (
                   <div>
-                    <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-0.5">Reason</label>
+                    <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-0.5">Reason *</label>
                     <textarea value={form.reason} onChange={(e) => setForm({ ...form, reason: e.target.value })}
                       rows={2} placeholder="Reason for adjustment"
                       className="w-full border border-slate-300 px-2.5 py-1.5 text-xs text-slate-700 bg-white focus:outline-none focus:ring-1 focus:ring-blue-400 focus:border-blue-400" />

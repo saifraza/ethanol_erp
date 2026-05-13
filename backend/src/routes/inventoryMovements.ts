@@ -112,9 +112,35 @@ router.get('/', asyncHandler(async (req: AuthRequest, res: Response) => {
   if (req.query.itemId) where.itemId = req.query.itemId as string;
   if (req.query.warehouseId) where.warehouseId = req.query.warehouseId as string;
   if (req.query.movementType) where.movementType = req.query.movementType as string;
+  if (req.query.direction) where.direction = req.query.direction as string;
 
-  const from = req.query.from as string | undefined;
-  const to = req.query.to as string | undefined;
+  // Bucket-style filter from the UI tabs (RECEIPT / ISSUE / TRANSFER / ADJUSTMENT).
+  // RECEIPT/ISSUE map to direction since movementType values include GRN_RECEIPT,
+  // PRODUCTION_ISSUE, SALES_ISSUE etc.
+  const bucket = req.query.bucket as string | undefined;
+  if (bucket === 'RECEIPT') where.direction = 'IN';
+  else if (bucket === 'ISSUE') where.direction = 'OUT';
+  else if (bucket === 'TRANSFER') where.movementType = 'TRANSFER';
+  else if (bucket === 'ADJUSTMENT') where.movementType = 'ADJUSTMENT';
+
+  // Filter by linked item.category (e.g., ?category=CHEMICAL on the chemicals page).
+  const category = req.query.category as string | undefined;
+  if (category) where.item = { category };
+
+  const search = (req.query.search as string | undefined)?.trim();
+  if (search) {
+    where.item = {
+      ...(typeof where.item === 'object' && where.item ? (where.item as Record<string, unknown>) : {}),
+      OR: [
+        { name: { contains: search, mode: 'insensitive' } },
+        { code: { contains: search, mode: 'insensitive' } },
+      ],
+    };
+  }
+
+  // Accept both ?from/?to and ?dateFrom/?dateTo for date range (UI sends the latter).
+  const from = (req.query.from || req.query.dateFrom) as string | undefined;
+  const to = (req.query.to || req.query.dateTo) as string | undefined;
   if (from || to) {
     where.date = {};
     if (from) (where.date as Record<string, unknown>).gte = new Date(from);
@@ -142,7 +168,7 @@ router.get('/', asyncHandler(async (req: AuthRequest, res: Response) => {
         refNo: true,
         narration: true,
         date: true,
-        item: { select: { id: true, name: true, code: true } },
+        item: { select: { id: true, name: true, code: true, unit: true, category: true } },
         warehouse: { select: { id: true, code: true, name: true } },
         batch: { select: { id: true, batchNo: true } },
       },

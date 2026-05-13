@@ -2,6 +2,11 @@ import { Router, Response } from 'express';
 import prisma from '../config/prisma';
 import { authenticate, AuthRequest, authorize } from '../middleware/auth';
 import { asyncHandler } from '../shared/middleware';
+import {
+  issueChemicalForDosing,
+  reverseChemicalForDosing,
+  adjustChemicalForDosing,
+} from '../services/chemicalDosingInventory';
 
 const router = Router();
 
@@ -107,12 +112,15 @@ router.delete('/batches/:id', authorize('ADMIN'), asyncHandler(async (req: AuthR
 // ─── DOSING ───
 router.post('/batches/:id/dosing', asyncHandler(async (req: AuthRequest, res: Response) => {
   const { chemicalName, quantity, unit, rate } = req.body;
+  const userId = req.user?.id || 'unknown';
+  const qtyNum = parseFloat(quantity);
+  const unitStr = unit || 'kg';
   const dosing = await prisma.pFDosing.create({
     data: {
       batchId: req.params.id,
       chemicalName,
-      quantity: parseFloat(quantity),
-      unit: unit || 'kg',
+      quantity: qtyNum,
+      unit: unitStr,
       rate: rate ? parseFloat(rate) : null
     }
   });
@@ -121,20 +129,47 @@ router.post('/batches/:id/dosing', asyncHandler(async (req: AuthRequest, res: Re
     where: { id: req.params.id, phase: 'SETUP' },
     data: { phase: 'DOSING' }
   });
+  // Best-effort chemical inventory issue. Lookup batch metadata for the ref label.
+  const batch = await prisma.pFBatch.findUnique({
+    where: { id: req.params.id },
+    select: { batchNo: true, fermenterNo: true },
+  });
+  await issueChemicalForDosing(prisma, {
+    chemicalName,
+    quantity: qtyNum,
+    unit: unitStr,
+    source: 'PF_DOSING',
+    refId: dosing.id,
+    batchNo: batch?.batchNo,
+    fermenterNo: batch?.fermenterNo,
+    userId,
+  });
   res.status(201).json(dosing);
 }));
 
 // Edit dosing quantity
 router.patch('/dosing/:id', asyncHandler(async (req: AuthRequest, res: Response) => {
   const { quantity } = req.body;
+  const userId = req.user?.id || 'unknown';
+  const newQty = parseFloat(quantity);
   const dosing = await prisma.pFDosing.update({
     where: { id: req.params.id },
-    data: { quantity: parseFloat(quantity) },
+    data: { quantity: newQty },
+  });
+  await adjustChemicalForDosing(prisma, {
+    source: 'PF_DOSING',
+    refId: dosing.id,
+    newQuantity: newQty,
+    chemicalName: dosing.chemicalName,
+    unit: dosing.unit,
+    userId,
   });
   res.json(dosing);
 }));
 
 router.delete('/dosing/:id', authorize('ADMIN'), asyncHandler(async (req: AuthRequest, res: Response) => {
+  const userId = req.user?.id || 'unknown';
+  await reverseChemicalForDosing(prisma, { source: 'PF_DOSING', refId: req.params.id, userId });
   await prisma.pFDosing.delete({ where: { id: req.params.id } });
   res.json({ ok: true });
 }));

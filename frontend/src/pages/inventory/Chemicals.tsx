@@ -14,7 +14,22 @@ interface Txn {
   issuedTo: string | null;
   createdAt: string;
 }
-interface Item {
+
+// StockMovement shape from /inventory/items?category=CHEMICAL
+interface RawStockMovement {
+  id: string;
+  movementType: string;
+  direction: 'IN' | 'OUT';
+  quantity: number;
+  unit?: string;
+  refType: string | null;
+  refNo: string | null;
+  narration: string | null;
+  date: string;
+  warehouse?: { name?: string } | null;
+}
+
+interface ApiItem {
   id: string;
   code: string;
   name: string;
@@ -29,7 +44,12 @@ interface Item {
   location: string | null;
   remarks: string | null;
   isActive: boolean;
-  transactions: Txn[];
+  transactions?: Txn[];
+  stockMovements?: RawStockMovement[];
+}
+
+interface Item extends Omit<ApiItem, 'transactions' | 'stockMovements'> {
+  transactions: Txn[]; // unified movement feed (legacy + new) sorted newest-first
 }
 
 const fmtQty = (n: number) => n.toLocaleString('en-IN', { maximumFractionDigits: 2 });
@@ -53,7 +73,30 @@ export default function Chemicals() {
     setLoading(true);
     try {
       const r = await api.get('/inventory/items', { params: { category: 'CHEMICAL' } });
-      setItems(Array.isArray(r.data) ? r.data : (r.data?.items ?? []));
+      const raw: ApiItem[] = Array.isArray(r.data) ? r.data : (r.data?.items ?? []);
+      const merged: Item[] = raw.map(i => {
+        const fromMovements: Txn[] = (i.stockMovements ?? []).map(m => ({
+          id: m.id,
+          type: m.direction === 'IN' ? 'IN' : 'OUT',
+          quantity: m.quantity,
+          reference: m.refNo || m.refType || null,
+          remarks: m.narration,
+          warehouse: m.warehouse?.name ?? null,
+          // dosing flows write refType=PF_DOSING / FERM_DOSING; surface that as the destination
+          department: m.refType === 'PF_DOSING' ? 'Pre-Fermentation'
+            : m.refType === 'FERM_DOSING' ? 'Fermentation'
+            : null,
+          issuedTo: null,
+          createdAt: m.date,
+        }));
+        const fromLegacy: Txn[] = i.transactions ?? [];
+        // Dedupe shouldn't be needed (different sources), just merge + sort newest-first
+        const all = [...fromMovements, ...fromLegacy]
+          .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())
+          .slice(0, 10);
+        return { ...i, transactions: all };
+      });
+      setItems(merged);
     } finally { setLoading(false); }
   }, []);
   useEffect(() => { load(); }, [load]);
