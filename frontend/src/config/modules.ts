@@ -7,7 +7,7 @@ import {
   Settings, Users, Truck, Package, LayoutDashboard,
   Warehouse, AlertCircle, ShoppingCart, Radio,
   UserCheck, ClipboardList, Send, FileText, IndianRupee,
-  Building2, Box, ShoppingBag, PackageCheck, Receipt, CreditCard,
+  Building2, Box, ShoppingBag, PackageCheck, Receipt, CreditCard, AlertTriangle,
   Store, Tractor, Scale, Handshake,
   BookOpen, Calculator, TrendingUp, Landmark,
   PackageSearch, ArrowRightLeft, ClipboardCheck, BarChart2, Banknote, PieChart, HardHat,
@@ -68,6 +68,7 @@ export const MODULE_DEFS: ModuleDef[] = [
   { key: 'purchase-orders', label: 'Purchase Orders', to: '/procurement/purchase-orders', icon: ShoppingBag, group: 'procurement' },
   { key: 'project-purchases', label: 'Project Purchases (AI)', to: '/procurement/project-purchases', icon: Sparkles, group: 'procurement' },
   { key: 'auto-grn', label: 'Auto GRN (WB)', to: '/procurement/goods-receipts/auto', icon: PackageCheck, group: 'procurement' },
+  { key: 'orphan-trucks', label: 'Orphan Trucks Audit', to: '/procurement/orphan-trucks', icon: AlertTriangle, group: 'procurement' },
   // Contractors merged into Vendor Master (category: CONTRACTOR_*)
   { key: 'raw-material-purchase', label: 'RM Deals', to: '/procurement/raw-material-purchase', icon: Handshake, group: 'procurement' },
   { key: 'farmers', label: 'Farmers', to: '/farmers', icon: Users, group: 'procurement' },

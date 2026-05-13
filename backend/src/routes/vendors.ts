@@ -167,58 +167,80 @@ router.get('/:id', asyncHandler(async (req: AuthRequest, res: Response) => {
 }));
 
 // GET /:id/ledger — full vendor dossier: POs + GRNs + orphan weighments + invoices + payments
+// Cross-company aware: aggregates every Vendor row that shares the same normalized
+// name as the seed vendor, so the same business registered separately under each
+// sister company (MSPIL / NARSINGHPUR LLP / CHAAPARA LLP) rolls up into one view.
 router.get('/:id/ledger', asyncHandler(async (req: AuthRequest, res: Response) => {
     const vendorId = req.params.id;
-    const vendor = await prisma.vendor.findUnique({
+    const seed = await prisma.vendor.findUnique({
       where: { id: vendorId },
-      select: { id: true, name: true, gstin: true, phone: true, email: true, address: true, paymentTerms: true, isMSME: true, msmeCategory: true, tdsApplicable: true, tdsPercent: true, isActive: true },
+      select: { id: true, name: true, gstin: true, phone: true, email: true, address: true, paymentTerms: true, isMSME: true, msmeCategory: true, tdsApplicable: true, tdsPercent: true, isActive: true, companyId: true },
     });
-    if (!vendor) return res.status(404).json({ error: 'Vendor not found' });
+    if (!seed) return res.status(404).json({ error: 'Vendor not found' });
+
+    // Sibling vendor rows that represent the same business under different sister
+    // companies. Match on normalized name (lower + trim). Fall back to seed alone
+    // if no siblings (the common case today).
+    const siblings = await prisma.$queryRaw<Array<{ id: string; companyId: string | null }>>`
+      SELECT id, "companyId" FROM "Vendor"
+      WHERE LOWER(TRIM(name)) = LOWER(TRIM(${seed.name}))
+    `;
+    const vendorIds = siblings.length > 0 ? siblings.map(s => s.id) : [vendorId];
+
+    const grnInclude = {
+      id: true, grnNo: true, ticketNo: true, grnDate: true, status: true,
+      vehicleNo: true, totalQty: true, totalAmount: true, netWeight: true,
+      poId: true, companyId: true,
+      po: { select: { poNo: true } },
+      company: { select: { code: true, name: true } },
+      lines: { select: { description: true, receivedQty: true, unit: true, rate: true, amount: true } },
+    } as const;
 
     const [pos, grns, invoices, payments, orphanWeighments] = await Promise.all([
       prisma.purchaseOrder.findMany({
-        where: { vendorId },
+        where: { vendorId: { in: vendorIds } },
         select: {
           id: true, poNo: true, status: true, poDate: true, dealType: true, grandTotal: true,
+          companyId: true,
+          company: { select: { code: true, name: true } },
           lines: { select: { description: true, quantity: true, receivedQty: true, unit: true, rate: true } },
         },
         orderBy: { poNo: 'desc' },
         take: 500,
       }),
       prisma.goodsReceipt.findMany({
-        where: { vendorId },
-        select: {
-          id: true, grnNo: true, ticketNo: true, grnDate: true, status: true,
-          vehicleNo: true, totalQty: true, totalAmount: true, netWeight: true,
-          poId: true,
-          po: { select: { poNo: true } },
-          lines: { select: { description: true, receivedQty: true, unit: true, rate: true, amount: true } },
-        },
+        where: { vendorId: { in: vendorIds } },
+        select: grnInclude,
         orderBy: { grnDate: 'desc' },
         take: 500,
       }),
       prisma.vendorInvoice.findMany({
-        where: { vendorId },
+        where: { vendorId: { in: vendorIds } },
         select: {
           id: true, invoiceNo: true, invoiceDate: true, status: true,
           totalAmount: true, balanceAmount: true,
+          companyId: true,
+          company: { select: { code: true, name: true } },
           payments: { select: { amount: true, tdsDeducted: true } },
         },
         orderBy: { invoiceDate: 'desc' },
         take: 500,
       }),
       prisma.vendorPayment.findMany({
-        where: { vendorId },
+        where: { vendorId: { in: vendorIds } },
         select: {
           id: true, paymentDate: true, amount: true, mode: true, reference: true,
           paymentStatus: true, tdsDeducted: true, remarks: true,
+          companyId: true,
+          company: { select: { code: true, name: true } },
         },
         orderBy: { paymentDate: 'desc' },
         take: 500,
       }),
-      // Orphan weighments: COMPLETE inbound for this vendor with no matching GRN.
-      // Matches by supplierId (preferred) OR supplierName (loose) since legacy
-      // factory rows may not have supplierId populated.
+      // Orphan weighments: COMPLETE inbound for this vendor (any sibling) with no
+      // matching GRN. Matches by supplierId (any sibling) OR supplierName ILIKE.
+      // Cross-company by design — a weighment booked under any sister company
+      // counts if the supplier name matches.
       prisma.$queryRaw<Array<Record<string, unknown>>>`
         SELECT w."ticketNo", w."localId", w."vehicleNo", w."materialName",
                w."firstWeightAt", w."secondWeightAt", w."netWeight",
@@ -226,10 +248,13 @@ router.get('/:id/ledger', asyncHandler(async (req: AuthRequest, res: Response) =
         FROM "Weighment" w
         WHERE w.direction = 'INBOUND' AND w.status = 'COMPLETE'
           AND COALESCE(w.cancelled, false) = false
-          AND (w."supplierId" = ${vendorId} OR w."supplierName" ILIKE ${'%' + vendor.name + '%'})
+          AND (
+            w."supplierId" = ANY(${vendorIds}::text[])
+            OR w."supplierName" ILIKE ${'%' + seed.name + '%'}
+          )
           AND NOT EXISTS (
             SELECT 1 FROM "GoodsReceipt" g
-            WHERE g."vendorId" = ${vendorId}
+            WHERE g."vendorId" = ANY(${vendorIds}::text[])
               AND (
                 g."ticketNo" = w."ticketNo"
                 OR g.remarks ILIKE '%' || w."localId" || '%'
@@ -240,6 +265,7 @@ router.get('/:id/ledger', asyncHandler(async (req: AuthRequest, res: Response) =
         LIMIT 200
       `,
     ]);
+    const vendor = seed;
 
     // Totals (computed server-side so the page never has to add money client-side)
     const totalInvoiced = invoices.reduce((s, i) => s + (i.totalAmount || 0), 0);
@@ -253,6 +279,9 @@ router.get('/:id/ledger', asyncHandler(async (req: AuthRequest, res: Response) =
 
     res.json({
       vendor,
+      // Sibling vendor ids/companies merged into this ledger. Frontend can show
+      // "merged across 3 companies" badge when this is > 1.
+      siblings: siblings.map(s => ({ id: s.id, companyId: s.companyId })),
       summary: {
         poCount: pos.length,
         grnCount: grns.length,
@@ -269,6 +298,94 @@ router.get('/:id/ledger', asyncHandler(async (req: AuthRequest, res: Response) =
       invoices,
       payments,
     });
+}));
+
+// GET /audit/orphan-trucks — system-wide list of every COMPLETE inbound Weighment
+// that has no matching GoodsReceipt. Cross-company (no companyFilter applied),
+// because the whole point is to surface trucks that fell through the GRN pipeline
+// regardless of which sister company they were booked under.
+router.get('/audit/orphan-trucks', asyncHandler(async (_req: AuthRequest, res: Response) => {
+  const rows = await prisma.$queryRaw<Array<{
+    ticketNo: number | null;
+    localId: string;
+    vehicleNo: string;
+    supplierName: string | null;
+    supplierId: string | null;
+    materialName: string | null;
+    firstWeightAt: Date | null;
+    secondWeightAt: Date | null;
+    netWeight: number | null;
+    purchaseType: string | null;
+    poId: string | null;
+    labStatus: string | null;
+    vendorIdByName: string | null;
+    vendorName: string | null;
+    poNo: number | null;
+    poStatus: string | null;
+    companyCode: string | null;
+    plantIssueId: string | null;
+    plantIssueStatus: string | null;
+  }>>`
+    SELECT
+      w."ticketNo", w."localId", w."vehicleNo", w."supplierName", w."supplierId",
+      w."materialName", w."firstWeightAt", w."secondWeightAt", w."netWeight",
+      w."purchaseType", w."poId", w."labStatus",
+      v.id   AS "vendorIdByName",
+      v.name AS "vendorName",
+      p."poNo"   AS "poNo",
+      p.status   AS "poStatus",
+      c.code     AS "companyCode",
+      pi.id      AS "plantIssueId",
+      pi.status  AS "plantIssueStatus"
+    FROM "Weighment" w
+    LEFT JOIN "PurchaseOrder" p ON p.id = w."poId"
+    LEFT JOIN "Company" c       ON c.id = p."companyId"
+    LEFT JOIN LATERAL (
+      SELECT id, name FROM "Vendor"
+      WHERE id = w."supplierId"
+         OR LOWER(TRIM(name)) = LOWER(TRIM(w."supplierName"))
+      LIMIT 1
+    ) v ON TRUE
+    LEFT JOIN LATERAL (
+      SELECT id, status FROM "PlantIssue"
+      WHERE description ILIKE '%' || w."localId" || '%'
+         OR description ILIKE '%' || w."vehicleNo" || '%' AND description ILIKE '%Ticket #' || w."ticketNo" || '%'
+      ORDER BY "createdAt" DESC
+      LIMIT 1
+    ) pi ON TRUE
+    WHERE w.direction = 'INBOUND' AND w.status = 'COMPLETE'
+      AND COALESCE(w.cancelled, false) = false
+      AND NOT EXISTS (
+        SELECT 1 FROM "GoodsReceipt" g
+        WHERE g."ticketNo" = w."ticketNo"
+           OR g.remarks ILIKE '%' || w."localId" || '%'
+           OR g.remarks ILIKE '%Ticket #' || w."ticketNo" || ' %'
+      )
+    ORDER BY w."secondWeightAt" DESC NULLS LAST, w."ticketNo" DESC
+    LIMIT 1000
+  `;
+
+  // Summary by vendor for the dashboard header
+  const byVendor = new Map<string, { vendorName: string; count: number; qtyKg: number }>();
+  let totalKg = 0;
+  for (const r of rows) {
+    totalKg += r.netWeight || 0;
+    const key = (r.vendorName || r.supplierName || 'UNKNOWN').toUpperCase();
+    const prev = byVendor.get(key) || { vendorName: r.vendorName || r.supplierName || 'UNKNOWN', count: 0, qtyKg: 0 };
+    prev.count += 1;
+    prev.qtyKg += r.netWeight || 0;
+    byVendor.set(key, prev);
+  }
+
+  res.json({
+    summary: {
+      totalCount: rows.length,
+      totalMt: Math.round((totalKg / 1000) * 100) / 100,
+      vendorCount: byVendor.size,
+    },
+    byVendor: Array.from(byVendor.values()).sort((a, b) => b.qtyKg - a.qtyKg),
+    rows,
+  });
 }));
 
 // POST / — create vendor

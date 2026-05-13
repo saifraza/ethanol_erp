@@ -17,6 +17,8 @@ interface PO {
   poDate: string;
   dealType: string;
   grandTotal: number;
+  companyId: string | null;
+  company?: { code: string; name: string } | null;
   lines: POLine[];
 }
 interface GRNLine {
@@ -37,6 +39,8 @@ interface GRN {
   totalAmount: number;
   netWeight: number | null;
   poId: string;
+  companyId: string | null;
+  company?: { code: string; name: string } | null;
   po?: { poNo: number };
   lines: GRNLine[];
 }
@@ -59,6 +63,8 @@ interface Invoice {
   status: string;
   totalAmount: number;
   balanceAmount: number;
+  companyId: string | null;
+  company?: { code: string; name: string } | null;
   payments: Array<{ amount: number; tdsDeducted: number }>;
 }
 interface Payment {
@@ -70,6 +76,8 @@ interface Payment {
   paymentStatus: string;
   tdsDeducted: number;
   remarks: string | null;
+  companyId: string | null;
+  company?: { code: string; name: string } | null;
 }
 interface Ledger {
   vendor: {
@@ -85,7 +93,9 @@ interface Ledger {
     tdsApplicable?: boolean;
     tdsPercent?: number;
     isActive: boolean;
+    companyId?: string | null;
   };
+  siblings: Array<{ id: string; companyId: string | null }>;
   summary: {
     poCount: number;
     grnCount: number;
@@ -149,6 +159,7 @@ const VendorLedger: React.FC = () => {
       poNo: g.po?.poNo ?? null,
       grnNo: g.grnNo,
       status: g.status,
+      company: g.company?.code || '',
     }));
     const orphanRows = data.orphanWeighments.map(o => ({
       kind: 'ORPHAN' as const,
@@ -162,6 +173,7 @@ const VendorLedger: React.FC = () => {
       poNo: null as number | null,
       grnNo: null as number | null,
       status: o.labStatus || 'COMPLETE',
+      company: '',
     }));
     const all = [...grnRows, ...orphanRows].sort((a, b) => (a.date < b.date ? 1 : -1));
     if (!search.trim()) return all;
@@ -199,6 +211,7 @@ const VendorLedger: React.FC = () => {
               {v.paymentTerms && <span>Terms: {v.paymentTerms}</span>}
               {v.isMSME && <span className="bg-green-600 px-1.5 py-0.5 text-[9px] font-bold">MSME {v.msmeCategory}</span>}
               {!v.isActive && <span className="bg-red-600 px-1.5 py-0.5 text-[9px] font-bold">INACTIVE</span>}
+              {data.siblings.length > 1 && <span className="bg-blue-600 px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-widest">Merged across {data.siblings.length} companies</span>}
             </div>
           </div>
         </div>
@@ -261,6 +274,7 @@ const VendorLedger: React.FC = () => {
               <thead className="bg-slate-100 text-[10px] uppercase tracking-widest text-slate-600">
                 <tr>
                   <th className="px-3 py-1.5 text-left border-r border-slate-200">Date</th>
+                  <th className="px-3 py-1.5 text-left border-r border-slate-200">Co.</th>
                   <th className="px-3 py-1.5 text-left border-r border-slate-200">Ticket</th>
                   <th className="px-3 py-1.5 text-left border-r border-slate-200">Vehicle</th>
                   <th className="px-3 py-1.5 text-left border-r border-slate-200">Material</th>
@@ -273,10 +287,11 @@ const VendorLedger: React.FC = () => {
               </thead>
               <tbody>
                 {trucks.length === 0 ? (
-                  <tr><td colSpan={9} className="px-3 py-6 text-center text-slate-400">No trucks</td></tr>
+                  <tr><td colSpan={10} className="px-3 py-6 text-center text-slate-400">No trucks</td></tr>
                 ) : trucks.map(t => (
                   <tr key={t.key} className={`border-b border-slate-100 ${t.kind === 'ORPHAN' ? 'bg-red-50' : 'hover:bg-slate-50'}`}>
                     <td className="px-3 py-1.5 border-r border-slate-100 whitespace-nowrap">{fmtDate(t.date)}</td>
+                    <td className="px-3 py-1.5 border-r border-slate-100 text-[10px] font-bold uppercase tracking-widest text-slate-500">{t.company || '—'}</td>
                     <td className="px-3 py-1.5 border-r border-slate-100 font-mono">{t.ticket ?? '—'}</td>
                     <td className="px-3 py-1.5 border-r border-slate-100 font-mono">{t.vehicle}</td>
                     <td className="px-3 py-1.5 border-r border-slate-100">{t.material}</td>
@@ -304,6 +319,7 @@ const VendorLedger: React.FC = () => {
               <thead className="bg-slate-100 text-[10px] uppercase tracking-widest text-slate-600">
                 <tr>
                   <th className="px-3 py-1.5 text-left border-r border-slate-200">PO #</th>
+                  <th className="px-3 py-1.5 text-left border-r border-slate-200">Co.</th>
                   <th className="px-3 py-1.5 text-left border-r border-slate-200">Date</th>
                   <th className="px-3 py-1.5 text-left border-r border-slate-200">Deal Type</th>
                   <th className="px-3 py-1.5 text-left border-r border-slate-200">Status</th>
@@ -315,7 +331,7 @@ const VendorLedger: React.FC = () => {
               </thead>
               <tbody>
                 {data.pos.length === 0 ? (
-                  <tr><td colSpan={8} className="px-3 py-6 text-center text-slate-400">No purchase orders</td></tr>
+                  <tr><td colSpan={9} className="px-3 py-6 text-center text-slate-400">No purchase orders</td></tr>
                 ) : data.pos.map(po => {
                   const ord = po.lines.reduce((a, l) => a + (l.quantity || 0), 0);
                   const rec = po.lines.reduce((a, l) => a + (l.receivedQty || 0), 0);
@@ -324,6 +340,7 @@ const VendorLedger: React.FC = () => {
                     <tr key={po.id} className="border-b border-slate-100 hover:bg-slate-50 cursor-pointer"
                         onClick={() => navigate(`/procurement/purchase-orders?id=${po.id}`)}>
                       <td className="px-3 py-1.5 border-r border-slate-100 font-mono font-bold">{po.poNo}</td>
+                      <td className="px-3 py-1.5 border-r border-slate-100 text-[10px] font-bold uppercase tracking-widest text-slate-500">{po.company?.code || '—'}</td>
                       <td className="px-3 py-1.5 border-r border-slate-100 whitespace-nowrap">{fmtDay(po.poDate)}</td>
                       <td className="px-3 py-1.5 border-r border-slate-100">{po.dealType}</td>
                       <td className="px-3 py-1.5 border-r border-slate-100"><span className="px-1.5 py-0.5 bg-slate-100 text-slate-700 text-[9px] font-bold uppercase tracking-widest">{po.status}</span></td>
@@ -343,6 +360,7 @@ const VendorLedger: React.FC = () => {
               <thead className="bg-slate-100 text-[10px] uppercase tracking-widest text-slate-600">
                 <tr>
                   <th className="px-3 py-1.5 text-left border-r border-slate-200">Invoice #</th>
+                  <th className="px-3 py-1.5 text-left border-r border-slate-200">Co.</th>
                   <th className="px-3 py-1.5 text-left border-r border-slate-200">Date</th>
                   <th className="px-3 py-1.5 text-left border-r border-slate-200">Status</th>
                   <th className="px-3 py-1.5 text-right border-r border-slate-200">Amount</th>
@@ -352,12 +370,13 @@ const VendorLedger: React.FC = () => {
               </thead>
               <tbody>
                 {data.invoices.length === 0 ? (
-                  <tr><td colSpan={6} className="px-3 py-6 text-center text-slate-400">No invoices</td></tr>
+                  <tr><td colSpan={7} className="px-3 py-6 text-center text-slate-400">No invoices</td></tr>
                 ) : data.invoices.map(inv => {
                   const paid = (inv.payments || []).reduce((a, p) => a + (p.amount || 0) + (p.tdsDeducted || 0), 0);
                   return (
                     <tr key={inv.id} className="border-b border-slate-100 hover:bg-slate-50">
                       <td className="px-3 py-1.5 border-r border-slate-100 font-mono">{inv.invoiceNo}</td>
+                      <td className="px-3 py-1.5 border-r border-slate-100 text-[10px] font-bold uppercase tracking-widest text-slate-500">{inv.company?.code || '—'}</td>
                       <td className="px-3 py-1.5 border-r border-slate-100">{fmtDay(inv.invoiceDate)}</td>
                       <td className="px-3 py-1.5 border-r border-slate-100"><span className="px-1.5 py-0.5 bg-slate-100 text-slate-700 text-[9px] font-bold uppercase tracking-widest">{inv.status}</span></td>
                       <td className="px-3 py-1.5 border-r border-slate-100 text-right tabular-nums">₹{fmtMoney(inv.totalAmount)}</td>
@@ -375,6 +394,7 @@ const VendorLedger: React.FC = () => {
               <thead className="bg-slate-100 text-[10px] uppercase tracking-widest text-slate-600">
                 <tr>
                   <th className="px-3 py-1.5 text-left border-r border-slate-200">Date</th>
+                  <th className="px-3 py-1.5 text-left border-r border-slate-200">Co.</th>
                   <th className="px-3 py-1.5 text-left border-r border-slate-200">Mode</th>
                   <th className="px-3 py-1.5 text-left border-r border-slate-200">Reference / UTR</th>
                   <th className="px-3 py-1.5 text-left border-r border-slate-200">Status</th>
@@ -385,10 +405,11 @@ const VendorLedger: React.FC = () => {
               </thead>
               <tbody>
                 {data.payments.length === 0 ? (
-                  <tr><td colSpan={7} className="px-3 py-6 text-center text-slate-400">No payments</td></tr>
+                  <tr><td colSpan={8} className="px-3 py-6 text-center text-slate-400">No payments</td></tr>
                 ) : data.payments.map(p => (
                   <tr key={p.id} className="border-b border-slate-100 hover:bg-slate-50">
                     <td className="px-3 py-1.5 border-r border-slate-100">{fmtDay(p.paymentDate)}</td>
+                    <td className="px-3 py-1.5 border-r border-slate-100 text-[10px] font-bold uppercase tracking-widest text-slate-500">{p.company?.code || '—'}</td>
                     <td className="px-3 py-1.5 border-r border-slate-100">{p.mode || '—'}</td>
                     <td className="px-3 py-1.5 border-r border-slate-100 font-mono">{p.reference || '—'}</td>
                     <td className="px-3 py-1.5 border-r border-slate-100"><span className={`px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-widest ${p.paymentStatus === 'CONFIRMED' ? 'bg-green-100 text-green-700' : 'bg-yellow-100 text-yellow-700'}`}>{p.paymentStatus}</span></td>
