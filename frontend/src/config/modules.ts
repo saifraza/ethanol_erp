@@ -129,6 +129,7 @@ export const MODULE_DEFS: ModuleDef[] = [
   { key: 'company-documents', label: 'Document Vault', to: '/admin/documents', icon: FolderArchive, group: 'admin' },
   { key: 'weighment-corrections', label: 'Weighment Corrections', to: '/admin/weighment-corrections', icon: ClipboardCheck, group: 'admin', adminOnly: true },
   { key: 'weighbridge-audit', label: 'Weighbridge Audit', to: '/admin/weighbridge-audit', icon: ClipboardCheck, group: 'admin', adminOnly: true },
+  { key: 'integrity-audit', label: 'Integrity Audit', to: '/admin/integrity', icon: ShieldCheck, group: 'admin', adminOnly: true },
   { key: 'activity-log', label: 'Activity Log', to: '/admin/activity-log', icon: ClipboardCheck, group: 'admin', adminOnly: true },
   { key: 'ai-usage', label: 'AI Usage', to: '/admin/ai-usage', icon: Sparkles, group: 'admin', adminOnly: true },
   { key: 'storage-health', label: 'Storage Health', to: '/admin/storage-health', icon: HardDrive, group: 'admin', adminOnly: true },
