@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
-import { Building2, Plus, X, Save, Loader2, Trash2, Search, ChevronDown, Package } from 'lucide-react';
+import { useNavigate } from 'react-router-dom';
+import { Building2, Plus, X, Save, Loader2, Trash2, Search, ChevronDown, Package, BookOpen } from 'lucide-react';
 import api from '../../services/api';
 import { useAuth } from '../../context/AuthContext';
 
@@ -71,6 +72,7 @@ interface Vendor {
 
 export default function Vendors() {
   const { user } = useAuth();
+  const navigate = useNavigate();
   const [vendors, setVendors] = useState<Vendor[]>([]);
   const [searchQuery, setSearchQuery] = useState('');
   const [showForm, setShowForm] = useState(false);
@@ -1132,6 +1134,7 @@ export default function Vendors() {
                       </td>
                       <td className="px-3 py-1.5 text-xs text-center">
                         <div className="flex items-center justify-center gap-1">
+                          <button onClick={(e) => { e.stopPropagation(); navigate(`/procurement/vendors/${vendor.id}`); }} className="px-2 py-0.5 bg-slate-800 text-white text-[10px] font-medium hover:bg-slate-700 flex items-center gap-1" title="Open ledger — all POs, GRNs, trucks, invoices, payments"><BookOpen size={10} />Ledger</button>
                           <button onClick={(e) => { e.stopPropagation(); openForm(vendor); }} className="px-2 py-0.5 bg-blue-600 text-white text-[10px] font-medium hover:bg-blue-700">Edit</button>
                           <ChevronDown size={12} className={`text-slate-400 transition-transform ${expandedId === vendor.id ? 'rotate-180' : ''}`} />
                         </div>

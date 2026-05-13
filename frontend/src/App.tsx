@@ -120,6 +120,7 @@ const WGSContracts = React.lazy(() => import('./pages/sales/WGSContracts'));
 const SugarContracts = React.lazy(() => import('./pages/sales/SugarContracts'));
 // Procurement (P2P)
 const Vendors = React.lazy(() => import('./pages/procurement/Vendors'));
+const VendorLedger = React.lazy(() => import('./pages/procurement/VendorLedger'));
 
 const Materials = React.lazy(() => import('./pages/procurement/Materials'));
 const PurchaseOrders = React.lazy(() => import('./pages/procurement/PurchaseOrders'));
@@ -308,6 +309,7 @@ export default function App() {
         <Route path="sales/sugar-contracts" element={<SugarContracts />} />
         {/* Procurement (P2P) */}
         <Route path="procurement/vendors" element={<Vendors />} />
+        <Route path="procurement/vendors/:id" element={<VendorLedger />} />
         <Route path="procurement/traders" element={<Navigate to="/procurement/vendors" replace />} />
         <Route path="procurement/contractors" element={<Navigate to="/procurement/vendors" replace />} />
         <Route path="procurement/materials" element={<Navigate to="/inventory" replace />} />
