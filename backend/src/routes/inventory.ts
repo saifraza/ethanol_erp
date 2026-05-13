@@ -50,11 +50,36 @@ router.get('/items', asyncHandler(async (req: AuthRequest, res: Response) => {
       { hsnCode: { contains: search, mode: 'insensitive' } },
     ];
   }
+  const includeMovements = category === 'CHEMICAL';
   const items = await prisma.inventoryItem.findMany({
     where,
     take: 5000,
     orderBy: { name: 'asc' },
-    include: { transactions: { orderBy: { createdAt: 'desc' }, take: 5 } },
+    include: {
+      transactions: { orderBy: { createdAt: 'desc' }, take: 5 },
+      // For Chemicals page: GRN receipts and dosing issues land in StockMovement.
+      // Pull the latest few so the page's recent-movements feed shows them.
+      ...(includeMovements
+        ? {
+            stockMovements: {
+              orderBy: { date: 'desc' },
+              take: 10,
+              select: {
+                id: true,
+                movementType: true,
+                direction: true,
+                quantity: true,
+                unit: true,
+                refType: true,
+                refNo: true,
+                narration: true,
+                date: true,
+                warehouse: { select: { name: true } },
+              },
+            },
+          }
+        : {}),
+    },
   });
   res.json({ items });
 }));
