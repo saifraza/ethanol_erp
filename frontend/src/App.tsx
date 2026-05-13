@@ -68,7 +68,6 @@ const WeighbridgeAudit = React.lazy(() => import('./pages/admin/WeighbridgeAudit
 const ActivityLog = React.lazy(() => import('./pages/admin/ActivityLog'));
 const AiUsage = React.lazy(() => import('./pages/admin/AiUsage'));
 const StorageHealth = React.lazy(() => import('./pages/admin/StorageHealth'));
-const IntegrityAudit = React.lazy(() => import('./pages/admin/IntegrityAudit'));
 const Companies = React.lazy(() => import('./pages/admin/Companies'));
 // Compliance
 const ComplianceDashboard = React.lazy(() => import('./pages/compliance/ComplianceDashboard'));
@@ -122,7 +121,6 @@ const SugarContracts = React.lazy(() => import('./pages/sales/SugarContracts'));
 // Procurement (P2P)
 const Vendors = React.lazy(() => import('./pages/procurement/Vendors'));
 const VendorLedger = React.lazy(() => import('./pages/procurement/VendorLedger'));
-const OrphanTrucks = React.lazy(() => import('./pages/procurement/OrphanTrucks'));
 
 const Materials = React.lazy(() => import('./pages/procurement/Materials'));
 const PurchaseOrders = React.lazy(() => import('./pages/procurement/PurchaseOrders'));
@@ -256,7 +254,6 @@ export default function App() {
         <Route path="admin/documents" element={<CompanyDocuments />} />
         <Route path="admin/weighment-corrections" element={<WeighmentCorrections />} />
         <Route path="admin/weighbridge-audit" element={<WeighbridgeAudit />} />
-        <Route path="admin/integrity" element={<IntegrityAudit />} />
         <Route path="admin/activity-log" element={<ActivityLog />} />
         <Route path="admin/ai-usage" element={<AiUsage />} />
         <Route path="admin/storage-health" element={<StorageHealth />} />
@@ -313,7 +310,6 @@ export default function App() {
         {/* Procurement (P2P) */}
         <Route path="procurement/vendors" element={<Vendors />} />
         <Route path="procurement/vendors/:id" element={<VendorLedger />} />
-        <Route path="procurement/orphan-trucks" element={<OrphanTrucks />} />
         <Route path="procurement/traders" element={<Navigate to="/procurement/vendors" replace />} />
         <Route path="procurement/contractors" element={<Navigate to="/procurement/vendors" replace />} />
         <Route path="procurement/materials" element={<Navigate to="/inventory" replace />} />
