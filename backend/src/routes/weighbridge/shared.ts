@@ -220,6 +220,51 @@ export async function checkWbDuplicate(w: WeighmentInput): Promise<{ id: string 
 //  INVENTORY SYNC — reused by PO and TRADER handlers
 // ==========================================================================
 
+/**
+ * Why this function records its own failures as PlantIssues:
+ *
+ * 2026-04-18 → 2026-05-06: a 17-day silent outage where this function
+ * was failing for 82% of weighbridge GRNs. The handler calling site used
+ * `try { syncToInventory(...) } catch (e) { console.error(...) }`, so
+ * errors only ever reached Railway logs — which nobody monitors. Result:
+ * 440 GRNs (₹3.11 cr) confirmed but never updating inventory. The 2026-05-13
+ * audit caught it; the system never did.
+ *
+ * From now on every failure path here writes a HIGH PlantIssue so the
+ * orphan-GRN watchdog + integrity audit dashboard can surface it within
+ * 10 minutes. The handler still catches the throw so a single bad GRN
+ * doesn't break the rest of the push batch.
+ */
+async function logSyncFailure(reason: string, ctx: { refType: string; refId: string; refNo: string; itemId: string; qty: number; movementType: string }): Promise<void> {
+  try {
+    await prisma.plantIssue.create({
+      data: {
+        title: `Inventory sync failed: ${ctx.refNo} (${ctx.movementType})`,
+        description: [
+          `syncToInventory aborted before stock movement was written.`,
+          ``,
+          `Reason: ${reason}`,
+          `Ref: ${ctx.refType} ${ctx.refId} (${ctx.refNo})`,
+          `Item ID: ${ctx.itemId}`,
+          `Qty: ${ctx.qty} (${ctx.movementType})`,
+          ``,
+          `Inventory level was NOT updated. The orphan-GRN watchdog should pick this up within 10 min and either retry or surface it on /admin/integrity.`,
+        ].join('\n'),
+        issueType: 'OTHER',
+        severity: 'HIGH',
+        equipment: 'Weighbridge / Inventory Sync',
+        location: 'Cloud ERP',
+        status: 'OPEN',
+        reportedBy: 'system-sync-to-inventory',
+        userId: 'system-sync-to-inventory',
+      },
+    });
+  } catch {
+    // PlantIssue create failing too means the DB is in deep trouble — nothing
+    // useful we can do here. Don't mask the original error to the caller.
+  }
+}
+
 export async function syncToInventory(
   refType: string,
   refId: string,
@@ -232,22 +277,33 @@ export async function syncToInventory(
   narration: string,
   userId: string,
 ): Promise<void> {
+  const ctx = { refType, refId, refNo, itemId, qty, movementType };
+
   const defaultWh = await prisma.warehouse.findFirst({
     where: { isActive: true },
     orderBy: { createdAt: 'asc' },
     select: { id: true },
   });
-  if (!defaultWh) return;
+  if (!defaultWh) {
+    await logSyncFailure('No active warehouse — `Warehouse.isActive=true` returned no rows.', ctx);
+    return;
+  }
 
   const totalValue = Math.round(qty * costRate * 100) / 100;
 
-  await prisma.$transaction(async (tx) => {
+  try {
+    await prisma.$transaction(async (tx) => {
     // NF-6 FIX: Read invItem INSIDE transaction for concurrency-safe avgCost
     const invItem = await tx.inventoryItem.findUnique({
       where: { id: itemId },
       select: { id: true, name: true, unit: true, currentStock: true, avgCost: true },
     });
-    if (!invItem) return;
+    if (!invItem) {
+      // Throw so we land in the outer catch and log a PlantIssue. Returning
+      // silently is what hid 440 receipts in April. The throw also rolls back
+      // the transaction (idempotent — nothing has been written yet here).
+      throw new Error(`InventoryItem ${itemId} not found`);
+    }
 
     const movement = await tx.stockMovement.create({
       data: {
@@ -316,8 +372,20 @@ export async function syncToInventory(
       itemName: invItem.name,
       userId,
       date: movement.date,
-    }).catch(() => {});
+    }).catch(async (err: unknown) => {
+      // Stock moved successfully but the auto-journal hook failed. Stock is
+      // correct; the accounting journal is not. Surface as PlantIssue so the
+      // integrity audit catches the "StockMovement → no JournalEntry" class.
+      await logSyncFailure(
+        `Stock movement ${movement.movementNo} committed but onStockMovement (auto-journal) failed: ${(err as Error)?.message || err}`,
+        { ...ctx, refNo: `SM-${movement.movementNo}` },
+      ).catch(() => {});
+    });
   });
+  } catch (err) {
+    await logSyncFailure(`Transaction failed: ${(err as Error)?.message || err}`, ctx);
+    throw err; // Re-throw so handler still sees failure (and can decide to retry)
+  }
 }
 
 // ==========================================================================
