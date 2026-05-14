@@ -9,6 +9,7 @@
  */
 
 import { Router, Response } from 'express';
+import multer from 'multer';
 import { authenticate, AuthRequest, getCompanyFilter } from '../middleware/auth';
 import { asyncHandler } from '../shared/middleware';
 import prisma from '../config/prisma';
@@ -16,6 +17,13 @@ import { syncAndListReplies, markReplySeen, sendThreadEmail } from '../services/
 
 const router = Router();
 router.use(authenticate);
+
+// In-memory uploads for reply attachments — file bytes are streamed straight
+// to nodemailer, not persisted to disk. 25MB/file, up to 5 files per reply.
+const replyUpload = multer({
+  storage: multer.memoryStorage(),
+  limits: { fileSize: 25 * 1024 * 1024, files: 5 },
+});
 
 // GET / — list threads by filter
 router.get('/', asyncHandler(async (req: AuthRequest, res: Response) => {
@@ -117,12 +125,20 @@ router.post('/:id/resend', asyncHandler(async (req: AuthRequest, res: Response) 
 }));
 
 // POST /:id/reply — reply to a thread (new message in same subject) — optionally
-// attached to a vendor's specific reply if they sent one
-router.post('/:id/reply', asyncHandler(async (req: AuthRequest, res: Response) => {
+// attached to a vendor's specific reply if they sent one. Accepts either
+// application/json or multipart/form-data (when sending file attachments).
+router.post('/:id/reply', replyUpload.array('attachments', 5), asyncHandler(async (req: AuthRequest, res: Response) => {
   const thread = await prisma.emailThread.findUnique({ where: { id: req.params.id } });
   if (!thread) return res.status(404).json({ error: 'Not found' });
   const { bodyText, bodyHtml, subject } = req.body as { bodyText?: string; bodyHtml?: string; subject?: string };
   if (!bodyText || !bodyText.trim()) return res.status(400).json({ error: 'bodyText required' });
+
+  const files = (req.files as Express.Multer.File[] | undefined) || [];
+  const attachments = files.map(f => ({
+    filename: f.originalname,
+    content: f.buffer,
+    contentType: f.mimetype,
+  }));
 
   const user = req.user!;
   const result = await sendThreadEmail({
@@ -138,6 +154,7 @@ router.post('/:id/reply', asyncHandler(async (req: AuthRequest, res: Response) =
     sentBy: user.name || user.email,
     fromName: thread.fromName || undefined,
     companyId: thread.companyId,
+    attachments: attachments.length ? attachments : undefined,
   });
   if (!result.success) return res.status(502).json({ error: result.error || 'Reply failed' });
   res.json({ ok: true, newThreadId: result.thread.id, messageId: result.messageId });

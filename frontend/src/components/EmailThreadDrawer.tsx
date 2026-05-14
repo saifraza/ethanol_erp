@@ -18,9 +18,12 @@
  *   - Attachment previews
  */
 
-import React, { useCallback, useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import api from '../services/api';
 import { X, Mail, Send, RefreshCw, Paperclip, Sparkles, ChevronDown, ChevronUp, Inbox } from 'lucide-react';
+
+const REPLY_ATTACHMENT_MAX_BYTES = 25 * 1024 * 1024; // matches backend multer limit
+const REPLY_ATTACHMENT_MAX_FILES = 5;
 
 export interface EmailThreadQuery {
   entityType?: string;
@@ -111,6 +114,8 @@ export default function EmailThreadDrawer({ query, title, contextLabel, onClose,
   const [syncing, setSyncing] = useState(false);
   const [resending, setResending] = useState(false);
   const [replyBody, setReplyBody] = useState('');
+  const [replyAttachments, setReplyAttachments] = useState<File[]>([]);
+  const replyFileInputRef = useRef<HTMLInputElement | null>(null);
   const [replySending, setReplySending] = useState(false);
   const [expandedReplies, setExpandedReplies] = useState<Record<string, boolean>>({});
   const [extractingId, setExtractingId] = useState<string | null>(null);
@@ -193,13 +198,46 @@ export default function EmailThreadDrawer({ query, title, contextLabel, onClose,
     if (!selectedThreadId || !replyBody.trim()) return;
     setReplySending(true);
     try {
-      await api.post(`/email-threads/${selectedThreadId}/reply`, { bodyText: replyBody });
+      if (replyAttachments.length > 0) {
+        const fd = new FormData();
+        fd.append('bodyText', replyBody);
+        for (const f of replyAttachments) fd.append('attachments', f, f.name);
+        await api.post(`/email-threads/${selectedThreadId}/reply`, fd, {
+          headers: { 'Content-Type': 'multipart/form-data' },
+        });
+      } else {
+        await api.post(`/email-threads/${selectedThreadId}/reply`, { bodyText: replyBody });
+      }
       setReplyBody('');
+      setReplyAttachments([]);
+      if (replyFileInputRef.current) replyFileInputRef.current.value = '';
+      await fetchDetail(selectedThreadId);
       fetchThreads();
     } catch (e: unknown) {
       alert((e as { response?: { data?: { error?: string } } }).response?.data?.error || 'Reply failed');
     }
     setReplySending(false);
+  };
+
+  const handlePickReplyFiles = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const incoming = Array.from(e.target.files || []);
+    if (!incoming.length) return;
+    const merged = [...replyAttachments];
+    const rejected: string[] = [];
+    for (const f of incoming) {
+      if (merged.length >= REPLY_ATTACHMENT_MAX_FILES) { rejected.push(`${f.name} (max ${REPLY_ATTACHMENT_MAX_FILES} files)`); continue; }
+      if (f.size > REPLY_ATTACHMENT_MAX_BYTES) { rejected.push(`${f.name} (>25MB)`); continue; }
+      if (merged.some(m => m.name === f.name && m.size === f.size)) continue;
+      merged.push(f);
+    }
+    setReplyAttachments(merged);
+    if (rejected.length) alert(`Skipped: ${rejected.join(', ')}`);
+    // Reset input so picking the same file again still fires onChange
+    if (replyFileInputRef.current) replyFileInputRef.current.value = '';
+  };
+
+  const removeReplyAttachment = (idx: number) => {
+    setReplyAttachments(prev => prev.filter((_, i) => i !== idx));
   };
 
   const handleExtract = async (replyId: string) => {
@@ -470,7 +508,30 @@ export default function EmailThreadDrawer({ query, title, contextLabel, onClose,
                     <textarea value={replyBody} onChange={e => setReplyBody(e.target.value)} rows={3}
                       placeholder={`Reply to ${detail.toEmail.split(',')[0]}...`}
                       className="w-full border border-slate-300 px-2.5 py-1.5 text-xs outline-none resize-none bg-white" />
-                    <div className="flex items-center justify-end gap-2 mt-1">
+                    {replyAttachments.length > 0 && (
+                      <div className="flex items-center gap-1.5 flex-wrap mt-1.5">
+                        {replyAttachments.map((f, i) => (
+                          <span key={`${f.name}-${i}`} className="text-[10px] text-slate-700 bg-white border border-slate-300 pl-1.5 pr-1 py-0.5 flex items-center gap-1" title={`${(f.size / 1024).toFixed(1)} KB`}>
+                            <Paperclip size={9} className="text-slate-500" />
+                            <span className="max-w-[160px] truncate">{f.name}</span>
+                            <span className="text-slate-400">{(f.size / 1024).toFixed(0)}KB</span>
+                            <button type="button" onClick={() => removeReplyAttachment(i)} className="text-slate-400 hover:text-red-600" aria-label={`Remove ${f.name}`}>
+                              <X size={10} />
+                            </button>
+                          </span>
+                        ))}
+                      </div>
+                    )}
+                    <div className="flex items-center justify-between gap-2 mt-1">
+                      <div>
+                        <input ref={replyFileInputRef} type="file" multiple onChange={handlePickReplyFiles} className="hidden" />
+                        <button type="button" onClick={() => replyFileInputRef.current?.click()}
+                          disabled={replyAttachments.length >= REPLY_ATTACHMENT_MAX_FILES}
+                          className="px-2 py-1 bg-white border border-slate-300 text-slate-700 text-[11px] font-medium hover:bg-slate-100 disabled:opacity-50 flex items-center gap-1"
+                          title={`Up to ${REPLY_ATTACHMENT_MAX_FILES} files · 25MB each`}>
+                          <Paperclip size={11} /> Attach
+                        </button>
+                      </div>
                       <button onClick={handleReply} disabled={replySending || !replyBody.trim()}
                         className="px-3 py-1 bg-blue-600 text-white text-[11px] font-bold uppercase tracking-wide hover:bg-blue-700 disabled:bg-slate-400 flex items-center gap-1">
                         <Send size={11} /> {replySending ? 'Sending...' : 'Send Reply'}
