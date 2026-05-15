@@ -673,7 +673,15 @@ router.post('/:id/generate-po', asyncHandler(async (req: AuthRequest, res: Respo
     + (inclGst ? q.gstAmount : 0)
     + (inclFreight ? q.freight : 0)
     + (inclErection ? q.otherCharges : 0);
-  const scaleFactor = denom > 0 ? negotiated / denom : 1;
+  // Without a breakdown we cannot scale into subtotal/GST/freight components.
+  // Previously the scaleFactor=1 fallback produced a ₹0 PO. Force the user to fix the quote first.
+  if (denom <= 0) {
+    res.status(400).json({
+      error: 'Awarded quotation has no subtotal / GST / freight breakdown — edit the quote and enter rates before generating PO.',
+    });
+    return;
+  }
+  const scaleFactor = negotiated / denom;
 
   const scaledSubtotal = q.subtotal * scaleFactor;
   const scaledGst = q.gstAmount * scaleFactor; // GST always follows subtotal
