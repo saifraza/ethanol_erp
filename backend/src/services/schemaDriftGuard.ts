@@ -105,6 +105,16 @@ const EXPECTED_COLUMNS: ColumnCheck[] = [
   // when factory-server's master-data cache goes stale). Added after 48h silent
   // outage where factory PC's CLOUD_DATABASE_URL pointed at a deleted DB host.
   { table: 'Settings', column: 'factoryCacheState', sql: `ALTER TABLE "Settings" ADD COLUMN IF NOT EXISTS "factoryCacheState" TEXT` },
+  // 2026-05-15 — Project Purchases: commercial flags on each quote + pre-PO checklist on project
+  // (so award & PO generation can be gated on full terms, not just price).
+  { table: 'ProjectQuotation', column: 'priceBasis',               sql: `ALTER TABLE "ProjectQuotation" ADD COLUMN IF NOT EXISTS "priceBasis" TEXT` },
+  { table: 'ProjectQuotation', column: 'gstInclusive',             sql: `ALTER TABLE "ProjectQuotation" ADD COLUMN IF NOT EXISTS "gstInclusive" BOOLEAN` },
+  { table: 'ProjectQuotation', column: 'freightInScope',           sql: `ALTER TABLE "ProjectQuotation" ADD COLUMN IF NOT EXISTS "freightInScope" BOOLEAN` },
+  { table: 'ProjectQuotation', column: 'insuranceInScope',         sql: `ALTER TABLE "ProjectQuotation" ADD COLUMN IF NOT EXISTS "insuranceInScope" BOOLEAN` },
+  { table: 'ProjectQuotation', column: 'installCommissionInScope', sql: `ALTER TABLE "ProjectQuotation" ADD COLUMN IF NOT EXISTS "installCommissionInScope" BOOLEAN` },
+  { table: 'ProjectQuotation', column: 'trainingDays',             sql: `ALTER TABLE "ProjectQuotation" ADD COLUMN IF NOT EXISTS "trainingDays" INTEGER` },
+  { table: 'ProjectPurchase',  column: 'prePOChecklist',           sql: `ALTER TABLE "ProjectPurchase" ADD COLUMN IF NOT EXISTS "prePOChecklist" JSONB` },
+  { table: 'ProjectPurchase',  column: 'prePOWaiverReason',        sql: `ALTER TABLE "ProjectPurchase" ADD COLUMN IF NOT EXISTS "prePOWaiverReason" TEXT` },
 ];
 
 const EXPECTED_TABLES: TableCheck[] = [

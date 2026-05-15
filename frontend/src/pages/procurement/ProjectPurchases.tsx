@@ -48,6 +48,12 @@ interface Quotation {
   otherCharges: number;
   totalAmount: number;
   currency: string;
+  priceBasis?: 'EXW' | 'FOR_SITE' | 'CIF' | 'DDP' | 'OTHER' | null;
+  gstInclusive?: boolean | null;
+  freightInScope?: boolean | null;
+  insuranceInScope?: boolean | null;
+  installCommissionInScope?: boolean | null;
+  trainingDays?: number | null;
   fileUrl: string;
   fileName: string | null;
   parseStatus: 'PENDING' | 'PARSING' | 'PARSED' | 'FAILED' | 'MANUAL';
@@ -104,6 +110,8 @@ interface Project {
   negotiationInclGst?: boolean;
   negotiationInclFreight?: boolean;
   negotiationInclErection?: boolean;
+  prePOChecklist?: Record<string, string> | null;
+  prePOWaiverReason?: string | null;
   aiAnalysis: AIAnalysis | null;
   aiAnalysisAt: string | null;
   remarks: string | null;
@@ -662,6 +670,15 @@ const ProjectDetailDrawer: React.FC<DrawerProps> = ({ projectId, detail, loading
               </div>
             )}
 
+            {/* PRE-PO CHECKLIST — only shows after award. Backend gates generate-po on it. */}
+            {detail.status === 'AWARDED' && !detail.po && (
+              <PrePOChecklistPanel
+                project={detail}
+                onSaved={async (msg) => { await onReload(); onSuccess(msg); }}
+                onError={onError}
+              />
+            )}
+
             {editQuoteId && (
               <QuotationEditModal
                 quotation={detail.quotations?.find((q) => q.id === editQuoteId) || null}
@@ -718,6 +735,142 @@ const ProjectDetailDrawer: React.FC<DrawerProps> = ({ projectId, detail, loading
           </div>
         )}
       </div>
+    </div>
+  );
+};
+
+// ═════════════════════════════════════════════════════════════════════
+// PRE-PO CHECKLIST — contractual terms that must be locked before PO.
+// Backend's /generate-po blocks until the 4 critical keys are filled OR
+// a written waiver reason is recorded.
+// ═════════════════════════════════════════════════════════════════════
+const PRE_PO_FIELDS: Array<{ key: string; label: string; placeholder: string; required: boolean }> = [
+  { key: 'pbg',                  label: 'Performance Bank Guarantee',  placeholder: 'e.g. 10% of PO value, valid 18 months from commissioning',     required: true },
+  { key: 'ld',                   label: 'Liquidated Damages',          placeholder: 'e.g. 0.5% per week of delay, capped at 10% of PO value',         required: true },
+  { key: 'inspection',           label: 'Inspection / TPI',            placeholder: 'e.g. Stage + final inspection at vendor works by Lloyd / TPL',   required: true },
+  { key: 'performanceGuarantee', label: 'Performance Guarantee',       placeholder: 'e.g. 95% throughput @ rated capacity, 98% uptime for 1 year',   required: true },
+  { key: 'drawingApproval',      label: 'Drawing Approval Window',     placeholder: 'e.g. GA drawings approved within 7 working days of submission',  required: false },
+  { key: 'documentation',        label: 'Documentation Deliverables',  placeholder: 'e.g. Mill TCs, hydro test certs, GA drawings, O&M manual',       required: false },
+  { key: 'statutoryClearances',  label: 'Statutory Clearances',        placeholder: 'e.g. PESO + Boiler (vendor) / Pollution NOC (buyer)',            required: false },
+  { key: 'spareParts',           label: 'Spare Parts',                 placeholder: 'e.g. 1-year mandatory spares list + 2-year recommended list',    required: false },
+];
+
+const PrePOChecklistPanel: React.FC<{
+  project: Project;
+  onSaved: (msg: string) => Promise<void> | void;
+  onError: (m: string) => void;
+}> = ({ project, onSaved, onError }) => {
+  const initialChecklist = (project.prePOChecklist || {}) as Record<string, string>;
+  const [vals, setVals] = useState<Record<string, string>>(() => {
+    const seed: Record<string, string> = {};
+    for (const f of PRE_PO_FIELDS) seed[f.key] = String(initialChecklist[f.key] || '');
+    return seed;
+  });
+  const [waiver, setWaiver] = useState<string>(project.prePOWaiverReason || '');
+  const [saving, setSaving] = useState(false);
+  const [showWaiver, setShowWaiver] = useState<boolean>(!!project.prePOWaiverReason);
+  const [collapsed, setCollapsed] = useState<boolean>(false);
+
+  const missingRequired = PRE_PO_FIELDS.filter(f => f.required && !vals[f.key]?.trim()).map(f => f.label);
+  const allRequiredFilled = missingRequired.length === 0;
+  const waived = waiver.trim().length > 0;
+  const ready = allRequiredFilled || waived;
+
+  const save = async (mode: 'checklist' | 'waiver') => {
+    setSaving(true);
+    try {
+      if (mode === 'checklist') {
+        await api.put(`/project-purchases/${project.id}/pre-po-checklist`, {
+          checklist: vals,
+          waiverReason: '',
+        });
+      } else {
+        await api.put(`/project-purchases/${project.id}/pre-po-checklist`, {
+          checklist: null,
+          waiverReason: waiver,
+        });
+      }
+      await onSaved('Pre-PO checklist saved');
+    } catch (err) {
+      const e = err as { response?: { data?: { error?: string } } };
+      onError(e.response?.data?.error || 'Save failed');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <div className={`border-2 ${ready ? 'border-green-400 bg-green-50/30' : 'border-amber-400 bg-amber-50/30'}`}>
+      <button
+        type="button"
+        onClick={() => setCollapsed(c => !c)}
+        className={`w-full px-3 py-2 flex items-center justify-between text-left ${ready ? 'bg-green-100 hover:bg-green-200' : 'bg-amber-100 hover:bg-amber-200'}`}
+      >
+        <span className="text-xs font-bold uppercase tracking-widest text-slate-800">
+          Pre-PO Checklist {ready ? (waived ? '· ⚠ Waived' : '· ✓ Ready') : `· ${missingRequired.length} required term${missingRequired.length === 1 ? '' : 's'} missing`}
+        </span>
+        <span className="text-[10px] text-slate-600">{collapsed ? '▸ expand' : '▾ collapse'}</span>
+      </button>
+      {!collapsed && (
+        <div className="p-3 space-y-3">
+          <div className="text-[11px] text-slate-600">
+            Lock these contractual terms before generating the PO. The 4 marked <span className="text-red-600 font-bold">*</span> are required by default; the rest are best-practice. If a term genuinely doesn't apply, use the Waiver below with a one-line reason.
+          </div>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+            {PRE_PO_FIELDS.map((f) => (
+              <div key={f.key}>
+                <Label required={f.required}>{f.label}</Label>
+                <input
+                  type="text"
+                  value={vals[f.key] || ''}
+                  onChange={(e) => setVals({ ...vals, [f.key]: e.target.value })}
+                  placeholder={f.placeholder}
+                  className={`border px-2.5 py-1.5 text-xs w-full ${f.required && !vals[f.key]?.trim() ? 'border-amber-400 bg-amber-50' : 'border-slate-300'}`}
+                />
+              </div>
+            ))}
+          </div>
+
+          <div className="flex flex-wrap gap-2 items-center pt-2 border-t border-slate-200">
+            <button
+              onClick={() => save('checklist')}
+              disabled={saving || !allRequiredFilled}
+              title={allRequiredFilled ? 'Save checklist — unlocks PO generation' : `Fill all required terms first: ${missingRequired.join(', ')}`}
+              className="px-3 py-1.5 bg-green-600 text-white text-xs font-bold uppercase tracking-widest hover:bg-green-700 disabled:bg-slate-300 flex items-center gap-1"
+            >
+              {saving ? <Loader2 size={12} className="animate-spin" /> : <Save size={12} />} Save Checklist
+            </button>
+            <button
+              onClick={() => setShowWaiver(s => !s)}
+              className="px-3 py-1.5 border border-amber-400 bg-amber-50 text-amber-800 text-xs font-bold uppercase tracking-widest hover:bg-amber-100"
+            >
+              {showWaiver ? 'Hide waiver' : 'Skip with waiver'}
+            </button>
+          </div>
+
+          {showWaiver && (
+            <div className="border border-amber-300 bg-amber-50/60 p-2">
+              <Label>Waiver reason (records why these terms aren't in the PO)</Label>
+              <textarea
+                rows={2}
+                value={waiver}
+                onChange={(e) => setWaiver(e.target.value)}
+                placeholder="e.g. Single-source OEM, no PBG offered in market — accepted with 25% retention against PI"
+                className="border border-slate-300 px-2.5 py-1.5 text-xs w-full"
+              />
+              <div className="mt-1 flex justify-end">
+                <button
+                  onClick={() => save('waiver')}
+                  disabled={saving || !waiver.trim()}
+                  className="px-3 py-1 border-2 border-amber-500 bg-white text-amber-800 text-[10px] font-bold uppercase tracking-widest hover:bg-amber-100 disabled:opacity-40"
+                >
+                  Save Waiver
+                </button>
+              </div>
+            </div>
+          )}
+        </div>
+      )}
     </div>
   );
 };
@@ -1272,6 +1425,12 @@ const QuotationEditModal: React.FC<{
     freight: quotation.freight,
     otherCharges: quotation.otherCharges,
     totalAmount: quotation.totalAmount,
+    priceBasis: quotation.priceBasis ?? null,
+    gstInclusive: quotation.gstInclusive ?? null,
+    freightInScope: quotation.freightInScope ?? null,
+    insuranceInScope: quotation.insuranceInScope ?? null,
+    installCommissionInScope: quotation.installCommissionInScope ?? null,
+    trainingDays: quotation.trainingDays ?? null,
     manualNotes: quotation.manualNotes || '',
   } : null);
   const [lineItems, setLineItems] = useState<QuotationLine[]>(quotation?.lineItems || []);
@@ -1302,6 +1461,7 @@ const QuotationEditModal: React.FC<{
         ...form,
         vendorId: form.vendorId || null,
         quotationDate: form.quotationDate || null,
+        priceBasis: form.priceBasis || null,
         lineItems: lineItems.map((li) => ({
           description: li.description, specification: li.specification, make: li.make, model: li.model,
           quantity: li.quantity, unit: li.unit, rate: li.rate, amount: li.amount,
@@ -1405,6 +1565,45 @@ const QuotationEditModal: React.FC<{
             </div>
           </div>
 
+          {/* COMMERCIAL TERMS — answers "what does this price actually mean?"
+              Without these explicit, two quotes at the same ₹X can be wildly different scope. */}
+          <div className="border border-slate-300">
+            <div className="bg-slate-100 px-3 py-1.5 text-[10px] font-bold text-slate-700 uppercase tracking-widest">
+              Commercial Terms — what does this price cover?
+            </div>
+            <div className="p-3 grid grid-cols-1 md:grid-cols-3 gap-3">
+              <div>
+                <Label>Price Basis</Label>
+                <select
+                  value={form.priceBasis || ''}
+                  onChange={(e) => update('priceBasis', (e.target.value || null) as typeof form.priceBasis)}
+                  className="border border-slate-300 px-2.5 py-1.5 text-xs w-full"
+                >
+                  <option value="">— Unknown —</option>
+                  <option value="EXW">EXW (Ex-works, vendor factory)</option>
+                  <option value="FOR_SITE">FOR Site (delivered to our site)</option>
+                  <option value="CIF">CIF (cost, insurance, freight to port)</option>
+                  <option value="DDP">DDP (duty-paid delivered)</option>
+                  <option value="OTHER">Other</option>
+                </select>
+              </div>
+              <TriState label="GST inclusive in Total?" value={form.gstInclusive} onChange={(v) => update('gstInclusive', v)} />
+              <TriState label="Freight in vendor scope?" value={form.freightInScope} onChange={(v) => update('freightInScope', v)} />
+              <TriState label="Insurance (transit + erection)?" value={form.insuranceInScope} onChange={(v) => update('insuranceInScope', v)} />
+              <TriState label="Installation & Commissioning?" value={form.installCommissionInScope} onChange={(v) => update('installCommissionInScope', v)} />
+              <div>
+                <Label>Operator Training (days at site)</Label>
+                <input
+                  type="number"
+                  value={form.trainingDays ?? ''}
+                  onChange={(e) => update('trainingDays', e.target.value === '' ? null : parseInt(e.target.value) || 0)}
+                  placeholder="0 = none offered"
+                  className="border border-slate-300 px-2.5 py-1.5 text-xs w-full text-right font-mono"
+                />
+              </div>
+            </div>
+          </div>
+
           <div>
             <div className="flex items-center justify-between mb-1">
               <div className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">Line Items (Σ amounts = ₹{fmtINR(linesSum)})</div>
@@ -1465,6 +1664,37 @@ const Label: React.FC<{ children: React.ReactNode; required?: boolean }> = ({ ch
     {children}{required && <span className="text-red-500 ml-0.5">*</span>}
   </label>
 );
+
+// TriState — Yes / No / Unknown radio. Used for commercial-flag answers where
+// "we haven't asked yet" needs to be distinct from "we asked, the answer is no".
+const TriState: React.FC<{ label: string; value: boolean | null | undefined; onChange: (v: boolean | null) => void }> = ({ label, value, onChange }) => {
+  const v = value === true ? 'YES' : value === false ? 'NO' : 'UNKNOWN';
+  const opts: Array<{ key: 'YES' | 'NO' | 'UNKNOWN'; label: string; cls: string }> = [
+    { key: 'YES',     label: 'Yes',     cls: 'border-green-500 bg-green-50 text-green-800' },
+    { key: 'NO',      label: 'No',      cls: 'border-red-500 bg-red-50 text-red-800' },
+    { key: 'UNKNOWN', label: 'Unknown', cls: 'border-slate-400 bg-slate-50 text-slate-600' },
+  ];
+  return (
+    <div>
+      <Label>{label}</Label>
+      <div className="flex gap-1">
+        {opts.map((o) => {
+          const active = v === o.key;
+          return (
+            <button
+              key={o.key}
+              type="button"
+              onClick={() => onChange(o.key === 'YES' ? true : o.key === 'NO' ? false : null)}
+              className={`flex-1 px-2 py-1 text-[10px] font-bold uppercase tracking-widest border-2 ${active ? o.cls : 'border-slate-200 bg-white text-slate-400 hover:border-slate-300'}`}
+            >
+              {o.label}
+            </button>
+          );
+        })}
+      </div>
+    </div>
+  );
+};
 
 const StatCard: React.FC<{ label: string; value: string; accent?: string; mono?: boolean }> = ({ label, value, accent, mono }) => (
   <div className="px-3 py-2 border-r border-slate-300 last:border-r-0">
