@@ -1571,9 +1571,49 @@ const QuotationEditModal: React.FC<{
   const [conditionalCommercials, setConditionalCommercials] = useState<ConditionalCommercial[]>(() => quotation?.conditionalCommercials || []);
   const [saving, setSaving] = useState(false);
 
+  // UI-only GST percent — derived from gstAmount/subtotal on first open, then drives
+  // gstAmount when the user types a %. We don't persist this; only gstAmount is stored.
+  const [gstPercent, setGstPercent] = useState<number>(() => {
+    if (!quotation || !quotation.subtotal || quotation.subtotal <= 0) return 0;
+    return Math.round((quotation.gstAmount / quotation.subtotal) * 10000) / 100;
+  });
+  // Auto-compute Total from breakdown unless the loaded quote was already out of
+  // sync (i.e. someone manually overrode the total). Then keep it manual so we
+  // don't clobber their explicit value.
+  const [autoTotal, setAutoTotal] = useState<boolean>(() => {
+    if (!quotation) return true;
+    const sum = quotation.subtotal + quotation.gstAmount + quotation.freight + quotation.otherCharges;
+    return quotation.totalAmount === 0 || Math.abs(sum - quotation.totalAmount) <= 1;
+  });
+
   if (!quotation || !form) return null;
 
   const update = <K extends keyof typeof form>(k: K, v: typeof form[K]) => setForm({ ...form, [k]: v });
+
+  // Smart setters — keep GST amount, GST %, and Total in sync as the user edits any
+  // breakdown field. This is what the user expects ("change one thing, totals update").
+  const recomputeTotal = (subtotal: number, gst: number, freight: number, other: number) =>
+    autoTotal ? subtotal + gst + freight + other : form.totalAmount;
+  const setSubtotal = (v: number) => {
+    const newGst = gstPercent > 0 ? Math.round(v * gstPercent) / 100 : form.gstAmount;
+    setForm({ ...form, subtotal: v, gstAmount: newGst, totalAmount: recomputeTotal(v, newGst, form.freight, form.otherCharges) });
+  };
+  const setGstPercentField = (pct: number) => {
+    setGstPercent(pct);
+    const newGst = form.subtotal > 0 ? Math.round(form.subtotal * pct) / 100 : 0;
+    setForm({ ...form, gstAmount: newGst, totalAmount: recomputeTotal(form.subtotal, newGst, form.freight, form.otherCharges) });
+  };
+  const setGstAmountField = (amt: number) => {
+    if (form.subtotal > 0) setGstPercent(Math.round((amt / form.subtotal) * 10000) / 100);
+    setForm({ ...form, gstAmount: amt, totalAmount: recomputeTotal(form.subtotal, amt, form.freight, form.otherCharges) });
+  };
+  const setFreightField = (v: number) => {
+    setForm({ ...form, freight: v, totalAmount: recomputeTotal(form.subtotal, form.gstAmount, v, form.otherCharges) });
+  };
+  const setOtherField = (v: number) => {
+    setForm({ ...form, otherCharges: v, totalAmount: recomputeTotal(form.subtotal, form.gstAmount, form.freight, v) });
+  };
+
   const updateLine = (idx: number, field: keyof QuotationLine, value: unknown) => {
     setLineItems((arr) => arr.map((l, i) => i === idx ? { ...l, [field]: value } : l));
   };
@@ -1663,43 +1703,115 @@ const QuotationEditModal: React.FC<{
             </div>
           </div>
 
-          {/* RATES & BREAKDOWN — surfaced here so the user fixes the numbers before anything else.
-              Required for PO generation. Reconciliation banner shows live status. */}
+          {/* RATES & BREAKDOWN — edit any field and dependent fields auto-update.
+              GST% drives GST ₹ (and vice versa). Subtotal + GST + Freight + Other = Total
+              by default; toggle the auto switch off to override Total manually. */}
           <div className={`border-2 ${reconciles ? 'border-green-300 bg-green-50/40' : 'border-red-300 bg-red-50/40'}`}>
-            <div className={`px-3 py-1.5 text-[10px] font-bold uppercase tracking-widest flex items-center justify-between ${reconciles ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'}`}>
+            <div className={`px-3 py-1.5 text-[10px] font-bold uppercase tracking-widest flex items-center justify-between gap-3 ${reconciles ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'}`}>
               <span>Rates & Breakdown {reconciles ? '· ✓ Reconciles' : '· ⚠ Subtotal + GST + Freight + Other must equal Total'}</span>
               <span className="font-mono">Σ breakdown ₹ {fmtINR(breakdownSum)} {reconciles ? '=' : '≠'} Total ₹ {fmtINR(form.totalAmount || 0)}</span>
             </div>
-            <div className="p-3 grid grid-cols-2 md:grid-cols-5 gap-3">
-              <div>
-                <Label>Subtotal (taxable)</Label>
-                <input type="number" value={form.subtotal || ''} onChange={(e) => update('subtotal', parseFloat(e.target.value) || 0)} className="border border-slate-300 px-2.5 py-1.5 text-xs w-full text-right font-mono" />
-                {linesSum > 0 && !subtotalMatchesLines && (
-                  <button onClick={() => update('subtotal', linesSum)} className="mt-1 text-[10px] text-indigo-600 hover:underline font-mono">
-                    ↻ Use Σ lines = ₹{fmtINR(linesSum)}
-                  </button>
-                )}
+            <div className="p-3 space-y-3">
+              <div className="grid grid-cols-2 md:grid-cols-6 gap-3">
+                <div className="md:col-span-2">
+                  <Label>Subtotal (taxable)</Label>
+                  <input
+                    type="number"
+                    value={form.subtotal || ''}
+                    onChange={(e) => setSubtotal(parseFloat(e.target.value) || 0)}
+                    className="border border-slate-300 px-2.5 py-1.5 text-xs w-full text-right font-mono"
+                  />
+                  {linesSum > 0 && !subtotalMatchesLines && (
+                    <button onClick={() => setSubtotal(linesSum)} className="mt-1 text-[10px] text-indigo-600 hover:underline font-mono">
+                      ↻ Use Σ lines = ₹{fmtINR(linesSum)}
+                    </button>
+                  )}
+                </div>
+                <div>
+                  <Label>GST %</Label>
+                  <input
+                    type="number"
+                    step="0.01"
+                    value={gstPercent || ''}
+                    onChange={(e) => setGstPercentField(parseFloat(e.target.value) || 0)}
+                    placeholder="18"
+                    className="border border-slate-300 px-2.5 py-1.5 text-xs w-full text-right font-mono"
+                  />
+                  <div className="mt-1 flex gap-1 flex-wrap">
+                    {[5, 12, 18, 28].map(p => (
+                      <button
+                        key={p}
+                        type="button"
+                        onClick={() => setGstPercentField(p)}
+                        className={`text-[10px] font-mono px-1.5 py-0.5 border ${gstPercent === p ? 'border-indigo-500 bg-indigo-50 text-indigo-700' : 'border-slate-300 bg-white text-slate-600 hover:bg-slate-50'}`}
+                      >
+                        {p}%
+                      </button>
+                    ))}
+                  </div>
+                </div>
+                <div>
+                  <Label>GST ₹</Label>
+                  <input
+                    type="number"
+                    value={form.gstAmount || ''}
+                    onChange={(e) => setGstAmountField(parseFloat(e.target.value) || 0)}
+                    className="border border-slate-300 px-2.5 py-1.5 text-xs w-full text-right font-mono"
+                  />
+                </div>
+                <div>
+                  <Label>Freight / Transport</Label>
+                  <input
+                    type="number"
+                    value={form.freight || ''}
+                    onChange={(e) => setFreightField(parseFloat(e.target.value) || 0)}
+                    className="border border-slate-300 px-2.5 py-1.5 text-xs w-full text-right font-mono"
+                  />
+                </div>
+                <div>
+                  <Label>Other / Erection</Label>
+                  <input
+                    type="number"
+                    value={form.otherCharges || ''}
+                    onChange={(e) => setOtherField(parseFloat(e.target.value) || 0)}
+                    className="border border-slate-300 px-2.5 py-1.5 text-xs w-full text-right font-mono"
+                  />
+                </div>
               </div>
-              <div>
-                <Label>GST</Label>
-                <input type="number" value={form.gstAmount || ''} onChange={(e) => update('gstAmount', parseFloat(e.target.value) || 0)} className="border border-slate-300 px-2.5 py-1.5 text-xs w-full text-right font-mono" />
-              </div>
-              <div>
-                <Label>Freight / Transport</Label>
-                <input type="number" value={form.freight || ''} onChange={(e) => update('freight', parseFloat(e.target.value) || 0)} className="border border-slate-300 px-2.5 py-1.5 text-xs w-full text-right font-mono" />
-              </div>
-              <div>
-                <Label>Other / Erection</Label>
-                <input type="number" value={form.otherCharges || ''} onChange={(e) => update('otherCharges', parseFloat(e.target.value) || 0)} className="border border-slate-300 px-2.5 py-1.5 text-xs w-full text-right font-mono" />
-              </div>
-              <div>
-                <Label>Total</Label>
-                <input type="number" value={form.totalAmount || ''} onChange={(e) => update('totalAmount', parseFloat(e.target.value) || 0)} className="border border-amber-300 bg-amber-50 px-2.5 py-1.5 text-xs w-full text-right font-mono font-bold" />
-                {breakdownSum > 0 && !reconciles && (
-                  <button onClick={() => update('totalAmount', breakdownSum)} className="mt-1 text-[10px] text-indigo-600 hover:underline font-mono">
-                    ↻ Use Σ breakdown = ₹{fmtINR(breakdownSum)}
-                  </button>
-                )}
+              <div className="grid grid-cols-2 md:grid-cols-6 gap-3 items-end">
+                <div className="md:col-span-4 flex items-center gap-2">
+                  <label className="flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-widest text-slate-700 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={autoTotal}
+                      onChange={(e) => {
+                        const on = e.target.checked;
+                        setAutoTotal(on);
+                        if (on) update('totalAmount', breakdownSum); // sync up immediately
+                      }}
+                      className="w-3.5 h-3.5"
+                    />
+                    Auto-compute Total from breakdown
+                  </label>
+                  <span className="text-[10px] text-slate-500">
+                    {autoTotal ? '· Total updates when you edit Subtotal / GST / Freight / Other' : '· Uncheck me'}
+                  </span>
+                </div>
+                <div className="md:col-span-2">
+                  <Label>Total</Label>
+                  <input
+                    type="number"
+                    value={form.totalAmount || ''}
+                    readOnly={autoTotal}
+                    onChange={(e) => update('totalAmount', parseFloat(e.target.value) || 0)}
+                    className={`border px-2.5 py-1.5 text-xs w-full text-right font-mono font-bold ${autoTotal ? 'border-slate-300 bg-slate-100 text-slate-700 cursor-not-allowed' : 'border-amber-300 bg-amber-50'}`}
+                  />
+                  {!autoTotal && breakdownSum > 0 && !reconciles && (
+                    <button onClick={() => update('totalAmount', breakdownSum)} className="mt-1 text-[10px] text-indigo-600 hover:underline font-mono">
+                      ↻ Use Σ breakdown = ₹{fmtINR(breakdownSum)}
+                    </button>
+                  )}
+                </div>
               </div>
             </div>
           </div>
