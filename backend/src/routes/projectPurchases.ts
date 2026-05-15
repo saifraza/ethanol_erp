@@ -577,6 +577,70 @@ router.post('/quotations/:qid/reparse', asyncHandler(async (req: AuthRequest, re
   res.status(202).json({ status: 'PARSING', message: 'Re-parse running in background' });
 }));
 
+// POST /quotations/:qid/create-vendor — create a Vendor master row from the AI-
+// extracted vendor name + GSTIN + contact on this quote, then link it. Saves the
+// operator a round-trip to Vendor Master. Reuses an existing vendor if one already
+// matches by GSTIN or exact name (case-insensitive).
+router.post('/quotations/:qid/create-vendor', asyncHandler(async (req: AuthRequest, res: Response) => {
+  const q = await prisma.projectQuotation.findUnique({
+    where: { id: req.params.qid },
+    select: { id: true, vendorId: true, vendorNameRaw: true, vendorContact: true, extractedJson: true },
+  });
+  if (!q) { res.status(404).json({ error: 'Quotation not found' }); return; }
+  if (q.vendorId) {
+    res.status(400).json({ error: 'Vendor already linked to this quote' });
+    return;
+  }
+
+  // Best-effort harvest from extraction. Optional overrides via request body so
+  // the operator can correct the AI's spelling before creating.
+  const ex = (q.extractedJson as Record<string, unknown> | null) || {};
+  const body = req.body as { name?: string; gstin?: string; email?: string; phone?: string; category?: string };
+  const name = (body.name || (ex.vendor_name as string) || q.vendorNameRaw || '').trim();
+  const gstin = (body.gstin || (ex.gstin as string) || '').trim() || null;
+  const contact = body.email || body.phone || q.vendorContact || (ex.vendor_contact as string) || '';
+  if (!name) {
+    res.status(400).json({ error: 'No vendor name to create — type one or re-parse the quote.' });
+    return;
+  }
+
+  // De-dupe: prefer GSTIN match (canonical), fall back to case-insensitive name match.
+  let vendor = null;
+  if (gstin) {
+    vendor = await prisma.vendor.findFirst({ where: { gstin } });
+  }
+  if (!vendor) {
+    vendor = await prisma.vendor.findFirst({
+      where: { name: { equals: name, mode: 'insensitive' } },
+    });
+  }
+
+  if (!vendor) {
+    // Split contact heuristically: contains '@' → email, else phone.
+    const email = contact.includes('@') ? contact.trim() : null;
+    const phone = !email && contact ? contact.trim() : null;
+    vendor = await prisma.vendor.create({
+      data: {
+        name,
+        category: body.category || 'GENERAL',
+        gstin,
+        email,
+        phone,
+        isActive: true,
+        remarks: 'Created from project quotation AI extraction',
+      },
+    });
+  }
+
+  // Link to this quote
+  await prisma.projectQuotation.update({
+    where: { id: q.id },
+    data: { vendorId: vendor.id },
+  });
+
+  res.json({ vendor, linked: true });
+}));
+
 
 // ═══════════════════════════════════════════════
 // PUT /quotations/:qid — edit quotation (vendor link, manual overrides, line items)

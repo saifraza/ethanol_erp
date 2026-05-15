@@ -205,6 +205,11 @@ const ProjectPurchases: React.FC = () => {
     setProjects(r.data.projects || []);
   }, []);
 
+  const reloadVendors = useCallback(async () => {
+    const r = await api.get('/vendors');
+    setVendors(r.data.vendors || []);
+  }, []);
+
   // `silent` mode skips the loading spinner toggle — used by the background poller
   // so the drawer doesn't visually flash every few seconds while waiting for AI.
   const loadProjectDetail = useCallback(async (id: string, opts?: { silent?: boolean }) => {
@@ -482,6 +487,7 @@ const ProjectPurchases: React.FC = () => {
             await loadProjectDetail(selectedProjectId);
             await reloadProjects();
           }}
+          onReloadVendors={reloadVendors}
           onError={setError}
           onSuccess={setSuccess}
         />
@@ -500,11 +506,12 @@ interface DrawerProps {
   vendors: Vendor[];
   onClose: () => void;
   onReload: () => Promise<void>;
+  onReloadVendors: () => Promise<void>;
   onError: (m: string) => void;
   onSuccess: (m: string) => void;
 }
 
-const ProjectDetailDrawer: React.FC<DrawerProps> = ({ projectId, detail, loading, vendors, onClose, onReload, onError, onSuccess }) => {
+const ProjectDetailDrawer: React.FC<DrawerProps> = ({ projectId, detail, loading, vendors, onClose, onReload, onReloadVendors, onError, onSuccess }) => {
   const [uploading, setUploading] = useState(false);
   const [analyzing, setAnalyzing] = useState(false);
   const [awarding, setAwarding] = useState(false);
@@ -739,6 +746,10 @@ const ProjectDetailDrawer: React.FC<DrawerProps> = ({ projectId, detail, loading
                   setEditQuoteId(null);
                   await onReload();
                   onSuccess('Quotation updated');
+                }}
+                onVendorsChanged={async () => {
+                  await onReloadVendors();
+                  await onReload();
                 }}
                 onError={onError}
               />
@@ -1538,8 +1549,9 @@ const QuotationEditModal: React.FC<{
   vendors: Vendor[];
   onClose: () => void;
   onSaved: () => Promise<void>;
+  onVendorsChanged: () => Promise<void>;
   onError: (m: string) => void;
-}> = ({ quotation, vendors, onClose, onSaved, onError }) => {
+}> = ({ quotation, vendors, onClose, onSaved, onVendorsChanged, onError }) => {
   const [form, setForm] = useState(() => quotation ? {
     vendorId: quotation.vendorId || '',
     vendorNameRaw: quotation.vendorNameRaw || '',
@@ -1570,6 +1582,25 @@ const QuotationEditModal: React.FC<{
   const [exclusions, setExclusions] = useState<string[]>(() => quotation?.exclusions || []);
   const [conditionalCommercials, setConditionalCommercials] = useState<ConditionalCommercial[]>(() => quotation?.conditionalCommercials || []);
   const [saving, setSaving] = useState(false);
+  const [creatingVendor, setCreatingVendor] = useState(false);
+
+  const handleCreateVendor = async () => {
+    if (!quotation) return;
+    setCreatingVendor(true);
+    try {
+      const r = await api.post(`/project-purchases/quotations/${quotation.id}/create-vendor`, {});
+      const newVendor: Vendor = r.data.vendor;
+      // Refresh parent vendor list + project so the dropdown sees the new entry,
+      // then auto-select it in this form.
+      await onVendorsChanged();
+      setForm((f) => f ? { ...f, vendorId: newVendor.id } : f);
+    } catch (err) {
+      const e = err as { response?: { data?: { error?: string } } };
+      onError(e.response?.data?.error || 'Could not create vendor');
+    } finally {
+      setCreatingVendor(false);
+    }
+  };
 
   // UI-only GST percent — derived from gstAmount/subtotal on first open, then drives
   // gstAmount when the user types a %. We don't persist this; only gstAmount is stored.
@@ -1675,7 +1706,23 @@ const QuotationEditModal: React.FC<{
                 <option value="">— Select Vendor — (or leave blank + edit vendorNameRaw)</option>
                 {vendors.map((v) => <option key={v.id} value={v.id}>{v.name}{v.gstin ? ` · ${v.gstin}` : ''}</option>)}
               </select>
-              {form.vendorNameRaw && <div className="text-[10px] text-amber-700 mt-1">AI extracted: <b>{form.vendorNameRaw}</b></div>}
+              {form.vendorNameRaw && (
+                <div className="text-[10px] text-amber-700 mt-1 flex items-center gap-2 flex-wrap">
+                  <span>AI extracted: <b>{form.vendorNameRaw}</b></span>
+                  {!form.vendorId && (
+                    <button
+                      type="button"
+                      onClick={handleCreateVendor}
+                      disabled={creatingVendor}
+                      className="px-2 py-0.5 text-[10px] font-bold uppercase tracking-widest border border-indigo-400 bg-indigo-50 text-indigo-700 hover:bg-indigo-100 disabled:opacity-40 flex items-center gap-1"
+                      title="Create a new vendor master record from the AI-extracted name + GSTIN + contact and link it to this quote"
+                    >
+                      {creatingVendor ? <Loader2 size={10} className="animate-spin" /> : <Plus size={10} />}
+                      Create &amp; Link
+                    </button>
+                  )}
+                </div>
+              )}
             </div>
             <div>
               <Label>Quote #</Label>
