@@ -29,6 +29,18 @@ interface QuotationLine {
   remarks: string | null;
 }
 
+interface VolumeOption {
+  label: string;
+  totalAmount: number;
+  notes?: string | null;
+}
+
+interface ConditionalCommercial {
+  kind: string; // PACKING_FWD | STEEL_ESCALATION | LATE_PICKUP | SUPERVISOR_IDLE | etc.
+  label: string;
+  formula: string;
+}
+
 interface Quotation {
   id: string;
   projectId: string;
@@ -54,6 +66,12 @@ interface Quotation {
   insuranceInScope?: boolean | null;
   installCommissionInScope?: boolean | null;
   trainingDays?: number | null;
+  volumeOptions?: VolumeOption[] | null;
+  selectedVolumeLabel?: string | null;
+  exclusions?: string[] | null;
+  conditionalCommercials?: ConditionalCommercial[] | null;
+  isIndicative?: boolean;
+  boughtOutWarrantyClause?: string | null;
   fileUrl: string;
   fileName: string | null;
   parseStatus: 'PENDING' | 'PARSING' | 'PARSED' | 'FAILED' | 'MANUAL';
@@ -674,6 +692,7 @@ const ProjectDetailDrawer: React.FC<DrawerProps> = ({ projectId, detail, loading
             {detail.status === 'AWARDED' && !detail.po && (
               <PrePOChecklistPanel
                 project={detail}
+                awardedQuote={detail.quotations?.find((q) => q.id === detail.awardedQuotationId) || null}
                 onSaved={async (msg) => { await onReload(); onSuccess(msg); }}
                 onError={onError}
               />
@@ -757,9 +776,10 @@ const PRE_PO_FIELDS: Array<{ key: string; label: string; placeholder: string; re
 
 const PrePOChecklistPanel: React.FC<{
   project: Project;
+  awardedQuote: Quotation | null;
   onSaved: (msg: string) => Promise<void> | void;
   onError: (m: string) => void;
-}> = ({ project, onSaved, onError }) => {
+}> = ({ project, awardedQuote, onSaved, onError }) => {
   const initialChecklist = (project.prePOChecklist || {}) as Record<string, string>;
   const [vals, setVals] = useState<Record<string, string>>(() => {
     const seed: Record<string, string> = {};
@@ -816,6 +836,41 @@ const PrePOChecklistPanel: React.FC<{
           <div className="text-[11px] text-slate-600">
             Lock these contractual terms before generating the PO. The 4 marked <span className="text-red-600 font-bold">*</span> are required by default; the rest are best-practice. If a term genuinely doesn't apply, use the Waiver below with a one-line reason.
           </div>
+
+          {/* SCOPE EXCLUSIONS REMINDER — read-only list pulled from the awarded quote so
+              the buyer is reminded which scope items they must arrange separately. */}
+          {awardedQuote?.exclusions && awardedQuote.exclusions.length > 0 && (
+            <div className="border border-amber-300 bg-amber-50/60">
+              <div className="bg-amber-100 px-3 py-1.5 text-[10px] font-bold text-amber-800 uppercase tracking-widest">
+                ⚠ Vendor excluded {awardedQuote.exclusions.length} scope items — buyer's responsibility
+              </div>
+              <ol className="px-5 py-2 list-decimal space-y-0.5 text-[11px] text-slate-700 max-h-48 overflow-y-auto">
+                {awardedQuote.exclusions.map((ex, i) => <li key={i}>{ex}</li>)}
+              </ol>
+              <div className="px-3 py-1.5 text-[10px] text-amber-800 border-t border-amber-200 bg-amber-50">
+                Confirm each item has another vendor / PR / internal team assigned before raising this PO.
+              </div>
+            </div>
+          )}
+
+          {awardedQuote?.conditionalCommercials && awardedQuote.conditionalCommercials.length > 0 && (
+            <div className="border border-slate-300 bg-slate-50/60">
+              <div className="bg-slate-100 px-3 py-1.5 text-[10px] font-bold text-slate-700 uppercase tracking-widest">
+                Conditional Commercials — vendor's price-adjustment clauses
+              </div>
+              <ul className="px-3 py-2 text-[11px] text-slate-700 space-y-1 max-h-40 overflow-y-auto">
+                {awardedQuote.conditionalCommercials.map((c, i) => (
+                  <li key={i}><span className="font-mono text-[10px] text-slate-500">[{c.kind}]</span> <b>{c.label}:</b> {c.formula}</li>
+                ))}
+              </ul>
+            </div>
+          )}
+
+          {awardedQuote?.isIndicative && (
+            <div className="border-2 border-amber-400 bg-amber-50 px-3 py-2 text-[11px] text-amber-900">
+              <b>Turnkey / Indicative offer.</b> Per-line rates on this quote are not individually binding. The PO PDF will carry this disclaimer and per-line reconciliation is informational only.
+            </div>
+          )}
           <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
             {PRE_PO_FIELDS.map((f) => (
               <div key={f.key}>
@@ -1235,7 +1290,16 @@ const QuotationsCompare: React.FC<{
             </tr>
           </thead>
           <tbody>
-            <CompareRow label="Vendor" values={quotations.map((q) => q.vendor?.name || q.vendorNameRaw || <span className="text-red-600 text-[10px]">No vendor linked — edit to set</span>)} bold />
+            <CompareRow label="Vendor" values={quotations.map((q) => (
+              <div className="flex items-center gap-1 flex-wrap">
+                <span>{q.vendor?.name || q.vendorNameRaw || <span className="text-red-600 text-[10px]">No vendor linked — edit to set</span>}</span>
+                {q.isIndicative && (
+                  <span className="text-[9px] font-bold uppercase tracking-widest px-1 py-0.5 border border-amber-400 bg-amber-50 text-amber-700" title="Quote is turnkey / lumpsum — per-line rates are indicative only">
+                    Turnkey
+                  </span>
+                )}
+              </div>
+            ))} bold />
             <CompareRow label="Quote #" values={quotations.map((q) => q.quotationNo || '--')} mono />
             <CompareRow label="Quote Date" values={quotations.map((q) => fmtDate(q.quotationDate))} />
             <CompareRow label="Validity (days)" values={quotations.map((q) => q.validityDays ?? '--')} />
@@ -1280,6 +1344,30 @@ const QuotationsCompare: React.FC<{
               </a>
             ))} />
             <CompareRow label="Lines" values={quotations.map((q) => `${q.lineItems.length} items`)} />
+            <tr className="bg-slate-100"><td colSpan={quotations.length + 1} className="px-2 py-1 text-[10px] font-bold text-slate-600 uppercase tracking-widest">Scope & Conditional Commercials</td></tr>
+            <CompareRow label="Volume Tiers" values={quotations.map((q) => {
+              const v = q.volumeOptions || [];
+              if (v.length === 0) return <span className="text-[10px] text-slate-400">single volume</span>;
+              return (
+                <div className="space-y-0.5">
+                  {v.map((tier, i) => (
+                    <div key={i} className={`text-[10px] font-mono ${q.selectedVolumeLabel === tier.label ? 'font-bold text-green-700' : 'text-slate-600'}`}>
+                      {q.selectedVolumeLabel === tier.label ? '● ' : '○ '}{tier.label}: ₹{fmtINR(tier.totalAmount)}
+                    </div>
+                  ))}
+                </div>
+              );
+            })} />
+            <CompareRow label="Exclusions" values={quotations.map((q) => {
+              const ex = q.exclusions || [];
+              if (ex.length === 0) return <span className="text-[10px] text-slate-400">none captured</span>;
+              return <span className="text-[10px] text-amber-700 font-bold" title={ex.slice(0, 5).join(' · ')}>⚠ {ex.length} items (buyer scope)</span>;
+            })} />
+            <CompareRow label="Conditional Commercials" values={quotations.map((q) => {
+              const cc = q.conditionalCommercials || [];
+              if (cc.length === 0) return <span className="text-[10px] text-slate-400">none captured</span>;
+              return <span className="text-[10px] text-slate-700" title={cc.map(c => c.label).join(' · ')}>{cc.length} clauses</span>;
+            })} />
             {canAward && (
               <tr className="bg-slate-50 border-t-2 border-slate-300">
                 <td className="px-2 py-2 text-[10px] font-bold text-slate-600 uppercase tracking-widest border-r border-slate-200 sticky left-0 bg-slate-50">Accept / Award</td>
@@ -1431,9 +1519,15 @@ const QuotationEditModal: React.FC<{
     insuranceInScope: quotation.insuranceInScope ?? null,
     installCommissionInScope: quotation.installCommissionInScope ?? null,
     trainingDays: quotation.trainingDays ?? null,
+    selectedVolumeLabel: quotation.selectedVolumeLabel ?? null,
+    isIndicative: !!quotation.isIndicative,
+    boughtOutWarrantyClause: quotation.boughtOutWarrantyClause ?? '',
     manualNotes: quotation.manualNotes || '',
   } : null);
   const [lineItems, setLineItems] = useState<QuotationLine[]>(quotation?.lineItems || []);
+  const [volumeOptions, setVolumeOptions] = useState<VolumeOption[]>(() => quotation?.volumeOptions || []);
+  const [exclusions, setExclusions] = useState<string[]>(() => quotation?.exclusions || []);
+  const [conditionalCommercials, setConditionalCommercials] = useState<ConditionalCommercial[]>(() => quotation?.conditionalCommercials || []);
   const [saving, setSaving] = useState(false);
 
   if (!quotation || !form) return null;
@@ -1462,6 +1556,10 @@ const QuotationEditModal: React.FC<{
         vendorId: form.vendorId || null,
         quotationDate: form.quotationDate || null,
         priceBasis: form.priceBasis || null,
+        boughtOutWarrantyClause: form.boughtOutWarrantyClause || null,
+        volumeOptions: volumeOptions.filter(v => v.label.trim() && v.totalAmount > 0),
+        exclusions: exclusions.map(e => e.trim()).filter(Boolean),
+        conditionalCommercials: conditionalCommercials.filter(c => c.label.trim() && c.formula.trim()),
         lineItems: lineItems.map((li) => ({
           description: li.description, specification: li.specification, make: li.make, model: li.model,
           quantity: li.quantity, unit: li.unit, rate: li.rate, amount: li.amount,
@@ -1565,6 +1663,25 @@ const QuotationEditModal: React.FC<{
             </div>
           </div>
 
+          {/* TURNKEY / INDICATIVE FLAG — when the offer is on lumpsum basis and per-line prices aren't binding */}
+          <div className="border border-slate-300 p-3 flex items-start gap-3 bg-slate-50">
+            <input
+              type="checkbox"
+              id="isIndicative"
+              checked={!!form.isIndicative}
+              onChange={(e) => update('isIndicative', e.target.checked)}
+              className="mt-0.5 w-4 h-4"
+            />
+            <label htmlFor="isIndicative" className="text-xs text-slate-700 leading-snug">
+              <span className="font-bold uppercase tracking-widest text-[10px] text-slate-600">Turnkey / Indicative</span>
+              <span className="block mt-0.5">
+                Tick if the offer is on turnkey / lumpsum / package basis AND the per-line rates are
+                indicative only (not individually binding). The PO PDF will carry the disclaimer and
+                per-line reconciliation becomes informational.
+              </span>
+            </label>
+          </div>
+
           {/* COMMERCIAL TERMS — answers "what does this price actually mean?"
               Without these explicit, two quotes at the same ₹X can be wildly different scope. */}
           <div className="border border-slate-300">
@@ -1637,6 +1754,210 @@ const QuotationEditModal: React.FC<{
                 </tbody>
               </table>
             </div>
+          </div>
+
+          {/* VOLUME OPTIONS — multi-tier pricing (e.g. "1 location ₹X / 2 locations ₹2X").
+              Vendor-agnostic — works for any "buy more, pay less" or "per-site" pricing pattern. */}
+          <div className="border border-slate-300">
+            <div className="bg-slate-100 px-3 py-1.5 text-[10px] font-bold text-slate-700 uppercase tracking-widest flex items-center justify-between">
+              <span>Volume / Location Tiers ({volumeOptions.length}) — vendor's tiered prices for the same scope</span>
+              <button
+                type="button"
+                onClick={() => setVolumeOptions([...volumeOptions, { label: '', totalAmount: 0, notes: '' }])}
+                className="text-[10px] font-bold uppercase px-2 py-0.5 border border-slate-300 bg-white hover:bg-slate-50 flex items-center gap-1"
+              >
+                <Plus size={10} /> Add Tier
+              </button>
+            </div>
+            {volumeOptions.length === 0 ? (
+              <div className="px-3 py-2 text-[11px] text-slate-500 italic">Single-volume quote — no tiers. Add one if the vendor priced this for multiple sites/capacities.</div>
+            ) : (
+              <div className="divide-y divide-slate-200">
+                {volumeOptions.map((v, idx) => (
+                  <div key={idx} className="px-3 py-2 grid grid-cols-12 gap-2 items-end">
+                    <div className="col-span-12 md:col-span-1 flex items-center">
+                      <input
+                        type="radio"
+                        name="selectedVolumeLabel"
+                        checked={form.selectedVolumeLabel === v.label && !!v.label}
+                        onChange={() => update('selectedVolumeLabel', v.label)}
+                        disabled={!v.label.trim()}
+                        className="w-4 h-4"
+                        title="Selected tier — drives PO scaling"
+                      />
+                    </div>
+                    <div className="col-span-12 md:col-span-3">
+                      <Label>Tier label</Label>
+                      <input
+                        type="text"
+                        value={v.label}
+                        onChange={(e) => setVolumeOptions(volumeOptions.map((x, i) => i === idx ? { ...x, label: e.target.value } : x))}
+                        placeholder="e.g. 1 location / 500 TPD"
+                        className="border border-slate-300 px-2.5 py-1.5 text-xs w-full"
+                      />
+                    </div>
+                    <div className="col-span-12 md:col-span-3">
+                      <Label>Total (₹)</Label>
+                      <input
+                        type="number"
+                        value={v.totalAmount || ''}
+                        onChange={(e) => setVolumeOptions(volumeOptions.map((x, i) => i === idx ? { ...x, totalAmount: parseFloat(e.target.value) || 0 } : x))}
+                        className="border border-slate-300 px-2.5 py-1.5 text-xs w-full text-right font-mono"
+                      />
+                    </div>
+                    <div className="col-span-12 md:col-span-4">
+                      <Label>Notes</Label>
+                      <input
+                        type="text"
+                        value={v.notes || ''}
+                        onChange={(e) => setVolumeOptions(volumeOptions.map((x, i) => i === idx ? { ...x, notes: e.target.value } : x))}
+                        placeholder="optional"
+                        className="border border-slate-300 px-2.5 py-1.5 text-xs w-full"
+                      />
+                    </div>
+                    <div className="col-span-12 md:col-span-1 flex justify-end">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setVolumeOptions(volumeOptions.filter((_, i) => i !== idx));
+                          if (form.selectedVolumeLabel === v.label) update('selectedVolumeLabel', null);
+                        }}
+                        className="text-red-500 hover:text-red-700"
+                      >
+                        <Trash2 size={12} />
+                      </button>
+                    </div>
+                  </div>
+                ))}
+                <div className="px-3 py-1.5 text-[10px] text-slate-500 bg-slate-50">
+                  Select a tier to record which one MSPIL is buying. The negotiated total in the Negotiate modal should match this tier's amount.
+                </div>
+              </div>
+            )}
+          </div>
+
+          {/* EXCLUSIONS — list of scope items the vendor explicitly excluded.
+              Buyer must arrange each via another vendor / PR, or knowingly waive. */}
+          <div className="border border-slate-300">
+            <div className="bg-slate-100 px-3 py-1.5 text-[10px] font-bold text-slate-700 uppercase tracking-widest flex items-center justify-between">
+              <span>Exclusions ({exclusions.length}) — scope items the vendor explicitly excluded (buyer's responsibility)</span>
+              <button
+                type="button"
+                onClick={() => setExclusions([...exclusions, ''])}
+                className="text-[10px] font-bold uppercase px-2 py-0.5 border border-slate-300 bg-white hover:bg-slate-50 flex items-center gap-1"
+              >
+                <Plus size={10} /> Add Exclusion
+              </button>
+            </div>
+            {exclusions.length === 0 ? (
+              <div className="px-3 py-2 text-[11px] text-slate-500 italic">No exclusions captured. Re-parse may have missed a "Buyer's Scope" / "Exclusions" section in the T&C.</div>
+            ) : (
+              <div className="divide-y divide-slate-200 max-h-64 overflow-y-auto">
+                {exclusions.map((ex, idx) => (
+                  <div key={idx} className="px-3 py-1.5 flex gap-2 items-start">
+                    <span className="text-[10px] font-mono text-slate-500 mt-1.5 w-6 text-right">{idx + 1}.</span>
+                    <textarea
+                      rows={1}
+                      value={ex}
+                      onChange={(e) => setExclusions(exclusions.map((x, i) => i === idx ? e.target.value : x))}
+                      className="border border-slate-300 px-2 py-1 text-xs w-full"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setExclusions(exclusions.filter((_, i) => i !== idx))}
+                      className="text-red-500 hover:text-red-700 mt-1.5"
+                    >
+                      <Trash2 size={12} />
+                    </button>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+
+          {/* CONDITIONAL COMMERCIALS — escalation, idle charges, cancellation fee,
+              OEM warranty pass-through etc. So the buyer can model worst-case cost. */}
+          <div className="border border-slate-300">
+            <div className="bg-slate-100 px-3 py-1.5 text-[10px] font-bold text-slate-700 uppercase tracking-widest flex items-center justify-between">
+              <span>Conditional Commercials ({conditionalCommercials.length}) — escalation, idle charges, penalties, OEM warranty pass-through</span>
+              <button
+                type="button"
+                onClick={() => setConditionalCommercials([...conditionalCommercials, { kind: 'OTHER', label: '', formula: '' }])}
+                className="text-[10px] font-bold uppercase px-2 py-0.5 border border-slate-300 bg-white hover:bg-slate-50 flex items-center gap-1"
+              >
+                <Plus size={10} /> Add
+              </button>
+            </div>
+            {conditionalCommercials.length === 0 ? (
+              <div className="px-3 py-2 text-[11px] text-slate-500 italic">None captured.</div>
+            ) : (
+              <div className="overflow-x-auto">
+                <table className="w-full">
+                  <thead className="bg-slate-700 text-white">
+                    <tr>
+                      {['Kind', 'Label', 'Formula / Rule', ''].map((h) => (
+                        <th key={h} className="text-[10px] uppercase font-semibold px-2 py-1 text-left border-r border-slate-600">{h}</th>
+                      ))}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {conditionalCommercials.map((c, idx) => (
+                      <tr key={idx} className="border-b border-slate-100">
+                        <td className="px-2 py-1 border-r border-slate-100 w-44">
+                          <select
+                            value={c.kind}
+                            onChange={(e) => setConditionalCommercials(conditionalCommercials.map((x, i) => i === idx ? { ...x, kind: e.target.value } : x))}
+                            className="border border-slate-300 px-1.5 py-1 text-xs w-full"
+                          >
+                            {['PACKING_FWD', 'FREIGHT_INSURANCE', 'STEEL_ESCALATION', 'RAW_MATERIAL_ESCALATION', 'LATE_PICKUP', 'SUPERVISOR_IDLE', 'SITE_ENGINEER_IDLE', 'CANCELLATION_FEE', 'OEM_WARRANTY', 'PRICE_VARIATION', 'LIQUIDATED_DAMAGES', 'OTHER'].map(k => (
+                              <option key={k} value={k}>{k}</option>
+                            ))}
+                          </select>
+                        </td>
+                        <td className="px-2 py-1 border-r border-slate-100 w-56">
+                          <input
+                            type="text"
+                            value={c.label}
+                            onChange={(e) => setConditionalCommercials(conditionalCommercials.map((x, i) => i === idx ? { ...x, label: e.target.value } : x))}
+                            className="border-0 bg-transparent text-xs w-full focus:outline-none focus:bg-yellow-50 px-1 py-0.5"
+                          />
+                        </td>
+                        <td className="px-2 py-1 border-r border-slate-100">
+                          <input
+                            type="text"
+                            value={c.formula}
+                            onChange={(e) => setConditionalCommercials(conditionalCommercials.map((x, i) => i === idx ? { ...x, formula: e.target.value } : x))}
+                            className="border-0 bg-transparent text-xs w-full focus:outline-none focus:bg-yellow-50 px-1 py-0.5"
+                          />
+                        </td>
+                        <td className="px-2 py-1 w-8">
+                          <button
+                            type="button"
+                            onClick={() => setConditionalCommercials(conditionalCommercials.filter((_, i) => i !== idx))}
+                            className="text-red-500 hover:text-red-700"
+                          >
+                            <Trash2 size={10} />
+                          </button>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </div>
+
+          {/* BOUGHT-OUT WARRANTY PASS-THROUGH — surfaced separately because it's a common
+              source of post-PO disputes ("vendor said motor warranty is OEM's job, OEM says go to vendor"). */}
+          <div>
+            <Label>Bought-out Items Warranty Clause (OEM pass-through)</Label>
+            <textarea
+              rows={2}
+              value={form.boughtOutWarrantyClause || ''}
+              onChange={(e) => update('boughtOutWarrantyClause', e.target.value)}
+              placeholder="e.g. Motors, Gearboxes, Electric bought-out items are covered by respective OEM's standard warranty, not by the prime vendor. Coordination via prime vendor only."
+              className="border border-slate-300 px-2.5 py-1.5 text-xs w-full"
+            />
           </div>
 
           <div>
