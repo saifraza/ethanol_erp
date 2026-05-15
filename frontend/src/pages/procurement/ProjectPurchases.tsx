@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
-import { Plus, X, Upload, Loader2, Trash2, Search, FileText, Sparkles, Award, CheckCircle, AlertTriangle, Download, Edit3, Save, Mail, MessageSquare } from 'lucide-react';
+import { Plus, X, Upload, Loader2, Trash2, Search, FileText, Sparkles, Award, CheckCircle, AlertTriangle, Download, Edit3, Save, Mail, MessageSquare, RefreshCw } from 'lucide-react';
 import api from '../../services/api';
 
 // ═════════════════════════════════════════════════════════════════════
@@ -222,6 +222,16 @@ const ProjectPurchases: React.FC = () => {
     if (selectedProjectId) loadProjectDetail(selectedProjectId);
     else setProjectDetail(null);
   }, [selectedProjectId, loadProjectDetail]);
+
+  // Auto-poll while any quotation is still being parsed in the background.
+  // Stops as soon as every quote is PARSED / FAILED / MANUAL.
+  useEffect(() => {
+    if (!selectedProjectId || !projectDetail) return;
+    const hasInflight = (projectDetail.quotations || []).some(q => q.parseStatus === 'PARSING');
+    if (!hasInflight) return;
+    const interval = setInterval(() => { loadProjectDetail(selectedProjectId); }, 4000);
+    return () => clearInterval(interval);
+  }, [selectedProjectId, projectDetail, loadProjectDetail]);
 
   useEffect(() => {
     if (success) {
@@ -503,12 +513,14 @@ const ProjectDetailDrawer: React.FC<DrawerProps> = ({ projectId, detail, loading
       for (const file of Array.from(files)) {
         const fd = new FormData();
         fd.append('file', file);
+        // Backend now returns 202 immediately after creating the PARSING stub.
+        // Gemini extraction runs in background; the page auto-polls until done.
         await api.post(`/project-purchases/${projectId}/quotations/upload`, fd, {
           headers: { 'Content-Type': 'multipart/form-data' },
-          timeout: 90000,
+          timeout: 60000, // just the file upload; AI extraction is async server-side
         });
       }
-      onSuccess(`${files.length} quotation${files.length > 1 ? 's' : ''} uploaded & parsed`);
+      onSuccess(`${files.length} file${files.length > 1 ? 's' : ''} uploaded — AI parsing in background`);
       await onReload();
     } catch (err) {
       const e = err as { response?: { data?: { error?: string } } };
@@ -516,6 +528,17 @@ const ProjectDetailDrawer: React.FC<DrawerProps> = ({ projectId, detail, loading
     } finally {
       setUploading(false);
       if (fileInputRef.current) fileInputRef.current.value = '';
+    }
+  };
+
+  const handleReparse = async (qid: string) => {
+    try {
+      await api.post(`/project-purchases/quotations/${qid}/reparse`);
+      onSuccess('Re-parse started — refreshing as it completes');
+      await onReload();
+    } catch (err) {
+      const e = err as { response?: { data?: { error?: string } } };
+      onError(e.response?.data?.error || 'Re-parse failed');
     }
   };
 
@@ -679,6 +702,7 @@ const ProjectDetailDrawer: React.FC<DrawerProps> = ({ projectId, detail, loading
                 onAward={handleAward}
                 onDelete={handleDeleteQuote}
                 onEdit={setEditQuoteId}
+                onReparse={handleReparse}
                 awarding={awarding}
               />
             ) : (
@@ -1248,8 +1272,9 @@ const QuotationsCompare: React.FC<{
   onAward: (qid: string, reason: string) => void;
   onDelete: (qid: string) => void;
   onEdit: (qid: string) => void;
+  onReparse: (qid: string) => void;
   awarding: boolean;
-}> = ({ quotations, awardedId, projectStatus, onAward, onDelete, onEdit, awarding }) => {
+}> = ({ quotations, awardedId, projectStatus, onAward, onDelete, onEdit, onReparse, awarding }) => {
   const [awardTarget, setAwardTarget] = useState<string | null>(null);
   const [awardReason, setAwardReason] = useState('');
 
@@ -1281,6 +1306,14 @@ const QuotationsCompare: React.FC<{
                     <span>Q{i + 1}</span>
                     {q.id === awardedId && <Award size={12} />}
                     <span className="ml-auto flex gap-1">
+                      <button
+                        onClick={() => onReparse(q.id)}
+                        disabled={q.parseStatus === 'PARSING'}
+                        className="hover:text-emerald-200 disabled:opacity-40"
+                        title={q.parseStatus === 'PARSING' ? 'Already parsing…' : 'Re-run AI extraction on this quote'}
+                      >
+                        <RefreshCw size={11} className={q.parseStatus === 'PARSING' ? 'animate-spin' : ''} />
+                      </button>
                       <button onClick={() => onEdit(q.id)} className="hover:text-indigo-200" title="Edit"><Edit3 size={11} /></button>
                       {!q.isAwarded && <button onClick={() => onDelete(q.id)} className="hover:text-red-300" title="Delete"><Trash2 size={11} /></button>}
                     </span>
