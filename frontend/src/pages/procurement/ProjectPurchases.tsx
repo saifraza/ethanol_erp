@@ -1047,6 +1047,18 @@ const QuotationsCompare: React.FC<{
 
   const canAward = !['PO_RAISED', 'COMPLETED', 'CANCELLED'].includes(projectStatus);
 
+  // Reconciliation: subtotal + gst + freight + other must equal total (₹1 tolerance).
+  // If total is zero or the breakdown sums to zero, the quote can't generate a valid PO.
+  const reconcile = (q: Quotation): { ok: boolean; reason: string } => {
+    const parts = (q.subtotal || 0) + (q.gstAmount || 0) + (q.freight || 0) + (q.otherCharges || 0);
+    const total = q.totalAmount || 0;
+    if (parts <= 0 && total <= 0) return { ok: false, reason: 'No rates entered' };
+    if (parts <= 0) return { ok: false, reason: 'Subtotal/GST/freight all 0 — only total set' };
+    if (total <= 0) return { ok: false, reason: 'Total is 0' };
+    if (Math.abs(parts - total) > 1) return { ok: false, reason: `Sum ₹${fmtINR(parts)} ≠ Total ₹${fmtINR(total)}` };
+    return { ok: true, reason: '' };
+  };
+
   return (
     <div>
       <div className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-1.5">Quotations ({quotations.length}) — side by side</div>
@@ -1087,6 +1099,24 @@ const QuotationsCompare: React.FC<{
               bold
               rowClass="bg-amber-50 border-t-2 border-amber-200"
             />
+            <CompareRow
+              label="Breakdown"
+              values={quotations.map((q) => {
+                const r = reconcile(q);
+                if (r.ok) return <span className="text-[10px] font-bold text-green-700">✓ Reconciles</span>;
+                return (
+                  <div className="space-y-1">
+                    <div className="text-[10px] font-bold text-red-700 leading-tight">⚠ {r.reason}</div>
+                    <button
+                      onClick={() => onEdit(q.id)}
+                      className="px-2 py-1 text-[10px] font-bold uppercase tracking-widest border border-red-400 bg-red-50 text-red-700 hover:bg-red-100 inline-flex items-center gap-1"
+                    >
+                      <Edit3 size={10} /> Edit Rates
+                    </button>
+                  </div>
+                );
+              })}
+            />
             <tr className="bg-slate-100"><td colSpan={quotations.length + 1} className="px-2 py-1 text-[10px] font-bold text-slate-600 uppercase tracking-widest">Terms</td></tr>
             <CompareRow label="Delivery" values={quotations.map((q) => q.deliveryPeriod || '--')} />
             <CompareRow label="Warranty" values={quotations.map((q) => q.warranty || '--')} />
@@ -1102,28 +1132,39 @@ const QuotationsCompare: React.FC<{
                 <td className="px-2 py-2 text-[10px] font-bold text-slate-600 uppercase tracking-widest border-r border-slate-200 sticky left-0 bg-slate-50">Accept / Award</td>
                 {quotations.map((q) => (
                   <td key={q.id} className="px-2 py-2 border-r border-slate-200">
-                    {q.id === awardedId ? (
-                      <span className="text-[10px] font-bold px-1.5 py-0.5 border border-green-400 bg-green-50 text-green-700 inline-flex items-center gap-1"><Award size={10} /> AWARDED</span>
-                    ) : !q.vendorId ? (
-                      <div className="space-y-1">
-                        <div className="text-[9px] text-amber-700 font-bold leading-tight">Link vendor first</div>
+                    {(() => {
+                      if (q.id === awardedId) {
+                        return <span className="text-[10px] font-bold px-1.5 py-0.5 border border-green-400 bg-green-50 text-green-700 inline-flex items-center gap-1"><Award size={10} /> AWARDED</span>;
+                      }
+                      const r = reconcile(q);
+                      // Collect blockers so the user sees ALL of them, not just the first.
+                      const blockers: string[] = [];
+                      if (!q.vendorId) blockers.push('Link vendor');
+                      if (!r.ok) blockers.push('Fix rates');
+                      if (blockers.length > 0) {
+                        return (
+                          <div className="space-y-1">
+                            <div className="text-[9px] text-amber-700 font-bold leading-tight">{blockers.join(' + ')} first</div>
+                            <button
+                              onClick={() => onEdit(q.id)}
+                              className="w-full px-2 py-1 text-[10px] font-bold uppercase tracking-widest border border-amber-400 bg-amber-50 text-amber-700 hover:bg-amber-100 flex items-center justify-center gap-1"
+                            >
+                              <Edit3 size={10} /> Edit Quote
+                            </button>
+                          </div>
+                        );
+                      }
+                      return (
                         <button
-                          onClick={() => onEdit(q.id)}
-                          className="w-full px-2 py-1 text-[10px] font-bold uppercase tracking-widest border border-amber-400 bg-amber-50 text-amber-700 hover:bg-amber-100 flex items-center justify-center gap-1"
+                          onClick={() => setAwardTarget(q.id)}
+                          disabled={awarding}
+                          title="Accept this quote as the winner"
+                          className="w-full px-2 py-1 text-[10px] font-bold uppercase tracking-widest border-2 border-amber-500 bg-amber-50 text-amber-800 hover:bg-amber-100 hover:border-amber-600 disabled:opacity-40 flex items-center justify-center gap-1"
                         >
-                          <Edit3 size={10} /> Edit to Link Vendor
+                          <Award size={10} /> Accept &amp; Award
                         </button>
-                      </div>
-                    ) : (
-                      <button
-                        onClick={() => setAwardTarget(q.id)}
-                        disabled={awarding}
-                        title="Accept this quote as the winner"
-                        className="w-full px-2 py-1 text-[10px] font-bold uppercase tracking-widest border-2 border-amber-500 bg-amber-50 text-amber-800 hover:bg-amber-100 hover:border-amber-600 disabled:opacity-40 flex items-center justify-center gap-1"
-                      >
-                        <Award size={10} /> Accept &amp; Award
-                      </button>
-                    )}
+                      );
+                    })()}
                   </td>
                 ))}
               </tr>
@@ -1248,6 +1289,12 @@ const QuotationEditModal: React.FC<{
   }]);
   const removeLine = (idx: number) => setLineItems((arr) => arr.filter((_, i) => i !== idx));
 
+  // Live computed helpers — the user can copy these into the breakdown fields with one click.
+  const linesSum = lineItems.reduce((s, l) => s + (Number(l.amount) || 0), 0);
+  const breakdownSum = (form.subtotal || 0) + (form.gstAmount || 0) + (form.freight || 0) + (form.otherCharges || 0);
+  const reconciles = breakdownSum > 0 && form.totalAmount > 0 && Math.abs(breakdownSum - form.totalAmount) <= 1;
+  const subtotalMatchesLines = linesSum > 0 && Math.abs(linesSum - (form.subtotal || 0)) <= 1;
+
   const save = async () => {
     setSaving(true);
     try {
@@ -1317,9 +1364,50 @@ const QuotationEditModal: React.FC<{
             </div>
           </div>
 
+          {/* RATES & BREAKDOWN — surfaced here so the user fixes the numbers before anything else.
+              Required for PO generation. Reconciliation banner shows live status. */}
+          <div className={`border-2 ${reconciles ? 'border-green-300 bg-green-50/40' : 'border-red-300 bg-red-50/40'}`}>
+            <div className={`px-3 py-1.5 text-[10px] font-bold uppercase tracking-widest flex items-center justify-between ${reconciles ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'}`}>
+              <span>Rates & Breakdown {reconciles ? '· ✓ Reconciles' : '· ⚠ Subtotal + GST + Freight + Other must equal Total'}</span>
+              <span className="font-mono">Σ breakdown ₹ {fmtINR(breakdownSum)} {reconciles ? '=' : '≠'} Total ₹ {fmtINR(form.totalAmount || 0)}</span>
+            </div>
+            <div className="p-3 grid grid-cols-2 md:grid-cols-5 gap-3">
+              <div>
+                <Label>Subtotal (taxable)</Label>
+                <input type="number" value={form.subtotal || ''} onChange={(e) => update('subtotal', parseFloat(e.target.value) || 0)} className="border border-slate-300 px-2.5 py-1.5 text-xs w-full text-right font-mono" />
+                {linesSum > 0 && !subtotalMatchesLines && (
+                  <button onClick={() => update('subtotal', linesSum)} className="mt-1 text-[10px] text-indigo-600 hover:underline font-mono">
+                    ↻ Use Σ lines = ₹{fmtINR(linesSum)}
+                  </button>
+                )}
+              </div>
+              <div>
+                <Label>GST</Label>
+                <input type="number" value={form.gstAmount || ''} onChange={(e) => update('gstAmount', parseFloat(e.target.value) || 0)} className="border border-slate-300 px-2.5 py-1.5 text-xs w-full text-right font-mono" />
+              </div>
+              <div>
+                <Label>Freight / Transport</Label>
+                <input type="number" value={form.freight || ''} onChange={(e) => update('freight', parseFloat(e.target.value) || 0)} className="border border-slate-300 px-2.5 py-1.5 text-xs w-full text-right font-mono" />
+              </div>
+              <div>
+                <Label>Other / Erection</Label>
+                <input type="number" value={form.otherCharges || ''} onChange={(e) => update('otherCharges', parseFloat(e.target.value) || 0)} className="border border-slate-300 px-2.5 py-1.5 text-xs w-full text-right font-mono" />
+              </div>
+              <div>
+                <Label>Total</Label>
+                <input type="number" value={form.totalAmount || ''} onChange={(e) => update('totalAmount', parseFloat(e.target.value) || 0)} className="border border-amber-300 bg-amber-50 px-2.5 py-1.5 text-xs w-full text-right font-mono font-bold" />
+                {breakdownSum > 0 && !reconciles && (
+                  <button onClick={() => update('totalAmount', breakdownSum)} className="mt-1 text-[10px] text-indigo-600 hover:underline font-mono">
+                    ↻ Use Σ breakdown = ₹{fmtINR(breakdownSum)}
+                  </button>
+                )}
+              </div>
+            </div>
+          </div>
+
           <div>
             <div className="flex items-center justify-between mb-1">
-              <div className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">Line Items</div>
+              <div className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">Line Items (Σ amounts = ₹{fmtINR(linesSum)})</div>
               <button onClick={addLine} className="text-[10px] font-bold uppercase px-2 py-0.5 border border-slate-300 bg-white hover:bg-slate-50 flex items-center gap-1"><Plus size={10} /> Add Line</button>
             </div>
             <div className="overflow-x-auto border border-slate-300">
@@ -1350,14 +1438,6 @@ const QuotationEditModal: React.FC<{
                 </tbody>
               </table>
             </div>
-          </div>
-
-          <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
-            <div><Label>Subtotal</Label><input type="number" value={form.subtotal || ''} onChange={(e) => update('subtotal', parseFloat(e.target.value) || 0)} className="border border-slate-300 px-2.5 py-1.5 text-xs w-full text-right font-mono" /></div>
-            <div><Label>GST</Label><input type="number" value={form.gstAmount || ''} onChange={(e) => update('gstAmount', parseFloat(e.target.value) || 0)} className="border border-slate-300 px-2.5 py-1.5 text-xs w-full text-right font-mono" /></div>
-            <div><Label>Freight</Label><input type="number" value={form.freight || ''} onChange={(e) => update('freight', parseFloat(e.target.value) || 0)} className="border border-slate-300 px-2.5 py-1.5 text-xs w-full text-right font-mono" /></div>
-            <div><Label>Other</Label><input type="number" value={form.otherCharges || ''} onChange={(e) => update('otherCharges', parseFloat(e.target.value) || 0)} className="border border-slate-300 px-2.5 py-1.5 text-xs w-full text-right font-mono" /></div>
-            <div><Label>Total</Label><input type="number" value={form.totalAmount || ''} onChange={(e) => update('totalAmount', parseFloat(e.target.value) || 0)} className="border border-amber-300 bg-amber-50 px-2.5 py-1.5 text-xs w-full text-right font-mono font-bold" /></div>
           </div>
 
           <div>
