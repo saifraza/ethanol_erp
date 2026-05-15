@@ -62,6 +62,21 @@ const updateQuotationSchema = z.object({
   insuranceInScope: z.boolean().optional().nullable(),
   installCommissionInScope: z.boolean().optional().nullable(),
   trainingDays: z.coerce.number().int().optional().nullable(),
+  // Complex-quote fields (editable from the modal even after AI extraction)
+  volumeOptions: z.array(z.object({
+    label: z.string(),
+    totalAmount: z.coerce.number(),
+    notes: z.string().optional().nullable(),
+  })).optional().nullable(),
+  selectedVolumeLabel: z.string().optional().nullable(),
+  exclusions: z.array(z.string()).optional().nullable(),
+  conditionalCommercials: z.array(z.object({
+    kind: z.string(),
+    label: z.string(),
+    formula: z.string(),
+  })).optional().nullable(),
+  isIndicative: z.boolean().optional(),
+  boughtOutWarrantyClause: z.string().optional().nullable(),
   manualNotes: z.string().optional().nullable(),
   lineItems: z.array(z.object({
     description: z.string(),
@@ -237,6 +252,8 @@ router.post('/:id/quotations/upload', upload.single('file'), mirrorToS3('project
   try {
     const base64 = fileBuffer.toString('base64');
     const prompt = `You are reading a vendor quotation / proforma invoice for a capital project purchase (mechanical, civil, electrical, instrumentation, IT, etc.).
+Real-world quotes from different vendors vary wildly in structure: some are a flat BOQ; some have a BOQ AND a separate "cost summary" table with extra rows for I&C / packing / freight; some price the same package at multiple volumes ("1 location ₹X / 2 locations ₹2X"); some are "turnkey lumpsum, individual rates indicative"; some bury 20 exclusions in a T&C section; some attach OEM-warranty-passthrough clauses. Your job is to extract ALL of this into a generic shape so any future vendor's PDF can be processed the same way — don't assume any particular vendor's layout.
+
 Return ONLY valid JSON (no markdown) with these keys:
 {
   "vendor_name": "string - supplier/vendor name",
@@ -246,11 +263,11 @@ Return ONLY valid JSON (no markdown) with these keys:
   "quotation_date": "YYYY-MM-DD or null",
   "validity_days": number or null,
   "delivery_period": "string - e.g. '15 days', '4 weeks', 'ex-stock'",
-  "warranty": "string - warranty terms",
-  "payment_terms": "string - e.g. '50% advance, 50% on delivery'",
+  "warranty": "string - core warranty (months/years from commissioning or dispatch). Do not paste the full T&C paragraph here; summarize.",
+  "payment_terms": "string - e.g. '40% advance, 60% against PI before dispatch'",
   "line_items": [
     {
-      "description": "string - item/service name (capture INSTALLATION, COMMISSIONING, ERECTION, SUPERVISION, TRAINING, TESTING, PAINTING, INSURANCE etc. as separate line items if priced separately in the document)",
+      "description": "string - item/service name. INCLUDE every priced row from the BOQ AND from any 'Cost Summary' / 'Commercial Summary' table — Installation, Commissioning, Erection, Supervision, Training, Testing, Painting, Insurance, Packing, Forwarding, Loading, Unloading etc. are line items when they have a price next to them, NOT 'other_charges'.",
       "specification": "string - specs, capacity, dimensions, standards",
       "make": "string - brand/make or null",
       "model": "string - model no or null",
@@ -273,15 +290,34 @@ Return ONLY valid JSON (no markdown) with these keys:
   "freight_in_scope": "boolean — true if freight is on vendor's account, false if buyer pays separately, null if unclear",
   "insurance_in_scope": "boolean — true if transit / erection insurance is in vendor scope, null if unclear",
   "install_commission_in_scope": "boolean — true if installation & commissioning is in vendor scope (priced or free), false if explicitly excluded, null if unclear",
-  "training_days": "number or null — operator training days at site if mentioned"
+  "training_days": "number or null — operator training days at site if mentioned",
+  "volume_options": [
+    { "label": "string - e.g. '1 location', '2 locations', '500 TPD', '1000 TPD'", "totalAmount": number, "notes": "string or null" }
+  ],
+  "exclusions": [
+    "string - one entry per scope item the vendor explicitly excluded (civil works, transformer, statutory licenses, lightning protection, compressed air plant, water supply, electrical panels, cable trays, storage space for vendor tools, accommodation for workers, etc.). Copy each bullet verbatim. Look at 'Exclusions' / 'Scope of Buyer' / 'Not in our scope' / 'In Client's Scope' sections."
+  ],
+  "conditional_commercials": [
+    {
+      "kind": "PACKING_FWD | FREIGHT_INSURANCE | STEEL_ESCALATION | RAW_MATERIAL_ESCALATION | LATE_PICKUP | SUPERVISOR_IDLE | SITE_ENGINEER_IDLE | CANCELLATION_FEE | OEM_WARRANTY | PRICE_VARIATION | LIQUIDATED_DAMAGES | OTHER",
+      "label": "string - short human label",
+      "formula": "string - exact wording from PDF including %, ₹/day, ₹/sqm/month etc."
+    }
+  ],
+  "is_indicative": "boolean — true if the offer is described as 'turnkey / lumpsum / package basis' AND says individual line-item prices are 'indicative only' / 'not binding individually'. Otherwise false.",
+  "bought_out_warranty_clause": "string or null — the clause that passes through OEM warranty (motors / gearboxes / electric items / instruments) to the OEM instead of the prime vendor"
 }
+
 Rules:
-- If a field is missing in the document, use null for strings/dates/booleans and 0 for numbers.
-- CRITICAL: every priced line in the BOQ/price-list/commercial-summary MUST appear in line_items. Don't drop installation, commissioning, erection, supervision, training, packing, painting, insurance, testing, transportation, loading/unloading just because they're "services" — they're priced rows.
-- If the document shows a single grand total but no rows, still emit line_items=[] (don't fake rows). Set total_amount to the grand total so the user can split it.
-- For line items, preserve vendor's wording in description verbatim.
-- specification should include make/capacity/standards if present.
-- Commercial flags (price_basis etc.) come from terms-and-conditions section, not the BOQ — read both.
+- If a field is missing in the document, use null for strings/dates/booleans, 0 for numbers, [] for arrays.
+- CRITICAL: every priced line in the BOQ AND every priced row in any 'Cost Summary' / 'Commercial Summary' table MUST appear in line_items. Don't drop them just because they're "services". Don't pile them into other_charges. A row reading "Installation & Commissioning ₹32,09,500" is a line_item, not other_charges.
+- If a row in the cost summary says 'Included' or 'Client Scope' or 'N/A' (no rupee value), do NOT put it in line_items — instead reflect it in the boolean flags (gst_inclusive, freight_in_scope, etc.).
+- volume_options: empty array if the quote prices a single volume only. Populate when you see "for X locations ₹Y" / "for X TPD ₹Y" patterns OR multiple totals shown. The single 'total_amount' field should match the FIRST option (the base case).
+- exclusions: take from the T&C section. One string per bullet, verbatim. Empty array if none stated.
+- conditional_commercials: capture ALL escalation, idle-charge, late-pickup, packing-percent, freight-actuals, cancellation-fee, OEM-warranty-passthrough clauses you find. Use exact ₹ and % from the document so the buyer can model worst-case cost.
+- is_indicative: only set true if the PDF explicitly says individual prices are indicative / for turnkey / lumpsum basis. Don't guess.
+- For line items, preserve vendor's wording in description verbatim. Specification should include make/capacity/standards if present.
+- Commercial flags (price_basis etc.) come from T&C section. Read both BOQ and T&C carefully.
 - Return ONLY JSON — no commentary, no markdown fences.`;
 
     const geminiRes = await axios.post(
@@ -351,6 +387,30 @@ Rules:
         insuranceInScope: typeof extracted.insurance_in_scope === 'boolean' ? extracted.insurance_in_scope : null,
         installCommissionInScope: typeof extracted.install_commission_in_scope === 'boolean' ? extracted.install_commission_in_scope : null,
         trainingDays: typeof extracted.training_days === 'number' ? extracted.training_days : null,
+        // Complex-quote structures
+        volumeOptions: Array.isArray(extracted.volume_options) && extracted.volume_options.length > 0
+          ? extracted.volume_options
+              .map((v: any) => ({
+                label: typeof v?.label === 'string' ? v.label : null,
+                totalAmount: typeof v?.totalAmount === 'number' ? v.totalAmount : Number(v?.totalAmount) || 0,
+                notes: typeof v?.notes === 'string' ? v.notes : null,
+              }))
+              .filter((v: any) => v.label && v.totalAmount > 0)
+          : Prisma.JsonNull,
+        exclusions: Array.isArray(extracted.exclusions) && extracted.exclusions.length > 0
+          ? extracted.exclusions.filter((x: unknown) => typeof x === 'string' && x.trim().length > 0)
+          : Prisma.JsonNull,
+        conditionalCommercials: Array.isArray(extracted.conditional_commercials) && extracted.conditional_commercials.length > 0
+          ? extracted.conditional_commercials
+              .map((c: any) => ({
+                kind: typeof c?.kind === 'string' ? c.kind : 'OTHER',
+                label: typeof c?.label === 'string' ? c.label : null,
+                formula: typeof c?.formula === 'string' ? c.formula : null,
+              }))
+              .filter((c: any) => c.label && c.formula)
+          : Prisma.JsonNull,
+        isIndicative: extracted.is_indicative === true,
+        boughtOutWarrantyClause: typeof extracted.bought_out_warranty_clause === 'string' ? extracted.bought_out_warranty_clause : null,
         extractedJson: extracted,
         parsedAt: new Date(),
         parseStatus: 'PARSED',
@@ -416,6 +476,18 @@ router.put('/quotations/:qid', validate(updateQuotationSchema), asyncHandler(asy
   if (b.insuranceInScope !== undefined) data.insuranceInScope = b.insuranceInScope;
   if (b.installCommissionInScope !== undefined) data.installCommissionInScope = b.installCommissionInScope;
   if (b.trainingDays !== undefined) data.trainingDays = b.trainingDays;
+  if (b.volumeOptions !== undefined) {
+    data.volumeOptions = Array.isArray(b.volumeOptions) && b.volumeOptions.length > 0 ? b.volumeOptions : Prisma.JsonNull;
+  }
+  if (b.selectedVolumeLabel !== undefined) data.selectedVolumeLabel = b.selectedVolumeLabel || null;
+  if (b.exclusions !== undefined) {
+    data.exclusions = Array.isArray(b.exclusions) && b.exclusions.length > 0 ? b.exclusions : Prisma.JsonNull;
+  }
+  if (b.conditionalCommercials !== undefined) {
+    data.conditionalCommercials = Array.isArray(b.conditionalCommercials) && b.conditionalCommercials.length > 0 ? b.conditionalCommercials : Prisma.JsonNull;
+  }
+  if (b.isIndicative !== undefined) data.isIndicative = !!b.isIndicative;
+  if (b.boughtOutWarrantyClause !== undefined) data.boughtOutWarrantyClause = b.boughtOutWarrantyClause || null;
   if (b.manualNotes !== undefined) data.manualNotes = b.manualNotes;
 
   const updated = await prisma.$transaction(async (tx) => {

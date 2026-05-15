@@ -115,6 +115,15 @@ const EXPECTED_COLUMNS: ColumnCheck[] = [
   { table: 'ProjectQuotation', column: 'trainingDays',             sql: `ALTER TABLE "ProjectQuotation" ADD COLUMN IF NOT EXISTS "trainingDays" INTEGER` },
   { table: 'ProjectPurchase',  column: 'prePOChecklist',           sql: `ALTER TABLE "ProjectPurchase" ADD COLUMN IF NOT EXISTS "prePOChecklist" JSONB` },
   { table: 'ProjectPurchase',  column: 'prePOWaiverReason',        sql: `ALTER TABLE "ProjectPurchase" ADD COLUMN IF NOT EXISTS "prePOWaiverReason" TEXT` },
+  // 2026-05-15 — Complex-quote structures (volume tiers, exclusions list, conditional
+  // commercials, turnkey disclaimer, OEM warranty pass-through). Generic shape so the
+  // extraction works for any vendor, not just the Rostfrei pattern that triggered it.
+  { table: 'ProjectQuotation', column: 'volumeOptions',           sql: `ALTER TABLE "ProjectQuotation" ADD COLUMN IF NOT EXISTS "volumeOptions" JSONB` },
+  { table: 'ProjectQuotation', column: 'selectedVolumeLabel',     sql: `ALTER TABLE "ProjectQuotation" ADD COLUMN IF NOT EXISTS "selectedVolumeLabel" TEXT` },
+  { table: 'ProjectQuotation', column: 'exclusions',              sql: `ALTER TABLE "ProjectQuotation" ADD COLUMN IF NOT EXISTS "exclusions" JSONB` },
+  { table: 'ProjectQuotation', column: 'conditionalCommercials',  sql: `ALTER TABLE "ProjectQuotation" ADD COLUMN IF NOT EXISTS "conditionalCommercials" JSONB` },
+  { table: 'ProjectQuotation', column: 'isIndicative',            sql: `ALTER TABLE "ProjectQuotation" ADD COLUMN IF NOT EXISTS "isIndicative" BOOLEAN NOT NULL DEFAULT false` },
+  { table: 'ProjectQuotation', column: 'boughtOutWarrantyClause', sql: `ALTER TABLE "ProjectQuotation" ADD COLUMN IF NOT EXISTS "boughtOutWarrantyClause" TEXT` },
 ];
 
 const EXPECTED_TABLES: TableCheck[] = [

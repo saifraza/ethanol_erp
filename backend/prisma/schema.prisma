@@ -5506,6 +5506,26 @@ model ProjectQuotation {
   insuranceInScope        Boolean? // transit + erection-all-risk on vendor
   installCommissionInScope Boolean? // I&C / erection at site on vendor
   trainingDays            Int? // operator training days at site (0 = none offered)
+  // Complex-quote structures — extracted from offers where individual rates are
+  // indicative only, the same package is priced for multiple volumes/locations,
+  // exclusions are extensive, or conditional charges (escalation/idle/late-pickup) apply.
+  // Shape: [{ label: string, totalAmount: number, multiplier?: number, notes?: string }]
+  // e.g. [{label:"1 location", totalAmount:30000000}, {label:"2 locations", totalAmount:60000000}]
+  volumeOptions           Json? // null or [] = single-volume quote
+  selectedVolumeLabel     String? // which volumeOption the buyer picked (drives PO scaling)
+  // Shape: string[] — each entry is one scope item the vendor explicitly excluded
+  // (civil works, transformer, statutory licenses, etc.). Surfaced in Pre-PO checklist
+  // so the buyer either has another vendor/PR for it or knowingly waives.
+  exclusions              Json?
+  // Shape: [{ kind: string, label: string, formula: string }]
+  // e.g. PACKING_FWD/STEEL_ESCALATION/LATE_PICKUP/SUPERVISOR_IDLE/CANCELLATION_FEE/OEM_WARRANTY
+  conditionalCommercials  Json?
+  // True for "turnkey" / "lumpsum" offers where line-item rates are indicative only —
+  // PO PDF must carry this disclaimer and per-line reconciliation is informational.
+  isIndicative            Boolean   @default(false)
+  // Text of bought-out item warranty clause (motors/gearboxes pass-through to OEM).
+  // Stored separately so the warranty input above stays a clean summary.
+  boughtOutWarrantyClause String?
   // File
   fileUrl        String // path to uploaded PDF/image
   fileName       String?
