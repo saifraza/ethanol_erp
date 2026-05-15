@@ -1,4 +1,5 @@
 import { Router, Response } from 'express';
+import { Prisma } from '@prisma/client';
 import prisma from '../config/prisma';
 import { authenticate, AuthRequest, getCompanyFilter, getActiveCompanyId } from '../middleware/auth';
 import { asyncHandler, validate } from '../shared/middleware';
@@ -54,6 +55,13 @@ const updateQuotationSchema = z.object({
   freight: z.coerce.number().optional(),
   otherCharges: z.coerce.number().optional(),
   totalAmount: z.coerce.number().optional(),
+  // Commercial flags — what the price actually covers
+  priceBasis: z.enum(['EXW', 'FOR_SITE', 'CIF', 'DDP', 'OTHER']).optional().nullable(),
+  gstInclusive: z.boolean().optional().nullable(),
+  freightInScope: z.boolean().optional().nullable(),
+  insuranceInScope: z.boolean().optional().nullable(),
+  installCommissionInScope: z.boolean().optional().nullable(),
+  trainingDays: z.coerce.number().int().optional().nullable(),
   manualNotes: z.string().optional().nullable(),
   lineItems: z.array(z.object({
     description: z.string(),
@@ -242,12 +250,12 @@ Return ONLY valid JSON (no markdown) with these keys:
   "payment_terms": "string - e.g. '50% advance, 50% on delivery'",
   "line_items": [
     {
-      "description": "string - item/service name",
+      "description": "string - item/service name (capture INSTALLATION, COMMISSIONING, ERECTION, SUPERVISION, TRAINING, TESTING, PAINTING, INSURANCE etc. as separate line items if priced separately in the document)",
       "specification": "string - specs, capacity, dimensions, standards",
       "make": "string - brand/make or null",
       "model": "string - model no or null",
       "quantity": number,
-      "unit": "string - NOS, SET, KG, MT, etc.",
+      "unit": "string - NOS, SET, KG, MT, LOT, JOB etc.",
       "rate": number,
       "amount": number,
       "hsn_sac": "string or null",
@@ -259,12 +267,21 @@ Return ONLY valid JSON (no markdown) with these keys:
   "freight": number,
   "other_charges": number,
   "total_amount": number,
-  "currency": "INR / USD / EUR"
+  "currency": "INR / USD / EUR",
+  "price_basis": "EXW | FOR_SITE | CIF | DDP | OTHER — read terms carefully; EXW = vendor factory, FOR_SITE = delivered to our site, CIF = port, DDP = duty-paid delivered. Use null if not stated.",
+  "gst_inclusive": "boolean — true if the quoted Total INCLUDES GST, false if GST is shown as extra/separate, null if unclear",
+  "freight_in_scope": "boolean — true if freight is on vendor's account, false if buyer pays separately, null if unclear",
+  "insurance_in_scope": "boolean — true if transit / erection insurance is in vendor scope, null if unclear",
+  "install_commission_in_scope": "boolean — true if installation & commissioning is in vendor scope (priced or free), false if explicitly excluded, null if unclear",
+  "training_days": "number or null — operator training days at site if mentioned"
 }
 Rules:
-- If a field is missing in the document, use null for strings/dates and 0 for numbers.
-- For line items, preserve vendor's wording in description.
+- If a field is missing in the document, use null for strings/dates/booleans and 0 for numbers.
+- CRITICAL: every priced line in the BOQ/price-list/commercial-summary MUST appear in line_items. Don't drop installation, commissioning, erection, supervision, training, packing, painting, insurance, testing, transportation, loading/unloading just because they're "services" — they're priced rows.
+- If the document shows a single grand total but no rows, still emit line_items=[] (don't fake rows). Set total_amount to the grand total so the user can split it.
+- For line items, preserve vendor's wording in description verbatim.
 - specification should include make/capacity/standards if present.
+- Commercial flags (price_basis etc.) come from terms-and-conditions section, not the BOQ — read both.
 - Return ONLY JSON — no commentary, no markdown fences.`;
 
     const geminiRes = await axios.post(
@@ -328,6 +345,12 @@ Rules:
         otherCharges: Number(extracted.other_charges) || 0,
         totalAmount: Number(extracted.total_amount) || 0,
         currency: extracted.currency || 'INR',
+        priceBasis: ['EXW', 'FOR_SITE', 'CIF', 'DDP', 'OTHER'].includes(extracted.price_basis) ? extracted.price_basis : null,
+        gstInclusive: typeof extracted.gst_inclusive === 'boolean' ? extracted.gst_inclusive : null,
+        freightInScope: typeof extracted.freight_in_scope === 'boolean' ? extracted.freight_in_scope : null,
+        insuranceInScope: typeof extracted.insurance_in_scope === 'boolean' ? extracted.insurance_in_scope : null,
+        installCommissionInScope: typeof extracted.install_commission_in_scope === 'boolean' ? extracted.install_commission_in_scope : null,
+        trainingDays: typeof extracted.training_days === 'number' ? extracted.training_days : null,
         extractedJson: extracted,
         parsedAt: new Date(),
         parseStatus: 'PARSED',
@@ -387,6 +410,12 @@ router.put('/quotations/:qid', validate(updateQuotationSchema), asyncHandler(asy
   if (b.freight !== undefined) data.freight = b.freight;
   if (b.otherCharges !== undefined) data.otherCharges = b.otherCharges;
   if (b.totalAmount !== undefined) data.totalAmount = b.totalAmount;
+  if (b.priceBasis !== undefined) data.priceBasis = b.priceBasis;
+  if (b.gstInclusive !== undefined) data.gstInclusive = b.gstInclusive;
+  if (b.freightInScope !== undefined) data.freightInScope = b.freightInScope;
+  if (b.insuranceInScope !== undefined) data.insuranceInScope = b.insuranceInScope;
+  if (b.installCommissionInScope !== undefined) data.installCommissionInScope = b.installCommissionInScope;
+  if (b.trainingDays !== undefined) data.trainingDays = b.trainingDays;
   if (b.manualNotes !== undefined) data.manualNotes = b.manualNotes;
 
   const updated = await prisma.$transaction(async (tx) => {
@@ -633,6 +662,52 @@ router.put('/:id/negotiate', asyncHandler(async (req: AuthRequest, res: Response
 }));
 
 // ═══════════════════════════════════════════════
+// PUT /:id/pre-po-checklist — save the contractual checklist (PBG/LD/etc.)
+// the operator confirms before PO generation. Either set `checklist` with the
+// terms map OR `waiverReason` to explicitly skip. Both are read by /generate-po.
+// ═══════════════════════════════════════════════
+const PRE_PO_CHECKLIST_FIELDS = [
+  'pbg', 'ld', 'inspection', 'drawingApproval', 'documentation',
+  'performanceGuarantee', 'statutoryClearances', 'spareParts',
+] as const;
+router.put('/:id/pre-po-checklist', asyncHandler(async (req: AuthRequest, res: Response) => {
+  const { checklist, waiverReason } = req.body as {
+    checklist?: Record<string, string | null>;
+    waiverReason?: string | null;
+  };
+  const project = await prisma.projectPurchase.findUnique({ where: { id: req.params.id } });
+  if (!project) { res.status(404).json({ error: 'Project not found' }); return; }
+
+  let storedChecklist: Record<string, unknown> | null = null;
+  if (checklist && typeof checklist === 'object') {
+    storedChecklist = {};
+    for (const f of PRE_PO_CHECKLIST_FIELDS) {
+      const v = checklist[f];
+      if (typeof v === 'string' && v.trim().length > 0) storedChecklist[f] = v.trim();
+    }
+    storedChecklist.completedAt = new Date().toISOString();
+    storedChecklist.completedBy = req.user!.id;
+  }
+
+  const dataPatch: Record<string, unknown> = {};
+  if (storedChecklist) {
+    dataPatch.prePOChecklist = storedChecklist;
+  } else if (typeof waiverReason === 'string') {
+    // Setting a waiver clears any stored checklist so the two paths don't conflict.
+    dataPatch.prePOChecklist = Prisma.JsonNull;
+  }
+  if (typeof waiverReason === 'string') {
+    dataPatch.prePOWaiverReason = waiverReason.trim() || null;
+  }
+
+  const updated = await prisma.projectPurchase.update({
+    where: { id: project.id },
+    data: dataPatch,
+  });
+  res.json(updated);
+}));
+
+// ═══════════════════════════════════════════════
 // POST /:id/generate-po — create a PurchaseOrder from the awarded quotation
 // ═══════════════════════════════════════════════
 router.post('/:id/generate-po', asyncHandler(async (req: AuthRequest, res: Response) => {
@@ -650,6 +725,22 @@ router.post('/:id/generate-po', asyncHandler(async (req: AuthRequest, res: Respo
   const existingPO = await prisma.purchaseOrder.findUnique({ where: { projectPurchaseId: project.id } });
   if (existingPO) {
     res.status(400).json({ error: `PO already generated: PO-${existingPO.poNo}` });
+    return;
+  }
+
+  // Pre-PO checklist gate — must have either a non-empty checklist with at least
+  // the four critical contractual terms (PBG, LD, Inspection, Performance Guarantee)
+  // filled, OR an explicit written waiver reason. Soft-gates that are easy to
+  // dismiss become wallpaper; this stops POs from going out without recourse terms.
+  const checklist = (project.prePOChecklist as Record<string, unknown> | null) || null;
+  const waiver = project.prePOWaiverReason && project.prePOWaiverReason.trim().length > 0;
+  const requiredKeys = ['pbg', 'ld', 'inspection', 'performanceGuarantee'] as const;
+  const missingKeys = requiredKeys.filter(k => !checklist || typeof checklist[k] !== 'string' || (checklist[k] as string).trim().length === 0);
+  if (!waiver && missingKeys.length > 0) {
+    res.status(400).json({
+      error: `Pre-PO checklist incomplete — fill ${missingKeys.join(', ')} (or record a waiver reason).`,
+      missingKeys,
+    });
     return;
   }
 
