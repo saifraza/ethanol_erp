@@ -533,10 +533,16 @@ router.post('/:id/quotations/upload', upload.single('file'), mirrorToS3('project
     },
   });
 
-  // Bump project to COLLECTING_QUOTES if still DRAFT
-  if (project.status === 'DRAFT') {
-    await prisma.projectPurchase.update({ where: { id: project.id }, data: { status: 'COLLECTING_QUOTES' } });
-  }
+  // Bump project to COLLECTING_QUOTES if still DRAFT, and invalidate any cached
+  // AI analysis — the prior ranking referenced a stale quotation set.
+  await prisma.projectPurchase.update({
+    where: { id: project.id },
+    data: {
+      ...(project.status === 'DRAFT' ? { status: 'COLLECTING_QUOTES' } : {}),
+      aiAnalysis: Prisma.JsonNull,
+      aiAnalysisAt: null,
+    },
+  });
 
   // Fire-and-forget — Gemini parse runs in background; client polls /:id to see
   // parseStatus flip from PARSING → PARSED (or FAILED with parseError). With the
@@ -553,12 +559,18 @@ router.post('/:id/quotations/upload', upload.single('file'), mirrorToS3('project
 // Useful after improving the prompt, after the previous run hit FAILED, or to
 // re-extract with the latest model when Google ships an upgrade.
 router.post('/quotations/:qid/reparse', asyncHandler(async (req: AuthRequest, res: Response) => {
-  const q = await prisma.projectQuotation.findUnique({ where: { id: req.params.qid } });
+  const q = await prisma.projectQuotation.findUnique({ where: { id: req.params.qid }, select: { id: true, projectId: true, parseStatus: true } });
   if (!q) { res.status(404).json({ error: 'Quotation not found' }); return; }
   if (q.parseStatus === 'PARSING') {
     res.status(409).json({ error: 'Already parsing — wait for it to finish or fail.' });
     return;
   }
+  // A reparse can change line items, totals, exclusions — the cached aiAnalysis
+  // ranking is no longer trustworthy. Clear it; user will re-trigger Analyze.
+  await prisma.projectPurchase.update({
+    where: { id: q.projectId },
+    data: { aiAnalysis: Prisma.JsonNull, aiAnalysisAt: null },
+  });
   void runQuotationParse(q.id).catch((err) => {
     console.error(`[reparse] background parse failed for ${q.id}:`, err);
   });
@@ -644,10 +656,18 @@ router.put('/quotations/:qid', validate(updateQuotationSchema), asyncHandler(asy
 // DELETE /quotations/:qid
 // ═══════════════════════════════════════════════
 router.delete('/quotations/:qid', asyncHandler(async (req: AuthRequest, res: Response) => {
-  const q = await prisma.projectQuotation.findUnique({ where: { id: req.params.qid }, select: { id: true, isAwarded: true } });
+  const q = await prisma.projectQuotation.findUnique({ where: { id: req.params.qid }, select: { id: true, isAwarded: true, projectId: true } });
   if (!q) { res.status(404).json({ error: 'Not found' }); return; }
   if (q.isAwarded) { res.status(400).json({ error: 'Cannot delete an awarded quotation' }); return; }
-  await prisma.projectQuotation.delete({ where: { id: req.params.qid } });
+  // Cached AI Analysis references quotationIds. Once a quote is gone, leaving the
+  // stale ranking around shows dead IDs in the comparison header — clear it.
+  await prisma.$transaction([
+    prisma.projectQuotation.delete({ where: { id: req.params.qid } }),
+    prisma.projectPurchase.update({
+      where: { id: q.projectId },
+      data: { aiAnalysis: Prisma.JsonNull, aiAnalysisAt: null },
+    }),
+  ]);
   res.json({ ok: true });
 }));
 

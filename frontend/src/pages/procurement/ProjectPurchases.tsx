@@ -205,8 +205,10 @@ const ProjectPurchases: React.FC = () => {
     setProjects(r.data.projects || []);
   }, []);
 
-  const loadProjectDetail = useCallback(async (id: string) => {
-    setDetailLoading(true);
+  // `silent` mode skips the loading spinner toggle — used by the background poller
+  // so the drawer doesn't visually flash every few seconds while waiting for AI.
+  const loadProjectDetail = useCallback(async (id: string, opts?: { silent?: boolean }) => {
+    if (!opts?.silent) setDetailLoading(true);
     try {
       const r = await api.get(`/project-purchases/${id}`);
       setProjectDetail(r.data);
@@ -214,7 +216,7 @@ const ProjectPurchases: React.FC = () => {
       const e = err as { response?: { data?: { error?: string } } };
       setError(e.response?.data?.error || 'Failed to load project');
     } finally {
-      setDetailLoading(false);
+      if (!opts?.silent) setDetailLoading(false);
     }
   }, []);
 
@@ -224,14 +226,20 @@ const ProjectPurchases: React.FC = () => {
   }, [selectedProjectId, loadProjectDetail]);
 
   // Auto-poll while any quotation is still being parsed in the background.
-  // Stops as soon as every quote is PARSED / FAILED / MANUAL.
+  // - Reads parse status from a ref so the effect doesn't re-run on every refetch
+  //   (previously each fetch updated projectDetail → effect re-ran → new interval
+  //   started → visual flicker every tick because detailLoading toggled).
+  // - Silent fetches (no spinner) on each tick.
+  // - Stops as soon as no quote is PARSING any more.
+  const inflightRef = useRef(false);
+  inflightRef.current = (projectDetail?.quotations || []).some(q => q.parseStatus === 'PARSING');
   useEffect(() => {
-    if (!selectedProjectId || !projectDetail) return;
-    const hasInflight = (projectDetail.quotations || []).some(q => q.parseStatus === 'PARSING');
-    if (!hasInflight) return;
-    const interval = setInterval(() => { loadProjectDetail(selectedProjectId); }, 4000);
+    if (!selectedProjectId) return;
+    const interval = setInterval(() => {
+      if (inflightRef.current) loadProjectDetail(selectedProjectId, { silent: true });
+    }, 6000);
     return () => clearInterval(interval);
-  }, [selectedProjectId, projectDetail, loadProjectDetail]);
+  }, [selectedProjectId, loadProjectDetail]);
 
   useEffect(() => {
     if (success) {
