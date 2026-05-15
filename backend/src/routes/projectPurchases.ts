@@ -27,9 +27,13 @@ const upload = multer({ storage, limits: { fileSize: 20 * 1024 * 1024 } });
 // ── AI model config ──
 // Project quotation parsing is occasional + high-stakes (capital purchase decisions
 // rely on it). Per CLAUDE.md feedback_accuracy_over_cost, default to the top-tier
-// Gemini model. Env var GEMINI_PROJECT_QUOTE_MODEL overrides (e.g. to chase a newer
-// model when Google ships one, or to fall back if 3-pro is rate-limited).
-const PROJECT_QUOTE_MODEL = process.env.GEMINI_PROJECT_QUOTE_MODEL || 'gemini-3-pro';
+// Gemini model available on the workspace's AI Studio plan.
+//
+// 2026-05-15: Default = gemini-3.1-pro (confirmed in the workspace quota dashboard).
+// Earlier try at `gemini-3-pro` came back 404 from v1beta — the GA model id has the
+// .1 in it. If 3.1-pro ever starts rejecting requests, set the env var to
+// `gemini-2.5-pro` (also GA in v1beta and what rfqQuoteExtractor.ts uses).
+const PROJECT_QUOTE_MODEL = process.env.GEMINI_PROJECT_QUOTE_MODEL || 'gemini-3.1-pro';
 const PROJECT_QUOTE_TIMEOUT_MS = 180_000; // 3 min — pro model on a dense 5-page PDF can take >60s
 
 const QUOTATION_PROMPT = `You are reading a vendor quotation / proforma invoice for a capital project purchase (mechanical, civil, electrical, instrumentation, IT, etc.).
