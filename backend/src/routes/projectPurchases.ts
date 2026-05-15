@@ -24,6 +24,255 @@ const storage = multer.diskStorage({
 });
 const upload = multer({ storage, limits: { fileSize: 20 * 1024 * 1024 } });
 
+// ── AI model config ──
+// Project quotation parsing is occasional + high-stakes (capital purchase decisions
+// rely on it). Per CLAUDE.md feedback_accuracy_over_cost, default to the top-tier
+// Gemini model. Env var GEMINI_PROJECT_QUOTE_MODEL overrides (e.g. to chase a newer
+// model when Google ships one, or to fall back if 3-pro is rate-limited).
+const PROJECT_QUOTE_MODEL = process.env.GEMINI_PROJECT_QUOTE_MODEL || 'gemini-3-pro';
+const PROJECT_QUOTE_TIMEOUT_MS = 180_000; // 3 min — pro model on a dense 5-page PDF can take >60s
+
+const QUOTATION_PROMPT = `You are reading a vendor quotation / proforma invoice for a capital project purchase (mechanical, civil, electrical, instrumentation, IT, etc.).
+Real-world quotes from different vendors vary wildly in structure: some are a flat BOQ; some have a BOQ AND a separate "cost summary" table with extra rows for I&C / packing / freight; some price the same package at multiple volumes ("1 location ₹X / 2 locations ₹2X"); some are "turnkey lumpsum, individual rates indicative"; some bury 20 exclusions in a T&C section; some attach OEM-warranty-passthrough clauses. Your job is to extract ALL of this into a generic shape so any future vendor's PDF can be processed the same way — don't assume any particular vendor's layout.
+
+Return ONLY valid JSON (no markdown) with these keys:
+{
+  "vendor_name": "string - supplier/vendor name",
+  "vendor_contact": "string - email or phone if visible",
+  "gstin": "string or null",
+  "quotation_number": "string or null",
+  "quotation_date": "YYYY-MM-DD or null",
+  "validity_days": number or null,
+  "delivery_period": "string - e.g. '15 days', '4 weeks', 'ex-stock'",
+  "warranty": "string - core warranty (months/years from commissioning or dispatch). Do not paste the full T&C paragraph here; summarize.",
+  "payment_terms": "string - e.g. '40% advance, 60% against PI before dispatch'",
+  "line_items": [
+    {
+      "description": "string - item/service name. INCLUDE every priced row from the BOQ AND from any 'Cost Summary' / 'Commercial Summary' table — Installation, Commissioning, Erection, Supervision, Training, Testing, Painting, Insurance, Packing, Forwarding, Loading, Unloading etc. are line items when they have a price next to them, NOT 'other_charges'.",
+      "specification": "string - specs, capacity, dimensions, standards",
+      "make": "string - brand/make or null",
+      "model": "string - model no or null",
+      "quantity": number,
+      "unit": "string - NOS, SET, KG, MT, LOT, JOB etc.",
+      "rate": number,
+      "amount": number,
+      "hsn_sac": "string or null",
+      "gst_percent": number
+    }
+  ],
+  "subtotal": number,
+  "gst_amount": number,
+  "freight": number,
+  "other_charges": number,
+  "total_amount": number,
+  "currency": "INR / USD / EUR",
+  "price_basis": "EXW | FOR_SITE | CIF | DDP | OTHER — read terms carefully; EXW = vendor factory, FOR_SITE = delivered to our site, CIF = port, DDP = duty-paid delivered. Use null if not stated.",
+  "gst_inclusive": "boolean — true if the quoted Total INCLUDES GST, false if GST is shown as extra/separate, null if unclear",
+  "freight_in_scope": "boolean — true if freight is on vendor's account, false if buyer pays separately, null if unclear",
+  "insurance_in_scope": "boolean — true if transit / erection insurance is in vendor scope, null if unclear",
+  "install_commission_in_scope": "boolean — true if installation & commissioning is in vendor scope (priced or free), false if explicitly excluded, null if unclear",
+  "training_days": "number or null — operator training days at site if mentioned",
+  "volume_options": [
+    { "label": "string - e.g. '1 location', '2 locations', '500 TPD', '1000 TPD'", "totalAmount": number, "notes": "string or null" }
+  ],
+  "exclusions": [
+    "string - one entry per scope item the vendor explicitly excluded (civil works, transformer, statutory licenses, lightning protection, compressed air plant, water supply, electrical panels, cable trays, storage space for vendor tools, accommodation for workers, etc.). Copy each bullet verbatim. Look at 'Exclusions' / 'Scope of Buyer' / 'Not in our scope' / 'In Client's Scope' sections."
+  ],
+  "conditional_commercials": [
+    {
+      "kind": "PACKING_FWD | FREIGHT_INSURANCE | STEEL_ESCALATION | RAW_MATERIAL_ESCALATION | LATE_PICKUP | SUPERVISOR_IDLE | SITE_ENGINEER_IDLE | CANCELLATION_FEE | OEM_WARRANTY | PRICE_VARIATION | LIQUIDATED_DAMAGES | OTHER",
+      "label": "string - short human label",
+      "formula": "string - exact wording from PDF including %, ₹/day, ₹/sqm/month etc."
+    }
+  ],
+  "is_indicative": "boolean — true if the offer is described as 'turnkey / lumpsum / package basis' AND says individual line-item prices are 'indicative only' / 'not binding individually'. Otherwise false.",
+  "bought_out_warranty_clause": "string or null — the clause that passes through OEM warranty (motors / gearboxes / electric items / instruments) to the OEM instead of the prime vendor"
+}
+
+Rules:
+- If a field is missing in the document, use null for strings/dates/booleans, 0 for numbers, [] for arrays.
+- CRITICAL: every priced line in the BOQ AND every priced row in any 'Cost Summary' / 'Commercial Summary' table MUST appear in line_items. Don't drop them just because they're "services". Don't pile them into other_charges. A row reading "Installation & Commissioning ₹32,09,500" is a line_item, not other_charges.
+- If a row in the cost summary says 'Included' or 'Client Scope' or 'N/A' (no rupee value), do NOT put it in line_items — instead reflect it in the boolean flags (gst_inclusive, freight_in_scope, etc.).
+- volume_options: empty array if the quote prices a single volume only. Populate when you see "for X locations ₹Y" / "for X TPD ₹Y" patterns OR multiple totals shown. The single 'total_amount' field should match the FIRST option (the base case).
+- exclusions: take from the T&C section. One string per bullet, verbatim. Empty array if none stated.
+- conditional_commercials: capture ALL escalation, idle-charge, late-pickup, packing-percent, freight-actuals, cancellation-fee, OEM-warranty-passthrough clauses you find. Use exact ₹ and % from the document so the buyer can model worst-case cost.
+- is_indicative: only set true if the PDF explicitly says individual prices are indicative / for turnkey / lumpsum basis. Don't guess.
+- For line items, preserve vendor's wording in description verbatim. Specification should include make/capacity/standards if present.
+- Commercial flags (price_basis etc.) come from T&C section. Read both BOQ and T&C carefully.
+- Return ONLY JSON — no commentary, no markdown fences.`;
+
+// runQuotationParse — Gemini extraction for one ProjectQuotation row.
+// Fire-and-forget from /quotations/upload AND callable from /quotations/:qid/reparse.
+// All updates land on the same row; success → parseStatus=PARSED, fail → FAILED.
+// Errors are swallowed (logged only) since there's no HTTP request to return them to.
+async function runQuotationParse(quotationId: string): Promise<void> {
+  const GEMINI_KEY = process.env.GEMINI_API_KEY;
+  if (!GEMINI_KEY) {
+    await prisma.projectQuotation.update({
+      where: { id: quotationId },
+      data: { parseStatus: 'MANUAL', parseError: 'GEMINI_API_KEY not configured — fill manually' },
+    });
+    return;
+  }
+
+  const quotation = await prisma.projectQuotation.findUnique({ where: { id: quotationId } });
+  if (!quotation) {
+    console.error(`[runQuotationParse] quotation ${quotationId} not found`);
+    return;
+  }
+
+  // Locate file on disk. `fileUrl` is stored as "project-quotations/<filename>".
+  const filePath = path.join(__dirname, '../../uploads', quotation.fileUrl);
+  if (!fs.existsSync(filePath)) {
+    await prisma.projectQuotation.update({
+      where: { id: quotationId },
+      data: { parseStatus: 'FAILED', parseError: `Source file not on disk: ${quotation.fileUrl}` },
+    });
+    return;
+  }
+
+  await prisma.projectQuotation.update({
+    where: { id: quotationId },
+    data: { parseStatus: 'PARSING', parseError: null },
+  });
+
+  try {
+    const fileBuffer = fs.readFileSync(filePath);
+    const base64 = fileBuffer.toString('base64');
+    const mimeType = quotation.mimeType || 'application/pdf';
+
+    const geminiRes = await axios.post(
+      `https://generativelanguage.googleapis.com/v1beta/models/${PROJECT_QUOTE_MODEL}:generateContent?key=${GEMINI_KEY}`,
+      {
+        contents: [{
+          parts: [
+            { text: QUOTATION_PROMPT },
+            { inline_data: { mime_type: mimeType.startsWith('image/') ? mimeType : 'application/pdf', data: base64 } },
+          ],
+        }],
+        // Long exclusion lists + 20+ line items can easily exceed 8K tokens.
+        // Bump generously — capital-equipment quotes warrant the headroom.
+        generationConfig: {
+          maxOutputTokens: 32_768,
+          temperature: 0.1,
+          responseMimeType: 'application/json',
+        },
+      },
+      { timeout: PROJECT_QUOTE_TIMEOUT_MS },
+    );
+
+    const rawText = geminiRes.data?.candidates?.[0]?.content?.parts?.[0]?.text || '';
+    const jsonStr = rawText.replace(/```json\n?/g, '').replace(/```\n?/g, '').trim();
+    let extracted: any = null;
+    try { extracted = JSON.parse(jsonStr); } catch { extracted = null; }
+
+    if (!extracted) {
+      await prisma.projectQuotation.update({
+        where: { id: quotationId },
+        data: { parseStatus: 'FAILED', parseError: 'Could not parse JSON from AI response', extractedJson: { raw: rawText } },
+      });
+      return;
+    }
+
+    // Vendor match by GSTIN or name
+    let matchedVendorId: string | null = null;
+    if (extracted.gstin) {
+      const v = await prisma.vendor.findFirst({ where: { gstin: extracted.gstin }, select: { id: true } });
+      if (v) matchedVendorId = v.id;
+    }
+    if (!matchedVendorId && extracted.vendor_name) {
+      const v = await prisma.vendor.findFirst({
+        where: { name: { contains: extracted.vendor_name, mode: 'insensitive' } },
+        select: { id: true },
+      });
+      if (v) matchedVendorId = v.id;
+    }
+
+    const lineItems = Array.isArray(extracted.line_items) ? extracted.line_items : [];
+
+    // Clear old line items before re-creating — re-parse should not duplicate rows.
+    await prisma.projectQuotationLine.deleteMany({ where: { quotationId } });
+
+    await prisma.projectQuotation.update({
+      where: { id: quotationId },
+      data: {
+        vendorId: matchedVendorId,
+        vendorNameRaw: extracted.vendor_name || null,
+        vendorContact: extracted.vendor_contact || null,
+        quotationNo: extracted.quotation_number || null,
+        quotationDate: extracted.quotation_date ? new Date(extracted.quotation_date) : null,
+        validityDays: extracted.validity_days ?? null,
+        deliveryPeriod: extracted.delivery_period || null,
+        warranty: extracted.warranty || null,
+        paymentTerms: extracted.payment_terms || null,
+        subtotal: Number(extracted.subtotal) || 0,
+        gstAmount: Number(extracted.gst_amount) || 0,
+        freight: Number(extracted.freight) || 0,
+        otherCharges: Number(extracted.other_charges) || 0,
+        totalAmount: Number(extracted.total_amount) || 0,
+        currency: extracted.currency || 'INR',
+        priceBasis: ['EXW', 'FOR_SITE', 'CIF', 'DDP', 'OTHER'].includes(extracted.price_basis) ? extracted.price_basis : null,
+        gstInclusive: typeof extracted.gst_inclusive === 'boolean' ? extracted.gst_inclusive : null,
+        freightInScope: typeof extracted.freight_in_scope === 'boolean' ? extracted.freight_in_scope : null,
+        insuranceInScope: typeof extracted.insurance_in_scope === 'boolean' ? extracted.insurance_in_scope : null,
+        installCommissionInScope: typeof extracted.install_commission_in_scope === 'boolean' ? extracted.install_commission_in_scope : null,
+        trainingDays: typeof extracted.training_days === 'number' ? extracted.training_days : null,
+        volumeOptions: Array.isArray(extracted.volume_options) && extracted.volume_options.length > 0
+          ? extracted.volume_options
+              .map((v: any) => ({
+                label: typeof v?.label === 'string' ? v.label : null,
+                totalAmount: typeof v?.totalAmount === 'number' ? v.totalAmount : Number(v?.totalAmount) || 0,
+                notes: typeof v?.notes === 'string' ? v.notes : null,
+              }))
+              .filter((v: any) => v.label && v.totalAmount > 0)
+          : Prisma.JsonNull,
+        exclusions: Array.isArray(extracted.exclusions) && extracted.exclusions.length > 0
+          ? extracted.exclusions.filter((x: unknown) => typeof x === 'string' && x.trim().length > 0)
+          : Prisma.JsonNull,
+        conditionalCommercials: Array.isArray(extracted.conditional_commercials) && extracted.conditional_commercials.length > 0
+          ? extracted.conditional_commercials
+              .map((c: any) => ({
+                kind: typeof c?.kind === 'string' ? c.kind : 'OTHER',
+                label: typeof c?.label === 'string' ? c.label : null,
+                formula: typeof c?.formula === 'string' ? c.formula : null,
+              }))
+              .filter((c: any) => c.label && c.formula)
+          : Prisma.JsonNull,
+        isIndicative: extracted.is_indicative === true,
+        boughtOutWarrantyClause: typeof extracted.bought_out_warranty_clause === 'string' ? extracted.bought_out_warranty_clause : null,
+        extractedJson: extracted,
+        parsedAt: new Date(),
+        parseStatus: 'PARSED',
+        parseError: null,
+        lineItems: {
+          create: lineItems.map((li: any, idx: number) => ({
+            lineNo: idx + 1,
+            description: String(li.description || ''),
+            specification: li.specification || null,
+            make: li.make || null,
+            model: li.model || null,
+            quantity: Number(li.quantity) || 1,
+            unit: li.unit || 'NOS',
+            rate: Number(li.rate) || 0,
+            amount: Number(li.amount) || 0,
+            hsnSac: li.hsn_sac || null,
+            gstPercent: Number(li.gst_percent) || 0,
+          })),
+        },
+      },
+    });
+  } catch (err: unknown) {
+    const msg = (err as { response?: { data?: { error?: { message?: string } } }; message?: string })?.response?.data?.error?.message
+      || (err as Error)?.message
+      || 'AI extraction failed';
+    console.error(`[runQuotationParse] ${quotationId}: ${msg}`);
+    await prisma.projectQuotation.update({
+      where: { id: quotationId },
+      data: { parseStatus: 'FAILED', parseError: msg },
+    });
+  }
+}
+
 // ── Zod ──
 const createProjectSchema = z.object({
   name: z.string().min(1, 'Project name required'),
@@ -219,10 +468,9 @@ router.post('/:id/quotations/upload', upload.single('file'), mirrorToS3('project
   if (!project) { res.status(404).json({ error: 'Project not found' }); return; }
 
   const fileUrl = `project-quotations/${req.file.filename}`;
-  const fileBuffer = fs.readFileSync(req.file.path);
   const mimeType = req.file.mimetype;
 
-  // Create quotation stub immediately so client has an ID
+  // Create quotation stub immediately so client has an ID + visible row.
   const quotation = await prisma.projectQuotation.create({
     data: {
       projectId: project.id,
@@ -239,213 +487,33 @@ router.post('/:id/quotations/upload', upload.single('file'), mirrorToS3('project
     await prisma.projectPurchase.update({ where: { id: project.id }, data: { status: 'COLLECTING_QUOTES' } });
   }
 
-  const GEMINI_KEY = process.env.GEMINI_API_KEY;
-  if (!GEMINI_KEY) {
-    await prisma.projectQuotation.update({
-      where: { id: quotation.id },
-      data: { parseStatus: 'MANUAL', parseError: 'GEMINI_API_KEY not configured — fill manually' },
-    });
-    res.json({ quotation, extracted: null, warning: 'AI parsing unavailable — fill fields manually' });
+  // Fire-and-forget — Gemini parse runs in background; client polls /:id to see
+  // parseStatus flip from PARSING → PARSED (or FAILED with parseError). With the
+  // pro model + a 5-page PDF this can take 30-120s; we don't want to hold the
+  // browser request open that long.
+  void runQuotationParse(quotation.id).catch((err) => {
+    console.error(`[upload] background parse failed for ${quotation.id}:`, err);
+  });
+
+  res.status(202).json({ quotation, status: 'PARSING', message: 'Upload received — AI extraction running in background' });
+}));
+
+// POST /quotations/:qid/reparse — re-run Gemini extraction on an existing upload.
+// Useful after improving the prompt, after the previous run hit FAILED, or to
+// re-extract with the latest model when Google ships an upgrade.
+router.post('/quotations/:qid/reparse', asyncHandler(async (req: AuthRequest, res: Response) => {
+  const q = await prisma.projectQuotation.findUnique({ where: { id: req.params.qid } });
+  if (!q) { res.status(404).json({ error: 'Quotation not found' }); return; }
+  if (q.parseStatus === 'PARSING') {
+    res.status(409).json({ error: 'Already parsing — wait for it to finish or fail.' });
     return;
   }
-
-  try {
-    const base64 = fileBuffer.toString('base64');
-    const prompt = `You are reading a vendor quotation / proforma invoice for a capital project purchase (mechanical, civil, electrical, instrumentation, IT, etc.).
-Real-world quotes from different vendors vary wildly in structure: some are a flat BOQ; some have a BOQ AND a separate "cost summary" table with extra rows for I&C / packing / freight; some price the same package at multiple volumes ("1 location ₹X / 2 locations ₹2X"); some are "turnkey lumpsum, individual rates indicative"; some bury 20 exclusions in a T&C section; some attach OEM-warranty-passthrough clauses. Your job is to extract ALL of this into a generic shape so any future vendor's PDF can be processed the same way — don't assume any particular vendor's layout.
-
-Return ONLY valid JSON (no markdown) with these keys:
-{
-  "vendor_name": "string - supplier/vendor name",
-  "vendor_contact": "string - email or phone if visible",
-  "gstin": "string or null",
-  "quotation_number": "string or null",
-  "quotation_date": "YYYY-MM-DD or null",
-  "validity_days": number or null,
-  "delivery_period": "string - e.g. '15 days', '4 weeks', 'ex-stock'",
-  "warranty": "string - core warranty (months/years from commissioning or dispatch). Do not paste the full T&C paragraph here; summarize.",
-  "payment_terms": "string - e.g. '40% advance, 60% against PI before dispatch'",
-  "line_items": [
-    {
-      "description": "string - item/service name. INCLUDE every priced row from the BOQ AND from any 'Cost Summary' / 'Commercial Summary' table — Installation, Commissioning, Erection, Supervision, Training, Testing, Painting, Insurance, Packing, Forwarding, Loading, Unloading etc. are line items when they have a price next to them, NOT 'other_charges'.",
-      "specification": "string - specs, capacity, dimensions, standards",
-      "make": "string - brand/make or null",
-      "model": "string - model no or null",
-      "quantity": number,
-      "unit": "string - NOS, SET, KG, MT, LOT, JOB etc.",
-      "rate": number,
-      "amount": number,
-      "hsn_sac": "string or null",
-      "gst_percent": number
-    }
-  ],
-  "subtotal": number,
-  "gst_amount": number,
-  "freight": number,
-  "other_charges": number,
-  "total_amount": number,
-  "currency": "INR / USD / EUR",
-  "price_basis": "EXW | FOR_SITE | CIF | DDP | OTHER — read terms carefully; EXW = vendor factory, FOR_SITE = delivered to our site, CIF = port, DDP = duty-paid delivered. Use null if not stated.",
-  "gst_inclusive": "boolean — true if the quoted Total INCLUDES GST, false if GST is shown as extra/separate, null if unclear",
-  "freight_in_scope": "boolean — true if freight is on vendor's account, false if buyer pays separately, null if unclear",
-  "insurance_in_scope": "boolean — true if transit / erection insurance is in vendor scope, null if unclear",
-  "install_commission_in_scope": "boolean — true if installation & commissioning is in vendor scope (priced or free), false if explicitly excluded, null if unclear",
-  "training_days": "number or null — operator training days at site if mentioned",
-  "volume_options": [
-    { "label": "string - e.g. '1 location', '2 locations', '500 TPD', '1000 TPD'", "totalAmount": number, "notes": "string or null" }
-  ],
-  "exclusions": [
-    "string - one entry per scope item the vendor explicitly excluded (civil works, transformer, statutory licenses, lightning protection, compressed air plant, water supply, electrical panels, cable trays, storage space for vendor tools, accommodation for workers, etc.). Copy each bullet verbatim. Look at 'Exclusions' / 'Scope of Buyer' / 'Not in our scope' / 'In Client's Scope' sections."
-  ],
-  "conditional_commercials": [
-    {
-      "kind": "PACKING_FWD | FREIGHT_INSURANCE | STEEL_ESCALATION | RAW_MATERIAL_ESCALATION | LATE_PICKUP | SUPERVISOR_IDLE | SITE_ENGINEER_IDLE | CANCELLATION_FEE | OEM_WARRANTY | PRICE_VARIATION | LIQUIDATED_DAMAGES | OTHER",
-      "label": "string - short human label",
-      "formula": "string - exact wording from PDF including %, ₹/day, ₹/sqm/month etc."
-    }
-  ],
-  "is_indicative": "boolean — true if the offer is described as 'turnkey / lumpsum / package basis' AND says individual line-item prices are 'indicative only' / 'not binding individually'. Otherwise false.",
-  "bought_out_warranty_clause": "string or null — the clause that passes through OEM warranty (motors / gearboxes / electric items / instruments) to the OEM instead of the prime vendor"
-}
-
-Rules:
-- If a field is missing in the document, use null for strings/dates/booleans, 0 for numbers, [] for arrays.
-- CRITICAL: every priced line in the BOQ AND every priced row in any 'Cost Summary' / 'Commercial Summary' table MUST appear in line_items. Don't drop them just because they're "services". Don't pile them into other_charges. A row reading "Installation & Commissioning ₹32,09,500" is a line_item, not other_charges.
-- If a row in the cost summary says 'Included' or 'Client Scope' or 'N/A' (no rupee value), do NOT put it in line_items — instead reflect it in the boolean flags (gst_inclusive, freight_in_scope, etc.).
-- volume_options: empty array if the quote prices a single volume only. Populate when you see "for X locations ₹Y" / "for X TPD ₹Y" patterns OR multiple totals shown. The single 'total_amount' field should match the FIRST option (the base case).
-- exclusions: take from the T&C section. One string per bullet, verbatim. Empty array if none stated.
-- conditional_commercials: capture ALL escalation, idle-charge, late-pickup, packing-percent, freight-actuals, cancellation-fee, OEM-warranty-passthrough clauses you find. Use exact ₹ and % from the document so the buyer can model worst-case cost.
-- is_indicative: only set true if the PDF explicitly says individual prices are indicative / for turnkey / lumpsum basis. Don't guess.
-- For line items, preserve vendor's wording in description verbatim. Specification should include make/capacity/standards if present.
-- Commercial flags (price_basis etc.) come from T&C section. Read both BOQ and T&C carefully.
-- Return ONLY JSON — no commentary, no markdown fences.`;
-
-    const geminiRes = await axios.post(
-      `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${GEMINI_KEY}`,
-      {
-        contents: [{
-          parts: [
-            { text: prompt },
-            { inline_data: { mime_type: mimeType.startsWith('image/') ? mimeType : 'application/pdf', data: base64 } },
-          ],
-        }],
-      },
-      { timeout: 60000 },
-    );
-
-    const rawText = geminiRes.data?.candidates?.[0]?.content?.parts?.[0]?.text || '';
-    const jsonStr = rawText.replace(/```json\n?/g, '').replace(/```\n?/g, '').trim();
-    let extracted: any = null;
-    try { extracted = JSON.parse(jsonStr); } catch { extracted = null; }
-
-    if (!extracted) {
-      await prisma.projectQuotation.update({
-        where: { id: quotation.id },
-        data: { parseStatus: 'FAILED', parseError: 'Could not parse JSON from AI response', extractedJson: { raw: rawText } },
-      });
-      res.json({ quotation, extracted: null, warning: 'AI parse failed — fill manually' });
-      return;
-    }
-
-    // Vendor match by GSTIN or name
-    let matchedVendorId: string | null = null;
-    if (extracted.gstin) {
-      const v = await prisma.vendor.findFirst({ where: { gstin: extracted.gstin }, select: { id: true } });
-      if (v) matchedVendorId = v.id;
-    }
-    if (!matchedVendorId && extracted.vendor_name) {
-      const v = await prisma.vendor.findFirst({
-        where: { name: { contains: extracted.vendor_name, mode: 'insensitive' } },
-        select: { id: true },
-      });
-      if (v) matchedVendorId = v.id;
-    }
-
-    const lineItems = Array.isArray(extracted.line_items) ? extracted.line_items : [];
-
-    const updated = await prisma.projectQuotation.update({
-      where: { id: quotation.id },
-      data: {
-        vendorId: matchedVendorId,
-        vendorNameRaw: extracted.vendor_name || null,
-        vendorContact: extracted.vendor_contact || null,
-        quotationNo: extracted.quotation_number || null,
-        quotationDate: extracted.quotation_date ? new Date(extracted.quotation_date) : null,
-        validityDays: extracted.validity_days ?? null,
-        deliveryPeriod: extracted.delivery_period || null,
-        warranty: extracted.warranty || null,
-        paymentTerms: extracted.payment_terms || null,
-        subtotal: Number(extracted.subtotal) || 0,
-        gstAmount: Number(extracted.gst_amount) || 0,
-        freight: Number(extracted.freight) || 0,
-        otherCharges: Number(extracted.other_charges) || 0,
-        totalAmount: Number(extracted.total_amount) || 0,
-        currency: extracted.currency || 'INR',
-        priceBasis: ['EXW', 'FOR_SITE', 'CIF', 'DDP', 'OTHER'].includes(extracted.price_basis) ? extracted.price_basis : null,
-        gstInclusive: typeof extracted.gst_inclusive === 'boolean' ? extracted.gst_inclusive : null,
-        freightInScope: typeof extracted.freight_in_scope === 'boolean' ? extracted.freight_in_scope : null,
-        insuranceInScope: typeof extracted.insurance_in_scope === 'boolean' ? extracted.insurance_in_scope : null,
-        installCommissionInScope: typeof extracted.install_commission_in_scope === 'boolean' ? extracted.install_commission_in_scope : null,
-        trainingDays: typeof extracted.training_days === 'number' ? extracted.training_days : null,
-        // Complex-quote structures
-        volumeOptions: Array.isArray(extracted.volume_options) && extracted.volume_options.length > 0
-          ? extracted.volume_options
-              .map((v: any) => ({
-                label: typeof v?.label === 'string' ? v.label : null,
-                totalAmount: typeof v?.totalAmount === 'number' ? v.totalAmount : Number(v?.totalAmount) || 0,
-                notes: typeof v?.notes === 'string' ? v.notes : null,
-              }))
-              .filter((v: any) => v.label && v.totalAmount > 0)
-          : Prisma.JsonNull,
-        exclusions: Array.isArray(extracted.exclusions) && extracted.exclusions.length > 0
-          ? extracted.exclusions.filter((x: unknown) => typeof x === 'string' && x.trim().length > 0)
-          : Prisma.JsonNull,
-        conditionalCommercials: Array.isArray(extracted.conditional_commercials) && extracted.conditional_commercials.length > 0
-          ? extracted.conditional_commercials
-              .map((c: any) => ({
-                kind: typeof c?.kind === 'string' ? c.kind : 'OTHER',
-                label: typeof c?.label === 'string' ? c.label : null,
-                formula: typeof c?.formula === 'string' ? c.formula : null,
-              }))
-              .filter((c: any) => c.label && c.formula)
-          : Prisma.JsonNull,
-        isIndicative: extracted.is_indicative === true,
-        boughtOutWarrantyClause: typeof extracted.bought_out_warranty_clause === 'string' ? extracted.bought_out_warranty_clause : null,
-        extractedJson: extracted,
-        parsedAt: new Date(),
-        parseStatus: 'PARSED',
-        parseError: null,
-        lineItems: {
-          create: lineItems.map((li: any, idx: number) => ({
-            lineNo: idx + 1,
-            description: String(li.description || ''),
-            specification: li.specification || null,
-            make: li.make || null,
-            model: li.model || null,
-            quantity: Number(li.quantity) || 1,
-            unit: li.unit || 'NOS',
-            rate: Number(li.rate) || 0,
-            amount: Number(li.amount) || 0,
-            hsnSac: li.hsn_sac || null,
-            gstPercent: Number(li.gst_percent) || 0,
-          })),
-        },
-      },
-      include: { lineItems: { orderBy: { lineNo: 'asc' } }, vendor: { select: { id: true, name: true, gstin: true } } },
-    });
-
-    res.json({ quotation: updated, extracted, matchedVendorId });
-  } catch (err: unknown) {
-    const msg = (err as { response?: { data?: { error?: { message?: string } } }; message?: string })?.response?.data?.error?.message
-      || (err as Error)?.message
-      || 'AI extraction failed';
-    await prisma.projectQuotation.update({
-      where: { id: quotation.id },
-      data: { parseStatus: 'FAILED', parseError: msg },
-    });
-    res.json({ quotation, extracted: null, error: msg });
-  }
+  void runQuotationParse(q.id).catch((err) => {
+    console.error(`[reparse] background parse failed for ${q.id}:`, err);
+  });
+  res.status(202).json({ status: 'PARSING', message: 'Re-parse running in background' });
 }));
+
 
 // ═══════════════════════════════════════════════
 // PUT /quotations/:qid — edit quotation (vendor link, manual overrides, line items)
