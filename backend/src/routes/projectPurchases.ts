@@ -26,14 +26,19 @@ const upload = multer({ storage, limits: { fileSize: 20 * 1024 * 1024 } });
 
 // ── AI model config ──
 // Project quotation parsing is occasional + high-stakes (capital purchase decisions
-// rely on it). Per CLAUDE.md feedback_accuracy_over_cost, default to the top-tier
-// Gemini model available on the workspace's AI Studio plan.
+// rely on it). Per CLAUDE.md feedback_accuracy_over_cost, want the top-tier model.
 //
-// 2026-05-15: Default = gemini-3.1-pro (confirmed in the workspace quota dashboard).
-// Earlier try at `gemini-3-pro` came back 404 from v1beta — the GA model id has the
-// .1 in it. If 3.1-pro ever starts rejecting requests, set the env var to
-// `gemini-2.5-pro` (also GA in v1beta and what rfqQuoteExtractor.ts uses).
-const PROJECT_QUOTE_MODEL = process.env.GEMINI_PROJECT_QUOTE_MODEL || 'gemini-3.1-pro';
+// History on 2026-05-15: tried 'gemini-3-pro' → 404; tried 'gemini-3.1-pro' (AI Studio
+// quota dashboard's display name) → also 404. The v1beta REST API uses model IDs that
+// don't always match the AI Studio UI name. To find the actual ID hit:
+//   GET /api/project-purchases/_diagnostic/list-models
+// which calls Google's ListModels and returns the GA list, then set
+//   GEMINI_PROJECT_QUOTE_MODEL=<exact-id-from-list>
+// in Railway env.
+//
+// Default stays on gemini-2.5-pro — the only top-tier model we've confirmed working
+// on this workspace's v1beta endpoint (proven in rfqQuoteExtractor.ts).
+const PROJECT_QUOTE_MODEL = process.env.GEMINI_PROJECT_QUOTE_MODEL || 'gemini-2.5-pro';
 const PROJECT_QUOTE_TIMEOUT_MS = 180_000; // 3 min — pro model on a dense 5-page PDF can take >60s
 
 const QUOTATION_PROMPT = `You are reading a vendor quotation / proforma invoice for a capital project purchase (mechanical, civil, electrical, instrumentation, IT, etc.).
@@ -345,6 +350,48 @@ const updateQuotationSchema = z.object({
     remarks: z.string().optional().nullable(),
   })).optional(),
 });
+
+// ═══════════════════════════════════════════════
+// GET /_diagnostic/list-models — call Google's ListModels so we can see the
+// actual API ids available on the current API key (the AI-Studio UI name
+// "Gemini 3.1 Pro" doesn't always match the v1beta API id). Use this when
+// the parse endpoint 404s on a model name to find the real id, then set
+// GEMINI_PROJECT_QUOTE_MODEL=<id> in env.
+// ═══════════════════════════════════════════════
+router.get('/_diagnostic/list-models', asyncHandler(async (_req: AuthRequest, res: Response) => {
+  const GEMINI_KEY = process.env.GEMINI_API_KEY;
+  if (!GEMINI_KEY) {
+    res.status(400).json({ error: 'GEMINI_API_KEY not configured' });
+    return;
+  }
+  try {
+    const r = await axios.get(
+      `https://generativelanguage.googleapis.com/v1beta/models?key=${GEMINI_KEY}&pageSize=200`,
+      { timeout: 10_000 },
+    );
+    const models: Array<{ name?: string; supportedGenerationMethods?: string[]; displayName?: string }> = r.data?.models || [];
+    // Just the ids that support generateContent, ranked with pros first then flashes
+    const usable = models
+      .filter(m => Array.isArray(m.supportedGenerationMethods) && m.supportedGenerationMethods.includes('generateContent'))
+      .map(m => ({
+        id: (m.name || '').replace(/^models\//, ''),
+        displayName: m.displayName || null,
+      }))
+      .sort((a, b) => {
+        const score = (id: string) => /-pro\b/.test(id) ? 0 : /-flash\b/.test(id) ? 1 : 2;
+        return score(a.id) - score(b.id) || a.id.localeCompare(b.id);
+      });
+    res.json({
+      currentDefault: PROJECT_QUOTE_MODEL,
+      currentEnvOverride: process.env.GEMINI_PROJECT_QUOTE_MODEL || null,
+      usable,
+    });
+  } catch (err: unknown) {
+    const msg = (err as { response?: { data?: { error?: { message?: string } } }; message?: string })?.response?.data?.error?.message
+      || (err as Error)?.message || 'list-models call failed';
+    res.status(502).json({ error: msg });
+  }
+}));
 
 // ═══════════════════════════════════════════════
 // GET / — list projects
