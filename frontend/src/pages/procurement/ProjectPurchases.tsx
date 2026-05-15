@@ -2090,9 +2090,16 @@ const ParseBadge: React.FC<{ q: Quotation }> = ({ q }) => {
     MANUAL: 'border-amber-300 bg-amber-50 text-amber-700',
   };
   return (
-    <span className={`text-[9px] font-bold uppercase px-1.5 py-0.5 border ${cls[q.parseStatus]}`} title={q.parseError || ''}>
-      {q.parseStatus}
-    </span>
+    <div className="flex flex-col gap-1">
+      <span className={`text-[9px] font-bold uppercase px-1.5 py-0.5 border self-start ${cls[q.parseStatus]}`}>
+        {q.parseStatus}
+      </span>
+      {q.parseStatus === 'FAILED' && q.parseError && (
+        <div className="text-[10px] text-red-700 break-words leading-snug" title={q.parseError}>
+          {q.parseError.length > 200 ? q.parseError.slice(0, 200) + '…' : q.parseError}
+        </div>
+      )}
+    </div>
   );
 };
 
