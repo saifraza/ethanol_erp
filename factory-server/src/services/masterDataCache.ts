@@ -25,6 +25,7 @@ interface Trader { id: string; name: string; phone: string | null; productTypes:
 interface Customer { id: string; name: string; shortName: string | null; gstNo: string | null; address: string | null; state: string | null; pincode: string | null }
 interface EthContract { id: string; contractNo: string; contractType: string; buyerName: string; buyerGst: string | null; buyerAddress: string | null; conversionRate: number | null; ethanolRate: number | null; gstPercent: number | null; paymentTermsDays: number | null; omcDepot: string | null }
 interface DdgsContract { id: string; contractNo: string; status: string; dealType: string; buyerName: string; buyerGstin: string | null; buyerAddress: string | null; buyerState: string | null; principalName: string | null; rate: number | null; processingChargePerMT: number | null; gstPercent: number | null; contractQtyMT: number | null; totalSuppliedMT: number | null; startDate: string | null; endDate: string | null }
+interface WgsContract { id: string; contractNo: string; status: string; dealType: string; buyerName: string; buyerGstin: string | null; buyerAddress: string | null; buyerState: string | null; principalName: string | null; rate: number | null; processingChargePerMT: number | null; gstPercent: number | null; contractQtyMT: number | null; totalSuppliedMT: number | null; startDate: string | null; endDate: string | null }
 interface ScrapSalesOrder { id: string; entryNo: number; buyerName: string; productName: string; rate: number; unit: string; validFrom: string | null; validTo: string | null; status: string; quantity: number; totalSuppliedQty: number }
 interface Company { id: string; code: string; name: string; shortName: string | null; isDefault: boolean }
 
@@ -37,6 +38,7 @@ interface MasterCache {
   vehicles: string[];
   ethContracts: EthContract[];
   ddgsContracts: DdgsContract[];
+  wgsContracts: WgsContract[];
   scrapOrders: ScrapSalesOrder[];
   companies: Company[];
   outboundProducts: string[];
@@ -49,10 +51,10 @@ interface MasterCache {
 // Default outbound product types — used as fallback if cloud doesn't provide them.
 // Single source of truth for the gate entry dropdown (was hardcoded in GateEntry.tsx).
 // Sugar excluded — separate weighbridge system (not routed through this one)
-const DEFAULT_OUTBOUND_PRODUCTS = ['DDGS', 'Ethanol', 'Scrap', 'Press Mud', 'LFO', 'HFO', 'Ash', 'Other'];
+const DEFAULT_OUTBOUND_PRODUCTS = ['DDGS', 'WGS', 'Ethanol', 'Scrap', 'Press Mud', 'LFO', 'HFO', 'Ash', 'Other'];
 
 const EMPTY_CACHE: MasterCache = {
-  suppliers: [], materials: [], pos: [], traders: [], customers: [], vehicles: [], ethContracts: [], ddgsContracts: [], scrapOrders: [], companies: [],
+  suppliers: [], materials: [], pos: [], traders: [], customers: [], vehicles: [], ethContracts: [], ddgsContracts: [], wgsContracts: [], scrapOrders: [], companies: [],
   outboundProducts: DEFAULT_OUTBOUND_PRODUCTS,
   lastCloudSync: null, lastCloudCheck: null, cloudTimestamp: null, source: 'empty',
 };
@@ -140,6 +142,7 @@ function loadFromDisk(): boolean {
       data.vehicles = data.vehicles || [];
       data.ethContracts = data.ethContracts || [];
       data.ddgsContracts = data.ddgsContracts || [];
+      data.wgsContracts = data.wgsContracts || [];
       data.scrapOrders = data.scrapOrders || [];
       data.companies = data.companies || [];
       data.outboundProducts = data.outboundProducts || DEFAULT_OUTBOUND_PRODUCTS;
@@ -336,6 +339,43 @@ async function fullSyncFromCloud(cloudTs?: string | null): Promise<boolean> {
       console.error('[CACHE] DDGS contracts sync failed:', err instanceof Error ? err.message : err);
     }
 
+    // WGS contracts — wet grain slop sales to dairy / cattle feed mills.
+    // Same shape as DDGSContract; the cloud table mirrors it (see WGSContract
+    // model in backend/prisma/schema.prisma). Failure here doesn't poison
+    // the rest of the cache — DDGS / scrap / inbound still sync.
+    let wgsContracts: WgsContract[] = cache.wgsContracts;
+    try {
+      const rows = await cloud.$queryRawUnsafe<any[]>(
+        `SELECT id, "contractNo", status, "dealType", "buyerName", "buyerGstin", "buyerAddress", "buyerState",
+                "principalName", rate, "processingChargePerMT", "gstPercent", "contractQtyMT", "totalSuppliedMT",
+                "startDate", "endDate", "companyId"
+         FROM "WGSContract"
+         WHERE status = 'ACTIVE'
+         ORDER BY "contractNo" LIMIT 50`
+      );
+      wgsContracts = rows.map(r => ({
+        id: r.id,
+        contractNo: r.contractNo,
+        status: r.status,
+        dealType: r.dealType,
+        buyerName: r.buyerName,
+        buyerGstin: r.buyerGstin,
+        buyerAddress: r.buyerAddress,
+        buyerState: r.buyerState,
+        principalName: r.principalName,
+        rate: r.rate != null ? Number(r.rate) : null,
+        processingChargePerMT: r.processingChargePerMT != null ? Number(r.processingChargePerMT) : null,
+        gstPercent: r.gstPercent != null ? Number(r.gstPercent) : null,
+        contractQtyMT: r.contractQtyMT != null ? Number(r.contractQtyMT) : null,
+        totalSuppliedMT: r.totalSuppliedMT != null ? Number(r.totalSuppliedMT) : null,
+        startDate: r.startDate ? new Date(r.startDate).toISOString() : null,
+        endDate: r.endDate ? new Date(r.endDate).toISOString() : null,
+      }));
+      console.log(`[CACHE] WGS contracts: ${wgsContracts.length}`);
+    } catch (err) {
+      console.error('[CACHE] WGS contracts sync failed:', err instanceof Error ? err.message : err);
+    }
+
     // Scrap sales orders — separate query with own error handling
     let scrapOrders: ScrapSalesOrder[] = cache.scrapOrders;
     try {
@@ -445,6 +485,7 @@ async function fullSyncFromCloud(cloudTs?: string | null): Promise<boolean> {
       customers: customers.map(c => ({ id: c.id, name: c.name, shortName: c.shortName, gstNo: c.gstNo, address: c.address, state: c.state, pincode: c.pincode, company_id: c.companyId || null })),
       ethContracts: ethContracts.map(c => ({ id: c.id, contractNo: c.contractNo, contractType: c.contractType, buyerName: c.buyerName, buyerGst: c.buyerGst, buyerAddress: c.buyerAddress, conversionRate: c.conversionRate, ethanolRate: c.ethanolRate, gstPercent: c.gstPercent, paymentTermsDays: c.paymentTermsDays, omcDepot: c.omcDepot, company_id: (c as any).companyId || null })),
       ddgsContracts,
+      wgsContracts,
       scrapOrders,
       companies,
       outboundProducts,

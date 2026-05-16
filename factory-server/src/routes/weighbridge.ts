@@ -1384,11 +1384,12 @@ router.get('/master-data', requireWbKey, asyncHandler(async (_req: Request, res:
   const traders = data.traders || [];
   const ethContracts = (data.ethContracts || []).map(c => ({ ...c, company_id: (c as any).company_id ?? null }));
   const ddgsContracts = data.ddgsContracts || [];
+  const wgsContracts = (data as any).wgsContracts || [];
   const scrapOrders = data.scrapOrders || [];
   const companies = data.companies || [];
   const outboundProducts = (data as any).outboundProducts || [];
 
-  res.json({ suppliers, materials, pos, customers, vehicles, traders, ethContracts, ddgsContracts, scrapOrders, companies, outboundProducts });
+  res.json({ suppliers, materials, pos, customers, vehicles, traders, ethContracts, ddgsContracts, wgsContracts, scrapOrders, companies, outboundProducts });
 }));
 
 /**

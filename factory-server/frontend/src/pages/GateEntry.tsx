@@ -11,6 +11,7 @@ interface Customer { id: string; name: string; gstNo?: string | null; address?: 
 interface Trader { id: string; name: string; phone?: string; productTypes?: string; category?: string }
 interface EthContract { id: string; contractNo: string; contractType: string; buyerName: string; buyerAddress?: string; omcDepot?: string; company_id?: string | null }
 interface DdgsContract { id: string; contractNo: string; dealType: string; buyerName: string; buyerGstin?: string | null; buyerAddress?: string | null; principalName?: string | null; rate?: number | null; processingChargePerMT?: number | null; gstPercent?: number | null; contractQtyMT?: number | null; totalSuppliedMT?: number | null; endDate?: string | null; company_id?: string | null }
+interface WgsContract { id: string; contractNo: string; dealType: string; buyerName: string; buyerGstin?: string | null; buyerAddress?: string | null; principalName?: string | null; rate?: number | null; processingChargePerMT?: number | null; gstPercent?: number | null; contractQtyMT?: number | null; totalSuppliedMT?: number | null; endDate?: string | null; company_id?: string | null }
 interface ScrapSalesOrder { id: string; entryNo: number; buyerName: string; productName: string; rate: number; unit: string; validFrom?: string | null; validTo?: string | null; status: string; quantity: number; totalSuppliedQty: number }
 
 const FUEL_KEYWORDS = ['coal', 'husk', 'bagasse', 'mustard', 'furnace', 'diesel', 'hsd', 'lfo', 'hfo', 'firewood', 'biomass'];
@@ -27,7 +28,7 @@ const VEHICLE_TYPES = ['Truck 14 Wheel', 'Truck 12 Wheel', 'Truck 10 Wheel', 'Tr
 const TANKER_CAPACITIES = ['10 KL', '20 KL', '30 KL', '40 KL'];
 // Fallback — used only when master data hasn't loaded yet. Actual list comes from server.
 // Sugar excluded — separate weighbridge system (not routed through this one)
-const OUTBOUND_PRODUCTS_FALLBACK = ['DDGS', 'Ethanol', 'Scrap', 'Press Mud', 'LFO', 'HFO', 'Ash', 'Other'];
+const OUTBOUND_PRODUCTS_FALLBACK = ['DDGS', 'WGS', 'Ethanol', 'Scrap', 'Press Mud', 'LFO', 'HFO', 'Ash', 'Other'];
 const PAYMENT_MODES = ['CASH', 'UPI', 'BANK_TRANSFER'];
 
 export default function GateEntry() {
@@ -107,6 +108,9 @@ export default function GateEntry() {
   // DDGS-specific
   const [ddgsContracts, setDdgsContracts] = useState<DdgsContract[]>([]);
   const [ddgsContractId, setDdgsContractId] = useState('');
+  // WGS-specific (wet grain slop — dairy / cattle feed sales)
+  const [wgsContracts, setWgsContracts] = useState<WgsContract[]>([]);
+  const [wgsContractId, setWgsContractId] = useState('');
   const [scrapOrders, setScrapOrders] = useState<ScrapSalesOrder[]>([]);
   const [scrapOrderId, setScrapOrderId] = useState('');
   const [driverName, setDriverName] = useState('');
@@ -124,6 +128,8 @@ export default function GateEntry() {
   const isEthanol = direction === 'OUTBOUND' && materialName === 'Ethanol';
   const isDdgsOut = direction === 'OUTBOUND' && materialName === 'DDGS';
   const selectedDdgsContract = ddgsContracts.find(c => c.id === ddgsContractId);
+  const isWgsOut = direction === 'OUTBOUND' && materialName === 'WGS';
+  const selectedWgsContract = wgsContracts.find(c => c.id === wgsContractId);
   const isScrapOut = direction === 'OUTBOUND' && materialName === 'Scrap';
   const selectedScrapOrder = scrapOrders.find(o => o.id === scrapOrderId);
 
@@ -142,6 +148,7 @@ export default function GateEntry() {
       setVehicles(data.vehicles || []);
       setEthContracts(data.ethContracts || []);
       setDdgsContracts(data.ddgsContracts || []);
+      setWgsContracts(data.wgsContracts || []);
       setScrapOrders(data.scrapOrders || []);
       // Outbound products from master data (falls back to hardcoded if not provided)
       if (Array.isArray(data.outboundProducts) && data.outboundProducts.length > 0) {
@@ -373,6 +380,11 @@ export default function GateEntry() {
     if (c.company_id) return c.company_id === selectedCompanyId;
     return !!isDefaultSelected;
   });
+  const filteredWgsContracts = wgsContracts.filter(c => {
+    if (!selectedCompanyId) return true;
+    if (c.company_id) return c.company_id === selectedCompanyId;
+    return !!isDefaultSelected;
+  });
 
   // Vehicle autocomplete
   const handleVehicleChange = (v: string) => {
@@ -428,6 +440,7 @@ export default function GateEntry() {
     if (!vehicleNo) { alert('Vehicle number is required'); return; }
     if (isEthanol && !ethContractId) { alert('Select an ethanol contract'); return; }
     if (isDdgsOut && !ddgsContractId) { alert('Select a DDGS contract'); return; }
+    if (isWgsOut && !wgsContractId) { alert('Select a WGS contract'); return; }
     if (isScrapOut && !scrapOrderId) { alert('Select a scrap sales order'); return; }
     if (direction === 'INBOUND' && purchaseType === 'TRADER' && !selectedTraderId) { alert('Select a trader'); return; }
     if (direction === 'INBOUND' && purchaseType === 'TRADER' && (!rate || parseFloat(rate) <= 0)) { alert('Rate is required for trader purchases'); return; }
@@ -512,6 +525,10 @@ export default function GateEntry() {
       // races against contract edits/deletes between gate entry and sync).
       if (isDdgsOut && ddgsContractId) {
         body.cloudContractId = ddgsContractId;
+      }
+      // WGS outbound: same idea — bind the truck to the picked WGS contract.
+      if (isWgsOut && wgsContractId) {
+        body.cloudContractId = wgsContractId;
       }
       if (isScrapOut && scrapOrderId) {
         body.cloudContractId = scrapOrderId;
@@ -1059,6 +1076,53 @@ export default function GateEntry() {
                       )}
                       {selectedDdgsContract.endDate && (
                         <div className="col-span-2"><span className="text-slate-500 uppercase tracking-wider">Valid till:</span> <span className="text-slate-800">{new Date(selectedDdgsContract.endDate).toLocaleDateString('en-IN')}</span></div>
+                      )}
+                    </div>
+                  </div>
+                )}
+              </div>
+            </>
+          )}
+
+          {/* WGS-specific fields — wet grain slop sales to dairies / cattle feed mills.
+              Mirror of the DDGS block — same contract shape, separate cloud table. */}
+          {isWgsOut && (
+            <>
+              <div className="md:col-span-3">
+                <label className="text-xs font-bold text-slate-700 uppercase tracking-widest block mb-1">WGS Contract *</label>
+                <select value={wgsContractId} onChange={e => {
+                  setWgsContractId(e.target.value);
+                  const c = filteredWgsContracts.find(x => x.id === e.target.value);
+                  if (c) setCustomerName(c.buyerName);
+                }} className="w-full border border-slate-300 px-3 py-2.5 text-sm focus:outline-none focus:ring-1 focus:ring-slate-400">
+                  <option value="">-- Select Contract --</option>
+                  {filteredWgsContracts.map(c => {
+                    const r = c.dealType === 'JOB_WORK' ? c.processingChargePerMT : c.rate;
+                    return <option key={c.id} value={c.id}>{c.contractNo} — {c.buyerName} ({c.dealType === 'JOB_WORK' ? 'JOB WORK' : 'SALE'}) ₹{r ?? '-'}/MT</option>;
+                  })}
+                </select>
+                {selectedWgsContract && (
+                  <div className="mt-2 border border-slate-300 bg-slate-50 px-3 py-2 text-[11px]">
+                    <div className="grid grid-cols-2 md:grid-cols-4 gap-x-4 gap-y-1">
+                      <div><span className="text-slate-500 uppercase tracking-wider">Buyer:</span> <span className="font-bold text-slate-800">{selectedWgsContract.buyerName}</span></div>
+                      <div><span className="text-slate-500 uppercase tracking-wider">GSTIN:</span> <span className="font-mono text-slate-800">{selectedWgsContract.buyerGstin || '—'}</span></div>
+                      <div>
+                        <span className="text-slate-500 uppercase tracking-wider">{selectedWgsContract.dealType === 'JOB_WORK' ? 'Job Work Rate' : 'Sale Rate'}:</span>{' '}
+                        <span className="font-mono font-bold text-slate-800">₹{(selectedWgsContract.dealType === 'JOB_WORK' ? selectedWgsContract.processingChargePerMT : selectedWgsContract.rate) ?? '—'}/MT</span>
+                      </div>
+                      <div><span className="text-slate-500 uppercase tracking-wider">GST:</span> <span className="font-mono text-slate-800">{selectedWgsContract.gstPercent ?? '—'}%</span></div>
+                      <div className="col-span-2">
+                        <span className="text-slate-500 uppercase tracking-wider">Supplied / Qty:</span>{' '}
+                        <span className="font-mono text-slate-800">{(selectedWgsContract.totalSuppliedMT ?? 0).toFixed(2)} / {(selectedWgsContract.contractQtyMT ?? 0).toFixed(2)} MT</span>
+                        <span className="text-slate-500 ml-2">
+                          ({Math.max(0, (selectedWgsContract.contractQtyMT ?? 0) - (selectedWgsContract.totalSuppliedMT ?? 0)).toFixed(2)} MT remaining)
+                        </span>
+                      </div>
+                      {selectedWgsContract.principalName && (
+                        <div className="col-span-2"><span className="text-slate-500 uppercase tracking-wider">Principal:</span> <span className="text-slate-800">{selectedWgsContract.principalName}</span></div>
+                      )}
+                      {selectedWgsContract.endDate && (
+                        <div className="col-span-2"><span className="text-slate-500 uppercase tracking-wider">Valid till:</span> <span className="text-slate-800">{new Date(selectedWgsContract.endDate).toLocaleDateString('en-IN')}</span></div>
                       )}
                     </div>
                   </div>
