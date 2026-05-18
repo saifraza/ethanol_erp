@@ -167,9 +167,28 @@ router.get('/analytics', authenticate, asyncHandler(async (req: AuthRequest, res
       klpd: v.klpd,
       avgStrength: v.avgStrength,
     }));
-    // KPI totals from DB values
-    totalEthanolBL = ethanolDaily.reduce((s, e) => s + e.productionBL, 0);
-    totalEthanolAL = ethanolDaily.reduce((s, e) => s + e.productionAL, 0);
+    // KPI totals — telescoped over raw stock deltas, NOT sum of per-dip
+    // productionBL. The per-dip value is floored at 0 at save time, which
+    // breaks (closing - opening + dispatch) accounting whenever a dip lands
+    // on a window where dispatch > measured production (legitimate) or
+    // partial tank data was entered. Summing the floored values over a
+    // month systematically over-reports.
+    const anchorEntry = ethanol.length > 0
+      ? await prisma.ethanolProductEntry.findFirst({
+          where: { date: { lt: ethanol[0].date } },
+          orderBy: { date: 'desc' },
+          select: { totalStock: true },
+        })
+      : null;
+    let runningPrevStock = anchorEntry?.totalStock ?? 0;
+    for (const e of ethanol) {
+      const delta = (e.totalStock || 0) - runningPrevStock + (e.totalDispatch || 0);
+      totalEthanolBL += delta;
+      totalEthanolAL += delta * ((e.avgStrength || 0) / 100);
+      runningPrevStock = e.totalStock || runningPrevStock;
+    }
+    totalEthanolBL = Math.max(0, totalEthanolBL);
+    totalEthanolAL = Math.max(0, totalEthanolAL);
     const recalcLatestKlpd = ethanolDaily.length > 0 ? ethanolDaily[ethanolDaily.length - 1].klpd : 0;
 
     // Distillation daily

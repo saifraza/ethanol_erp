@@ -180,23 +180,13 @@ router.get('/latest', authenticate, asyncHandler(async (req: AuthRequest, res: R
 }));
 
 router.get('/total-production', authenticate, asyncHandler(async (req: AuthRequest, res: Response) => {
-  // Sum all daily production values
+  // First entry has no prevEntry, so its productionBL was computed as
+  // (totalStock - 0 + 0) = totalStock — i.e. opening stock is already
+  // baked into the sum. Adding it again double-counts.
   const totalProduction = await prisma.ethanolProductEntry.aggregate({
-    _sum: {
-      productionBL: true,
-    },
+    _sum: { productionBL: true },
   });
-  const sumProd = totalProduction._sum.productionBL || 0;
-
-  // Add the opening stock from the FIRST entry (base stock when ERP started)
-  // The first entry's totalStock represents all ethanol in tanks when tracking began
-  const firstEntry = await prisma.ethanolProductEntry.findFirst({
-    orderBy: { date: 'asc' },
-    select: { totalStock: true, productionBL: true },
-  });
-  const openingStock = firstEntry?.totalStock || 0;
-
-  res.json({ totalProduced: sumProd + openingStock });
+  res.json({ totalProduced: totalProduction._sum.productionBL || 0 });
 }));
 
 // GET /api/ethanol-product — history
