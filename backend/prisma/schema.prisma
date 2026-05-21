@@ -4343,6 +4343,7 @@ model DDGSContract {
   contractNo            String   @unique
   status                String   @default("ACTIVE") // DRAFT, ACTIVE, EXPIRED, TERMINATED
   dealType              String   @default("FIXED_RATE") // FIXED_RATE, JOB_WORK, SPOT
+  productType           String   @default("DDGS") // DDGS, WGS, MASH_BIOFUEL — by-product category sold under this contract
   processingChargePerMT Float? // job work only
   principalName         String? // job work only
   customerId            String

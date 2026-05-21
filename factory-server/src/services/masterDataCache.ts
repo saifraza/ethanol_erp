@@ -24,7 +24,7 @@ interface PO { id: string; po_no: number; vendor_name: string; vendor_id: string
 interface Trader { id: string; name: string; phone: string | null; productTypes: string | null; category: string | null }
 interface Customer { id: string; name: string; shortName: string | null; gstNo: string | null; address: string | null; state: string | null; pincode: string | null }
 interface EthContract { id: string; contractNo: string; contractType: string; buyerName: string; buyerGst: string | null; buyerAddress: string | null; conversionRate: number | null; ethanolRate: number | null; gstPercent: number | null; paymentTermsDays: number | null; omcDepot: string | null }
-interface DdgsContract { id: string; contractNo: string; status: string; dealType: string; buyerName: string; buyerGstin: string | null; buyerAddress: string | null; buyerState: string | null; principalName: string | null; rate: number | null; processingChargePerMT: number | null; gstPercent: number | null; contractQtyMT: number | null; totalSuppliedMT: number | null; startDate: string | null; endDate: string | null }
+interface DdgsContract { id: string; contractNo: string; status: string; dealType: string; productType: string; buyerName: string; buyerGstin: string | null; buyerAddress: string | null; buyerState: string | null; principalName: string | null; rate: number | null; processingChargePerMT: number | null; gstPercent: number | null; contractQtyMT: number | null; totalSuppliedMT: number | null; startDate: string | null; endDate: string | null }
 interface WgsContract { id: string; contractNo: string; status: string; dealType: string; buyerName: string; buyerGstin: string | null; buyerAddress: string | null; buyerState: string | null; principalName: string | null; rate: number | null; processingChargePerMT: number | null; gstPercent: number | null; contractQtyMT: number | null; totalSuppliedMT: number | null; startDate: string | null; endDate: string | null }
 interface ScrapSalesOrder { id: string; entryNo: number; buyerName: string; productName: string; rate: number; unit: string; validFrom: string | null; validTo: string | null; status: string; quantity: number; totalSuppliedQty: number }
 interface Company { id: string; code: string; name: string; shortName: string | null; isDefault: boolean }
@@ -308,7 +308,8 @@ async function fullSyncFromCloud(cloudTs?: string | null): Promise<boolean> {
     let ddgsContracts: DdgsContract[] = cache.ddgsContracts; // keep existing on failure
     try {
       const rows = await cloud.$queryRawUnsafe<any[]>(
-        `SELECT id, "contractNo", status, "dealType", "buyerName", "buyerGstin", "buyerAddress", "buyerState",
+        `SELECT id, "contractNo", status, "dealType", COALESCE("productType", 'DDGS') AS "productType",
+                "buyerName", "buyerGstin", "buyerAddress", "buyerState",
                 "principalName", rate, "processingChargePerMT", "gstPercent", "contractQtyMT", "totalSuppliedMT",
                 "startDate", "endDate", "companyId"
          FROM "DDGSContract"
@@ -320,6 +321,7 @@ async function fullSyncFromCloud(cloudTs?: string | null): Promise<boolean> {
         contractNo: r.contractNo,
         status: r.status,
         dealType: r.dealType,
+        productType: r.productType || 'DDGS',
         buyerName: r.buyerName,
         buyerGstin: r.buyerGstin,
         buyerAddress: r.buyerAddress,

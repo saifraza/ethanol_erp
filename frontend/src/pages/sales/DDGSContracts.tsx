@@ -61,6 +61,7 @@ interface Contract {
   contractNo: string;
   status: string;
   dealType: string;
+  productType?: 'DDGS' | 'WGS' | 'MASH_BIOFUEL';
   processingChargePerMT?: number | null;
   principalName?: string | null;
   customerId: string;
@@ -119,7 +120,7 @@ interface CustomerOption {
 
 const emptyForm = {
   contractNo: '', status: 'ACTIVE',
-  dealType: 'FIXED_RATE', processingChargePerMT: '', principalName: '',
+  dealType: 'FIXED_RATE', productType: 'DDGS', processingChargePerMT: '', principalName: '',
   customerId: '',
   buyerName: '', buyerAddress: '', buyerGstin: '', buyerState: '', buyerContact: '', buyerPhone: '', buyerEmail: '',
   supplyType: 'INTRA_STATE',
@@ -141,6 +142,12 @@ const statusColors: Record<string, string> = {
   ACTIVE: 'bg-green-50 text-green-700 border-green-300',
   EXPIRED: 'bg-red-50 text-red-700 border-red-300',
   TERMINATED: 'bg-red-100 text-red-800 border-red-400',
+};
+
+const productTypePill: Record<string, { label: string; cls: string }> = {
+  DDGS:         { label: 'DDGS',  cls: 'bg-amber-50 text-amber-700 border-amber-300' },
+  WGS:          { label: 'WGS',   cls: 'bg-sky-50 text-sky-700 border-sky-300' },
+  MASH_BIOFUEL: { label: 'Mash',  cls: 'bg-violet-50 text-violet-700 border-violet-300' },
 };
 
 const DDGSContracts: React.FC = () => {
@@ -222,6 +229,7 @@ const DDGSContracts: React.FC = () => {
     setForm({
       contractNo: c.contractNo, status: c.status,
       dealType: c.dealType || 'FIXED_RATE',
+      productType: c.productType || 'DDGS',
       processingChargePerMT: c.processingChargePerMT != null ? String(c.processingChargePerMT) : '',
       principalName: c.principalName || '',
       customerId: c.customerId,
@@ -471,7 +479,13 @@ const DDGSContracts: React.FC = () => {
                     <tr className="border-b border-slate-100 even:bg-slate-50/70 hover:bg-blue-50/60 cursor-pointer"
                       onClick={() => handleExpand(c.id)}>
                       <td className="px-3 py-1.5 text-xs border-r border-slate-100">
-                        <div className="font-bold text-slate-900">{c.contractNo}</div>
+                        <div className="flex items-center gap-1.5">
+                          <span className="font-bold text-slate-900">{c.contractNo}</span>
+                          {(() => {
+                            const pt = productTypePill[c.productType || 'DDGS'];
+                            return <span className={`text-[9px] font-bold uppercase px-1.5 py-0.5 border ${pt.cls}`}>{pt.label}</span>;
+                          })()}
+                        </div>
                         <div className="text-[10px] text-slate-400">
                           {new Date(c.startDate).toLocaleDateString('en-IN', { day: '2-digit', month: 'short' })} - {new Date(c.endDate).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: '2-digit' })}
                           {days > 0 && <span className={`ml-1 ${days <= 30 ? 'text-red-500' : ''}`}>({days}d left)</span>}
@@ -928,8 +942,8 @@ const DDGSContracts: React.FC = () => {
               <button onClick={() => setShowForm(false)} className="text-slate-400 hover:text-white"><X size={18} /></button>
             </div>
             <div className="p-5 space-y-5 max-h-[75vh] overflow-y-auto">
-              {/* Contract No + Deal Type + Status */}
-              <div className="grid grid-cols-4 gap-4">
+              {/* Contract No + Product Type + Deal Type + Status + Buyer */}
+              <div className="grid grid-cols-5 gap-4">
                 <div>
                   <label className={labelCls}>Contract No</label>
                   {editId ? (
@@ -937,6 +951,14 @@ const DDGSContracts: React.FC = () => {
                   ) : (
                     <div className={`${inputCls} bg-slate-50 text-slate-400 italic`}>Auto-generated on save</div>
                   )}
+                </div>
+                <div>
+                  <label className={labelCls}>Product Type *</label>
+                  <select name="productType" value={form.productType} onChange={handleFormChange} className={inputCls}>
+                    <option value="DDGS">DDGS (~₹27/kg dry)</option>
+                    <option value="WGS">WGS (~₹5-7/kg wet)</option>
+                    <option value="MASH_BIOFUEL">Mash Biofuel (DDGS job-work)</option>
+                  </select>
                 </div>
                 <div>
                   <label className={labelCls}>Deal Type *</label>
