@@ -122,14 +122,44 @@ router.get('/analytics', authenticate, asyncHandler(async (req: AuthRequest, res
     // ─── Daily trends (grouped by date) ───
     const fmtDate = (d: Date) => { const ist = new Date(d.getTime() + 5.5 * 60 * 60 * 1000); return ist.toISOString().split('T')[0]; };
 
-    // Grain daily
-    const grainDaily = grain.map(e => ({
-      date: fmtDate(e.date),
-      unloaded: e.grainUnloaded || 0,
-      consumed: e.grainConsumed || 0,
-      siloStock: e.siloClosingStock || 0,
-      totalAtPlant: e.totalGrainAtPlant || 0,
-    }));
+    // Build full IST date series for the window so short windows (7/15 day) with
+    // sparse data still render a chart axis instead of an empty <ResponsiveContainer>.
+    const dateSeries: string[] = [];
+    {
+      const cur = new Date(from);
+      while (cur <= now) {
+        dateSeries.push(fmtDate(cur));
+        cur.setUTCDate(cur.getUTCDate() + 1);
+      }
+    }
+
+    // Grain daily — pad missing days, carry forward stock so silo/total lines are continuous
+    const grainByDate = new Map<string, { unloaded: number; consumed: number; siloStock: number; totalAtPlant: number }>();
+    for (const e of grain) {
+      grainByDate.set(fmtDate(e.date), {
+        unloaded: e.grainUnloaded || 0,
+        consumed: e.grainConsumed || 0,
+        siloStock: e.siloClosingStock || 0,
+        totalAtPlant: e.totalGrainAtPlant || 0,
+      });
+    }
+    // Anchor carry-forward with the most recent entry strictly before the window
+    const grainAnchor = await prisma.grainEntry.findFirst({
+      where: { date: { lt: from } },
+      orderBy: { date: 'desc' },
+      select: { siloClosingStock: true, totalGrainAtPlant: true },
+    });
+    let lastSilo = grainAnchor?.siloClosingStock || 0;
+    let lastTotal = grainAnchor?.totalGrainAtPlant || 0;
+    const grainDaily = dateSeries.map(date => {
+      const row = grainByDate.get(date);
+      if (row) {
+        lastSilo = row.siloStock || lastSilo;
+        lastTotal = row.totalAtPlant || lastTotal;
+        return { date, ...row };
+      }
+      return { date, unloaded: 0, consumed: 0, siloStock: lastSilo, totalAtPlant: lastTotal };
+    });
 
     // Ethanol daily — use stored DB values (manually entered dispatch is correct per team)
     // Each dip measures previous day's production, so shift date back 1 day
@@ -158,15 +188,44 @@ router.get('/analytics', authenticate, asyncHandler(async (req: AuthRequest, res
         existing.count++;
       }
     }
-    const ethanolDaily = Array.from(ethanolByDate.entries()).map(([date, v]) => ({
-      date,
-      productionBL: v.productionBL,
-      productionAL: v.productionAL,
-      totalStock: v.totalStock,
-      dispatch: v.dispatch,
-      klpd: v.klpd,
-      avgStrength: v.avgStrength,
-    }));
+    // Anchor ethanol stock carry-forward with the latest entry strictly before the window
+    const ethAnchor = await prisma.ethanolProductEntry.findFirst({
+      where: { date: { lt: from } },
+      orderBy: { date: 'desc' },
+      select: { totalStock: true, avgStrength: true, klpd: true },
+    });
+    let lastEthStock = ethAnchor?.totalStock || 0;
+    let lastEthStrength = ethAnchor?.avgStrength || 0;
+    let lastEthKlpd = ethAnchor?.klpd ? Math.round(ethAnchor.klpd * 10) / 10 : 0;
+    // Union dateSeries with any ethanolByDate keys (prod-day shift can push the
+    // earliest bucket one day before `from`) so we don't lose boundary entries.
+    const ethDateUnion = Array.from(new Set([...dateSeries, ...ethanolByDate.keys()])).sort();
+    const ethanolDaily = ethDateUnion.map(date => {
+      const v = ethanolByDate.get(date);
+      if (v) {
+        lastEthStock = v.totalStock || lastEthStock;
+        lastEthStrength = v.avgStrength || lastEthStrength;
+        lastEthKlpd = v.klpd || lastEthKlpd;
+        return {
+          date,
+          productionBL: v.productionBL,
+          productionAL: v.productionAL,
+          totalStock: v.totalStock,
+          dispatch: v.dispatch,
+          klpd: v.klpd,
+          avgStrength: v.avgStrength,
+        };
+      }
+      return {
+        date,
+        productionBL: 0,
+        productionAL: 0,
+        totalStock: lastEthStock,
+        dispatch: 0,
+        klpd: lastEthKlpd,
+        avgStrength: lastEthStrength,
+      };
+    });
     // KPI totals — telescoped over raw stock deltas, NOT sum of per-dip
     // productionBL. The per-dip value is floored at 0 at save time, which
     // breaks (closing - opening + dispatch) accounting whenever a dip lands
