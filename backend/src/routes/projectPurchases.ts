@@ -10,6 +10,7 @@ import fs from 'fs';
 import axios from 'axios';
 import { nextDocNo } from '../utils/docSequence';
 import { mirrorToS3 } from '../shared/s3Storage';
+import { getCompanyById } from '../shared/config/company';
 
 const router = Router();
 router.use(authenticate);
@@ -1068,50 +1069,89 @@ router.post('/:id/generate-po', asyncHandler(async (req: AuthRequest, res: Respo
     `Negotiated ₹${negotiated.toFixed(0)} (incl ${inclFlags}); quote ₹${q.totalAmount.toFixed(0)}; final PO ₹${newGrandTotal.toFixed(0)}`,
   ].filter(Boolean).join(' | ');
 
+  // ── GST split: derive supplyType from vendor.state vs company state ──
+  // Vendor state empty → assume INTRA_STATE as the safer default (user can
+  // edit PO + vendor master before issuing). Same-state (case-insensitive
+  // compare) → INTRA, else INTER.
+  const buyerCompany = await getCompanyById(companyId);
+  const vendorRow = await prisma.vendor.findUnique({
+    where: { id: q.vendorId! },
+    select: { state: true, gstin: true },
+  });
+  const buyerState = (buyerCompany.stateName || '').trim().toLowerCase();
+  const vendorState = (vendorRow?.state || '').trim().toLowerCase();
+  const supplyType: 'INTRA_STATE' | 'INTER_STATE' =
+    vendorState && buyerState && vendorState !== buyerState ? 'INTER_STATE' : 'INTRA_STATE';
+
+  // Effective GST rate per line: respect line-level gstPercent if set,
+  // otherwise derive from quote header (gstAmount / subtotal × 100) so a
+  // header-only edit still produces correct line splits.
+  const headerEffectiveGstPct = q.subtotal > 0 ? (q.gstAmount / q.subtotal) * 100 : 0;
+  const linesWithGst = q.lineItems.map((li) => {
+    const gstPct = li.gstPercent && li.gstPercent > 0 ? li.gstPercent : headerEffectiveGstPct;
+    const taxable = li.amount * scaleFactor;
+    const cgstPct = supplyType === 'INTRA_STATE' ? gstPct / 2 : 0;
+    const sgstPct = supplyType === 'INTRA_STATE' ? gstPct / 2 : 0;
+    const igstPct = supplyType === 'INTER_STATE' ? gstPct : 0;
+    const cgstAmt = Math.round(taxable * cgstPct) / 100;
+    const sgstAmt = Math.round(taxable * sgstPct) / 100;
+    const igstAmt = Math.round(taxable * igstPct) / 100;
+    const totalGstAmt = cgstAmt + sgstAmt + igstAmt;
+    return {
+      lineNo: li.lineNo,
+      description: [li.description, li.specification].filter(Boolean).join(' | '),
+      hsnCode: li.hsnSac || '',
+      quantity: li.quantity,
+      unit: li.unit,
+      rate: li.rate * scaleFactor,
+      discountPercent: 0,
+      gstPercent: gstPct,
+      amount: taxable,
+      taxableAmount: taxable,
+      cgstPercent: cgstPct,
+      sgstPercent: sgstPct,
+      igstPercent: igstPct,
+      cgstAmount: cgstAmt,
+      sgstAmount: sgstAmt,
+      igstAmount: igstAmt,
+      totalGst: totalGstAmt,
+      lineTotal: taxable + totalGstAmt,
+      rateSnapshotGst: gstPct,
+    };
+  });
+  const totalCgst = linesWithGst.reduce((s, l) => s + l.cgstAmount, 0);
+  const totalSgst = linesWithGst.reduce((s, l) => s + l.sgstAmount, 0);
+  const totalIgst = linesWithGst.reduce((s, l) => s + l.igstAmount, 0);
+  const totalGst  = totalCgst + totalSgst + totalIgst;
+  const recomputedGrandTotal = scaledSubtotal + totalGst + scaledFreight + scaledOther;
+
   const po = await prisma.$transaction(async (tx) => {
     const created = await tx.purchaseOrder.create({
       data: {
         poNo,
         vendorId: q.vendorId!,
         poDate: new Date(),
-        supplyType: 'INTRA_STATE',
+        supplyType,
         poType: 'PROJECT',
         dealType: 'STANDARD',
         status: 'DRAFT',
         paymentTerms: q.paymentTerms || '',
         remarks: remarkParts,
         subtotal: scaledSubtotal,
-        totalGst: scaledGst,
+        totalGst,
+        totalCgst,
+        totalSgst,
+        totalIgst,
         freightCharge: scaledFreight,
         otherCharges: scaledOther,
-        grandTotal: newGrandTotal,
+        grandTotal: recomputedGrandTotal,
         quotationNo: q.quotationNo,
         quotationDate: q.quotationDate,
         projectName: project.name,
         projectPurchaseId: project.id,
         userId: req.user!.id,
         companyId,
-        lines: {
-          create: q.lineItems.map((li) => ({
-            lineNo: li.lineNo,
-            description: [li.description, li.specification].filter(Boolean).join(' | '),
-            hsnCode: li.hsnSac || '',
-            quantity: li.quantity,
-            unit: li.unit,
-            rate: li.rate * scaleFactor,
-            discountPercent: 0,
-            gstPercent: li.gstPercent,
-            amount: li.amount * scaleFactor,
-            taxableAmount: li.amount * scaleFactor,
-            cgstPercent: 0,
-            sgstPercent: 0,
-            igstPercent: 0,
-            cgstAmount: 0,
-            sgstAmount: 0,
-            igstAmount: 0,
-            rateSnapshotGst: li.gstPercent,
-          })),
-        },
+        lines: { create: linesWithGst },
       },
     });
 
