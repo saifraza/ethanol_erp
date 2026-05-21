@@ -188,15 +188,19 @@ router.get('/analytics', authenticate, asyncHandler(async (req: AuthRequest, res
         existing.count++;
       }
     }
-    // Anchor ethanol stock carry-forward with the latest entry strictly before the window
+    // Anchor STOCK carry-forward with the latest entry strictly before the
+    // window. Stocks are persistent levels, so carrying them across data gaps
+    // keeps the area chart continuous. Rate / flow fields (klpd, avgStrength,
+    // production, dispatch) are per-day measurements and must NOT carry
+    // forward — otherwise a single dip shows as a flat line at the same value
+    // across all 7/15 days (regression from the first padding fix). Use null
+    // for missing days so Recharts renders gaps instead of fake-flat lines.
     const ethAnchor = await prisma.ethanolProductEntry.findFirst({
       where: { date: { lt: from } },
       orderBy: { date: 'desc' },
-      select: { totalStock: true, avgStrength: true, klpd: true },
+      select: { totalStock: true },
     });
     let lastEthStock = ethAnchor?.totalStock || 0;
-    let lastEthStrength = ethAnchor?.avgStrength || 0;
-    let lastEthKlpd = ethAnchor?.klpd ? Math.round(ethAnchor.klpd * 10) / 10 : 0;
     // Union dateSeries with any ethanolByDate keys (prod-day shift can push the
     // earliest bucket one day before `from`) so we don't lose boundary entries.
     const ethDateUnion = Array.from(new Set([...dateSeries, ...ethanolByDate.keys()])).sort();
@@ -204,8 +208,6 @@ router.get('/analytics', authenticate, asyncHandler(async (req: AuthRequest, res
       const v = ethanolByDate.get(date);
       if (v) {
         lastEthStock = v.totalStock || lastEthStock;
-        lastEthStrength = v.avgStrength || lastEthStrength;
-        lastEthKlpd = v.klpd || lastEthKlpd;
         return {
           date,
           productionBL: v.productionBL,
@@ -222,8 +224,8 @@ router.get('/analytics', authenticate, asyncHandler(async (req: AuthRequest, res
         productionAL: 0,
         totalStock: lastEthStock,
         dispatch: 0,
-        klpd: lastEthKlpd,
-        avgStrength: lastEthStrength,
+        klpd: null,
+        avgStrength: null,
       };
     });
     // KPI totals — telescoped over raw stock deltas, NOT sum of per-dip
