@@ -124,6 +124,13 @@ const EXPECTED_COLUMNS: ColumnCheck[] = [
   { table: 'ProjectQuotation', column: 'conditionalCommercials',  sql: `ALTER TABLE "ProjectQuotation" ADD COLUMN IF NOT EXISTS "conditionalCommercials" JSONB` },
   { table: 'ProjectQuotation', column: 'isIndicative',            sql: `ALTER TABLE "ProjectQuotation" ADD COLUMN IF NOT EXISTS "isIndicative" BOOLEAN NOT NULL DEFAULT false` },
   { table: 'ProjectQuotation', column: 'boughtOutWarrantyClause', sql: `ALTER TABLE "ProjectQuotation" ADD COLUMN IF NOT EXISTS "boughtOutWarrantyClause" TEXT` },
+
+  // 2026-05-21 — DDGS contract by-product type (DDGS / WGS / MASH_BIOFUEL).
+  // Consolidates the standalone WGS module into a single DDGS page with a
+  // type dropdown — operators stopped using the WGS page so it left a zombie
+  // table of 4 contracts. Backfill of existing rows happens via a one-shot
+  // SQL UPDATE after this column is in place; see PR description.
+  { table: 'DDGSContract', column: 'productType', sql: `ALTER TABLE "DDGSContract" ADD COLUMN IF NOT EXISTS "productType" TEXT NOT NULL DEFAULT 'DDGS'` },
 ];
 
 const EXPECTED_TABLES: TableCheck[] = [
