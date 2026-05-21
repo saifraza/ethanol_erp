@@ -304,45 +304,63 @@ export async function handleDDGSOutbound(w: WeighmentInput, ctx: PushContext): P
       },
     });
 
-    // Single-increment guard: only bump contract totals if we actually transitioned to BILLED
+    // Bump contract totals if we actually transitioned to BILLED. Soft-warn on
+    // overage rather than hard-fail: in the real world a truck commonly tops
+    // the contract qty by 5-15% (extra space on the bed, last delivery of the
+    // month, etc). Previously this `throw`-on-cap-violation rolled back the
+    // whole tx — invoice + truck.status=BILLED + contract increment — leaving
+    // the truck stuck at GROSS_WEIGHED with no invoice or EWB while the driver
+    // waited at the gate. Now we always increment; if overage is detected we
+    // surface it via PlantIssue post-commit so operations can extend the
+    // contract qty after the fact.
+    let overage: { contractNo: string; cap: number; previouslySupplied: number; newSupplied: number } | null = null;
     if (billedUpdate.count > 0) {
-      // Concurrency guard: re-read the contract INSIDE the tx and run a
-      // conditional update so two simultaneous trucks can't oversubscribe a
-      // FIXED-quantity contract. For OPEN contracts (contractQtyMT === 0)
-      // there's no cap and we always increment.
-      //
-      // The original eligibility check at line 43-63 was OUTSIDE the tx and
-      // raced against concurrent invoices. Here we re-fetch within the tx
-      // (READ COMMITTED — sees concurrent commits) and use updateMany with a
-      // WHERE on totalSuppliedMT so the DB enforces the cap atomically.
       const fresh = await tx.dDGSContract.findUnique({
         where: { id: contract.id },
         select: { contractQtyMT: true, totalSuppliedMT: true, contractNo: true },
       });
       const cap = fresh?.contractQtyMT || 0;
-      const isOpen = cap === 0;
-      const incremented = await tx.dDGSContract.updateMany({
-        where: isOpen
-          ? { id: contract.id }
-          : { id: contract.id, totalSuppliedMT: { lte: cap - netMT } },
+      const previouslySupplied = fresh?.totalSuppliedMT || 0;
+      const newSupplied = previouslySupplied + netMT;
+      await tx.dDGSContract.update({
+        where: { id: contract.id },
         data: {
           totalSuppliedMT: { increment: netMT },
           totalInvoicedAmt: { increment: total },
         },
       });
-      if (incremented.count === 0) {
-        // Oversubscribed mid-flight — throw to roll back the entire tx
-        // (invoice + truck.status=BILLED + contract increment). The push.ts
-        // safety net catches this, acks the weighment so the factory stops
-        // retrying, and writes a PlantIssue for operator review.
-        throw new Error(
-          `DDGS contract ${fresh?.contractNo || contract.contractNo} oversubscribed: cannot bill ${netMT}MT (cap ${cap}MT, supplied ${fresh?.totalSuppliedMT}MT) from ${w.vehicle_no}`,
-        );
+      if (cap > 0 && newSupplied > cap) {
+        overage = { contractNo: fresh?.contractNo || contract.contractNo, cap, previouslySupplied, newSupplied };
       }
     }
 
-    return { dispatch, billed: billedUpdate.count > 0, alreadyBilled: false, invoiceId: invoice.id, invoice, customer, amount, gst, total };
+    return { dispatch, billed: billedUpdate.count > 0, alreadyBilled: false, invoiceId: invoice.id, invoice, customer, amount, gst, total, overage };
   }, { timeout: 15000 });
+
+  // Post-commit advisory: contract qty was exceeded. Non-blocking, fire-and-forget.
+  if (txResult.billed && txResult.overage) {
+    const ov = txResult.overage;
+    const overshootMT = ov.newSupplied - ov.cap;
+    setImmediate(async () => {
+      try {
+        await prisma.plantIssue.create({
+          data: {
+            title: `DDGS contract ${ov.contractNo} exceeded by ${overshootMT.toFixed(2)} MT`,
+            description: `Truck ${w.vehicle_no} billed ${netMT.toFixed(2)} MT, pushing total supplied to ${ov.newSupplied.toFixed(2)} MT against contract qty ${ov.cap.toFixed(2)} MT (previously ${ov.previouslySupplied.toFixed(2)} MT).\n\nInvoice + EWB were generated normally. Extend the contract quantity in the DDGS Supply page if more trucks are expected, or close the contract.`,
+            issueType: 'OTHER',
+            severity: 'LOW',
+            equipment: 'DDGS Sales',
+            location: 'Cloud ERP',
+            status: 'OPEN',
+            reportedBy: 'system-weighbridge',
+            userId: 'system-weighbridge',
+          },
+        });
+      } catch (logErr) {
+        console.error('[DDGS-OUTBOUND] Failed to persist overage advisory to PlantIssue:', logErr);
+      }
+    });
+  }
 
   // ── 4. Post-commit best-effort: journal + IRN/EWB (retriable from invoice record) ──
   if (txResult.billed && txResult.invoiceId) {
