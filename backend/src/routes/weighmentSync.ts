@@ -88,6 +88,11 @@ const rowSchema = z.object({
   cancelled: z.boolean().nullable().optional(),
   cancelledReason: z.string().nullable().optional(),
   cancelledAt: z.string().nullable().optional(),
+  ewayBillStatus: z.string().nullable().optional(),
+  ewayBillNo: z.string().nullable().optional(),
+  ewayBillReason: z.string().nullable().optional(),
+  ewayBillVerifiedAt: z.string().nullable().optional(),
+  ewayBillVerifiedBy: z.string().nullable().optional(),
   createdAt: z.string().nullable().optional(),
   updatedAt: z.string().nullable().optional(),
 });
@@ -159,6 +164,11 @@ interface UpsertData {
   cancelled: boolean;
   cancelledReason: string | null;
   cancelledAt: Date | null;
+  ewayBillStatus: string | null;
+  ewayBillNo: string | null;
+  ewayBillReason: string | null;
+  ewayBillVerifiedAt: Date | null;
+  ewayBillVerifiedBy: string | null;
   factoryCreatedAt: Date | null;
   factoryUpdatedAt: Date | null;
   rawPayload: SyncRow;
@@ -212,6 +222,11 @@ function buildUpsertData(row: SyncRow, syncedFromIp: string): UpsertData {
     cancelled: row.cancelled ?? false,
     cancelledReason: row.cancelledReason ?? null,
     cancelledAt: parseDate(row.cancelledAt),
+    ewayBillStatus: row.ewayBillStatus ?? null,
+    ewayBillNo: row.ewayBillNo ?? null,
+    ewayBillReason: row.ewayBillReason ?? null,
+    ewayBillVerifiedAt: parseDate(row.ewayBillVerifiedAt),
+    ewayBillVerifiedBy: row.ewayBillVerifiedBy ?? null,
     factoryCreatedAt: parseDate(row.createdAt),
     factoryUpdatedAt: parseDate(row.updatedAt),
     rawPayload: row,

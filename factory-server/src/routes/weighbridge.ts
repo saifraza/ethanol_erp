@@ -386,12 +386,35 @@ router.post('/gate-entry', requireAuth, requireRole('GATE_ENTRY', 'ADMIN'), asyn
     cloudContractId,
     // Ship-To (outbound only; omit = Bill-To == Ship-To)
     shipToCustomerId, shipToName, shipToGstin, shipToAddress, shipToState, shipToPincode,
+    // E-way bill capture (inbound; operator picks one).
+    ewayBillStatus, ewayBillNo, ewayBillReason,
     // Multi-company tenancy
     companyId, companyCode,
   } = req.body;
 
   if (!vehicleNo) {
     res.status(400).json({ error: 'vehicleNo is required' });
+    return;
+  }
+
+  // E-way bill validation. Tri-state — VERIFIED / NOT_APPLICABLE / SKIPPED.
+  // null is allowed (legacy clients / outbound — outbound generates its own EWB
+  // elsewhere). When the operator commits to a state, the supporting field is
+  // mandatory so we don't end up with VERIFIED rows missing the number.
+  const ewbStatusInput = typeof ewayBillStatus === 'string' ? ewayBillStatus.trim().toUpperCase() : null;
+  const ewbAllowed: ReadonlyArray<string> = ['VERIFIED', 'NOT_APPLICABLE', 'SKIPPED'];
+  if (ewbStatusInput && !ewbAllowed.includes(ewbStatusInput)) {
+    res.status(400).json({ error: `ewayBillStatus must be one of ${ewbAllowed.join(', ')}` });
+    return;
+  }
+  const ewbNoTrim = typeof ewayBillNo === 'string' ? ewayBillNo.trim() : '';
+  const ewbReasonTrim = typeof ewayBillReason === 'string' ? ewayBillReason.trim() : '';
+  if (ewbStatusInput === 'VERIFIED' && !ewbNoTrim) {
+    res.status(400).json({ error: 'E-way bill number is required when status = VERIFIED' });
+    return;
+  }
+  if (ewbStatusInput === 'NOT_APPLICABLE' && !ewbReasonTrim) {
+    res.status(400).json({ error: 'Reason is required when e-way bill is marked Not Applicable' });
     return;
   }
 
@@ -584,6 +607,13 @@ router.post('/gate-entry', requireAuth, requireRole('GATE_ENTRY', 'ADMIN'), asyn
       shipToAddress: !isInbound ? resolvedShipToAddress : null,
       shipToState: !isInbound ? resolvedShipToState : null,
       shipToPincode: !isInbound ? resolvedShipToPincode : null,
+      // E-way bill: only persisted on INBOUND rows — outbound EWB lives on
+      // DispatchTruck / Shipment and is generated server-side after invoice.
+      ewayBillStatus: isInbound ? (ewbStatusInput || null) : null,
+      ewayBillNo: isInbound && ewbStatusInput === 'VERIFIED' ? (ewbNoTrim || null) : null,
+      ewayBillReason: isInbound && ewbStatusInput === 'NOT_APPLICABLE' ? (ewbReasonTrim || null) : null,
+      ewayBillVerifiedAt: isInbound && ewbStatusInput ? gateEntryAt : null,
+      ewayBillVerifiedBy: isInbound && ewbStatusInput ? (operatorName || req.user?.name || null) : null,
     },
     });
   });
@@ -1118,6 +1148,8 @@ ${row('Bags', w.bags)}
 ${row('Shift', w.shift)}
 ${row('Gate Entry', fmtIST(w.gateEntryAt))}
 ${row('Operator', w.operatorName)}
+${w.ewayBillStatus === 'VERIFIED' ? row('EWB No', w.ewayBillNo || '--') : ''}
+${w.ewayBillStatus === 'NOT_APPLICABLE' ? row('EWB', `N/A — ${w.ewayBillReason || ''}`) : ''}
 ${w.remarks ? row('Remarks', w.remarks) : ''}
 ${farmerSection}
 ${await qrImg(w.localId)}

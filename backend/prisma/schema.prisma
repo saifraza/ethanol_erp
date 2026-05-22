@@ -4908,6 +4908,12 @@ model Weighment {
   cancelled        Boolean   @default(false)
   cancelledReason  String?
   cancelledAt      DateTime?
+  // E-way bill capture from gate entry (mirror of factory Weighment fields).
+  ewayBillStatus     String?   // VERIFIED, NOT_APPLICABLE, SKIPPED
+  ewayBillNo         String?
+  ewayBillReason     String?
+  ewayBillVerifiedAt DateTime?
+  ewayBillVerifiedBy String?
   factoryCreatedAt DateTime?
   factoryUpdatedAt DateTime?
   rawPayload       Json?
