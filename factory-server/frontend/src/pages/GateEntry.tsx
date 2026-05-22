@@ -117,6 +117,13 @@ export default function GateEntry() {
   const [destination, setDestination] = useState('');
   const [rstNo, setRstNo] = useState('');
   const [sealNo, setSealNo] = useState('');
+  // E-way bill (inbound only). Three-state — operator picks one. SKIPPED is the
+  // default because farmer trips + small loads frequently have no EWB; we still
+  // capture the state so audits can see who skipped.
+  type EwayStatus = 'VERIFIED' | 'NOT_APPLICABLE' | 'SKIPPED';
+  const [ewayBillStatus, setEwayBillStatus] = useState<EwayStatus>('SKIPPED');
+  const [ewayBillNo, setEwayBillNo] = useState('');
+  const [ewayBillReason, setEwayBillReason] = useState('');
 
   const [saving, setSaving] = useState(false);
   const [todayCount, setTodayCount] = useState(0);
@@ -434,6 +441,7 @@ export default function GateEntry() {
     setCustomerName(''); setSelectedTraderId('');
     setEthContractId(''); setDriverName(''); setDestination(''); setRstNo(''); setSealNo('');
     setShipToMode('SAME'); setShipToCustomerId('');
+    setEwayBillStatus('SKIPPED'); setEwayBillNo(''); setEwayBillReason('');
   };
 
   const handleSubmit = async () => {
@@ -445,6 +453,12 @@ export default function GateEntry() {
     if (direction === 'INBOUND' && purchaseType === 'TRADER' && !selectedTraderId) { alert('Select a trader'); return; }
     if (direction === 'INBOUND' && purchaseType === 'TRADER' && (!rate || parseFloat(rate) <= 0)) { alert('Rate is required for trader purchases'); return; }
     if (direction === 'INBOUND' && purchaseType === 'TRADER' && !materialName) { alert('Select a material/product'); return; }
+    // E-way bill — soft prompt. Only validates the supporting field for the
+    // status the operator picked; SKIPPED short-circuits the whole thing.
+    if (direction === 'INBOUND') {
+      if (ewayBillStatus === 'VERIFIED' && !ewayBillNo.trim()) { alert('Enter the e-way bill number, or pick another option'); return; }
+      if (ewayBillStatus === 'NOT_APPLICABLE' && !ewayBillReason.trim()) { alert('Enter a reason, or pick another option'); return; }
+    }
     // Farmer (SPOT) mode: phone + aadhaar both mandatory, both digit-checked.
     if (direction === 'INBOUND' && purchaseType === 'FARMER') {
       if (!supplierName.trim()) { alert('Farmer name is required'); return; }
@@ -503,6 +517,11 @@ export default function GateEntry() {
         body.poLineId = selectedPoLineId || undefined;
         body.poNumber = poNumber || undefined;
         if (purchaseType === 'JOB_WORK') body.purchaseType = 'JOB_WORK';
+      }
+      if (direction === 'INBOUND') {
+        body.ewayBillStatus = ewayBillStatus;
+        if (ewayBillStatus === 'VERIFIED' && ewayBillNo.trim()) body.ewayBillNo = ewayBillNo.trim();
+        if (ewayBillStatus === 'NOT_APPLICABLE' && ewayBillReason.trim()) body.ewayBillReason = ewayBillReason.trim();
       }
       if (direction === 'INBOUND' && purchaseType === 'FARMER') {
         body.sellerPhone = sellerPhone;
@@ -1161,6 +1180,55 @@ export default function GateEntry() {
                 )}
               </div>
             </>
+          )}
+
+          {/* E-way bill (inbound only) */}
+          {direction === 'INBOUND' && (
+            <div className="md:col-span-3 border border-slate-300 bg-slate-50 px-3 py-2.5">
+              <div className="text-xs font-bold text-slate-700 uppercase tracking-widest mb-1.5">
+                E-Way Bill
+                <span className="ml-2 text-[10px] font-normal text-slate-500 normal-case tracking-normal">operator confirms what the driver showed at the gate</span>
+              </div>
+              <div className="flex flex-wrap items-center gap-x-5 gap-y-1 text-xs">
+                <label className="flex items-center gap-1.5 cursor-pointer">
+                  <input type="radio" name="ewayStatus" value="VERIFIED"
+                    checked={ewayBillStatus === 'VERIFIED'}
+                    onChange={() => setEwayBillStatus('VERIFIED')} />
+                  Verified
+                </label>
+                <label className="flex items-center gap-1.5 cursor-pointer">
+                  <input type="radio" name="ewayStatus" value="NOT_APPLICABLE"
+                    checked={ewayBillStatus === 'NOT_APPLICABLE'}
+                    onChange={() => setEwayBillStatus('NOT_APPLICABLE')} />
+                  Not applicable
+                </label>
+                <label className="flex items-center gap-1.5 cursor-pointer">
+                  <input type="radio" name="ewayStatus" value="SKIPPED"
+                    checked={ewayBillStatus === 'SKIPPED'}
+                    onChange={() => { setEwayBillStatus('SKIPPED'); setEwayBillNo(''); setEwayBillReason(''); }} />
+                  Skip
+                </label>
+              </div>
+              {ewayBillStatus === 'VERIFIED' && (
+                <div className="mt-2">
+                  <label className="text-[10px] font-bold text-slate-600 uppercase tracking-widest block mb-0.5">EWB No. *</label>
+                  <input value={ewayBillNo}
+                    onChange={e => setEwayBillNo(e.target.value.replace(/\D/g, '').slice(0, 12))}
+                    inputMode="numeric"
+                    className="w-full md:w-1/2 border border-slate-300 px-3 py-2 text-sm font-mono focus:outline-none focus:ring-1 focus:ring-slate-400"
+                    placeholder="12-digit e-way bill number" />
+                </div>
+              )}
+              {ewayBillStatus === 'NOT_APPLICABLE' && (
+                <div className="mt-2">
+                  <label className="text-[10px] font-bold text-slate-600 uppercase tracking-widest block mb-0.5">Reason *</label>
+                  <input value={ewayBillReason}
+                    onChange={e => setEwayBillReason(e.target.value)}
+                    className="w-full md:w-1/2 border border-slate-300 px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-slate-400"
+                    placeholder="e.g. farmer trip, below threshold, intra-state &lt;10km" />
+                </div>
+              )}
+            </div>
           )}
 
           {/* Common fields */}

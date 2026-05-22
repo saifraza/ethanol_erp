@@ -106,6 +106,18 @@ model Weighment {
   shipToAddress    String?
   shipToState      String?
   shipToPincode    String?
+  // E-way bill — operator picks one at gate entry. Not compulsory: SKIPPED is allowed
+  // because farmer trips and small loads often don't carry an e-way bill. The status
+  // is captured either way so audits can later distinguish "verified" vs "no EWB"
+  // vs "operator didn't bother". null = legacy rows from before this column existed.
+  //   VERIFIED       → ewayBillNo required (operator saw the slip)
+  //   NOT_APPLICABLE → ewayBillReason required (small load / farmer / exempt)
+  //   SKIPPED        → operator hit submit without picking (default)
+  ewayBillStatus     String?   // VERIFIED, NOT_APPLICABLE, SKIPPED
+  ewayBillNo         String?
+  ewayBillReason     String?
+  ewayBillVerifiedAt DateTime?
+  ewayBillVerifiedBy String?
   // Camera snapshots (comma-separated relative paths)
   grossPhotos   String?  // e.g. "{id}/gross_cam1.jpg,{id}/gross_cam2.jpg"
   tarePhotos    String?

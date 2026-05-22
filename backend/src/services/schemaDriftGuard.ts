@@ -131,6 +131,14 @@ const EXPECTED_COLUMNS: ColumnCheck[] = [
   // table of 4 contracts. Backfill of existing rows happens via a one-shot
   // SQL UPDATE after this column is in place; see PR description.
   { table: 'DDGSContract', column: 'productType', sql: `ALTER TABLE "DDGSContract" ADD COLUMN IF NOT EXISTS "productType" TEXT NOT NULL DEFAULT 'DDGS'` },
+
+  // 2026-05-22 — E-way bill capture at gate entry (factory operator).
+  // Mirrors the new factory Weighment columns; arrives via /api/weighment/sync.
+  { table: 'Weighment', column: 'ewayBillStatus',     sql: `ALTER TABLE "Weighment" ADD COLUMN IF NOT EXISTS "ewayBillStatus" TEXT` },
+  { table: 'Weighment', column: 'ewayBillNo',         sql: `ALTER TABLE "Weighment" ADD COLUMN IF NOT EXISTS "ewayBillNo" TEXT` },
+  { table: 'Weighment', column: 'ewayBillReason',     sql: `ALTER TABLE "Weighment" ADD COLUMN IF NOT EXISTS "ewayBillReason" TEXT` },
+  { table: 'Weighment', column: 'ewayBillVerifiedAt', sql: `ALTER TABLE "Weighment" ADD COLUMN IF NOT EXISTS "ewayBillVerifiedAt" TIMESTAMP(3)` },
+  { table: 'Weighment', column: 'ewayBillVerifiedBy', sql: `ALTER TABLE "Weighment" ADD COLUMN IF NOT EXISTS "ewayBillVerifiedBy" TEXT` },
 ];
 
 const EXPECTED_TABLES: TableCheck[] = [
