@@ -1028,4 +1028,108 @@ router.patch('/:id/auto-einvoice', asyncHandler(async (req: AuthRequest, res: Re
   res.json({ contract });
 }));
 
+// ── EXCEL EXPORT ──
+// Mirror of /api/ethanol-contracts/export/excel. Same filter shape
+// (contractId / from / to) and the same toolbar wiring on the page.
+router.get('/export/excel', asyncHandler(async (req: AuthRequest, res: Response) => {
+  const ExcelJS = require('exceljs');
+  const { contractId, from, to } = req.query;
+
+  const where: Record<string, unknown> = {};
+  if (contractId) where.contractId = contractId as string;
+  if (from || to) {
+    where.dispatchDate = {};
+    if (from) (where.dispatchDate as Record<string, unknown>).gte = new Date(from as string);
+    if (to) (where.dispatchDate as Record<string, unknown>).lte = new Date(to as string + 'T23:59:59');
+  }
+
+  const dispatches = await prisma.dDGSContractDispatch.findMany({
+    where,
+    orderBy: { dispatchDate: 'desc' },
+    include: {
+      contract: { select: { contractNo: true, buyerName: true, dealType: true, productType: true, principalName: true } },
+      invoice: { select: { invoiceNo: true, ewbNo: true } },
+    },
+    take: 5000,
+  });
+
+  const wb = new ExcelJS.Workbook();
+  wb.creator = 'MSPIL ERP';
+  const ws = wb.addWorksheet('DDGS Dispatches');
+
+  const hdrFill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF1E293B' } } as const;
+  const hdrFont = { bold: true, color: { argb: 'FFFFFFFF' }, size: 10 } as const;
+  const borderThin = { style: 'thin', color: { argb: 'FFE2E8F0' } } as const;
+  const borders = { top: borderThin, bottom: borderThin, left: borderThin, right: borderThin };
+
+  ws.columns = [
+    { header: 'Date', key: 'date', width: 12 },
+    { header: 'Contract', key: 'contract', width: 25 },
+    { header: 'Party', key: 'party', width: 30 },
+    { header: 'Product', key: 'product', width: 14 },
+    { header: 'Deal', key: 'deal', width: 12 },
+    { header: 'Vehicle', key: 'vehicle', width: 16 },
+    { header: 'Bags', key: 'bags', width: 8 },
+    { header: 'Net (MT)', key: 'netMT', width: 12 },
+    { header: 'Rate (₹/MT)', key: 'rate', width: 14 },
+    { header: 'Amount (₹)', key: 'amount', width: 15 },
+    { header: 'Invoice', key: 'invoice', width: 18 },
+    { header: 'EWB', key: 'ewb', width: 18 },
+    { header: 'Challan', key: 'challan', width: 14 },
+    { header: 'Gate Pass', key: 'gatePass', width: 14 },
+    { header: 'Transporter', key: 'transporter', width: 22 },
+    { header: 'Destination', key: 'destination', width: 20 },
+    { header: 'Status', key: 'status', width: 12 },
+  ];
+
+  const headerRow = ws.getRow(1);
+  headerRow.eachCell((cell: any) => { cell.fill = hdrFill; cell.font = hdrFont; cell.border = borders; cell.alignment = { vertical: 'middle' }; });
+  headerRow.height = 24;
+
+  for (const d of dispatches) {
+    const row = ws.addRow({
+      date: d.dispatchDate,
+      contract: d.contract.contractNo,
+      party: d.contract.buyerName,
+      product: d.contract.productType || 'DDGS',
+      deal: d.contract.dealType === 'JOB_WORK' ? 'Job Work' : 'Sale',
+      vehicle: d.vehicleNo,
+      bags: d.bags,
+      netMT: d.weightNetMT,
+      rate: d.rate,
+      amount: d.amount,
+      invoice: d.invoice?.invoiceNo || '',
+      ewb: d.invoice?.ewbNo || '',
+      challan: d.challanNo || '',
+      gatePass: d.gatePassNo || '',
+      transporter: d.transporterName,
+      destination: d.destination,
+      status: d.status,
+    });
+    row.eachCell((cell: any) => { cell.border = borders; cell.font = { size: 10 }; });
+  }
+
+  ws.getColumn('date').numFmt = 'DD-MMM-YY';
+  ws.getColumn('netMT').numFmt = '#,##0.000';
+  ws.getColumn('rate').numFmt = '#,##0.00';
+  ws.getColumn('amount').numFmt = '₹#,##0.00';
+
+  const totalNet = dispatches.reduce((s, d) => s + (d.weightNetMT || 0), 0);
+  const totalAmt = dispatches.reduce((s, d) => s + (d.amount || 0), 0);
+  const totalBags = dispatches.reduce((s, d) => s + (d.bags || 0), 0);
+  const sumRow = ws.addRow({
+    date: '', contract: '', party: 'TOTAL', product: '', deal: '',
+    vehicle: `${dispatches.length} trips`, bags: totalBags, netMT: totalNet, rate: '', amount: totalAmt,
+  });
+  sumRow.eachCell((cell: any) => { cell.font = { bold: true, size: 10 }; cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFF1F5F9' } }; cell.border = borders; });
+
+  ws.autoFilter = { from: 'A1', to: `Q${dispatches.length + 1}` };
+
+  const dateStr = new Date().toISOString().slice(0, 10);
+  const fileName = `DDGS-Dispatches-${dateStr}.xlsx`;
+  res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+  res.setHeader('Content-Disposition', `attachment; filename=${fileName}`);
+  await wb.xlsx.write(res);
+}));
+
 export default router;
