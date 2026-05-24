@@ -223,9 +223,17 @@ async function autoPull(d: CachedDevice): Promise<void> {
   try {
     pulled = await bridge.pullPunches(toRef(d), since, false);
   } catch (err) {
+    // CRITICAL: do NOT advance lastPullAt on failure. The `since` cursor must
+    // stay at the last KNOWN-GOOD pull so that when the device comes back after
+    // a power/network outage, the next successful pull covers the whole gap
+    // and the buffered punches in the device's memory get ingested. Advancing
+    // the cursor on failure silently drops the outage window — that's how we
+    // lost ~248 punches on 2026-05-24 when MSPIL + ETHANOL devices were dark
+    // for ~5 hours. The unique index on (deviceCode, deviceUserId, punchAt)
+    // makes the over-pull idempotent on retry.
     await prisma.cachedBiometricDevice.update({
       where: { id: d.id },
-      data: { lastError: err instanceof Error ? err.message : String(err), lastPullAt: new Date() },
+      data: { lastError: err instanceof Error ? err.message : String(err) },
     }).catch(() => {});
     return;
   }
