@@ -6,6 +6,7 @@ import { useAuth } from '../../context/AuthContext';
 interface DispatchInvoice {
   id: string;
   invoiceNo: number;
+  remarks?: string | null;
   totalAmount: number;
   paidAmount: number;
   balanceAmount: number;
@@ -29,6 +30,8 @@ interface DispatchInvoice {
   ewbNo?: string | null;
   ewbDate?: string | null;
   ewbStatus?: string | null;
+  cancelledAt?: string | null;
+  cancelReason?: string | null;
 }
 
 interface Dispatch {
@@ -203,6 +206,14 @@ const DDGSContracts: React.FC = () => {
   const [ewbForm, setEwbForm] = useState({ distanceKm: '', transporterName: '', transporterGstin: '', vehicleNo: '' });
   const [manualEwb, setManualEwb] = useState<{ dispatchId: string; ewbNo: string; file: File | null } | null>(null);
 
+  // Review-&-edit-before-generate modal (also used to regenerate after a cancellation)
+  const [reviewModal, setReviewModal] = useState<{ contractId: string; dispatchId: string; fromWeighbridge: boolean; regen: boolean } | null>(null);
+  const [reviewForm, setReviewForm] = useState({ quantity: '', rate: '', gstPercent: '', vehicleNo: '', invoiceDate: '' });
+
+  // Cancel-invoice (void with remark) modal
+  const [cancelModal, setCancelModal] = useState<{ contractId: string; invoiceId: string; invoiceLabel: string } | null>(null);
+  const [cancelReason, setCancelReason] = useState('');
+
   useEffect(() => { fetchData(); fetchCustomers(); }, []);
 
   const fetchData = async () => {
@@ -337,12 +348,47 @@ const DDGSContracts: React.FC = () => {
     }
   };
 
-  const handleCreateInvoice = async (contractId: string, dispatchId: string) => {
+  // Open the review screen pre-filled from the dispatch. Operator confirms (or corrects) before the invoice is created.
+  const openReviewInvoice = (c: Contract, d: Dispatch, regen = false) => {
+    setError('');
+    setReviewModal({ contractId: c.id, dispatchId: d.id, fromWeighbridge: !!d.ddgsDispatchTruckId, regen });
+    setReviewForm({
+      quantity: String(d.weightNetMT ?? ''),
+      rate: String(d.rate || c.rate || ''),
+      gstPercent: String(d.invoice?.gstPercent ?? c.gstPercent ?? 5),
+      vehicleNo: d.vehicleNo || '',
+      invoiceDate: (d.dispatchDate || new Date().toISOString()).slice(0, 10),
+    });
+  };
+
+  const submitReviewInvoice = async () => {
+    if (!reviewModal) return;
+    const { contractId, dispatchId } = reviewModal;
     try {
       setActionLoading(dispatchId);
-      await api.post(`/ddgs-contracts/${contractId}/dispatches/${dispatchId}/create-invoice`);
+      await api.post(`/ddgs-contracts/${contractId}/dispatches/${dispatchId}/create-invoice`, {
+        quantity: reviewForm.quantity,
+        rate: reviewForm.rate,
+        gstPercent: reviewForm.gstPercent,
+        vehicleNo: reviewForm.vehicleNo,
+        invoiceDate: reviewForm.invoiceDate,
+      });
+      setReviewModal(null);
       loadSupplyDetail(contractId);
     } catch (err: unknown) { setError(err?.response?.data?.error || 'Failed to create invoice'); }
+    finally { setActionLoading(null); }
+  };
+
+  const handleCancelInvoice = async () => {
+    if (!cancelModal || cancelReason.trim().length < 3) return;
+    const { contractId, invoiceId } = cancelModal;
+    try {
+      setActionLoading(invoiceId);
+      await api.post(`/invoices/${invoiceId}/cancel`, { reason: cancelReason.trim() });
+      setCancelModal(null);
+      setCancelReason('');
+      loadSupplyDetail(contractId);
+    } catch (err: unknown) { setError(err?.response?.data?.error || 'Failed to cancel invoice'); }
     finally { setActionLoading(null); }
   };
 
@@ -634,9 +680,11 @@ const DDGSContracts: React.FC = () => {
 
                               {/* Document Pipeline KPIs */}
                               {(() => {
-                                const withInvoice = detailDispatches.filter(d => d.invoice).length;
-                                const withIRN = detailDispatches.filter(d => d.invoice?.irnStatus === 'GENERATED').length;
-                                const withEWB = detailDispatches.filter(d => d.invoice?.ewbStatus === 'GENERATED').length;
+                                const isLive = (inv?: DispatchInvoice | null) => !!inv && inv.status !== 'CANCELLED';
+                                const withInvoice = detailDispatches.filter(d => isLive(d.invoice)).length;
+                                const withIRN = detailDispatches.filter(d => isLive(d.invoice) && d.invoice?.irnStatus === 'GENERATED').length;
+                                const withEWB = detailDispatches.filter(d => isLive(d.invoice) && d.invoice?.ewbStatus === 'GENERATED').length;
+                                const cancelled = detailDispatches.filter(d => d.invoice?.status === 'CANCELLED').length;
                                 const pending = detailDispatches.length - withInvoice;
                                 return (
                                   <div className="grid grid-cols-2 md:grid-cols-6 border-b border-slate-200">
@@ -655,6 +703,7 @@ const DDGSContracts: React.FC = () => {
                                       <div className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Invoiced</div>
                                       <div className="text-lg font-bold text-blue-700 font-mono tabular-nums mt-0.5">{withInvoice} <span className="text-xs text-slate-400 font-normal">/ {detailSummary.totalDispatches}</span></div>
                                       {pending > 0 && <div className="text-[10px] text-red-500 font-medium">{pending} pending</div>}
+                                      {cancelled > 0 && <div className="text-[10px] text-slate-400 font-medium">{cancelled} cancelled</div>}
                                     </div>
                                     <div className="bg-white px-4 py-2.5 border-r border-slate-200 border-l-4 border-l-green-500">
                                       <div className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">IRN Generated</div>
@@ -768,11 +817,21 @@ const DDGSContracts: React.FC = () => {
                                         </td>
                                         {/* Invoice */}
                                         <td className="px-2 py-1.5 border-r border-slate-100 text-center">
-                                          {d.invoice ? (
+                                          {d.invoice && d.invoice.status === 'CANCELLED' ? (
+                                            <div className="flex items-center justify-center gap-1">
+                                              <button onClick={(e) => { e.stopPropagation(); setShowIrnDetail(showIrnDetail === d.id ? null : d.id); }}
+                                                className="text-[10px] font-medium text-slate-400 line-through hover:text-slate-600 cursor-pointer" title="Cancelled invoice">{d.invoice.remarks || `INV-${d.invoice.invoiceNo}`}</button>
+                                              <button onClick={(e) => { e.stopPropagation(); openReviewInvoice(c, d, true); }}
+                                                disabled={actionLoading === d.id}
+                                                className="text-[9px] font-bold uppercase px-1.5 py-0.5 border border-blue-300 bg-blue-50 text-blue-700 hover:bg-blue-100 disabled:opacity-50" title="Generate a corrected invoice">
+                                                {actionLoading === d.id ? '...' : 'Regen'}
+                                              </button>
+                                            </div>
+                                          ) : d.invoice ? (
                                             <button onClick={(e) => { e.stopPropagation(); setShowIrnDetail(showIrnDetail === d.id ? null : d.id); }} className="text-[10px] font-medium text-blue-700 underline hover:text-blue-900 cursor-pointer">{d.invoice.remarks || `INV-${d.invoice.invoiceNo}`}</button>
                                           ) : (
                                             <button
-                                              onClick={(e) => { e.stopPropagation(); handleCreateInvoice(c.id, d.id); }}
+                                              onClick={(e) => { e.stopPropagation(); openReviewInvoice(c, d); }}
                                               disabled={actionLoading === d.id}
                                               className="text-[9px] font-bold uppercase px-1.5 py-0.5 border border-blue-300 bg-blue-50 text-blue-700 hover:bg-blue-100 disabled:opacity-50">
                                               {actionLoading === d.id ? '...' : 'Gen Invoice'}
@@ -781,7 +840,9 @@ const DDGSContracts: React.FC = () => {
                                         </td>
                                         {/* IRN */}
                                         <td className="px-2 py-1.5 border-r border-slate-100 text-center">
-                                          {d.invoice?.irnStatus === 'GENERATED' ? (
+                                          {d.invoice && d.invoice.status === 'CANCELLED' ? (
+                                            <span className="text-[9px] font-bold uppercase px-1.5 py-0.5 border border-slate-200 bg-slate-50 text-slate-400">Cancelled</span>
+                                          ) : d.invoice?.irnStatus === 'GENERATED' ? (
                                             <button onClick={(e) => { e.stopPropagation(); setShowIrnDetail(showIrnDetail === d.id ? null : d.id); }}
                                               className="text-[9px] font-bold uppercase px-1.5 py-0.5 border border-green-300 bg-green-50 text-green-700 hover:bg-green-100 cursor-pointer">IRN</button>
                                           ) : d.invoice ? (
@@ -797,7 +858,9 @@ const DDGSContracts: React.FC = () => {
                                         </td>
                                         {/* EWB */}
                                         <td className="px-2 py-1.5 border-r border-slate-100 text-center">
-                                          {d.invoice?.ewbStatus === 'GENERATED' && manualEwb?.dispatchId !== d.id ? (
+                                          {d.invoice && d.invoice.status === 'CANCELLED' ? (
+                                            <span className="text-slate-300">--</span>
+                                          ) : d.invoice?.ewbStatus === 'GENERATED' && manualEwb?.dispatchId !== d.id ? (
                                             <button onClick={(e) => { e.stopPropagation(); setManualEwb({ dispatchId: d.id, ewbNo: d.invoice!.ewbNo || '', file: null }); }}
                                               className="text-[9px] font-bold uppercase px-1.5 py-0.5 border border-green-300 bg-green-50 text-green-700 hover:bg-green-100 cursor-pointer" title={`${d.invoice.ewbNo || ''}`}>EWB</button>
                                           ) : (d.invoice?.irnStatus === 'GENERATED' || d.invoice?.ewbStatus === 'GENERATED') ? (
@@ -874,6 +937,14 @@ const DDGSContracts: React.FC = () => {
                                                 } catch { setError('Failed to load EWB PDF'); }
                                               }} className="text-[8px] font-bold uppercase px-1 py-0.5 border border-green-300 bg-green-50 text-green-600 hover:bg-green-100" title="E-Way Bill PDF">EWB</button>
                                             )}
+                                            {d.invoice && d.invoice.status === 'UNPAID' && (
+                                              <button onClick={(e) => {
+                                                e.stopPropagation();
+                                                setError('');
+                                                setCancelReason('');
+                                                setCancelModal({ contractId: c.id, invoiceId: d.invoice!.id, invoiceLabel: d.invoice!.remarks || `INV-${d.invoice!.invoiceNo}` });
+                                              }} className="text-[8px] font-bold uppercase px-1 py-0.5 border border-red-300 bg-red-50 text-red-600 hover:bg-red-100" title="Cancel / void this invoice">Cancel</button>
+                                            )}
                                             {/* Delete button removed — dispatches should never be deleted */}
                                           </div>
                                         </td>
@@ -887,9 +958,17 @@ const DDGSContracts: React.FC = () => {
                                               <span className={`text-[9px] font-bold uppercase px-1.5 py-0.5 border ${
                                                 d.invoice.status === 'PAID' ? 'bg-green-900/50 text-green-300 border-green-600' :
                                                 d.invoice.status === 'PARTIAL' ? 'bg-amber-900/50 text-amber-300 border-amber-600' :
+                                                d.invoice.status === 'CANCELLED' ? 'bg-slate-700 text-slate-300 border-slate-500 line-through' :
                                                 'bg-red-900/50 text-red-300 border-red-600'
                                               }`}>{d.invoice.status}</span>
                                             </div>
+                                            {d.invoice.status === 'CANCELLED' && (
+                                              <div className="bg-slate-100 border-l-4 border-l-slate-400 px-3 py-1.5 text-[10px] text-slate-600">
+                                                <span className="font-bold text-slate-400 uppercase tracking-widest">Cancelled</span>
+                                                {d.invoice.cancelledAt && <span className="ml-2 font-mono">{new Date(d.invoice.cancelledAt).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })}</span>}
+                                                {d.invoice.cancelReason && <span className="ml-2">— {d.invoice.cancelReason}</span>}
+                                              </div>
+                                            )}
                                             <div className="bg-slate-50 px-3 py-2 text-[10px] border-l-4 border-l-blue-500">
                                               <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-x-6 gap-y-1.5 mb-2">
                                                 <div>
@@ -1214,6 +1293,96 @@ const DDGSContracts: React.FC = () => {
               <button onClick={handleDispatchSubmit} disabled={dispatchSaving}
                 className="px-4 py-1.5 bg-blue-600 text-white text-[11px] font-medium hover:bg-blue-700 disabled:opacity-50">
                 {dispatchSaving ? 'Saving...' : 'Record Dispatch'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* REVIEW & EDIT INVOICE BEFORE GENERATING (also used to regenerate after a cancellation) */}
+      {reviewModal && (() => {
+        const qty = parseFloat(reviewForm.quantity) || 0;
+        const rate = parseFloat(reviewForm.rate) || 0;
+        const gstPct = parseFloat(reviewForm.gstPercent) || 0;
+        const amount = qty * rate;
+        const gstAmt = amount * gstPct / 100;
+        const total = amount + gstAmt;
+        return (
+          <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+            <div className="bg-white shadow-2xl w-full max-w-md mx-4">
+              <div className="bg-slate-800 text-white px-4 py-2.5 flex items-center justify-between">
+                <h2 className="text-sm font-bold tracking-wide uppercase">{reviewModal.regen ? 'Regenerate Invoice' : 'Review Invoice Before Generating'}</h2>
+                <button onClick={() => setReviewModal(null)} className="text-slate-400 hover:text-white"><X size={18} /></button>
+              </div>
+              <div className="p-5 space-y-4">
+                <p className="text-[11px] text-slate-500">Check the details and fix any errors. The invoice is created only when you confirm.</p>
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className={labelCls}>Quantity (MT)</label>
+                    <input type="number" value={reviewForm.quantity} disabled={reviewModal.fromWeighbridge}
+                      onChange={e => setReviewForm(p => ({ ...p, quantity: e.target.value }))}
+                      className={`${inputCls} ${reviewModal.fromWeighbridge ? 'bg-slate-100 text-slate-500 cursor-not-allowed' : ''}`} />
+                    {reviewModal.fromWeighbridge && <p className="text-[9px] text-slate-400 mt-0.5">Locked — measured at the weighbridge</p>}
+                  </div>
+                  <div>
+                    <label className={labelCls}>Rate (₹/MT)</label>
+                    <input type="number" value={reviewForm.rate} onChange={e => setReviewForm(p => ({ ...p, rate: e.target.value }))} className={inputCls} autoFocus />
+                  </div>
+                  <div>
+                    <label className={labelCls}>GST %</label>
+                    <input type="number" value={reviewForm.gstPercent} onChange={e => setReviewForm(p => ({ ...p, gstPercent: e.target.value }))} className={inputCls} />
+                  </div>
+                  <div>
+                    <label className={labelCls}>Invoice Date</label>
+                    <input type="date" value={reviewForm.invoiceDate} onChange={e => setReviewForm(p => ({ ...p, invoiceDate: e.target.value }))} className={inputCls} />
+                  </div>
+                  <div className="col-span-2">
+                    <label className={labelCls}>Vehicle No</label>
+                    <input type="text" value={reviewForm.vehicleNo} onChange={e => setReviewForm(p => ({ ...p, vehicleNo: e.target.value }))} className={inputCls} />
+                  </div>
+                </div>
+                <div className="bg-slate-50 border border-slate-200 px-3 py-2 text-[11px] space-y-1">
+                  <div className="flex justify-between"><span className="text-slate-500">Base Amount</span><span className="font-mono text-slate-700">{fmtINR(amount)}</span></div>
+                  <div className="flex justify-between"><span className="text-slate-500">GST @ {gstPct}%</span><span className="font-mono text-slate-700">{fmtINR(gstAmt)}</span></div>
+                  <div className="flex justify-between border-t border-slate-200 pt-1 font-bold"><span className="text-slate-600">Total</span><span className="font-mono text-slate-800">{fmtINR(total)}</span></div>
+                </div>
+              </div>
+              <div className="bg-slate-50 px-5 py-3 flex items-center justify-end gap-2 border-t border-slate-200">
+                <button onClick={() => setReviewModal(null)} className="px-4 py-1.5 bg-white border border-slate-300 text-slate-600 text-[11px] font-medium hover:bg-slate-50">Cancel</button>
+                <button onClick={submitReviewInvoice}
+                  disabled={actionLoading === reviewModal.dispatchId || !(qty > 0) || !(rate > 0)}
+                  className="px-4 py-1.5 bg-blue-600 text-white text-[11px] font-medium hover:bg-blue-700 disabled:opacity-50">
+                  {actionLoading === reviewModal.dispatchId ? 'Generating...' : 'Generate Invoice'}
+                </button>
+              </div>
+            </div>
+          </div>
+        );
+      })()}
+
+      {/* CANCEL / VOID INVOICE MODAL */}
+      {cancelModal && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+          <div className="bg-white shadow-2xl w-full max-w-md mx-4">
+            <div className="bg-red-700 text-white px-4 py-2.5 flex items-center justify-between">
+              <h2 className="text-sm font-bold tracking-wide uppercase">Cancel Invoice {cancelModal.invoiceLabel}</h2>
+              <button onClick={() => setCancelModal(null)} className="text-red-200 hover:text-white"><X size={18} /></button>
+            </div>
+            <div className="p-5 space-y-3">
+              <p className="text-[11px] text-slate-600">This marks the invoice as <span className="font-bold">CANCELLED</span> and reverses its accounting entry. It does not cancel the e-invoice on the government portal — do that there if an IRN was generated.</p>
+              <div>
+                <label className={labelCls}>Reason for cancellation *</label>
+                <textarea value={cancelReason} onChange={e => setCancelReason(e.target.value)} rows={3}
+                  placeholder="e.g. Wrong rate entered, duplicate invoice…"
+                  className="border border-slate-300 px-2.5 py-1.5 text-xs w-full focus:outline-none focus:ring-1 focus:ring-red-400" autoFocus />
+              </div>
+            </div>
+            <div className="bg-slate-50 px-5 py-3 flex items-center justify-end gap-2 border-t border-slate-200">
+              <button onClick={() => setCancelModal(null)} className="px-4 py-1.5 bg-white border border-slate-300 text-slate-600 text-[11px] font-medium hover:bg-slate-50">Keep Invoice</button>
+              <button onClick={handleCancelInvoice}
+                disabled={actionLoading === cancelModal.invoiceId || cancelReason.trim().length < 3}
+                className="px-4 py-1.5 bg-red-600 text-white text-[11px] font-medium hover:bg-red-700 disabled:opacity-50">
+                {actionLoading === cancelModal.invoiceId ? 'Cancelling...' : 'Cancel Invoice'}
               </button>
             </div>
           </div>

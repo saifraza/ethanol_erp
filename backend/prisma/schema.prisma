@@ -2336,6 +2336,10 @@ model Invoice {
   shipToState             String?
   shipToPincode           String?
   remarks                 String?
+  // Cancellation (void) — set when an invoice is cancelled from the ERP. No NIC call; books reversed via SALE journal.
+  cancelledAt             DateTime?
+  cancelledBy             String? // userId who cancelled
+  cancelReason            String? // operator-entered remark explaining the cancellation
   userId                  String
   createdAt               DateTime                @default(now())
   updatedAt               DateTime                @updatedAt

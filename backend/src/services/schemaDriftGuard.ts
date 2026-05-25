@@ -139,6 +139,12 @@ const EXPECTED_COLUMNS: ColumnCheck[] = [
   { table: 'Weighment', column: 'ewayBillReason',     sql: `ALTER TABLE "Weighment" ADD COLUMN IF NOT EXISTS "ewayBillReason" TEXT` },
   { table: 'Weighment', column: 'ewayBillVerifiedAt', sql: `ALTER TABLE "Weighment" ADD COLUMN IF NOT EXISTS "ewayBillVerifiedAt" TIMESTAMP(3)` },
   { table: 'Weighment', column: 'ewayBillVerifiedBy', sql: `ALTER TABLE "Weighment" ADD COLUMN IF NOT EXISTS "ewayBillVerifiedBy" TEXT` },
+
+  // 2026-05-25 — Invoice cancellation (void) from the ERP. Operator cancels a wrong
+  // invoice with a remark; status -> CANCELLED, SALE journal reversed. No NIC call.
+  { table: 'Invoice', column: 'cancelledAt',  sql: `ALTER TABLE "Invoice" ADD COLUMN IF NOT EXISTS "cancelledAt" TIMESTAMP(3)` },
+  { table: 'Invoice', column: 'cancelledBy',  sql: `ALTER TABLE "Invoice" ADD COLUMN IF NOT EXISTS "cancelledBy" TEXT` },
+  { table: 'Invoice', column: 'cancelReason', sql: `ALTER TABLE "Invoice" ADD COLUMN IF NOT EXISTS "cancelReason" TEXT` },
 ];
 
 const EXPECTED_TABLES: TableCheck[] = [
