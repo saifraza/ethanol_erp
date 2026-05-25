@@ -35,6 +35,10 @@ const updateInvoiceSchema = z.object({
   invoiceDate: z.string().optional(),
   dueDate: z.string().optional().nullable(),
 });
+
+const cancelInvoiceSchema = z.object({
+  reason: z.string().trim().min(3, 'A cancellation reason is required'),
+});
 import { generateInvoicePdf } from '../utils/pdfGenerator';
 import { renderDocumentPdf } from '../services/documentRenderer';
 import { nextDocNo } from '../utils/docSequence';
@@ -43,7 +47,7 @@ import { getCompanyForPdf } from '../utils/pdfCompanyHelper';
 import { sendEmail } from '../services/messaging';
 import { generateIRN, cancelIRN, getIRNDetails } from '../services/eInvoice';
 import { freezeInvoice, auditAllSnapshots } from '../services/invoiceSnapshot';
-import { onSaleInvoiceCreated } from '../services/autoJournal';
+import { onSaleInvoiceCreated, reverseAutoJournal } from '../services/autoJournal';
 import { calcGstSplit } from '../utils/gstSplit';
 
 const router = Router();
@@ -842,6 +846,49 @@ router.post('/:id/e-invoice/cancel', asyncHandler(async (req: AuthRequest, res: 
       message: 'IRN cancelled successfully',
       invoice: updated,
     });
+}));
+
+// POST /:id/cancel — Cancel/void an invoice in the ERP (with a remark).
+// Marks status=CANCELLED, reverses the SALE journal, and (if an IRN exists) records
+// irnStatus=CANCELLED. Does NOT call the NIC portal — cancel the e-invoice there
+// yourself. Cannot cancel an invoice that already has payments against it.
+router.post('/:id/cancel', validate(cancelInvoiceSchema), asyncHandler(async (req: AuthRequest, res: Response) => {
+    const reason: string = req.body.reason.trim();
+
+    const invoice = await prisma.invoice.findUnique({ where: { id: req.params.id } });
+    if (!invoice) { res.status(404).json({ error: 'Invoice not found' }); return; }
+    if (invoice.status === 'CANCELLED') { res.status(400).json({ error: 'Invoice is already cancelled' }); return; }
+    if ((invoice.paidAmount || 0) > 0 || invoice.status === 'PAID' || invoice.status === 'PARTIAL') {
+      res.status(400).json({ error: 'Cannot cancel an invoice that has payments recorded. Reverse the payments first.' });
+      return;
+    }
+
+    const irn = (invoice as any).irn;
+    const updated = await prisma.invoice.update({
+      where: { id: invoice.id },
+      data: {
+        status: 'CANCELLED',
+        balanceAmount: 0,
+        cancelledAt: new Date(),
+        cancelledBy: req.user?.id || 'system',
+        cancelReason: reason,
+        ...(irn ? { irnStatus: 'CANCELLED' } : {}),
+      } as any,
+      include: { customer: { select: { id: true, name: true, shortName: true } } },
+    });
+
+    // Reverse the auto-generated sale journal so the books don't carry a cancelled sale.
+    await reverseAutoJournal(prisma, 'SALE', invoice.id, req.user?.id || 'system');
+
+    // Mirror cancellation onto a linked shipment's IRN status, if any.
+    if (invoice.shipmentId && irn) {
+      await prisma.shipment.update({
+        where: { id: invoice.shipmentId },
+        data: { irnStatus: 'CANCELLED' } as any,
+      }).catch(() => {});
+    }
+
+    res.json({ success: true, message: 'Invoice cancelled', invoice: updated });
 }));
 
 // GET /:id/e-invoice/details — Get IRN details

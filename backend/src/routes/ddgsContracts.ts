@@ -340,6 +340,7 @@ router.get('/:id/supply-summary', asyncHandler(async (req: AuthRequest, res: Res
               supplyType: true, freightCharge: true,
               irn: true, irnDate: true, irnStatus: true, ackNo: true, signedQRCode: true,
               ewbNo: true, ewbDate: true, ewbValidTill: true, ewbStatus: true,
+              cancelledAt: true, cancelReason: true,
             },
           },
         },
@@ -361,7 +362,7 @@ router.get('/:id/supply-summary', asyncHandler(async (req: AuthRequest, res: Res
   let totalInvoiceAmount = 0;
   let totalPaid = 0;
   for (const d of dispatches) {
-    if (d.invoice) {
+    if (d.invoice && d.invoice.status !== 'CANCELLED') {
       totalInvoiceAmount += d.invoice.totalAmount || 0;
       totalPaid += d.invoice.paidAmount || 0;
     }
@@ -686,12 +687,23 @@ router.post('/:id/release-truck/:truckId', asyncHandler(async (req: AuthRequest,
 }));
 
 // ── CREATE INVOICE from dispatch ──
+// Operator may correct details on the review screen before generating. Accepts optional
+// overrides: quantity (MT), rate, gstPercent, vehicleNo, invoiceDate. Net weight is LOCKED
+// for weighbridge-sourced dispatches (hardware-measured — anti-fraud). If the linked invoice
+// was CANCELLED, a fresh corrected invoice may be generated (re-points the dispatch).
 router.post('/:id/dispatches/:dispatchId/create-invoice', asyncHandler(async (req: AuthRequest, res: Response) => {
   const dispatch = await prisma.dDGSContractDispatch.findFirst({
     where: { id: req.params.dispatchId, contractId: req.params.id },
   });
   if (!dispatch) return res.status(404).json({ error: 'Dispatch not found for this contract' });
-  if (dispatch.invoiceId) return res.status(400).json({ error: 'Invoice already exists for this dispatch' });
+
+  // Allow regeneration only when the currently-linked invoice has been cancelled.
+  if (dispatch.invoiceId) {
+    const linked = await prisma.invoice.findUnique({ where: { id: dispatch.invoiceId }, select: { status: true } });
+    if (linked && linked.status !== 'CANCELLED') {
+      return res.status(400).json({ error: 'Invoice already exists for this dispatch' });
+    }
+  }
 
   const contract = await prisma.dDGSContract.findUnique({
     where: { id: req.params.id },
@@ -702,30 +714,54 @@ router.post('/:id/dispatches/:dispatchId/create-invoice', asyncHandler(async (re
   const customer = contract.customer;
   if (!customer) return res.status(500).json({ error: 'Customer not found' });
 
-  const gstPercent = contract.gstPercent || DDGS_GST_PCT;
-  const amount = dispatch.amount || (dispatch.weightNetMT * dispatch.rate);
+  const b = req.body || {};
+  const fromWeighbridge = !!dispatch.ddgsDispatchTruckId;
+
+  // Net weight is the hardware-measured value for weighbridge dispatches — never editable here.
+  const qtyOverride = p(b.quantity);
+  if (fromWeighbridge && qtyOverride !== null && Math.abs(qtyOverride - dispatch.weightNetMT) > 0.001) {
+    return res.status(400).json({ error: 'Net weight comes from the weighbridge and cannot be edited. Correct rate/GST instead.' });
+  }
+  const quantity = fromWeighbridge ? dispatch.weightNetMT : (qtyOverride ?? dispatch.weightNetMT);
+  const rate = p(b.rate) ?? dispatch.rate ?? 0;
+  const gstPercent = p(b.gstPercent) ?? (contract.gstPercent || DDGS_GST_PCT);
+  const invoiceDate = b.invoiceDate ? new Date(b.invoiceDate) : dispatch.dispatchDate;
+  const vehicleNo = typeof b.vehicleNo === 'string' && b.vehicleNo.trim() ? b.vehicleNo.trim() : dispatch.vehicleNo;
+
+  if (!(quantity > 0)) return res.status(400).json({ error: 'Quantity (MT) must be greater than zero' });
+  if (!(rate > 0)) return res.status(400).json({ error: 'Rate must be greater than zero' });
+  if (gstPercent < 0) return res.status(400).json({ error: 'GST % cannot be negative' });
+
+  const amount = Math.round(quantity * rate * 100) / 100;
   const gst = calcGstSplit(amount, gstPercent, customer.state, customer.gstNo);
   const totalAmount = Math.round((amount + gst.gstAmount) * 100) / 100;
 
-  // Atomic: create invoice + link to dispatch in transaction
+  // Atomic: create invoice + link to dispatch + sync corrected dispatch values
   const invoice = await prisma.$transaction(async (tx) => {
-    // Re-check inside transaction
-    const fresh = await tx.dDGSContractDispatch.findUnique({ where: { id: dispatch.id }, select: { invoiceId: true } });
-    if (fresh?.invoiceId) throw new Error('Invoice already exists for this dispatch');
+    // Re-check inside transaction — block only if a non-cancelled invoice slipped in.
+    const fresh = await tx.dDGSContractDispatch.findUnique({
+      where: { id: dispatch.id },
+      select: { invoiceId: true, challanNo: true, gatePassNo: true },
+    });
+    if (fresh?.invoiceId) {
+      const linked = await tx.invoice.findUnique({ where: { id: fresh.invoiceId }, select: { status: true } });
+      if (linked && linked.status !== 'CANCELLED') throw new Error('Invoice already exists for this dispatch');
+    }
 
     const customInvNo = await nextInvoiceNo(tx, 'ETH');
-    const dchNo = await nextCounter(tx, 'DCH/ETH');
-    const gpNo = await nextCounter(tx, 'GP/ETH');
+    // Reuse existing challan/gate-pass numbers on regeneration; the physical movement already happened.
+    const dchNo = fresh?.challanNo || await nextCounter(tx, 'DCH/ETH');
+    const gpNo = fresh?.gatePassNo || await nextCounter(tx, 'GP/ETH');
 
     const inv = await tx.invoice.create({
       data: {
         customerId: customer.id,
-        invoiceDate: dispatch.dispatchDate,
-        dueDate: contract.paymentTermsDays ? new Date(dispatch.dispatchDate.getTime() + contract.paymentTermsDays * 86400000) : null,
+        invoiceDate,
+        dueDate: contract.paymentTermsDays ? new Date(invoiceDate.getTime() + contract.paymentTermsDays * 86400000) : null,
         productName: 'DDGS',
-        quantity: dispatch.weightNetMT,
+        quantity,
         unit: 'MT',
-        rate: dispatch.rate || 0,
+        rate,
         amount,
         gstPercent,
         gstAmount: gst.gstAmount,
@@ -744,9 +780,19 @@ router.post('/:id/dispatches/:dispatchId/create-invoice', asyncHandler(async (re
       },
     });
 
+    // Keep the dispatch consistent with the (possibly corrected) invoice it now points to.
     await tx.dDGSContractDispatch.update({
       where: { id: dispatch.id },
-      data: { invoiceId: inv.id, challanNo: dchNo, gatePassNo: gpNo },
+      data: {
+        invoiceId: inv.id,
+        challanNo: dchNo,
+        gatePassNo: gpNo,
+        rate,
+        amount,
+        dispatchDate: invoiceDate,
+        vehicleNo,
+        ...(fromWeighbridge ? {} : { weightNetMT: quantity }),
+      },
     });
 
     return inv;
@@ -754,12 +800,12 @@ router.post('/:id/dispatches/:dispatchId/create-invoice', asyncHandler(async (re
 
   // Auto-journal
   onSaleInvoiceCreated(prisma, {
-    id: invoice.id, invoiceNo: invoice.invoiceNo, totalAmount: invoice.totalAmount,
+    id: invoice.id, invoiceNo: invoice.invoiceNo, remarks: invoice.remarks, totalAmount: invoice.totalAmount,
     amount: invoice.amount, gstAmount: gst.gstAmount, gstPercent,
     cgstAmount: gst.cgstAmount, sgstAmount: gst.sgstAmount, igstAmount: gst.igstAmount,
     supplyType: gst.supplyType, productName: 'DDGS',
     customerId: customer.id, userId: (req as AuthRequest).user?.id || 'system',
-    invoiceDate: dispatch.dispatchDate, customer: { state: customer.state },
+    invoiceDate, customer: { state: customer.state },
   });
 
   res.json({ invoice });
