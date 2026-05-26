@@ -1974,11 +1974,15 @@ model TransportWorkOrder {
   contractNo      String? // snapshot
   customerName    String? // snapshot (e.g. Reliance)
   // Destination (drives the rate)
-  depot           String // free-text delivery location
-  distanceKm      Float? // for PER_KM
+  depot             String // free-text delivery location
+  distanceKm        Float? // for PER_KM
+  estimatedDelivery DateTime? // one ETA for the whole WO (e.g. ~1 week)
   // Pricing
   rateBasis       String // PER_TRUCK | PER_LITER | PER_KL | PER_MT | PER_KM
   rate            Float   @default(0) // ₹ per unit (or per truck)
+  // Manual/aggregate entry (no weighbridge): N trucks × qty per truck
+  truckCount      Int?    // number of trucks (manual aggregate)
+  qtyPerTruck     Float?  // qty per truck in the rate's unit (e.g. 40000 L, 40 KL)
   // Tax
   gstPercent      Float   @default(0) // 0 = RCM/unregistered (common for GTA)
   supplyType      String? // INTRA_STATE | INTER_STATE

@@ -204,13 +204,19 @@ async function buildLinesAndTotals(body: any) {
     }
   }
 
-  // Manual trucks (scrap / ad-hoc) — operator-entered quantity in the basis unit.
-  const manual: { vehicleNo: string; dispatchDate?: string; quantity?: number }[] = Array.isArray(body.manualTrucks) ? body.manualTrucks : [];
-  for (const m of manual) {
-    if (!m.vehicleNo) continue;
-    const qty = rateBasis === 'PER_TRUCK' ? 1 : (Number(m.quantity) || 0);
+  // Manual aggregate (no weighbridge): N trucks × qty per truck → one summary line.
+  const truckCount = Math.trunc(Number(body.truckCount) || 0);
+  const qtyPerTruck = Number(body.qtyPerTruck) || 0;
+  if (truckCount > 0) {
     const unit = rateBasis === 'PER_TRUCK' ? 'TRUCK' : rateBasis === 'PER_MT' ? 'MT' : rateBasis === 'PER_KL' ? 'KL' : rateBasis === 'PER_LITER' ? 'LITER' : 'KM';
-    lines.push({ sourceType: 'MANUAL', sourceId: null, vehicleNo: m.vehicleNo, dispatchDate: m.dispatchDate ? new Date(m.dispatchDate) : null, quantity: qty, unit, amount: round2(rate * qty) });
+    // PER_TRUCK bills per truck; everything else bills total units (trucks × qty/truck).
+    const totalQty = rateBasis === 'PER_TRUCK' ? truckCount : round2(truckCount * qtyPerTruck);
+    const eta = body.estimatedDelivery ? new Date(body.estimatedDelivery) : null;
+    lines.push({
+      sourceType: 'MANUAL', sourceId: null,
+      vehicleNo: `${truckCount} truck${truckCount > 1 ? 's' : ''}${qtyPerTruck > 0 && rateBasis !== 'PER_TRUCK' ? ` × ${qtyPerTruck.toLocaleString('en-IN')} ${unit}` : ''}`,
+      dispatchDate: eta, quantity: totalQty, unit, amount: round2(rate * totalQty),
+    });
   }
 
   const supplyType: string = body.supplyType || 'INTRA_STATE';
@@ -237,8 +243,11 @@ const createSchema = z.object({
   tdsPercent: z.coerce.number().min(0).max(10).optional().default(0),
   supplyType: z.enum(['INTRA_STATE', 'INTER_STATE']).optional().default('INTRA_STATE'),
   remarks: z.string().optional().nullable(),
+  estimatedDelivery: z.string().optional().nullable(),
   truckSelections: z.array(z.object({ sourceType: z.string(), sourceId: z.string() })).optional(),
-  manualTrucks: z.array(z.object({ vehicleNo: z.string(), dispatchDate: z.string().optional(), quantity: z.coerce.number().optional() })).optional(),
+  // Manual aggregate (no weighbridge): N trucks × qty per truck
+  truckCount: z.coerce.number().int().min(0).optional(),
+  qtyPerTruck: z.coerce.number().min(0).optional(),
 });
 
 // ── POST / — create (DRAFT) ──
@@ -261,8 +270,11 @@ router.post('/', validate(createSchema), asyncHandler(async (req: AuthRequest, r
       customerName: b.customerName || null,
       depot: b.depot,
       distanceKm: b.distanceKm ?? null,
+      estimatedDelivery: b.estimatedDelivery ? new Date(b.estimatedDelivery) : null,
       rateBasis: b.rateBasis,
       rate: Number(b.rate) || 0,
+      truckCount: b.truckCount ? Math.trunc(Number(b.truckCount)) : null,
+      qtyPerTruck: b.qtyPerTruck ? Number(b.qtyPerTruck) : null,
       gstPercent: Number(b.gstPercent) || 0,
       supplyType,
       tdsPercent: Number(b.tdsPercent) || 0,
@@ -297,12 +309,14 @@ router.put('/:id', validate(updateSchema), asyncHandler(async (req: AuthRequest,
     gstPercent: req.body.gstPercent !== undefined ? req.body.gstPercent : existing.gstPercent,
     tdsPercent: req.body.tdsPercent !== undefined ? req.body.tdsPercent : existing.tdsPercent,
     supplyType: req.body.supplyType || existing.supplyType || 'INTRA_STATE',
+    estimatedDelivery: req.body.estimatedDelivery !== undefined ? req.body.estimatedDelivery : existing.estimatedDelivery,
     truckSelections: req.body.truckSelections,
-    manualTrucks: req.body.manualTrucks,
+    truckCount: req.body.truckCount !== undefined ? req.body.truckCount : existing.truckCount,
+    qtyPerTruck: req.body.qtyPerTruck !== undefined ? req.body.qtyPerTruck : existing.qtyPerTruck,
   };
 
-  const reLine = req.body.truckSelections !== undefined || req.body.manualTrucks !== undefined
-    || req.body.rate !== undefined || req.body.rateBasis !== undefined;
+  const reLine = req.body.truckSelections !== undefined || req.body.truckCount !== undefined
+    || req.body.qtyPerTruck !== undefined || req.body.rate !== undefined || req.body.rateBasis !== undefined;
 
   const data: Record<string, unknown> = {};
   for (const f of ['depot', 'distanceKm', 'remarks', 'contractNo', 'customerName', 'contractId', 'transporterId']) {
@@ -313,6 +327,9 @@ router.put('/:id', validate(updateSchema), asyncHandler(async (req: AuthRequest,
   if (req.body.gstPercent !== undefined) data.gstPercent = Number(req.body.gstPercent);
   if (req.body.tdsPercent !== undefined) data.tdsPercent = Number(req.body.tdsPercent);
   if (req.body.supplyType !== undefined) data.supplyType = req.body.supplyType;
+  if (req.body.estimatedDelivery !== undefined) data.estimatedDelivery = req.body.estimatedDelivery ? new Date(req.body.estimatedDelivery) : null;
+  if (req.body.truckCount !== undefined) data.truckCount = req.body.truckCount ? Math.trunc(Number(req.body.truckCount)) : null;
+  if (req.body.qtyPerTruck !== undefined) data.qtyPerTruck = req.body.qtyPerTruck ? Number(req.body.qtyPerTruck) : null;
 
   if (reLine) {
     const { lines, totals, supplyType } = await buildLinesAndTotals(merged);

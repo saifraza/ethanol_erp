@@ -21,6 +21,7 @@ interface WoPayment {
 interface WoDetail extends WoListRow {
   gstPercent: number; cgstAmount: number; sgstAmount: number; igstAmount: number; gstAmount: number;
   tdsPercent: number; tdsAmount: number; supplyType?: string | null; distanceKm?: number | null;
+  estimatedDelivery?: string | null; truckCount?: number | null; qtyPerTruck?: number | null;
   cancelReason?: string | null;
   transporter?: { id: string; name: string; gstin?: string | null; phone?: string | null };
   lines: WoLine[]; payments: WoPayment[];
@@ -95,13 +96,13 @@ export default function TransportOrders() {
   const [showCreate, setShowCreate] = useState(false);
   const [form, setForm] = useState({
     transporterId: '', productType: 'ETHANOL', contractId: '', contractNo: '', customerName: '',
-    depot: '', distanceKm: '', rateBasis: 'PER_LITER', rate: '', gstPercent: '0', tdsPercent: '0', supplyType: 'INTRA_STATE',
+    depot: '', distanceKm: '', estimatedDelivery: '', rateBasis: 'PER_LITER', rate: '', gstPercent: '0', tdsPercent: '0', supplyType: 'INTRA_STATE',
+    truckCount: '', qtyPerTruck: '',
   });
   const [contracts, setContracts] = useState<ContractOpt[]>([]);
   const [trucks, setTrucks] = useState<SourceTruck[]>([]);
   const [depotSuggestions, setDepotSuggestions] = useState<string[]>([]);
   const [selected, setSelected] = useState<Set<string>>(new Set());
-  const [manualTrucks, setManualTrucks] = useState<{ vehicleNo: string; dispatchDate: string; quantity: string }[]>([]);
 
   // pay / cancel modals
   const [payModal, setPayModal] = useState<{ woId: string; balance: number } | null>(null);
@@ -129,8 +130,8 @@ export default function TransportOrders() {
   // ── create wizard helpers ──
   const openCreate = () => {
     setError('');
-    setForm({ transporterId: '', productType: 'ETHANOL', contractId: '', contractNo: '', customerName: '', depot: '', distanceKm: '', rateBasis: 'PER_LITER', rate: '', gstPercent: '0', tdsPercent: '0', supplyType: 'INTRA_STATE' });
-    setContracts([]); setTrucks([]); setSelected(new Set()); setManualTrucks([]); setDepotSuggestions([]);
+    setForm({ transporterId: '', productType: 'ETHANOL', contractId: '', contractNo: '', customerName: '', depot: '', distanceKm: '', estimatedDelivery: '', rateBasis: 'PER_LITER', rate: '', gstPercent: '0', tdsPercent: '0', supplyType: 'INTRA_STATE', truckCount: '', qtyPerTruck: '' });
+    setContracts([]); setTrucks([]); setSelected(new Set()); setDepotSuggestions([]);
     setShowCreate(true);
     loadContracts('ETHANOL');
   };
@@ -176,22 +177,24 @@ export default function TransportOrders() {
   const selectedTrucks = trucks.filter(t => selected.has(t.sourceId));
   const rateNum = Number(form.rate) || 0;
   const pulledSubtotal = selectedTrucks.reduce((s, t) => s + previewAmount(form.rateBasis, rateNum, t), 0);
-  const manualSubtotal = manualTrucks.reduce((s, m) => {
-    const q = form.rateBasis === 'PER_TRUCK' ? 1 : (Number(m.quantity) || 0);
-    return s + round2(rateNum * q);
-  }, 0);
+  // Manual aggregate: N trucks × qty per truck
+  const manualCount = Math.trunc(Number(form.truckCount) || 0);
+  const manualQtyPer = Number(form.qtyPerTruck) || 0;
+  const manualTotalQty = form.rateBasis === 'PER_TRUCK' ? manualCount : round2(manualCount * manualQtyPer);
+  const manualSubtotal = round2(rateNum * manualTotalQty);
   const subtotal = round2(pulledSubtotal + manualSubtotal);
   const gstAmount = round2(subtotal * (Number(form.gstPercent) || 0) / 100);
   const tdsAmount = round2(subtotal * (Number(form.tdsPercent) || 0) / 100);
   const totalAmount = round2(subtotal + gstAmount);
   const netPayable = round2(totalAmount - tdsAmount);
-  const lineCount = selectedTrucks.length + manualTrucks.filter(m => m.vehicleNo).length;
+  const lineCount = selectedTrucks.length + manualCount;
 
   const submitCreate = async () => {
     if (!form.transporterId) { setError('Select a transporter'); return; }
     if (!form.depot.trim()) { setError('Enter the depot / destination'); return; }
     if (!(rateNum > 0)) { setError('Enter a rate greater than zero'); return; }
-    if (lineCount === 0) { setError('Select at least one truck (or add one manually)'); return; }
+    if (lineCount === 0) { setError('Enter the number of trucks (or select dispatched trucks)'); return; }
+    if (manualCount > 0 && form.rateBasis !== 'PER_TRUCK' && !(manualQtyPer > 0)) { setError('Enter the quantity per truck'); return; }
     try {
       setBusy('create');
       await api.post('/transport-work-orders', {
@@ -202,13 +205,15 @@ export default function TransportOrders() {
         customerName: form.customerName || null,
         depot: form.depot.trim(),
         distanceKm: form.distanceKm || null,
+        estimatedDelivery: form.estimatedDelivery || null,
         rateBasis: form.rateBasis,
         rate: form.rate,
         gstPercent: form.gstPercent,
         tdsPercent: form.tdsPercent,
         supplyType: form.supplyType,
         truckSelections: selectedTrucks.map(t => ({ sourceType: t.sourceType, sourceId: t.sourceId })),
-        manualTrucks: manualTrucks.filter(m => m.vehicleNo).map(m => ({ vehicleNo: m.vehicleNo, dispatchDate: m.dispatchDate || undefined, quantity: m.quantity || undefined })),
+        truckCount: manualCount || undefined,
+        qtyPerTruck: manualQtyPer || undefined,
       });
       setShowCreate(false);
       fetchOrders();
@@ -343,6 +348,8 @@ export default function TransportOrders() {
           <span><b className="text-slate-400 uppercase tracking-widest text-[10px]">Transporter</b> {d.transporter?.name} {d.transporter?.gstin ? `· ${d.transporter.gstin}` : ''}</span>
           <span><b className="text-slate-400 uppercase tracking-widest text-[10px]">Basis</b> {fmtINR(d.rate)} {BASIS_LABEL[d.rateBasis]}</span>
           {d.distanceKm ? <span><b className="text-slate-400 uppercase tracking-widest text-[10px]">Distance</b> {d.distanceKm} km</span> : null}
+          {d.truckCount ? <span><b className="text-slate-400 uppercase tracking-widest text-[10px]">Trucks</b> {d.truckCount}</span> : null}
+          {d.estimatedDelivery ? <span><b className="text-slate-400 uppercase tracking-widest text-[10px]">Est. delivery</b> {new Date(d.estimatedDelivery).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })}</span> : null}
           {d.status === 'CANCELLED' && d.cancelReason && <span className="text-slate-500">Cancelled — {d.cancelReason}</span>}
         </div>
 
@@ -525,22 +532,30 @@ export default function TransportOrders() {
               </div>
             )}
 
-            {/* manual trucks */}
+            {/* manual aggregate — no weighbridge: just count + qty/truck + one ETA */}
             <div>
-              <div className="flex items-center justify-between mb-1">
-                <label className={labelCls}>Manual trucks {form.productType === 'SCRAP' && <span className="text-slate-400 normal-case">(scrap / ad-hoc)</span>}</label>
-                <button onClick={() => setManualTrucks(m => [...m, { vehicleNo: '', dispatchDate: '', quantity: '' }])} className="text-[10px] text-blue-600 hover:underline">+ Add truck</button>
-              </div>
-              {manualTrucks.map((m, idx) => (
-                <div key={idx} className="flex items-center gap-2 mb-1">
-                  <input value={m.vehicleNo} onChange={e => setManualTrucks(arr => arr.map((x, i) => i === idx ? { ...x, vehicleNo: e.target.value } : x))} placeholder="Vehicle No" className={`${inputCls} flex-1`} />
-                  <input type="date" value={m.dispatchDate} onChange={e => setManualTrucks(arr => arr.map((x, i) => i === idx ? { ...x, dispatchDate: e.target.value } : x))} className={`${inputCls} w-36`} />
-                  {form.rateBasis !== 'PER_TRUCK' && (
-                    <input type="number" value={m.quantity} onChange={e => setManualTrucks(arr => arr.map((x, i) => i === idx ? { ...x, quantity: e.target.value } : x))} placeholder={`Qty (${BASIS_LABEL[form.rateBasis].split('/')[1]?.trim()})`} className={`${inputCls} w-28`} />
-                  )}
-                  <button onClick={() => setManualTrucks(arr => arr.filter((_, i) => i !== idx))} className="text-slate-400 hover:text-red-600"><X size={14} /></button>
+              <label className={labelCls}>Trucks dispatched (manual) <span className="text-slate-400 normal-case">— use when there's no weighbridge feed</span></label>
+              <div className="grid grid-cols-2 md:grid-cols-3 gap-3 mt-1">
+                <div>
+                  <label className="text-[9px] text-slate-400 uppercase tracking-widest mb-0.5 block">No. of trucks</label>
+                  <input type="number" min="0" step="1" value={form.truckCount} onChange={e => setForm(f => ({ ...f, truckCount: e.target.value }))} className={inputCls} placeholder="e.g. 4" />
                 </div>
-              ))}
+                {form.rateBasis !== 'PER_TRUCK' && (
+                  <div>
+                    <label className="text-[9px] text-slate-400 uppercase tracking-widest mb-0.5 block">Qty per truck ({BASIS_LABEL[form.rateBasis].split('/')[1]?.trim()})</label>
+                    <input type="number" min="0" value={form.qtyPerTruck} onChange={e => setForm(f => ({ ...f, qtyPerTruck: e.target.value }))} className={inputCls} placeholder={form.rateBasis === 'PER_LITER' ? 'e.g. 40000' : form.rateBasis === 'PER_KL' ? 'e.g. 40' : 'e.g. 25'} />
+                  </div>
+                )}
+                <div>
+                  <label className="text-[9px] text-slate-400 uppercase tracking-widest mb-0.5 block">Est. delivery</label>
+                  <input type="date" value={form.estimatedDelivery} onChange={e => setForm(f => ({ ...f, estimatedDelivery: e.target.value }))} className={inputCls} />
+                </div>
+              </div>
+              {manualCount > 0 && (
+                <p className="text-[10px] text-slate-500 mt-1">
+                  {manualCount} truck{manualCount > 1 ? 's' : ''}{form.rateBasis !== 'PER_TRUCK' && manualQtyPer > 0 ? ` × ${manualQtyPer.toLocaleString('en-IN')} ${BASIS_LABEL[form.rateBasis].split('/')[1]?.trim()}` : ''} → freight {fmtINR(manualSubtotal)}
+                </p>
+              )}
             </div>
 
             {/* totals preview */}
