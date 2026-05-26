@@ -1981,7 +1981,8 @@ model TransportWorkOrder {
   rateBasis       String // PER_TRUCK | PER_LITER | PER_KL | PER_MT | PER_KM
   rate            Float   @default(0) // ₹ per unit (or per truck)
   // Manual/aggregate entry (no weighbridge): N trucks × qty per truck
-  truckCount      Int?    // number of trucks (manual aggregate)
+  trucksOrdered   Int?    // planned trucks committed to the transporter (informational)
+  truckCount      Int?    // trucks ACTUALLY used — drives the freight billed
   qtyPerTruck     Float?  // qty per truck in the rate's unit (e.g. 40000 L, 40 KL)
   // Tax
   gstPercent      Float   @default(0) // 0 = RCM/unregistered (common for GTA)

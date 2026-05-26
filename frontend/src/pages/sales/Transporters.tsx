@@ -8,6 +8,8 @@ interface Transporter {
   email?: string; gstin?: string; pan?: string;
   vehicleCount?: number; address?: string; isActive: boolean;
   createdAt: string;
+  // Rollup from Transport Work Orders (trucks actually used / billed)
+  trucksDispatched?: number; woCount?: number; totalFreight?: number; outstandingFreight?: number;
 }
 
 export default function Transporters() {
@@ -257,6 +259,8 @@ export default function Transporters() {
                   <th className="text-[10px] uppercase tracking-widest font-semibold px-3 py-2 text-left border-r border-slate-700">Contact</th>
                   <th className="text-[10px] uppercase tracking-widest font-semibold px-3 py-2 text-left border-r border-slate-700">Phone</th>
                   <th className="text-[10px] uppercase tracking-widest font-semibold px-3 py-2 text-center border-r border-slate-700">Vehicles</th>
+                  <th className="text-[10px] uppercase tracking-widest font-semibold px-3 py-2 text-center border-r border-slate-700">Trucks Dispatched</th>
+                  <th className="text-[10px] uppercase tracking-widest font-semibold px-3 py-2 text-right border-r border-slate-700">Freight (Net)</th>
                   <th className="text-[10px] uppercase tracking-widest font-semibold px-3 py-2 text-left border-r border-slate-700">GSTIN</th>
                   <th className="text-[10px] uppercase tracking-widest font-semibold px-3 py-2 text-left border-r border-slate-700">Address</th>
                   <th className="text-[10px] uppercase tracking-widest font-semibold px-3 py-2 text-center">Actions</th>
@@ -275,6 +279,14 @@ export default function Transporters() {
                       ) : '--'}
                     </td>
                     <td className="px-3 py-1.5 text-xs border-r border-slate-100 text-center font-mono tabular-nums">{t.vehicleCount || '--'}</td>
+                    <td className="px-3 py-1.5 text-xs border-r border-slate-100 text-center font-mono tabular-nums">
+                      {t.trucksDispatched ? <span className="font-semibold text-slate-800">{t.trucksDispatched}</span> : <span className="text-slate-300">--</span>}
+                      {t.woCount ? <span className="text-[10px] text-slate-400 ml-1">({t.woCount} WO{t.woCount > 1 ? 's' : ''})</span> : null}
+                    </td>
+                    <td className="px-3 py-1.5 text-xs border-r border-slate-100 text-right font-mono tabular-nums">
+                      {t.totalFreight ? '₹' + t.totalFreight.toLocaleString('en-IN') : <span className="text-slate-300">--</span>}
+                      {t.outstandingFreight ? <div className="text-[10px] text-amber-600">₹{t.outstandingFreight.toLocaleString('en-IN')} due</div> : null}
+                    </td>
                     <td className="px-3 py-1.5 text-xs border-r border-slate-100 text-slate-600 font-mono">{t.gstin || '--'}</td>
                     <td className="px-3 py-1.5 text-xs border-r border-slate-100 text-slate-500 max-w-[200px] truncate">{t.address || '--'}</td>
                     <td className="px-3 py-1.5 text-xs text-center">
