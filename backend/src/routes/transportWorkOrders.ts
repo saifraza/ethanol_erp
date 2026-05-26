@@ -8,6 +8,7 @@ import {
   onTransportPaymentMade,
   reverseAutoJournal,
 } from '../services/autoJournal';
+import { renderDocumentPdf } from '../services/documentRenderer';
 
 const router = Router();
 
@@ -451,6 +452,49 @@ router.delete('/:id', asyncHandler(async (req: AuthRequest, res: Response) => {
     prisma.transportWorkOrder.delete({ where: { id: wo.id } }),
   ]);
   res.json({ success: true });
+}));
+
+const RATE_BASIS_LABEL: Record<string, string> = {
+  PER_TRUCK: '/ truck', PER_LITER: '/ litre', PER_KL: '/ KL', PER_MT: '/ MT', PER_KM: '/ km',
+};
+
+// ── GET /:id/pdf — render the Transport Work Order as a PDF ──
+router.get('/:id/pdf', asyncHandler(async (req: AuthRequest, res: Response) => {
+  const wo = await prisma.transportWorkOrder.findFirst({
+    where: { id: req.params.id, ...getCompanyFilter(req) },
+    include: {
+      transporter: { select: { name: true, gstin: true, phone: true } },
+      lines: { orderBy: { dispatchDate: 'asc' } },
+    },
+  });
+  if (!wo) return res.status(404).json({ error: 'Transport work order not found' });
+
+  const creator = wo.userId ? await prisma.user.findUnique({ where: { id: wo.userId }, select: { name: true } }) : null;
+
+  const pdf = await renderDocumentPdf({
+    docType: 'TRANSPORT_ORDER',
+    templateName: 'transport-order',
+    verifyId: wo.id,
+    data: {
+      twoNo: wo.twoNo, createdAt: wo.createdAt, status: wo.status,
+      productType: wo.productType, contractNo: wo.contractNo, customerName: wo.customerName,
+      depot: wo.depot, distanceKm: wo.distanceKm, estimatedDelivery: wo.estimatedDelivery,
+      rate: wo.rate, rateBasisLabel: RATE_BASIS_LABEL[wo.rateBasis] || '',
+      trucksOrdered: wo.trucksOrdered, truckCount: wo.truckCount,
+      supplyType: wo.supplyType || 'INTRA_STATE',
+      transporter: wo.transporter,
+      lines: wo.lines,
+      subtotal: wo.subtotal, gstPercent: wo.gstPercent, gstAmount: wo.gstAmount,
+      cgstAmount: wo.cgstAmount, sgstAmount: wo.sgstAmount, igstAmount: wo.igstAmount,
+      totalAmount: wo.totalAmount, tdsPercent: wo.tdsPercent, tdsAmount: wo.tdsAmount,
+      netPayable: wo.netPayable,
+      preparedBy: creator?.name || '',
+    },
+  });
+
+  res.setHeader('Content-Type', 'application/pdf');
+  res.setHeader('Content-Disposition', `inline; filename="TWO-${wo.twoNo}.pdf"`);
+  res.send(pdf);
 }));
 
 export default router;
