@@ -83,11 +83,30 @@ export default function Invoices() {
   // Create invoice form
   const [formCustomerId, setFormCustomerId] = useState('');
   const [formProduct, setFormProduct] = useState('DDGS');
+  const [formProductOther, setFormProductOther] = useState('');
+  const [formUnit, setFormUnit] = useState('MT');
   const [formQty, setFormQty] = useState('');
   const [formRate, setFormRate] = useState('');
-  const [formGst, setFormGst] = useState('18');
+  const [formGst, setFormGst] = useState('5');
   const [formFreight, setFormFreight] = useState('');
   const [formChallanNo, setFormChallanNo] = useState('');
+
+  // Sensible unit + GST defaults per product (operator can still override)
+  const PRODUCT_DEFAULTS: Record<string, { unit: string; gst: string }> = {
+    DDGS: { unit: 'MT', gst: '5' },
+    WGS: { unit: 'MT', gst: '5' },
+    SUGAR: { unit: 'MT', gst: '5' },
+    ETHANOL: { unit: 'KL', gst: '18' },
+    RS: { unit: 'KL', gst: '18' },
+    LFO: { unit: 'KL', gst: '18' },
+    HFO: { unit: 'KL', gst: '18' },
+    OTHER: { unit: 'MT', gst: '18' },
+  };
+  const onProductChange = (p: string) => {
+    setFormProduct(p);
+    const d = PRODUCT_DEFAULTS[p];
+    if (d) { setFormUnit(d.unit); setFormGst(d.gst); }
+  };
 
   // Computed stats
   const totalOutstanding = invoices.reduce((s, inv) => s + inv.balanceAmount, 0);
@@ -135,9 +154,11 @@ export default function Invoices() {
   const resetCreateForm = () => {
     setFormCustomerId('');
     setFormProduct('DDGS');
+    setFormProductOther('');
+    setFormUnit('MT');
     setFormQty('');
     setFormRate('');
-    setFormGst('18');
+    setFormGst('5');
     setFormFreight('');
     setFormChallanNo('');
     setShowCreateForm(false);
@@ -148,13 +169,19 @@ export default function Invoices() {
       setMsg({ type: 'err', text: 'Customer, qty, and rate required' });
       return;
     }
+    const productName = formProduct === 'OTHER' ? formProductOther.trim() : formProduct;
+    if (!productName) {
+      setMsg({ type: 'err', text: 'Enter the product name' });
+      return;
+    }
 
     setSaving(true);
     setMsg(null);
     try {
       await api.post('/invoices', {
         customerId: formCustomerId,
-        productName: formProduct,
+        productName,
+        unit: formUnit,
         quantity: parseFloat(formQty),
         rate: parseFloat(formRate),
         gstPercent: parseFloat(formGst),
@@ -309,18 +336,44 @@ export default function Invoices() {
                 </select>
               </div>
 
-              <div>
-                <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-0.5 block">Product</label>
-                <select
-                  value={formProduct}
-                  onChange={e => setFormProduct(e.target.value)}
-                  className="border border-slate-300 px-2.5 py-1.5 text-xs w-full focus:outline-none focus:ring-1 focus:ring-slate-400"
-                >
-                  {['DDGS', 'ETHANOL', 'LFO', 'HFO', 'RS'].map(p => (
-                    <option key={p} value={p}>{p}</option>
-                  ))}
-                </select>
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-0.5 block">Product</label>
+                  <select
+                    value={formProduct}
+                    onChange={e => onProductChange(e.target.value)}
+                    className="border border-slate-300 px-2.5 py-1.5 text-xs w-full focus:outline-none focus:ring-1 focus:ring-slate-400"
+                  >
+                    {['DDGS', 'ETHANOL', 'SUGAR', 'WGS', 'LFO', 'HFO', 'RS', 'OTHER'].map(p => (
+                      <option key={p} value={p}>{p === 'OTHER' ? 'Other / custom…' : p}</option>
+                    ))}
+                  </select>
+                </div>
+                <div>
+                  <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-0.5 block">Unit</label>
+                  <select
+                    value={formUnit}
+                    onChange={e => setFormUnit(e.target.value)}
+                    className="border border-slate-300 px-2.5 py-1.5 text-xs w-full focus:outline-none focus:ring-1 focus:ring-slate-400"
+                  >
+                    {['MT', 'KL', 'QTL', 'LTR', 'NOS', 'BAG'].map(u => (
+                      <option key={u} value={u}>{u}</option>
+                    ))}
+                  </select>
+                </div>
               </div>
+
+              {formProduct === 'OTHER' && (
+                <div>
+                  <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-0.5 block">Product Name *</label>
+                  <input
+                    value={formProductOther}
+                    onChange={e => setFormProductOther(e.target.value)}
+                    placeholder="e.g. Molasses, Bagasse, Press Mud"
+                    className="border border-slate-300 px-2.5 py-1.5 text-xs w-full focus:outline-none focus:ring-1 focus:ring-slate-400"
+                  />
+                </div>
+              )}
 
               <div className="grid grid-cols-3 gap-3">
                 <div>
