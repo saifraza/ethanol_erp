@@ -1,6 +1,6 @@
 import { Router, Response } from 'express';
 import prisma from '../config/prisma';
-import { AuthRequest, getCompanyFilter, getActiveCompanyId } from '../middleware/auth';
+import { authenticate, AuthRequest, getCompanyFilter, getActiveCompanyId } from '../middleware/auth';
 import { asyncHandler, validate } from '../shared/middleware';
 import { z } from 'zod';
 import {
@@ -10,6 +10,9 @@ import {
 } from '../services/autoJournal';
 
 const router = Router();
+
+// All transport-work-order routes require a logged-in user (sets req.user).
+router.use(authenticate);
 
 const PRODUCT_TYPES = ['ETHANOL', 'DDGS', 'WGS', 'SUGAR', 'SCRAP'] as const;
 const RATE_BASES = ['PER_TRUCK', 'PER_LITER', 'PER_KL', 'PER_MT', 'PER_KM'] as const;
