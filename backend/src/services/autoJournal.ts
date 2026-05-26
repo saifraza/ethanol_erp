@@ -48,6 +48,9 @@ const ACCT = {
   DDGS_SALES: '3002',
   OTHER_INCOME: '3003',
   INTEREST_INCOME: '3004',
+  SCRAP_SALES: '3005',
+  SUGAR_SALES: '3006',
+  WGS_SALES: '3007',
   // Expenses
   GRAIN_PURCHASE: '4001',
   CHEMICAL_PURCHASE: '4002',
@@ -82,6 +85,9 @@ function getSalesAccountCode(productName: string): string {
   const p = (productName || '').toUpperCase();
   if (p.includes('ETHANOL') || p.includes('ENA') || p.includes('RS') || p.includes('RECTIFIED')) return ACCT.ETHANOL_SALES;
   if (p.includes('DDGS') || p.includes('DISTILLER')) return ACCT.DDGS_SALES;
+  if (p.includes('SUGAR')) return ACCT.SUGAR_SALES;
+  if (p.includes('WGS') || p.includes('WET GRAIN')) return ACCT.WGS_SALES;
+  if (p.includes('SCRAP')) return ACCT.SCRAP_SALES;
   return ACCT.OTHER_INCOME;
 }
 

@@ -69,6 +69,32 @@ async function seedMashBioContract() {
   } catch (e) { console.error('[Seed] Mash Bio contract error:', e); }
 }
 
+// Ensure the Sugar Sales (3006) + WGS Sales (3007) income ledgers exist.
+// The /seed endpoint only runs on an empty Chart of Accounts, so already-seeded
+// deployments won't get new default accounts — and a missing account makes the
+// sale journal silently skip. We anchor on DDGS Sales (3002) so the new ledgers
+// land under the same company as the existing sales accounts (resolveAccounts
+// is company-scoped). Skips entirely until the COA has been seeded.
+async function ensureByproductSalesAccounts() {
+  try {
+    const ddgs = await prisma.account.findUnique({ where: { code: '3002' }, select: { companyId: true } });
+    if (!ddgs) return; // COA not seeded yet — /seed (which now includes these) will create them
+    const ledgers = [
+      { code: '3006', name: 'Sugar Sales' },
+      { code: '3007', name: 'WGS Sales' },
+    ];
+    for (const l of ledgers) {
+      const exists = await prisma.account.findUnique({ where: { code: l.code }, select: { id: true } });
+      if (!exists) {
+        await prisma.account.create({
+          data: { code: l.code, name: l.name, type: 'INCOME', subType: 'DIRECT_INCOME', isSystem: true, companyId: ddgs.companyId },
+        });
+        console.log(`[Seed] Created income ledger ${l.code} — ${l.name}`);
+      }
+    }
+  } catch (e) { console.error('[Seed] By-product sales ledgers error:', e); }
+}
+
 // One-time: create SUPER_ADMIN user "saif" and upgrade admin@distillery.com
 async function migrateSuperAdmin() {
   try {
@@ -97,6 +123,7 @@ const server = app.listen(PORT, HOST, async () => {
   await autoSeed();
   await migrateSuperAdmin();
   await seedMashBioContract();
+  await ensureByproductSalesAccounts();
 
   // Schema drift guard — catches missed prisma db push on deploy
   await runSchemaDriftGuard();
