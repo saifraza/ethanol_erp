@@ -656,6 +656,102 @@ const EXPECTED_TABLES: TableCheck[] = [
       CREATE INDEX IF NOT EXISTS "WGSContractDispatch_invoiceId_idx" ON "WGSContractDispatch"("invoiceId");
     `,
   },
+  // 2026-05-26 — Sales-side Transport Work Orders (freight on outbound product
+  // sales). Header + per-truck lines + payments. See routes/transportWorkOrders.ts.
+  {
+    table: 'TransportWorkOrder',
+    sql: `
+      CREATE TABLE IF NOT EXISTS "TransportWorkOrder" (
+        "id" TEXT NOT NULL,
+        "twoNo" SERIAL NOT NULL,
+        "transporterId" TEXT NOT NULL,
+        "transporterName" TEXT NOT NULL,
+        "productType" TEXT NOT NULL,
+        "contractId" TEXT,
+        "contractNo" TEXT,
+        "customerName" TEXT,
+        "depot" TEXT NOT NULL,
+        "distanceKm" DOUBLE PRECISION,
+        "rateBasis" TEXT NOT NULL,
+        "rate" DOUBLE PRECISION NOT NULL DEFAULT 0,
+        "gstPercent" DOUBLE PRECISION NOT NULL DEFAULT 0,
+        "supplyType" TEXT,
+        "cgstAmount" DOUBLE PRECISION NOT NULL DEFAULT 0,
+        "sgstAmount" DOUBLE PRECISION NOT NULL DEFAULT 0,
+        "igstAmount" DOUBLE PRECISION NOT NULL DEFAULT 0,
+        "gstAmount" DOUBLE PRECISION NOT NULL DEFAULT 0,
+        "tdsPercent" DOUBLE PRECISION NOT NULL DEFAULT 0,
+        "tdsAmount" DOUBLE PRECISION NOT NULL DEFAULT 0,
+        "subtotal" DOUBLE PRECISION NOT NULL DEFAULT 0,
+        "totalAmount" DOUBLE PRECISION NOT NULL DEFAULT 0,
+        "netPayable" DOUBLE PRECISION NOT NULL DEFAULT 0,
+        "paidAmount" DOUBLE PRECISION NOT NULL DEFAULT 0,
+        "balanceAmount" DOUBLE PRECISION NOT NULL DEFAULT 0,
+        "status" TEXT NOT NULL DEFAULT 'DRAFT',
+        "confirmedAt" TIMESTAMP(3),
+        "confirmedBy" TEXT,
+        "cancelledAt" TIMESTAMP(3),
+        "cancelReason" TEXT,
+        "remarks" TEXT,
+        "userId" TEXT NOT NULL,
+        "division" TEXT DEFAULT 'ETHANOL',
+        "companyId" TEXT,
+        "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        "updatedAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        CONSTRAINT "TransportWorkOrder_pkey" PRIMARY KEY ("id")
+      );
+      CREATE INDEX IF NOT EXISTS "TransportWorkOrder_transporterId_idx" ON "TransportWorkOrder"("transporterId");
+      CREATE INDEX IF NOT EXISTS "TransportWorkOrder_status_idx" ON "TransportWorkOrder"("status");
+      CREATE INDEX IF NOT EXISTS "TransportWorkOrder_productType_idx" ON "TransportWorkOrder"("productType");
+      CREATE INDEX IF NOT EXISTS "TransportWorkOrder_contractId_idx" ON "TransportWorkOrder"("contractId");
+      CREATE INDEX IF NOT EXISTS "TransportWorkOrder_companyId_idx" ON "TransportWorkOrder"("companyId");
+    `,
+  },
+  {
+    table: 'TransportWorkOrderLine',
+    sql: `
+      CREATE TABLE IF NOT EXISTS "TransportWorkOrderLine" (
+        "id" TEXT NOT NULL,
+        "woId" TEXT NOT NULL,
+        "sourceType" TEXT,
+        "sourceId" TEXT,
+        "dispatchDate" TIMESTAMP(3),
+        "vehicleNo" TEXT NOT NULL,
+        "quantity" DOUBLE PRECISION NOT NULL DEFAULT 0,
+        "unit" TEXT NOT NULL DEFAULT 'TRUCK',
+        "amount" DOUBLE PRECISION NOT NULL DEFAULT 0,
+        "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        CONSTRAINT "TransportWorkOrderLine_pkey" PRIMARY KEY ("id")
+      );
+      CREATE UNIQUE INDEX IF NOT EXISTS "TransportWorkOrderLine_woId_sourceType_sourceId_key" ON "TransportWorkOrderLine"("woId", "sourceType", "sourceId");
+      CREATE INDEX IF NOT EXISTS "TransportWorkOrderLine_woId_idx" ON "TransportWorkOrderLine"("woId");
+    `,
+  },
+  {
+    table: 'TransportPayment',
+    sql: `
+      CREATE TABLE IF NOT EXISTS "TransportPayment" (
+        "id" TEXT NOT NULL,
+        "paymentNo" SERIAL NOT NULL,
+        "woId" TEXT NOT NULL,
+        "transporterId" TEXT,
+        "amount" DOUBLE PRECISION NOT NULL,
+        "tdsDeducted" DOUBLE PRECISION NOT NULL DEFAULT 0,
+        "paymentMode" TEXT NOT NULL DEFAULT 'NEFT',
+        "paymentRef" TEXT,
+        "paymentDate" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        "paymentStatus" TEXT NOT NULL DEFAULT 'CONFIRMED',
+        "remarks" TEXT,
+        "userId" TEXT NOT NULL,
+        "companyId" TEXT,
+        "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        "updatedAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        CONSTRAINT "TransportPayment_pkey" PRIMARY KEY ("id")
+      );
+      CREATE INDEX IF NOT EXISTS "TransportPayment_woId_idx" ON "TransportPayment"("woId");
+      CREATE INDEX IF NOT EXISTS "TransportPayment_paymentDate_idx" ON "TransportPayment"("paymentDate");
+    `,
+  },
 ];
 
 async function checkAndCreateTables(): Promise<void> {

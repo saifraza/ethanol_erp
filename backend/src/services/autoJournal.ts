@@ -944,4 +944,85 @@ export async function reverseAutoJournal(
   }
 }
 
+// ═══════════════════════════════════════════════════════
+// TRANSPORT WORK ORDER CONFIRMED → Journal Entry (Accrual)
+// Dr Freight & Transport (subtotal) + Input GST (if transporter charges it)
+//   Cr Accounts Payable (netPayable)
+//   Cr TDS Payable (tds u/s 194C, if any)
+// ═══════════════════════════════════════════════════════
+export async function onTransportWorkOrderConfirmed(
+  prisma: PrismaClient,
+  wo: {
+    id: string; twoNo: number; subtotal: number;
+    cgstAmount: number; sgstAmount: number; igstAmount: number;
+    tdsAmount: number; netPayable: number;
+    transporterName: string; userId: string; date: Date; companyId?: string;
+  }
+): Promise<string | null> {
+  try {
+    const gstCodes: string[] = [];
+    if (wo.igstAmount > 0) gstCodes.push(ACCT.GST_INPUT_IGST);
+    if (wo.cgstAmount > 0) gstCodes.push(ACCT.GST_INPUT_CGST);
+    if (wo.sgstAmount > 0) gstCodes.push(ACCT.GST_INPUT_SGST);
+    const allCodes = [ACCT.TRANSPORT_EXPENSE, ACCT.TRADE_PAYABLE, ...gstCodes];
+    if (wo.tdsAmount > 0) allCodes.push(ACCT.TDS_PAYABLE);
+    const accts = await resolveAccounts(prisma, allCodes, wo.companyId);
+    for (const code of allCodes) { if (!accts[code]) return null; }
+
+    const lines: { accountId: string; debit: number; credit: number; narration?: string }[] = [
+      { accountId: accts[ACCT.TRANSPORT_EXPENSE], debit: wo.subtotal, credit: 0, narration: `Freight TWO-${wo.twoNo} — ${wo.transporterName}` },
+    ];
+    if (wo.igstAmount > 0) lines.push({ accountId: accts[ACCT.GST_INPUT_IGST], debit: wo.igstAmount, credit: 0, narration: `IGST on freight TWO-${wo.twoNo}` });
+    if (wo.cgstAmount > 0) lines.push({ accountId: accts[ACCT.GST_INPUT_CGST], debit: wo.cgstAmount, credit: 0, narration: `CGST on freight TWO-${wo.twoNo}` });
+    if (wo.sgstAmount > 0) lines.push({ accountId: accts[ACCT.GST_INPUT_SGST], debit: wo.sgstAmount, credit: 0, narration: `SGST on freight TWO-${wo.twoNo}` });
+    lines.push({ accountId: accts[ACCT.TRADE_PAYABLE], debit: 0, credit: wo.netPayable, narration: `Freight payable — TWO-${wo.twoNo}` });
+    if (wo.tdsAmount > 0) lines.push({ accountId: accts[ACCT.TDS_PAYABLE], debit: 0, credit: wo.tdsAmount, narration: `TDS u/s 194C — ${wo.transporterName}` });
+
+    return await prisma.$transaction(async (tx: Prisma.TransactionClient) => {
+      return createJournalEntry(tx, {
+        date: wo.date, narration: `Transport WO TWO-${wo.twoNo} — ${wo.transporterName}`,
+        refType: 'TRANSPORT_WO', refId: wo.id, userId: wo.userId, companyId: wo.companyId, lines,
+      });
+    });
+  } catch (err) { console.error('[AutoJournal] Failed to create transport WO journal:', err); return null; }
+}
+
+// ═══════════════════════════════════════════════════════
+// TRANSPORT PAYMENT (against a Transport WO) → Journal Entry
+// Dr Accounts Payable (amount + tds)
+//   Cr Bank/Cash (amount)
+//   Cr TDS Payable (tds, if any)
+// ═══════════════════════════════════════════════════════
+export async function onTransportPaymentMade(
+  prisma: PrismaClient,
+  payment: {
+    id: string; amount: number; mode: string; reference?: string | null;
+    tdsDeducted: number; transporterName: string;
+    userId: string; paymentDate: Date; companyId?: string;
+  }
+): Promise<string | null> {
+  try {
+    const bankCode = PAYMENT_ACCOUNT[payment.mode] || ACCT.SBI_BANK;
+    const codes = [bankCode, ACCT.TRADE_PAYABLE];
+    if (payment.tdsDeducted > 0) codes.push(ACCT.TDS_PAYABLE);
+    const accts = await resolveAccounts(prisma, codes, payment.companyId);
+    for (const code of codes) { if (!accts[code]) return null; }
+
+    const totalSettled = payment.amount + payment.tdsDeducted;
+    const lines: { accountId: string; debit: number; credit: number; narration?: string }[] = [
+      { accountId: accts[ACCT.TRADE_PAYABLE], debit: totalSettled, credit: 0, narration: `Freight payment ${payment.reference || ''}`.trim() },
+      { accountId: accts[bankCode], debit: 0, credit: payment.amount, narration: `${payment.mode} ${payment.reference || ''}`.trim() },
+    ];
+    if (payment.tdsDeducted > 0) lines.push({ accountId: accts[ACCT.TDS_PAYABLE], debit: 0, credit: payment.tdsDeducted, narration: `TDS u/s 194C` });
+
+    return await prisma.$transaction(async (tx: Prisma.TransactionClient) => {
+      return createJournalEntry(tx, {
+        date: payment.paymentDate,
+        narration: `Transport payment to ${payment.transporterName} — ${payment.mode} ${payment.reference || ''}`.trim(),
+        refType: 'TRANSPORT_PAYMENT', refId: payment.id, userId: payment.userId, companyId: payment.companyId, lines,
+      });
+    });
+  } catch (err) { console.error('[AutoJournal] Failed to create transport payment journal:', err); return null; }
+}
+
 export { ACCT, PAYMENT_ACCOUNT };

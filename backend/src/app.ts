@@ -82,6 +82,7 @@ import ethanolGatePassRoutes from './routes/ethanolGatePass';
 import ddgsContractRoutes from './routes/ddgsContracts';
 import wgsContractRoutes from './routes/wgsContracts';
 import sugarContractRoutes from './routes/sugarContracts';
+import transportWorkOrderRoutes from './routes/transportWorkOrders';
 // Accounts (Payment Desk)
 import accountsRoutes from './routes/accounts';
 // Accounts (Bookkeeping — Chart of Accounts, Journal Entries, Ledger, Reports)
@@ -304,6 +305,7 @@ app.use('/api/ethanol-gate-pass', ethanolGatePassRoutes);
 app.use('/api/ddgs-contracts', ddgsContractRoutes);
 app.use('/api/wgs-contracts', wgsContractRoutes);
 app.use('/api/sugar-contracts', sugarContractRoutes);
+app.use('/api/transport-work-orders', transportWorkOrderRoutes);
 // Accounts (Payment Desk)
 app.use('/api/accounts', accountsRoutes);
 // Accounts (Bookkeeping)

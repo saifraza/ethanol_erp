@@ -117,6 +117,7 @@ const FreightManagement = React.lazy(() => import('./pages/sales/FreightManageme
 const EthanolContracts = React.lazy(() => import('./pages/sales/EthanolContracts'));
 const DDGSContracts = React.lazy(() => import('./pages/sales/DDGSContracts'));
 const SugarContracts = React.lazy(() => import('./pages/sales/SugarContracts'));
+const TransportOrders = React.lazy(() => import('./pages/sales/TransportOrders'));
 // Procurement (P2P)
 const Vendors = React.lazy(() => import('./pages/procurement/Vendors'));
 const VendorLedger = React.lazy(() => import('./pages/procurement/VendorLedger'));
@@ -305,6 +306,7 @@ export default function App() {
         <Route path="sales/ethanol-contracts" element={<EthanolContracts />} />
         <Route path="sales/ddgs-contracts" element={<DDGSContracts />} />
         <Route path="sales/sugar-contracts" element={<SugarContracts />} />
+        <Route path="sales/transport-orders" element={<TransportOrders />} />
         {/* Procurement (P2P) */}
         <Route path="procurement/vendors" element={<Vendors />} />
         <Route path="procurement/vendors/:id" element={<VendorLedger />} />
