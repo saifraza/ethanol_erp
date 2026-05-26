@@ -1,5 +1,5 @@
 import { useState, useEffect, Fragment } from 'react';
-import { Truck, Plus, X, Loader2, CheckCircle2, Ban, Wallet, Trash2, ChevronDown } from 'lucide-react';
+import { Truck, Plus, X, Loader2, CheckCircle2, Ban, Wallet, Trash2, ChevronDown, FileDown } from 'lucide-react';
 import api from '../../services/api';
 
 // ── Types ──
@@ -110,6 +110,7 @@ export default function TransportOrders() {
   const [cancelModal, setCancelModal] = useState<{ woId: string; label: string } | null>(null);
   const [cancelReason, setCancelReason] = useState('');
   const [usedEdit, setUsedEdit] = useState(''); // actual trucks used, set at final billing
+  const [rateEdit, setRateEdit] = useState(''); // editable rate on a DRAFT
 
   useEffect(() => { fetchOrders(); fetchTransporters(); }, []);
 
@@ -230,16 +231,17 @@ export default function TransportOrders() {
       const res = await api.get(`/transport-work-orders/${id}`);
       setDetail(res.data.wo);
       setUsedEdit(res.data.wo.truckCount != null ? String(res.data.wo.truckCount) : '');
+      setRateEdit(res.data.wo.rate != null ? String(res.data.wo.rate) : '');
     } catch { setError('Failed to load work order'); }
   };
   const refreshDetail = async (id: string) => {
-    try { const res = await api.get(`/transport-work-orders/${id}`); setDetail(res.data.wo); setUsedEdit(res.data.wo.truckCount != null ? String(res.data.wo.truckCount) : ''); } catch { /* ignore */ }
+    try { const res = await api.get(`/transport-work-orders/${id}`); setDetail(res.data.wo); setUsedEdit(res.data.wo.truckCount != null ? String(res.data.wo.truckCount) : ''); setRateEdit(res.data.wo.rate != null ? String(res.data.wo.rate) : ''); } catch { /* ignore */ }
   };
 
-  // Set the actual trucks used (final billing) on a DRAFT manual WO, then recompute.
-  const updateUsed = async (id: string) => {
-    try { setBusy(id); await api.put(`/transport-work-orders/${id}`, { truckCount: Number(usedEdit) || 0 }); await refreshDetail(id); fetchOrders(); }
-    catch (err) { setError(errMsg(err, 'Failed to update trucks used')); }
+  // Adjust a DRAFT (actual trucks used + rate) before final billing, then recompute.
+  const updateDraft = async (id: string) => {
+    try { setBusy(id); await api.put(`/transport-work-orders/${id}`, { truckCount: Number(usedEdit) || 0, rate: Number(rateEdit) || 0 }); await refreshDetail(id); fetchOrders(); }
+    catch (err) { setError(errMsg(err, 'Failed to update the work order')); }
     finally { setBusy(null); }
   };
 
@@ -247,6 +249,12 @@ export default function TransportOrders() {
     try { setBusy(id); await api.post(`/transport-work-orders/${id}/confirm`); await refreshDetail(id); fetchOrders(); }
     catch (err) { setError(errMsg(err, 'Failed to confirm')); }
     finally { setBusy(null); }
+  };
+  const downloadPdf = async (id: string) => {
+    try {
+      const res = await api.get(`/transport-work-orders/${id}/pdf`, { responseType: 'blob' });
+      window.open(URL.createObjectURL(res.data), '_blank');
+    } catch { setError('Failed to load the work-order PDF'); }
   };
   const deleteWo = async (id: string) => {
     if (!confirm('Delete this draft work order?')) return;
@@ -405,19 +413,29 @@ export default function TransportOrders() {
           </div>
 
           <div className="flex flex-col gap-1.5">
+            <button onClick={() => downloadPdf(d.id)} className="flex items-center justify-center gap-1.5 px-3 py-1.5 border border-slate-300 text-slate-700 text-xs font-medium hover:bg-slate-50">
+              <FileDown size={14} /> Download PDF
+            </button>
             {d.status === 'DRAFT' && (
               <>
-                {d.trucksOrdered != null && (
-                  <div className="border border-slate-200 bg-white px-2.5 py-2">
-                    <label className="text-[9px] font-bold text-slate-500 uppercase tracking-widest block mb-1">Final billing — trucks used <span className="text-slate-400 normal-case">(ordered {d.trucksOrdered})</span></label>
-                    <div className="flex items-center gap-1.5">
-                      <input type="number" min="0" step="1" value={usedEdit} onChange={e => setUsedEdit(e.target.value)} className="border border-slate-300 px-2 py-1 text-xs w-20 focus:outline-none focus:ring-1 focus:ring-blue-400" />
-                      <button onClick={() => updateUsed(d.id)} disabled={busy === d.id || usedEdit === String(d.truckCount ?? '')}
-                        className="text-[11px] font-medium px-2 py-1 border border-blue-300 bg-blue-50 text-blue-700 hover:bg-blue-100 disabled:opacity-40">Update</button>
-                      <span className="text-[10px] text-slate-400">freight {fmtINR(d.subtotal)}</span>
+                <div className="border border-slate-200 bg-white px-2.5 py-2">
+                  <label className="text-[9px] font-bold text-slate-500 uppercase tracking-widest block mb-1">Adjust before billing {d.trucksOrdered != null ? <span className="text-slate-400 normal-case">(ordered {d.trucksOrdered})</span> : null}</label>
+                  <div className="flex items-end gap-2 flex-wrap">
+                    {d.truckCount != null && (
+                      <div>
+                        <span className="text-[9px] text-slate-400 uppercase tracking-widest block">Trucks used</span>
+                        <input type="number" min="0" step="1" value={usedEdit} onChange={e => setUsedEdit(e.target.value)} className="border border-slate-300 px-2 py-1 text-xs w-20 focus:outline-none focus:ring-1 focus:ring-blue-400" />
+                      </div>
+                    )}
+                    <div>
+                      <span className="text-[9px] text-slate-400 uppercase tracking-widest block">Rate {BASIS_LABEL[d.rateBasis]}</span>
+                      <input type="number" min="0" value={rateEdit} onChange={e => setRateEdit(e.target.value)} className="border border-slate-300 px-2 py-1 text-xs w-24 focus:outline-none focus:ring-1 focus:ring-blue-400" />
                     </div>
+                    <button onClick={() => updateDraft(d.id)} disabled={busy === d.id || (usedEdit === String(d.truckCount ?? '') && rateEdit === String(d.rate ?? ''))}
+                      className="text-[11px] font-medium px-2 py-1 border border-blue-300 bg-blue-50 text-blue-700 hover:bg-blue-100 disabled:opacity-40">Update</button>
+                    <span className="text-[10px] text-slate-400">freight {fmtINR(d.subtotal)}</span>
                   </div>
-                )}
+                </div>
                 <button onClick={() => confirmWo(d.id)} disabled={busy === d.id} className="flex items-center justify-center gap-1.5 px-3 py-1.5 bg-blue-600 text-white text-xs font-medium hover:bg-blue-700 disabled:opacity-50">
                   <CheckCircle2 size={14} /> Confirm &amp; bill {d.truckCount != null ? `${d.truckCount} truck${d.truckCount > 1 ? 's' : ''}` : ''}
                 </button>
