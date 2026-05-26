@@ -200,7 +200,7 @@ const EthanolContracts: React.FC = () => {
   const [ewbForm, setEwbForm] = useState({ distanceKm: '', transporterName: '', transporterGstin: '', vehicleNo: '' });
   const [manualEwb, setManualEwb] = useState<{ liftingId: string; ewbNo: string; file: File | null } | null>(null);
   // Re-rate an existing lifting's invoice (no IRN / no payment). Cascades to invoice + GST + journal.
-  const [rateModal, setRateModal] = useState<{ contractId: string; liftingId: string; label: string; qtyBL: number; unit: string; oldRate: number } | null>(null);
+  const [rateModal, setRateModal] = useState<{ contractId: string; liftingId: string; label: string; billQty: number; unit: string; oldRate: number } | null>(null);
   const [rateInput, setRateInput] = useState('');
 
   // Truck detail modal (before release)
@@ -623,7 +623,7 @@ const EthanolContracts: React.FC = () => {
                         <span className={`text-[9px] font-bold uppercase px-1.5 py-0.5 border ${statusColors[c.status] || 'bg-slate-50 text-slate-700 border-slate-300'}`}>{c.status}</span>
                       </td>
                       <td className="px-3 py-1.5 text-xs border-r border-slate-100 text-right hidden md:table-cell font-mono tabular-nums font-bold">
-                        {c.contractType === 'JOB_WORK' ? `${c.conversionRate || 0}/BL` : `${c.ethanolRate || 0}/L`}
+                        {c.contractType === 'JOB_WORK' ? `${c.conversionRate || 0}/BL` : `${c.ethanolRate || 0}/KL`}
                       </td>
                       <td className="px-3 py-1.5 text-xs border-r border-slate-100 text-right hidden md:table-cell">
                         <div className="font-mono tabular-nums">{c.totalSuppliedKL.toFixed(0)} / {(c.contractQtyKL || 0).toFixed(0)} KL</div>
@@ -794,7 +794,7 @@ const EthanolContracts: React.FC = () => {
                                         <td className="px-2 py-1.5 border-r border-orange-100 hidden md:table-cell">{t.destination || '-'}</td>
                                         <td className="px-2 py-1.5 border-r border-orange-100 text-right font-mono tabular-nums">{t.quantityBL ? t.quantityBL.toLocaleString() : '-'}</td>
                                         <td className="px-2 py-1.5 border-r border-orange-100 text-right font-mono tabular-nums">{t.quantityBL ? (t.quantityBL / 1000).toFixed(2) : '-'}</td>
-                                        <td className="px-2 py-1.5 border-r border-orange-100 text-right font-mono tabular-nums">{t.quantityBL ? (t.quantityBL * (c.contractType === 'JOB_WORK' ? (c.conversionRate || 0) : (c.ethanolRate || 0))).toLocaleString('en-IN') : '-'}</td>
+                                        <td className="px-2 py-1.5 border-r border-orange-100 text-right font-mono tabular-nums">{t.quantityBL ? (c.contractType === 'JOB_WORK' ? (t.quantityBL * (c.conversionRate || 0)) : ((t.quantityBL / 1000) * (c.ethanolRate || 0))).toLocaleString('en-IN') : '-'}</td>
                                         <td className="px-2 py-1.5 border-r border-orange-100 text-center">
                                           <span className={`text-[9px] font-bold uppercase px-1.5 py-0.5 border ${
                                             t.status === 'GROSS_WEIGHED' ? 'border-green-300 bg-green-100 text-green-700' : 'border-orange-300 bg-orange-100 text-orange-700'
@@ -922,7 +922,7 @@ const EthanolContracts: React.FC = () => {
                                               <button onClick={(e) => {
                                                 e.stopPropagation();
                                                 setError('');
-                                                setRateModal({ contractId: c.id, liftingId: l.id, label: l.invoice!.remarks || `INV-${l.invoice!.invoiceNo}`, qtyBL: l.quantityBL, unit: l.invoice!.unit || 'BL', oldRate: l.invoice!.rate });
+                                                setRateModal({ contractId: c.id, liftingId: l.id, label: l.invoice!.remarks || `INV-${l.invoice!.invoiceNo}`, billQty: c.contractType === 'JOB_WORK' ? l.quantityBL : l.quantityKL, unit: c.contractType === 'JOB_WORK' ? 'BL' : 'KL', oldRate: l.invoice!.rate });
                                                 setRateInput(String(l.invoice!.rate ?? ''));
                                               }} className="text-[8px] font-bold uppercase px-1 py-0.5 border border-purple-300 bg-purple-50 text-purple-700 hover:bg-purple-100" title="Fix invoice rate">RATE</button>
                                             )}
@@ -1173,7 +1173,7 @@ const EthanolContracts: React.FC = () => {
                 <div className="bg-emerald-50 p-4 border border-emerald-200">
                   <h3 className="text-[10px] font-bold text-emerald-700 uppercase tracking-widest mb-3">Pricing</h3>
                   <div className="grid grid-cols-3 gap-3">
-                    <div><label className={labelCls}>Ethanol Rate (/Litre) *</label><input type="number" name="ethanolRate" value={form.ethanolRate} onChange={handleFormChange} step="0.01" className={inputCls} /></div>
+                    <div><label className={labelCls}>Ethanol Rate (₹/KL) *</label><input type="number" name="ethanolRate" value={form.ethanolRate} onChange={handleFormChange} step="0.01" placeholder="e.g. 58750.47" className={inputCls} /></div>
                     <div><label className={labelCls}>GST %</label><input type="number" name="gstPercent" value={form.gstPercent} onChange={handleFormChange} step="0.01" className={inputCls} /></div>
                     <div><label className={labelCls}>Supply Type</label>
                       <select name="supplyType" value={form.supplyType} onChange={handleFormChange} className={inputCls}>
@@ -1296,7 +1296,7 @@ const EthanolContracts: React.FC = () => {
       {/* E-INVOICE / E-WAY BILL GENERATION MODAL */}
       {rateModal && (() => {
         const newRate = parseFloat(rateInput) || 0;
-        const newAmount = Math.round(rateModal.qtyBL * newRate * 100) / 100;
+        const newAmount = Math.round(rateModal.billQty * newRate * 100) / 100;
         return (
           <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
             <div className="bg-white shadow-2xl w-full max-w-md mx-4">
@@ -1312,7 +1312,7 @@ const EthanolContracts: React.FC = () => {
                   <div className="text-[9px] text-slate-400 mt-0.5">Was ₹{rateModal.oldRate?.toLocaleString('en-IN')}/{rateModal.unit}</div>
                 </div>
                 <div className="bg-slate-50 border border-slate-200 px-3 py-2 text-[11px] flex justify-between">
-                  <span className="text-slate-500">{rateModal.qtyBL.toLocaleString('en-IN')} {rateModal.unit} × ₹{newRate.toLocaleString('en-IN')}</span>
+                  <span className="text-slate-500">{rateModal.billQty.toLocaleString('en-IN')} {rateModal.unit} × ₹{newRate.toLocaleString('en-IN')}</span>
                   <span className="font-mono font-bold text-slate-800">₹{newAmount.toLocaleString('en-IN')}</span>
                 </div>
                 {error && <div className="bg-red-50 border border-red-200 text-red-700 px-3 py-2 text-xs">{error}</div>}
