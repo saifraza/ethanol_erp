@@ -246,6 +246,7 @@ const createSchema = z.object({
   estimatedDelivery: z.string().optional().nullable(),
   truckSelections: z.array(z.object({ sourceType: z.string(), sourceId: z.string() })).optional(),
   // Manual aggregate (no weighbridge): N trucks × qty per truck
+  trucksOrdered: z.coerce.number().int().min(0).optional(),
   truckCount: z.coerce.number().int().min(0).optional(),
   qtyPerTruck: z.coerce.number().min(0).optional(),
 });
@@ -273,6 +274,7 @@ router.post('/', validate(createSchema), asyncHandler(async (req: AuthRequest, r
       estimatedDelivery: b.estimatedDelivery ? new Date(b.estimatedDelivery) : null,
       rateBasis: b.rateBasis,
       rate: Number(b.rate) || 0,
+      trucksOrdered: b.trucksOrdered ? Math.trunc(Number(b.trucksOrdered)) : null,
       truckCount: b.truckCount ? Math.trunc(Number(b.truckCount)) : null,
       qtyPerTruck: b.qtyPerTruck ? Number(b.qtyPerTruck) : null,
       gstPercent: Number(b.gstPercent) || 0,
@@ -328,6 +330,7 @@ router.put('/:id', validate(updateSchema), asyncHandler(async (req: AuthRequest,
   if (req.body.tdsPercent !== undefined) data.tdsPercent = Number(req.body.tdsPercent);
   if (req.body.supplyType !== undefined) data.supplyType = req.body.supplyType;
   if (req.body.estimatedDelivery !== undefined) data.estimatedDelivery = req.body.estimatedDelivery ? new Date(req.body.estimatedDelivery) : null;
+  if (req.body.trucksOrdered !== undefined) data.trucksOrdered = req.body.trucksOrdered ? Math.trunc(Number(req.body.trucksOrdered)) : null;
   if (req.body.truckCount !== undefined) data.truckCount = req.body.truckCount ? Math.trunc(Number(req.body.truckCount)) : null;
   if (req.body.qtyPerTruck !== undefined) data.qtyPerTruck = req.body.qtyPerTruck ? Number(req.body.qtyPerTruck) : null;
 

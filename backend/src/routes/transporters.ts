@@ -50,14 +50,41 @@ router.get('/gstin-lookup/:gstin', asyncHandler(async (req: AuthRequest, res: Re
     }
 }));
 
-// GET / — list active transporters
+// GET / — list active transporters (+ dispatch stats from their Transport WOs)
 router.get('/', asyncHandler(async (req: AuthRequest, res: Response) => {
     const transporters = await prisma.transporter.findMany({
       where: { isActive: true, ...getCompanyFilter(req) },
       orderBy: { name: 'asc' },
       take: 500,
     });
-    res.json({ transporters });
+
+    // Per-transporter rollup from non-cancelled Transport Work Orders.
+    // "Trucks dispatched" = truckCount when set (manual aggregate), else the line count.
+    const wos = await prisma.transportWorkOrder.findMany({
+      where: { status: { not: 'CANCELLED' }, ...getCompanyFilter(req) },
+      select: { transporterId: true, truckCount: true, netPayable: true, balanceAmount: true, _count: { select: { lines: true } } },
+    });
+    const stats = new Map<string, { trucks: number; orders: number; freight: number; outstanding: number }>();
+    for (const w of wos) {
+      const s = stats.get(w.transporterId) || { trucks: 0, orders: 0, freight: 0, outstanding: 0 };
+      s.trucks += w.truckCount ?? w._count.lines;
+      s.orders += 1;
+      s.freight += w.netPayable || 0;
+      s.outstanding += w.balanceAmount || 0;
+      stats.set(w.transporterId, s);
+    }
+
+    const withStats = transporters.map(t => {
+      const s = stats.get(t.id) || { trucks: 0, orders: 0, freight: 0, outstanding: 0 };
+      return {
+        ...t,
+        trucksDispatched: s.trucks,
+        woCount: s.orders,
+        totalFreight: Math.round(s.freight * 100) / 100,
+        outstandingFreight: Math.round(s.outstanding * 100) / 100,
+      };
+    });
+    res.json({ transporters: withStats });
 }));
 
 // POST / — create transporter

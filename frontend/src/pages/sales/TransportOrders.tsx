@@ -21,7 +21,7 @@ interface WoPayment {
 interface WoDetail extends WoListRow {
   gstPercent: number; cgstAmount: number; sgstAmount: number; igstAmount: number; gstAmount: number;
   tdsPercent: number; tdsAmount: number; supplyType?: string | null; distanceKm?: number | null;
-  estimatedDelivery?: string | null; truckCount?: number | null; qtyPerTruck?: number | null;
+  estimatedDelivery?: string | null; trucksOrdered?: number | null; truckCount?: number | null; qtyPerTruck?: number | null;
   cancelReason?: string | null;
   transporter?: { id: string; name: string; gstin?: string | null; phone?: string | null };
   lines: WoLine[]; payments: WoPayment[];
@@ -97,7 +97,7 @@ export default function TransportOrders() {
   const [form, setForm] = useState({
     transporterId: '', productType: 'ETHANOL', contractId: '', contractNo: '', customerName: '',
     depot: '', distanceKm: '', estimatedDelivery: '', rateBasis: 'PER_LITER', rate: '', gstPercent: '0', tdsPercent: '0', supplyType: 'INTRA_STATE',
-    truckCount: '', qtyPerTruck: '',
+    trucksOrdered: '', truckCount: '', qtyPerTruck: '',
   });
   const [contracts, setContracts] = useState<ContractOpt[]>([]);
   const [trucks, setTrucks] = useState<SourceTruck[]>([]);
@@ -130,7 +130,7 @@ export default function TransportOrders() {
   // ── create wizard helpers ──
   const openCreate = () => {
     setError('');
-    setForm({ transporterId: '', productType: 'ETHANOL', contractId: '', contractNo: '', customerName: '', depot: '', distanceKm: '', estimatedDelivery: '', rateBasis: 'PER_LITER', rate: '', gstPercent: '0', tdsPercent: '0', supplyType: 'INTRA_STATE', truckCount: '', qtyPerTruck: '' });
+    setForm({ transporterId: '', productType: 'ETHANOL', contractId: '', contractNo: '', customerName: '', depot: '', distanceKm: '', estimatedDelivery: '', rateBasis: 'PER_LITER', rate: '', gstPercent: '0', tdsPercent: '0', supplyType: 'INTRA_STATE', trucksOrdered: '', truckCount: '', qtyPerTruck: '' });
     setContracts([]); setTrucks([]); setSelected(new Set()); setDepotSuggestions([]);
     setShowCreate(true);
     loadContracts('ETHANOL');
@@ -212,6 +212,7 @@ export default function TransportOrders() {
         tdsPercent: form.tdsPercent,
         supplyType: form.supplyType,
         truckSelections: selectedTrucks.map(t => ({ sourceType: t.sourceType, sourceId: t.sourceId })),
+        trucksOrdered: Number(form.trucksOrdered) || undefined,
         truckCount: manualCount || undefined,
         qtyPerTruck: manualQtyPer || undefined,
       });
@@ -348,7 +349,7 @@ export default function TransportOrders() {
           <span><b className="text-slate-400 uppercase tracking-widest text-[10px]">Transporter</b> {d.transporter?.name} {d.transporter?.gstin ? `· ${d.transporter.gstin}` : ''}</span>
           <span><b className="text-slate-400 uppercase tracking-widest text-[10px]">Basis</b> {fmtINR(d.rate)} {BASIS_LABEL[d.rateBasis]}</span>
           {d.distanceKm ? <span><b className="text-slate-400 uppercase tracking-widest text-[10px]">Distance</b> {d.distanceKm} km</span> : null}
-          {d.truckCount ? <span><b className="text-slate-400 uppercase tracking-widest text-[10px]">Trucks</b> {d.truckCount}</span> : null}
+          {d.truckCount ? <span><b className="text-slate-400 uppercase tracking-widest text-[10px]">Trucks used</b> {d.truckCount}{d.trucksOrdered ? ` of ${d.trucksOrdered}` : ''}</span> : null}
           {d.estimatedDelivery ? <span><b className="text-slate-400 uppercase tracking-widest text-[10px]">Est. delivery</b> {new Date(d.estimatedDelivery).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })}</span> : null}
           {d.status === 'CANCELLED' && d.cancelReason && <span className="text-slate-500">Cancelled — {d.cancelReason}</span>}
         </div>
@@ -532,13 +533,17 @@ export default function TransportOrders() {
               </div>
             )}
 
-            {/* manual aggregate — no weighbridge: just count + qty/truck + one ETA */}
+            {/* manual aggregate — no weighbridge: ordered + used + qty/truck + one ETA */}
             <div>
-              <label className={labelCls}>Trucks dispatched (manual) <span className="text-slate-400 normal-case">— use when there's no weighbridge feed</span></label>
-              <div className="grid grid-cols-2 md:grid-cols-3 gap-3 mt-1">
+              <label className={labelCls}>Trucks <span className="text-slate-400 normal-case">— freight is billed on trucks USED, not ordered</span></label>
+              <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mt-1">
                 <div>
-                  <label className="text-[9px] text-slate-400 uppercase tracking-widest mb-0.5 block">No. of trucks</label>
-                  <input type="number" min="0" step="1" value={form.truckCount} onChange={e => setForm(f => ({ ...f, truckCount: e.target.value }))} className={inputCls} placeholder="e.g. 4" />
+                  <label className="text-[9px] text-slate-400 uppercase tracking-widest mb-0.5 block">Trucks ordered</label>
+                  <input type="number" min="0" step="1" value={form.trucksOrdered} onChange={e => setForm(f => ({ ...f, trucksOrdered: e.target.value }))} className={inputCls} placeholder="e.g. 10" />
+                </div>
+                <div>
+                  <label className="text-[9px] text-blue-500 uppercase tracking-widest mb-0.5 block">Trucks used *</label>
+                  <input type="number" min="0" step="1" value={form.truckCount} onChange={e => setForm(f => ({ ...f, truckCount: e.target.value }))} className={inputCls} placeholder="e.g. 8" />
                 </div>
                 {form.rateBasis !== 'PER_TRUCK' && (
                   <div>
@@ -553,7 +558,7 @@ export default function TransportOrders() {
               </div>
               {manualCount > 0 && (
                 <p className="text-[10px] text-slate-500 mt-1">
-                  {manualCount} truck{manualCount > 1 ? 's' : ''}{form.rateBasis !== 'PER_TRUCK' && manualQtyPer > 0 ? ` × ${manualQtyPer.toLocaleString('en-IN')} ${BASIS_LABEL[form.rateBasis].split('/')[1]?.trim()}` : ''} → freight {fmtINR(manualSubtotal)}
+                  {manualCount}{form.trucksOrdered && Number(form.trucksOrdered) > 0 ? ` of ${form.trucksOrdered}` : ''} truck{manualCount > 1 ? 's' : ''} used{form.rateBasis !== 'PER_TRUCK' && manualQtyPer > 0 ? ` × ${manualQtyPer.toLocaleString('en-IN')} ${BASIS_LABEL[form.rateBasis].split('/')[1]?.trim()}` : ''} → freight {fmtINR(manualSubtotal)}
                 </p>
               )}
             </div>
