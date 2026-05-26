@@ -60,6 +60,7 @@ model Company {
   contractorPayments    ContractorPayment[]
   contractorStoreIssues ContractorStoreIssue[]
   workOrders            WorkOrder[]
+  transportWorkOrders   TransportWorkOrder[]
   directPurchases       DirectPurchase[]
   directSales           DirectSale[]
   approvals             Approval[]
@@ -1947,7 +1948,114 @@ model Transporter {
   companyId String? // FK → Company (null = MSPIL default)
   company   Company? @relation(fields: [companyId], references: [id])
 
+  transportWorkOrders TransportWorkOrder[]
+
   @@index([companyId])
+}
+
+// ════════════════════════════════════════════════════════════════════
+// SALES-SIDE TRANSPORT WORK ORDER — freight for outbound product sales
+// (ethanol / DDGS / WGS / sugar / scrap). Tied to a sales contract +
+// transporter + depot, with a rate basis (per truck / per L / per KL /
+// per MT / per km). Trucks are pulled from the contract's dispatches and
+// billed; confirm posts Dr Freight&Transport / Cr AP, pay settles it.
+// Distinct from the Store-module WorkOrder(contractType=TRANSPORT).
+// ════════════════════════════════════════════════════════════════════
+model TransportWorkOrder {
+  id              String      @id @default(uuid())
+  twoNo           Int         @default(autoincrement())
+  // Transporter (freight vendor, e.g. LMR)
+  transporterId   String
+  transporter     Transporter @relation(fields: [transporterId], references: [id])
+  transporterName String // snapshot
+  // Sales contract this freight is against (polymorphic soft-ref — no FK)
+  productType     String // ETHANOL | DDGS | WGS | SUGAR | SCRAP
+  contractId      String? // id in the relevant contract table (null for SCRAP/manual)
+  contractNo      String? // snapshot
+  customerName    String? // snapshot (e.g. Reliance)
+  // Destination (drives the rate)
+  depot           String // free-text delivery location
+  distanceKm      Float? // for PER_KM
+  // Pricing
+  rateBasis       String // PER_TRUCK | PER_LITER | PER_KL | PER_MT | PER_KM
+  rate            Float   @default(0) // ₹ per unit (or per truck)
+  // Tax
+  gstPercent      Float   @default(0) // 0 = RCM/unregistered (common for GTA)
+  supplyType      String? // INTRA_STATE | INTER_STATE
+  cgstAmount      Float   @default(0)
+  sgstAmount      Float   @default(0)
+  igstAmount      Float   @default(0)
+  gstAmount       Float   @default(0)
+  tdsPercent      Float   @default(0) // 194C — 0 when transporter is exempt u/s 194C(6)
+  tdsAmount       Float   @default(0)
+  // Totals
+  subtotal        Float   @default(0) // sum of line amounts (freight before GST)
+  totalAmount     Float   @default(0) // subtotal + GST
+  netPayable      Float   @default(0) // totalAmount - TDS
+  paidAmount      Float   @default(0)
+  balanceAmount   Float   @default(0) // netPayable - paid
+  // Status
+  status          String    @default("DRAFT") // DRAFT | CONFIRMED | PARTIAL_PAID | PAID | CANCELLED
+  confirmedAt     DateTime?
+  confirmedBy     String?
+  cancelledAt     DateTime?
+  cancelReason    String?
+  remarks         String?
+  userId          String
+  division        String?   @default("ETHANOL")
+  companyId       String?
+  company         Company?  @relation(fields: [companyId], references: [id])
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+
+  lines    TransportWorkOrderLine[]
+  payments TransportPayment[]
+
+  @@index([transporterId])
+  @@index([status])
+  @@index([productType])
+  @@index([contractId])
+  @@index([companyId])
+}
+
+model TransportWorkOrderLine {
+  id           String             @id @default(uuid())
+  woId         String
+  wo           TransportWorkOrder @relation(fields: [woId], references: [id], onDelete: Cascade)
+  // Source truck (soft-ref to whichever dispatch table) — traceability + dedupe
+  sourceType   String? // SHIPMENT | DISPATCH_TRUCK | DDGS_DISPATCH | DDGS_DISPATCH_TRUCK | ETHANOL_LIFTING | MANUAL
+  sourceId     String?
+  dispatchDate DateTime?
+  vehicleNo    String
+  quantity     Float    @default(0) // in the billing unit (liters / KL / MT / 1 for per-truck)
+  unit         String   @default("TRUCK") // LITER | KL | MT | TRUCK | KM
+  amount       Float    @default(0) // computed freight for this truck
+  createdAt    DateTime @default(now())
+
+  @@unique([woId, sourceType, sourceId])
+  @@index([woId])
+}
+
+model TransportPayment {
+  id            String             @id @default(uuid())
+  paymentNo     Int                @default(autoincrement())
+  woId          String
+  wo            TransportWorkOrder @relation(fields: [woId], references: [id])
+  transporterId String?
+  amount        Float
+  tdsDeducted   Float    @default(0)
+  paymentMode   String   @default("NEFT") // CASH, NEFT, RTGS, UPI, CHEQUE, BANK_TRANSFER
+  paymentRef    String? // UTR / cheque no
+  paymentDate   DateTime @default(now())
+  paymentStatus String   @default("CONFIRMED") // CONFIRMED | CANCELLED
+  remarks       String?
+  userId        String
+  companyId     String?
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  @@index([woId])
+  @@index([paymentDate])
 }
 
 // ── Sales Order (HQ creates) ──
