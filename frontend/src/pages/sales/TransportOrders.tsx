@@ -109,6 +109,7 @@ export default function TransportOrders() {
   const [payForm, setPayForm] = useState({ amount: '', tdsDeducted: '0', paymentMode: 'NEFT', paymentRef: '', paymentDate: new Date().toISOString().slice(0, 10) });
   const [cancelModal, setCancelModal] = useState<{ woId: string; label: string } | null>(null);
   const [cancelReason, setCancelReason] = useState('');
+  const [usedEdit, setUsedEdit] = useState(''); // actual trucks used, set at final billing
 
   useEffect(() => { fetchOrders(); fetchTransporters(); }, []);
 
@@ -212,7 +213,7 @@ export default function TransportOrders() {
         tdsPercent: form.tdsPercent,
         supplyType: form.supplyType,
         truckSelections: selectedTrucks.map(t => ({ sourceType: t.sourceType, sourceId: t.sourceId })),
-        trucksOrdered: Number(form.trucksOrdered) || undefined,
+        trucksOrdered: manualCount || undefined,
         truckCount: manualCount || undefined,
         qtyPerTruck: manualQtyPer || undefined,
       });
@@ -228,10 +229,18 @@ export default function TransportOrders() {
     try {
       const res = await api.get(`/transport-work-orders/${id}`);
       setDetail(res.data.wo);
+      setUsedEdit(res.data.wo.truckCount != null ? String(res.data.wo.truckCount) : '');
     } catch { setError('Failed to load work order'); }
   };
   const refreshDetail = async (id: string) => {
-    try { const res = await api.get(`/transport-work-orders/${id}`); setDetail(res.data.wo); } catch { /* ignore */ }
+    try { const res = await api.get(`/transport-work-orders/${id}`); setDetail(res.data.wo); setUsedEdit(res.data.wo.truckCount != null ? String(res.data.wo.truckCount) : ''); } catch { /* ignore */ }
+  };
+
+  // Set the actual trucks used (final billing) on a DRAFT manual WO, then recompute.
+  const updateUsed = async (id: string) => {
+    try { setBusy(id); await api.put(`/transport-work-orders/${id}`, { truckCount: Number(usedEdit) || 0 }); await refreshDetail(id); fetchOrders(); }
+    catch (err) { setError(errMsg(err, 'Failed to update trucks used')); }
+    finally { setBusy(null); }
   };
 
   const confirmWo = async (id: string) => {
@@ -398,8 +407,19 @@ export default function TransportOrders() {
           <div className="flex flex-col gap-1.5">
             {d.status === 'DRAFT' && (
               <>
+                {d.trucksOrdered != null && (
+                  <div className="border border-slate-200 bg-white px-2.5 py-2">
+                    <label className="text-[9px] font-bold text-slate-500 uppercase tracking-widest block mb-1">Final billing — trucks used <span className="text-slate-400 normal-case">(ordered {d.trucksOrdered})</span></label>
+                    <div className="flex items-center gap-1.5">
+                      <input type="number" min="0" step="1" value={usedEdit} onChange={e => setUsedEdit(e.target.value)} className="border border-slate-300 px-2 py-1 text-xs w-20 focus:outline-none focus:ring-1 focus:ring-blue-400" />
+                      <button onClick={() => updateUsed(d.id)} disabled={busy === d.id || usedEdit === String(d.truckCount ?? '')}
+                        className="text-[11px] font-medium px-2 py-1 border border-blue-300 bg-blue-50 text-blue-700 hover:bg-blue-100 disabled:opacity-40">Update</button>
+                      <span className="text-[10px] text-slate-400">freight {fmtINR(d.subtotal)}</span>
+                    </div>
+                  </div>
+                )}
                 <button onClick={() => confirmWo(d.id)} disabled={busy === d.id} className="flex items-center justify-center gap-1.5 px-3 py-1.5 bg-blue-600 text-white text-xs font-medium hover:bg-blue-700 disabled:opacity-50">
-                  <CheckCircle2 size={14} /> Confirm (post to ledger)
+                  <CheckCircle2 size={14} /> Confirm &amp; bill {d.truckCount != null ? `${d.truckCount} truck${d.truckCount > 1 ? 's' : ''}` : ''}
                 </button>
                 <button onClick={() => deleteWo(d.id)} disabled={busy === d.id} className="flex items-center justify-center gap-1.5 px-3 py-1.5 border border-slate-300 text-slate-600 text-xs font-medium hover:bg-slate-50 disabled:opacity-50">
                   <Trash2 size={14} /> Delete draft
@@ -533,17 +553,13 @@ export default function TransportOrders() {
               </div>
             )}
 
-            {/* manual aggregate — no weighbridge: ordered + used + qty/truck + one ETA */}
+            {/* manual order — no weighbridge: order N trucks now; actual used is set at billing */}
             <div>
-              <label className={labelCls}>Trucks <span className="text-slate-400 normal-case">— freight is billed on trucks USED, not ordered</span></label>
-              <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mt-1">
+              <label className={labelCls}>Order quantity <span className="text-slate-400 normal-case">— actual trucks used is set later, at final billing</span></label>
+              <div className="grid grid-cols-2 md:grid-cols-3 gap-3 mt-1">
                 <div>
-                  <label className="text-[9px] text-slate-400 uppercase tracking-widest mb-0.5 block">Trucks ordered</label>
-                  <input type="number" min="0" step="1" value={form.trucksOrdered} onChange={e => setForm(f => ({ ...f, trucksOrdered: e.target.value }))} className={inputCls} placeholder="e.g. 10" />
-                </div>
-                <div>
-                  <label className="text-[9px] text-blue-500 uppercase tracking-widest mb-0.5 block">Trucks used *</label>
-                  <input type="number" min="0" step="1" value={form.truckCount} onChange={e => setForm(f => ({ ...f, truckCount: e.target.value }))} className={inputCls} placeholder="e.g. 8" />
+                  <label className="text-[9px] text-slate-400 uppercase tracking-widest mb-0.5 block">No. of trucks</label>
+                  <input type="number" min="0" step="1" value={form.truckCount} onChange={e => setForm(f => ({ ...f, truckCount: e.target.value }))} className={inputCls} placeholder="e.g. 10" />
                 </div>
                 {form.rateBasis !== 'PER_TRUCK' && (
                   <div>
@@ -558,7 +574,7 @@ export default function TransportOrders() {
               </div>
               {manualCount > 0 && (
                 <p className="text-[10px] text-slate-500 mt-1">
-                  {manualCount}{form.trucksOrdered && Number(form.trucksOrdered) > 0 ? ` of ${form.trucksOrdered}` : ''} truck{manualCount > 1 ? 's' : ''} used{form.rateBasis !== 'PER_TRUCK' && manualQtyPer > 0 ? ` × ${manualQtyPer.toLocaleString('en-IN')} ${BASIS_LABEL[form.rateBasis].split('/')[1]?.trim()}` : ''} → freight {fmtINR(manualSubtotal)}
+                  Order: {manualCount} truck{manualCount > 1 ? 's' : ''}{form.rateBasis !== 'PER_TRUCK' && manualQtyPer > 0 ? ` × ${manualQtyPer.toLocaleString('en-IN')} ${BASIS_LABEL[form.rateBasis].split('/')[1]?.trim()}` : ''} → est. freight {fmtINR(manualSubtotal)} <span className="text-slate-400">(adjust to actual before you bill)</span>
                 </p>
               )}
             </div>
