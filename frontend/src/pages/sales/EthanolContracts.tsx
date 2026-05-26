@@ -199,9 +199,6 @@ const EthanolContracts: React.FC = () => {
   const [ewbModal, setEwbModal] = useState<{ contractId: string; liftingId: string; vehicleNo: string; destination: string; transporterName: string; distanceKm: number } | null>(null);
   const [ewbForm, setEwbForm] = useState({ distanceKm: '', transporterName: '', transporterGstin: '', vehicleNo: '' });
   const [manualEwb, setManualEwb] = useState<{ liftingId: string; ewbNo: string; file: File | null } | null>(null);
-  // Re-rate an existing lifting's invoice (no IRN / no payment). Cascades to invoice + GST + journal.
-  const [rateModal, setRateModal] = useState<{ contractId: string; liftingId: string; label: string; billQty: number; unit: string; oldRate: number } | null>(null);
-  const [rateInput, setRateInput] = useState('');
 
   // Truck detail modal (before release)
   const [truckDetail, setTruckDetail] = useState<{ truck: any; contract: Contract } | null>(null);
@@ -429,20 +426,6 @@ const EthanolContracts: React.FC = () => {
       setManualEwb(null);
       loadSupplyDetail(contractId);
     } catch (err: unknown) { setError(err?.response?.data?.error || 'Failed to save EWB'); }
-    finally { setActionLoading(null); }
-  };
-
-  const handleReRate = async () => {
-    if (!rateModal) return;
-    const newRate = parseFloat(rateInput);
-    if (!newRate || newRate <= 0) { setError('Enter a rate greater than zero'); return; }
-    try {
-      setActionLoading(rateModal.liftingId);
-      await api.patch(`/ethanol-contracts/liftings/${rateModal.liftingId}/rate`, { rate: newRate });
-      setRateModal(null);
-      setError('');
-      loadSupplyDetail(rateModal.contractId);
-    } catch (err: unknown) { setError(err?.response?.data?.error || 'Failed to update rate'); }
     finally { setActionLoading(null); }
   };
 
@@ -916,16 +899,7 @@ const EthanolContracts: React.FC = () => {
                                         {/* Actions */}
                                         <td className="px-2 py-1.5 text-center">
                                           <div className="flex items-center justify-center gap-1 flex-wrap">
-                                            {/* Fix the rate on this lifting's invoice — only while no IRN and no payment.
-                                                Cascades to invoice amount/GST/total + journal (backend re-rate endpoint). */}
-                                            {l.invoice && !l.invoice.irn && l.invoice.irnStatus !== 'GENERATED' && (l.invoice.paidAmount || 0) === 0 && (
-                                              <button onClick={(e) => {
-                                                e.stopPropagation();
-                                                setError('');
-                                                setRateModal({ contractId: c.id, liftingId: l.id, label: l.invoice!.remarks || `INV-${l.invoice!.invoiceNo}`, billQty: c.contractType === 'JOB_WORK' ? l.quantityBL : l.quantityKL, unit: c.contractType === 'JOB_WORK' ? 'BL' : 'KL', oldRate: l.invoice!.rate });
-                                                setRateInput(String(l.invoice!.rate ?? ''));
-                                              }} className="text-[8px] font-bold uppercase px-1 py-0.5 border border-purple-300 bg-purple-50 text-purple-700 hover:bg-purple-100" title="Fix invoice rate">RATE</button>
-                                            )}
+                                            {/* Rate corrections are made at the contract level (cascades to un-IRN, unpaid invoices). */}
                                             {l.invoice && (
                                               <button onClick={async (e) => {
                                                 e.stopPropagation();
@@ -1294,40 +1268,6 @@ const EthanolContracts: React.FC = () => {
       )}
 
       {/* E-INVOICE / E-WAY BILL GENERATION MODAL */}
-      {rateModal && (() => {
-        const newRate = parseFloat(rateInput) || 0;
-        const newAmount = Math.round(rateModal.billQty * newRate * 100) / 100;
-        return (
-          <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
-            <div className="bg-white shadow-2xl w-full max-w-md mx-4">
-              <div className="bg-purple-700 text-white px-4 py-2.5 flex items-center justify-between">
-                <h2 className="text-sm font-bold tracking-wide uppercase">Fix Rate — {rateModal.label}</h2>
-                <button onClick={() => setRateModal(null)} className="text-purple-200 hover:text-white"><X size={18} /></button>
-              </div>
-              <div className="p-5 space-y-3">
-                <p className="text-[11px] text-slate-500">Recomputes the invoice amount, GST and total, and reposts the accounting entry. Allowed only before an IRN is generated or any payment is received.</p>
-                <div>
-                  <label className={labelCls}>Rate (₹ per {rateModal.unit})</label>
-                  <input type="number" step="0.01" value={rateInput} onChange={e => setRateInput(e.target.value)} className={inputCls} autoFocus />
-                  <div className="text-[9px] text-slate-400 mt-0.5">Was ₹{rateModal.oldRate?.toLocaleString('en-IN')}/{rateModal.unit}</div>
-                </div>
-                <div className="bg-slate-50 border border-slate-200 px-3 py-2 text-[11px] flex justify-between">
-                  <span className="text-slate-500">{rateModal.billQty.toLocaleString('en-IN')} {rateModal.unit} × ₹{newRate.toLocaleString('en-IN')}</span>
-                  <span className="font-mono font-bold text-slate-800">₹{newAmount.toLocaleString('en-IN')}</span>
-                </div>
-                {error && <div className="bg-red-50 border border-red-200 text-red-700 px-3 py-2 text-xs">{error}</div>}
-              </div>
-              <div className="flex gap-2 p-5 border-t border-slate-200 justify-end">
-                <button onClick={() => setRateModal(null)} className="px-4 py-1.5 bg-white border border-slate-300 text-slate-600 text-[11px] font-medium hover:bg-slate-50">Cancel</button>
-                <button onClick={handleReRate} disabled={actionLoading === rateModal.liftingId || !(newRate > 0)}
-                  className="px-4 py-1.5 bg-purple-600 text-white text-[11px] font-medium hover:bg-purple-700 disabled:opacity-50">
-                  {actionLoading === rateModal.liftingId ? 'Updating...' : 'Update Rate'}
-                </button>
-              </div>
-            </div>
-          </div>
-        );
-      })()}
       {ewbModal && (
         <div className="fixed inset-0 bg-black/50 flex items-start justify-center z-50 overflow-y-auto py-8">
           <div className="bg-white shadow-2xl w-full max-w-lg mx-4">
