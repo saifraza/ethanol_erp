@@ -592,7 +592,7 @@ router.get('/:id/supply-summary', asyncHandler(async (req: AuthRequest, res: Res
           include: {
             invoice: {
               select: {
-                id: true, invoiceNo: true, totalAmount: true, paidAmount: true, balanceAmount: true, status: true,
+                id: true, invoiceNo: true, remarks: true, totalAmount: true, paidAmount: true, balanceAmount: true, status: true,
                 amount: true, quantity: true, rate: true, unit: true, productName: true,
                 gstPercent: true, gstAmount: true, cgstAmount: true, sgstAmount: true, igstAmount: true,
                 supplyType: true, freightCharge: true,
@@ -763,7 +763,7 @@ router.post('/:id/liftings/:liftingId/create-invoice', asyncHandler(async (req: 
           balanceAmount: totalAmount,
           status: 'UNPAID',
           remarks: customInvNo, // store custom invoice no in remarks for now
-          userId: (req as any).user?.id || 'system',
+          userId: req.user?.id || 'system',
         },
       });
 
@@ -781,7 +781,7 @@ router.post('/:id/liftings/:liftingId/create-invoice', asyncHandler(async (req: 
       amount: invoice.amount, gstAmount: gst.gstAmount, gstPercent,
       cgstAmount: gst.cgstAmount, sgstAmount: gst.sgstAmount, igstAmount: gst.igstAmount,
       supplyType: gst.supplyType, productName: invoice.productName,
-      customerId: customer.id, userId: (req as any).user?.id || 'system',
+      customerId: customer.id, userId: req.user?.id || 'system',
       invoiceDate: lifting.liftingDate, customer: { state: customer.state },
       companyId: invoice.companyId || undefined,
     });
@@ -1302,7 +1302,7 @@ router.post('/:id/import-history', asyncHandler(async (req: AuthRequest, res: Re
           totalAmount, paidAmount: totalAmount, balanceAmount: 0,
           status: 'PAID', irnStatus: 'GENERATED', irnDate: new Date(row.date),
           ewbStatus: 'GENERATED',
-          userId: (req as any).user?.id || 'system',
+          userId: req.user?.id || 'system',
         },
       });
 
