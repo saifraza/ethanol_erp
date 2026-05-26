@@ -377,6 +377,8 @@ router.post('/seed', asyncHandler(async (req: AuthRequest, res: Response) => {
     { code: '3003', name: 'Other Income', type: 'INCOME', subType: 'INDIRECT_INCOME', isSystem: false },
     { code: '3004', name: 'Interest Income', type: 'INCOME', subType: 'INDIRECT_INCOME', isSystem: false },
     { code: '3005', name: 'Scrap Sales', type: 'INCOME', subType: 'INDIRECT_INCOME', isSystem: false },
+    { code: '3006', name: 'Sugar Sales', type: 'INCOME', subType: 'DIRECT_INCOME', isSystem: true },
+    { code: '3007', name: 'WGS Sales', type: 'INCOME', subType: 'DIRECT_INCOME', isSystem: true },
 
     // EXPENSE (4xxx)
     { code: '4001', name: 'Raw Material - Grain', type: 'EXPENSE', subType: 'DIRECT_EXPENSE', isSystem: true },
