@@ -21,6 +21,15 @@ const router = Router();
 router.use(authenticate);
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 10 * 1024 * 1024 } });
 
+// Ethanol invoice billing unit by contract type:
+//   JOB_WORK      → per BL (the conversion charge is quoted per bulk litre)
+//   FIXED_PRICE / OMC → per KL (the ethanol price you actually quote, e.g. ₹58,750/KL)
+// Returns the quantity + unit to put on the invoice; the rate is per that unit.
+function ethanolBilling(contractType: string, quantityBL: number, quantityKL: number): { billQty: number; billUnit: string } {
+  const isJobWork = contractType === 'JOB_WORK';
+  return { billQty: isJobWork ? quantityBL : quantityKL, billUnit: isJobWork ? 'BL' : 'KL' };
+}
+
 // Recompute a contract's supplied/invoiced totals from its liftings (drift-safe).
 async function recomputeEthanolContractTotals(client: Prisma.TransactionClient | typeof prisma, contractId: string) {
   const liftings = await client.ethanolLifting.findMany({
@@ -53,8 +62,8 @@ async function reRateLiftingInvoice(
   if (inv.irn || inv.irnStatus === 'GENERATED') return { ok: false, reason: 'irn' };
   if ((inv.paidAmount || 0) > 0) return { ok: false, reason: 'paid' };
 
-  const qtyBL = lifting.quantityBL;
-  const newAmount = Math.round(qtyBL * newRate * 100) / 100;
+  const { billQty, billUnit } = ethanolBilling(lifting.contract.contractType, lifting.quantityBL, lifting.quantityKL);
+  const newAmount = Math.round(billQty * newRate * 100) / 100;
   const gstPercent = inv.gstPercent || lifting.contract.gstPercent || 18;
   const gst = calcGstSplit(newAmount, gstPercent, inv.customer?.state, inv.customer?.gstNo);
   const newTotal = Math.round((newAmount + gst.gstAmount) * 100) / 100;
@@ -63,6 +72,9 @@ async function reRateLiftingInvoice(
     await tx.invoice.update({
       where: { id: inv.id },
       data: {
+        // Also normalise qty + unit to the billing convention so legacy BL invoices
+        // (qty 40000 / unit BL) migrate to the correct KL line on re-rate.
+        quantity: billQty, unit: billUnit,
         rate: newRate, amount: newAmount, gstAmount: gst.gstAmount,
         cgstPercent: gst.cgstPercent, cgstAmount: gst.cgstAmount,
         sgstPercent: gst.sgstPercent, sgstAmount: gst.sgstAmount,
@@ -337,7 +349,7 @@ router.post('/:id/liftings', asyncHandler(async (req: AuthRequest, res: Response
       else rate = contract.ethanolRate; // OMC rate
     }
     if (!amount && rate) {
-      amount = qtyBL * rate;
+      amount = ethanolBilling(contract.contractType, qtyBL, qtyKL).billQty * rate;
     }
 
     const lifting = await prisma.ethanolLifting.create({
@@ -406,11 +418,12 @@ router.post('/:id/liftings', asyncHandler(async (req: AuthRequest, res: Response
         const inv = await prisma.$transaction(async (tx) => {
           // Atomic next invoice number from the global counter (INV/ETH/NNN)
           const customInvNo = await nextInvoiceNo(tx, 'ETH');
+          const eb = ethanolBilling(contract.contractType, qtyBL, qtyKL);
           const created = await tx.invoice.create({
             data: {
               customerId: cust.id, invoiceDate: lifting.liftingDate,
               productName: contract.contractType === 'JOB_WORK' ? 'Job Work Charges for Ethanol Production' : 'ETHANOL',
-              quantity: qtyBL, unit: 'LTR', rate: rate!, amount: amount!,
+              quantity: eb.billQty, unit: eb.billUnit, rate: rate!, amount: amount!,
               gstPercent: contract.gstPercent || 18, gstAmount: gst.gstAmount, supplyType: gst.supplyType,
               cgstPercent: gst.cgstPercent, cgstAmount: gst.cgstAmount, sgstPercent: gst.sgstPercent, sgstAmount: gst.sgstAmount,
               igstPercent: gst.igstPercent, igstAmount: gst.igstAmount,
@@ -730,7 +743,8 @@ router.post('/:id/liftings/:liftingId/create-invoice', asyncHandler(async (req: 
     if (!customer) return res.status(500).json({ error: 'Customer not found after resolve' });
 
     const gstPercent = contract.gstPercent || 18;
-    const amount = lifting.amount || (lifting.quantityBL * (lifting.rate || 0));
+    const eb = ethanolBilling(contract.contractType, lifting.quantityBL, lifting.quantityKL);
+    const amount = lifting.amount || (eb.billQty * (lifting.rate || 0));
     const gst = calcGstSplit(amount, gstPercent, customer.state, customer.gstNo);
     const totalAmount = Math.round(amount + gst.gstAmount);
 
@@ -750,8 +764,8 @@ router.post('/:id/liftings/:liftingId/create-invoice', asyncHandler(async (req: 
           invoiceDate: lifting.liftingDate,
           dueDate: contract.paymentTermsDays ? new Date(lifting.liftingDate.getTime() + contract.paymentTermsDays * 86400000) : null,
           productName: contract.contractType === 'JOB_WORK' ? 'Job Work Charges for Ethanol Production' : 'ETHANOL',
-          quantity: lifting.quantityBL,
-          unit: contract.contractType === 'JOB_WORK' ? 'BL' : 'LTR',
+          quantity: eb.billQty,
+          unit: eb.billUnit,
           rate: lifting.rate || 0,
           amount,
           gstPercent,
@@ -805,8 +819,12 @@ router.get('/:id/liftings/:liftingId/delivery-challan-pdf', asyncHandler(async (
     if (!lifting) return res.status(404).json({ error: 'Lifting not found' });
 
     const isJobWork = lifting.contract.contractType === 'JOB_WORK';
-    const productRate = isJobWork ? 71.86 : (lifting.contract.ethanolRate || 71.86);
-    const productValue = Math.round(lifting.quantityBL * productRate);
+    // Job-work challan shows the goods value at the market per-litre rate (₹71.86/L × BL).
+    // Fixed-price/OMC shows the sale value at the per-KL rate (₹/KL × KL).
+    const productRate = isJobWork ? 71.86 : (lifting.contract.ethanolRate || 0);
+    const productValue = isJobWork
+      ? Math.round(lifting.quantityBL * productRate)
+      : Math.round(lifting.quantityKL * productRate);
     const gstRate = 5;
     const gstAmount = Math.round(productValue * gstRate / 100);
     const totalValue = productValue + gstAmount;
@@ -855,7 +873,7 @@ router.get('/:id/liftings/:liftingId/gate-pass-pdf', asyncHandler(async (req: Au
 
     const isJobWork = lifting.contract.contractType === 'JOB_WORK';
     const rate = isJobWork ? (lifting.contract.conversionRate || 0) : (lifting.contract.ethanolRate || 0);
-    const amount = Math.round(lifting.quantityBL * rate);
+    const amount = Math.round(ethanolBilling(lifting.contract.contractType, lifting.quantityBL, lifting.quantityKL).billQty * rate);
 
     const { renderDocumentPdf } = await import('../services/documentRenderer');
     const pdfBuffer = await renderDocumentPdf({
