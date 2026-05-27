@@ -2687,6 +2687,8 @@ model PurchaseOrder {
   overrideTdsSection   TdsSection?          @relation("PoOverrideTds", fields: [overrideTdsSectionId], references: [id])
   // RM contract terms ticked on this PO — keys from backend/src/data/poTerms.ts
   termsAccepted        String[]             @default([])
+  // Free-text terms the team adds/edits/types per PO — [{ title, body }] (mirrors WorkOrder)
+  termsAndConditions   Json?
   // Payment terms
   paymentTerms         String?
   creditDays           Int                  @default(30)

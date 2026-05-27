@@ -202,6 +202,10 @@ const EXPECTED_COLUMNS: ColumnCheck[] = [
   { table: 'TransportPayment', column: 'paymentStatus',       sql: `ALTER TABLE "TransportPayment" ADD COLUMN IF NOT EXISTS "paymentStatus" TEXT NOT NULL DEFAULT 'CONFIRMED'` },
   { table: 'TransportPayment', column: 'remarks',             sql: `ALTER TABLE "TransportPayment" ADD COLUMN IF NOT EXISTS "remarks" TEXT` },
   { table: 'TransportPayment', column: 'companyId',           sql: `ALTER TABLE "TransportPayment" ADD COLUMN IF NOT EXISTS "companyId" TEXT` },
+
+  // 2026-05-27 — Free-text editable terms & conditions on a PO ([{title, body}] JSON),
+  // alongside the existing preset termsAccepted keys.
+  { table: 'PurchaseOrder', column: 'termsAndConditions', sql: `ALTER TABLE "PurchaseOrder" ADD COLUMN IF NOT EXISTS "termsAndConditions" JSONB` },
 ];
 
 const EXPECTED_TABLES: TableCheck[] = [
