@@ -454,7 +454,7 @@ router.post('/:id/liftings', asyncHandler(async (req: AuthRequest, res: Response
             try {
               const irnRes = await generateIRN({
                 invoiceNo: invoiceDisplayNo(inv), invoiceDate: inv.invoiceDate,
-                productName: inv.productName, quantity: inv.quantity, unit: 'LTR', rate: inv.rate, amount: inv.amount, gstPercent: inv.gstPercent,
+                productName: inv.productName, quantity: inv.quantity, unit: inv.unit, rate: inv.rate, amount: inv.amount, gstPercent: inv.gstPercent,
                 customer: { gstin: cust.gstNo!, name: cust.name, address: cust.address!, city: cust.city || '', pincode: cust.pincode!, state: cust.state!, phone: cust.phone || '', email: cust.email || '' },
               });
               if (irnRes.success && irnRes.irn) {
@@ -820,11 +820,11 @@ router.get('/:id/liftings/:liftingId/delivery-challan-pdf', asyncHandler(async (
 
     const isJobWork = lifting.contract.contractType === 'JOB_WORK';
     // Job-work challan shows the goods value at the market per-litre rate (₹71.86/L × BL).
-    // Fixed-price/OMC shows the sale value at the per-KL rate (₹/KL × KL).
+    // Fixed-price/OMC shows the sale value at the per-KL rate (₹/KL × KL). The qty + unit + rate
+    // on the document must match the same convention so the line reads consistently.
+    const { billQty, billUnit } = ethanolBilling(lifting.contract.contractType, lifting.quantityBL, lifting.quantityKL);
     const productRate = isJobWork ? 71.86 : (lifting.contract.ethanolRate || 0);
-    const productValue = isJobWork
-      ? Math.round(lifting.quantityBL * productRate)
-      : Math.round(lifting.quantityKL * productRate);
+    const productValue = Math.round(billQty * productRate);
     const gstRate = 5;
     const gstAmount = Math.round(productValue * gstRate / 100);
     const totalValue = productValue + gstAmount;
@@ -847,6 +847,8 @@ router.get('/:id/liftings/:liftingId/delivery-challan-pdf', asyncHandler(async (
         buyerAddress: lifting.contract.buyerAddress || '',
         buyerGst: lifting.contract.buyerGst || '',
         quantityBL: lifting.quantityBL,
+        billQty,
+        billUnit,
         productRate,
         productValue,
         gstRate,
@@ -873,7 +875,8 @@ router.get('/:id/liftings/:liftingId/gate-pass-pdf', asyncHandler(async (req: Au
 
     const isJobWork = lifting.contract.contractType === 'JOB_WORK';
     const rate = isJobWork ? (lifting.contract.conversionRate || 0) : (lifting.contract.ethanolRate || 0);
-    const amount = Math.round(ethanolBilling(lifting.contract.contractType, lifting.quantityBL, lifting.quantityKL).billQty * rate);
+    const { billQty: gpBillQty, billUnit: gpBillUnit } = ethanolBilling(lifting.contract.contractType, lifting.quantityBL, lifting.quantityKL);
+    const amount = Math.round(gpBillQty * rate);
 
     const { renderDocumentPdf } = await import('../services/documentRenderer');
     const pdfBuffer = await renderDocumentPdf({
@@ -896,6 +899,8 @@ router.get('/:id/liftings/:liftingId/gate-pass-pdf', asyncHandler(async (req: Au
         productDescription: isJobWork ? 'Job Work Charges for Ethanol Production' : 'Ethanol',
         hsnCode: isJobWork ? '998842' : '22072000',
         quantityBL: lifting.quantityBL,
+        billQty: gpBillQty,
+        billUnit: gpBillUnit,
         rate,
         amount,
         strength: lifting.strength,
