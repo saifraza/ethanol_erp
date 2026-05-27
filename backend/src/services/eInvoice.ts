@@ -297,6 +297,7 @@ function getIRNUnit(unit: string): string {
     'MT': 'MTS',
     'KL': 'KLR',
     'LTR': 'LTR',
+    'BL': 'LTR', // bulk litres (job-work ethanol) — keep as LTR, unchanged from prior behaviour
     'KG': 'KGS',
     'BAG': 'BAG',
     'NOS': 'NOS',
