@@ -204,6 +204,8 @@ const PurchaseOrders: React.FC = () => {
   const [poTerms, setPoTerms] = useState<Array<{ key: string; group: string; label: string; hasBackendHook?: boolean }>>([]);
   const [tds194QId, setTds194QId] = useState<string | null>(null);
   const [termsUserEdited, setTermsUserEdited] = useState(false); // don't stomp user choices
+  // Free-text terms the team types per PO (add/edit/delete) — separate from the preset checkboxes
+  const [formTerms, setFormTerms] = useState<Array<{ title: string; body: string }>>([]);
 
   useEffect(() => {
     (async () => {
@@ -400,6 +402,7 @@ const PurchaseOrders: React.FC = () => {
           contractorId: po.contractorId || '',
           dealType: po.dealType || 'STANDARD',
         });
+        setFormTerms(Array.isArray(po.termsAndConditions) ? po.termsAndConditions.map((t: { title?: string; body?: string }) => ({ title: t.title || '', body: t.body || '' })) : []);
         setTermsUserEdited(true); // keep their saved choices on edit
       }
     }).catch(() => setPODetail(null)).finally(() => setDetailLoading(false));
@@ -590,14 +593,19 @@ const PurchaseOrders: React.FC = () => {
 
     try {
       setSubmitting(true);
+      // Free-text terms (drop blank-title rows) sent alongside the preset termsAccepted keys.
+      const payload = {
+        ...formData,
+        termsAndConditions: formTerms.map(t => ({ title: t.title.trim(), body: (t.body || '').trim() })).filter(t => t.title.length > 0),
+      };
       let response: { data: PurchaseOrder };
       if (editingPoId) {
-        response = await api.put(`/purchase-orders/${editingPoId}`, formData);
+        response = await api.put(`/purchase-orders/${editingPoId}`, payload);
         setPos(prev => prev.map(p => p.id === editingPoId ? response.data : p));
         setSuccess('Purchase Order updated successfully');
         setEditingPoId(null);
       } else {
-        response = await api.post('/purchase-orders', formData);
+        response = await api.post('/purchase-orders', payload);
         setPos([response.data, ...pos]);
         setSuccess('Purchase Order created successfully');
       }
@@ -630,6 +638,7 @@ const PurchaseOrders: React.FC = () => {
         poType: 'GOODS',
         dealType: 'STANDARD',
       });
+      setFormTerms([]);
       setTermsUserEdited(false);
       setShowCreateForm(false);
       setTimeout(() => setSuccess(''), 3000);
@@ -782,7 +791,7 @@ const PurchaseOrders: React.FC = () => {
             <span className="text-[10px] text-slate-400">Manage procurement orders</span>
           </div>
           <button
-            onClick={() => { setEditingPoId(null); setShowCreateForm(!showCreateForm); }}
+            onClick={() => { setEditingPoId(null); setFormTerms([]); setShowCreateForm(!showCreateForm); }}
             className="px-3 py-1 bg-blue-600 text-white text-[11px] font-medium hover:bg-blue-700 flex items-center gap-1"
           >
             <Plus size={12} /> NEW PO
@@ -830,7 +839,7 @@ const PurchaseOrders: React.FC = () => {
             <div className="bg-white shadow-2xl w-full max-w-5xl mx-4">
               <div className="bg-slate-800 text-white px-4 py-2.5 flex items-center justify-between">
                 <span className="text-sm font-bold tracking-wide uppercase">{editingPoId ? 'Edit Purchase Order' : 'Create New Purchase Order'}</span>
-                <button onClick={() => { setShowCreateForm(false); setEditingPoId(null); }} className="text-slate-400 hover:text-white"><X size={16} /></button>
+                <button onClick={() => { setShowCreateForm(false); setEditingPoId(null); setFormTerms([]); }} className="text-slate-400 hover:text-white"><X size={16} /></button>
               </div>
 
               <form onSubmit={handleSubmitPO} className="p-4 space-y-4 max-h-[80vh] overflow-y-auto">
@@ -1236,8 +1245,45 @@ const PurchaseOrders: React.FC = () => {
                   </div>
                 )}
 
+                {/* Free-text Terms & Conditions — type/add/delete, printed on the PO PDF */}
+                <div className="border border-slate-200 bg-white px-3 py-2">
+                  <div className="flex items-center justify-between mb-2">
+                    <div>
+                      <div className="text-[10px] font-bold text-slate-600 uppercase tracking-widest">Terms &amp; Conditions (custom)</div>
+                      <div className="text-[10px] text-slate-500 mt-0.5">Typed clauses printed on the PO PDF{poTerms.length > 0 ? ' below the ticked clauses above' : ''}. Add, edit, or remove freely.</div>
+                    </div>
+                    <button type="button" onClick={() => setFormTerms(prev => [...prev, { title: '', body: '' }])}
+                      className="px-2 py-1 text-[11px] border border-slate-400 text-slate-700 bg-white hover:bg-slate-100">+ Add Term</button>
+                  </div>
+                  {formTerms.length === 0 ? (
+                    <div className="text-[11px] text-slate-400 italic py-2 text-center">No custom terms. Click “+ Add Term” to type one.</div>
+                  ) : (
+                    <div className="space-y-2">
+                      {formTerms.map((t, idx) => (
+                        <div key={idx} className="border border-slate-200 bg-slate-50 p-2">
+                          <div className="flex items-center gap-2 mb-1">
+                            <span className="text-[10px] font-bold text-slate-500 w-5 text-right">{idx + 1}.</span>
+                            <input type="text" value={t.title} placeholder="Title (e.g. Payment, Delivery, Penalty)"
+                              onChange={e => setFormTerms(prev => prev.map((p, i) => i === idx ? { ...p, title: e.target.value } : p))}
+                              className="flex-1 border border-slate-300 px-2 py-1 text-xs font-semibold focus:outline-none focus:ring-1 focus:ring-slate-400" />
+                            <button type="button" disabled={idx === 0} onClick={() => setFormTerms(prev => { const n = [...prev]; [n[idx - 1], n[idx]] = [n[idx], n[idx - 1]]; return n; })}
+                              className="px-1.5 py-1 text-[10px] text-slate-500 border border-slate-200 hover:bg-slate-100 disabled:opacity-30" title="Move up">↑</button>
+                            <button type="button" disabled={idx === formTerms.length - 1} onClick={() => setFormTerms(prev => { const n = [...prev]; [n[idx + 1], n[idx]] = [n[idx], n[idx + 1]]; return n; })}
+                              className="px-1.5 py-1 text-[10px] text-slate-500 border border-slate-200 hover:bg-slate-100 disabled:opacity-30" title="Move down">↓</button>
+                            <button type="button" onClick={() => setFormTerms(prev => prev.filter((_, i) => i !== idx))}
+                              className="px-2 py-1 text-[10px] text-rose-600 border border-rose-200 hover:bg-rose-50">Remove</button>
+                          </div>
+                          <textarea value={t.body} placeholder="Details (optional — multiple lines OK)" rows={2}
+                            onChange={e => setFormTerms(prev => prev.map((p, i) => i === idx ? { ...p, body: e.target.value } : p))}
+                            className="w-full border border-slate-300 px-2 py-1 text-xs focus:outline-none focus:ring-1 focus:ring-slate-400" />
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+
                 <div className="flex gap-2 justify-end pt-4 border-t border-slate-200">
-                  <button type="button" onClick={() => { setShowCreateForm(false); setEditingPoId(null); }} className="px-4 py-1.5 bg-slate-200 text-slate-700 text-[11px] font-medium hover:bg-slate-300">CANCEL</button>
+                  <button type="button" onClick={() => { setShowCreateForm(false); setEditingPoId(null); setFormTerms([]); }} className="px-4 py-1.5 bg-slate-200 text-slate-700 text-[11px] font-medium hover:bg-slate-300">CANCEL</button>
                   <button type="submit" disabled={submitting} className="px-4 py-1.5 bg-blue-600 text-white text-[11px] font-medium hover:bg-blue-700 disabled:opacity-50 flex items-center gap-1">
                     {submitting && <Loader className="w-3 h-3 animate-spin" />} {editingPoId ? 'SAVE PO' : 'CREATE PO'}
                   </button>

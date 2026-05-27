@@ -1,4 +1,5 @@
 import { Router, Response } from 'express';
+import { Prisma } from '@prisma/client';
 import prisma from '../config/prisma';
 import { authenticate, AuthRequest, authorize, getCompanyFilter, getActiveCompanyId } from '../middleware/auth';
 import { asyncHandler, validate } from '../shared/middleware';
@@ -40,6 +41,7 @@ const createPOSchema = z.object({
   roundOff: z.coerce.number().optional().default(0),
   lines: z.array(poLineSchema).min(1),
   termsAccepted: z.array(z.string()).optional(),
+  termsAndConditions: z.array(z.object({ title: z.string(), body: z.string().optional().default('') })).optional().nullable(),
   overrideTdsSectionId: z.string().optional().nullable(),
   poType: z.enum(['GOODS', 'SERVICE', 'CONTRACTOR', 'TRANSPORT', 'RENT', 'UTILITY', 'PROJECT', 'OTHER']).optional().default('GOODS'),
   dealType: z.enum(['STANDARD', 'OPEN']).optional().default('STANDARD'),
@@ -66,6 +68,7 @@ const updatePOSchema = z.object({
   roundOff: z.coerce.number().optional(),
   lines: z.array(poLineSchema).optional(),
   termsAccepted: z.array(z.string()).optional(),
+  termsAndConditions: z.array(z.object({ title: z.string(), body: z.string().optional().default('') })).optional().nullable(),
   overrideTdsSectionId: z.string().optional().nullable(),
   poType: z.enum(['GOODS', 'SERVICE', 'CONTRACTOR', 'TRANSPORT', 'RENT', 'UTILITY', 'PROJECT', 'OTHER']).optional(),
   dealType: z.enum(['STANDARD', 'OPEN']).optional(),
@@ -84,6 +87,16 @@ import { writeAudit, auditDiff } from '../utils/auditLog';
 
 const router = Router();
 router.use(authenticate);
+
+// Normalise free-text PO terms: trim, drop rows with an empty title, and return a
+// DB-ready value — the cleaned array, or Prisma.JsonNull when there are none.
+function cleanPoTerms(terms: { title: string; body?: string }[] | null | undefined): Prisma.InputJsonValue | typeof Prisma.JsonNull {
+  if (!Array.isArray(terms)) return Prisma.JsonNull;
+  const cleaned = terms
+    .map((t) => ({ title: (t.title || '').trim(), body: (t.body || '').trim() }))
+    .filter((t) => t.title.length > 0);
+  return cleaned.length > 0 ? cleaned : Prisma.JsonNull;
+}
 
 // ──────────────────────────────────────────────────────────────────────────
 // Shared tax line processing — single source of truth for PO GST.
@@ -510,6 +523,7 @@ router.post('/', validate(createPOSchema), asyncHandler(async (req: AuthRequest,
         tdsComputedAt: new Date(),
         overrideTdsSectionId: b.overrideTdsSectionId || null,
         termsAccepted,
+        termsAndConditions: cleanPoTerms(b.termsAndConditions),
         poType,
         dealType,
         quotationNo: b.quotationNo || null,
@@ -652,6 +666,7 @@ router.put('/:id', validate(updatePOSchema), asyncHandler(async (req: AuthReques
             tdsComputedAt: new Date(),
             overrideTdsSectionId: effOverride === null ? null : (effOverride ?? po.overrideTdsSectionId),
             termsAccepted: b.termsAccepted !== undefined ? b.termsAccepted : po.termsAccepted,
+            termsAndConditions: b.termsAndConditions !== undefined ? cleanPoTerms(b.termsAndConditions) : undefined,
             poType: b.poType ?? po.poType,
             dealType: b.dealType ?? po.dealType,
             quotationNo: b.quotationNo !== undefined ? (b.quotationNo || null) : po.quotationNo,
@@ -840,6 +855,8 @@ router.get('/:id/pdf', asyncHandler(async (req: AuthRequest, res: Response) => {
         .map((k) => termByKey(k))
         .filter((t): t is NonNullable<ReturnType<typeof termByKey>> => !!t)
         .map((t) => ({ group: t.group, label: t.label })),
+      // Free-text terms typed by the team (rendered after the preset clauses)
+      customTerms: Array.isArray(po.termsAndConditions) ? po.termsAndConditions : [],
       // Flat list of GRN receipts against this PO. Hide the placeholder
       // partial GRN that's auto-created on Confirm PO (qty=0) — that row
       // is just a "waiting for goods" marker, not a real receipt, and it

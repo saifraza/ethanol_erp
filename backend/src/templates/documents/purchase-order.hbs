@@ -153,6 +153,20 @@
   </div>
   {{/if}}
 
+  {{#if customTerms.length}}
+  <div class="remarks-section" style="page-break-inside:avoid;">
+    <div class="label">Terms & Conditions:</div>
+    <ol class="text" style="padding-left:16px;margin:0;">
+      {{#each customTerms}}
+      <li style="margin-bottom:3px;">
+        {{#if this.title}}<strong>{{this.title}}</strong>{{/if}}
+        {{#if this.body}}<div style="white-space:pre-line;">{{this.body}}</div>{{/if}}
+      </li>
+      {{/each}}
+    </ol>
+  </div>
+  {{/if}}
+
   {{> terms-footer}}
   {{> signatures sigCount=3 sigLabels=(list "Prepared By" "Approved By" "Authorized Signatory") sigNames=(list preparedBy approvedBy authorizedSignatory)}}
 
