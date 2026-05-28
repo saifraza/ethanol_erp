@@ -21,6 +21,12 @@ const router = Router();
 router.use(authenticate);
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 10 * 1024 * 1024 } });
 
+// MSPIL ethanol is manufactured from Damaged Food Grains (DFG) under the GoI EBP scheme
+// and denatured with Brucine Sulphate 4 ppm (the legal denaturant for HSN 22072000).
+// Print both feedstock + denaturant on the invoice so OMC/buyer reconciles to the right HSN slab.
+const ETHANOL_PRODUCT_NAME = 'DENATURED ETHANOL FROM DFG (DAMAGED FOOD GRAINS) - DENATURED WITH BRUCINE SULPHATE 4 PPM';
+const JOB_WORK_PRODUCT_NAME = 'Job Work Charges for Ethanol Production';
+
 // Ethanol invoice billing unit by contract type:
 //   JOB_WORK      → per BL (the conversion charge is quoted per bulk litre)
 //   FIXED_PRICE / OMC → per KL (the ethanol price you actually quote, e.g. ₹58,750/KL)
@@ -422,7 +428,7 @@ router.post('/:id/liftings', asyncHandler(async (req: AuthRequest, res: Response
           const created = await tx.invoice.create({
             data: {
               customerId: cust.id, invoiceDate: lifting.liftingDate,
-              productName: contract.contractType === 'JOB_WORK' ? 'Job Work Charges for Ethanol Production' : 'ETHANOL',
+              productName: contract.contractType === 'JOB_WORK' ? JOB_WORK_PRODUCT_NAME : ETHANOL_PRODUCT_NAME,
               quantity: eb.billQty, unit: eb.billUnit, rate: rate!, amount: amount!,
               gstPercent: contract.gstPercent || 18, gstAmount: gst.gstAmount, supplyType: gst.supplyType,
               cgstPercent: gst.cgstPercent, cgstAmount: gst.cgstAmount, sgstPercent: gst.sgstPercent, sgstAmount: gst.sgstAmount,
@@ -442,7 +448,7 @@ router.post('/:id/liftings', asyncHandler(async (req: AuthRequest, res: Response
           amount: amount!, gstAmount: gst.gstAmount, gstPercent: contract.gstPercent || 18,
           cgstAmount: gst.cgstAmount, sgstAmount: gst.sgstAmount, igstAmount: gst.igstAmount,
           supplyType: gst.supplyType,
-          productName: contract.contractType === 'JOB_WORK' ? 'Job Work Charges for Ethanol Production' : 'ETHANOL',
+          productName: contract.contractType === 'JOB_WORK' ? JOB_WORK_PRODUCT_NAME : ETHANOL_PRODUCT_NAME,
           customerId: cust.id, userId: 'system', invoiceDate: lifting.liftingDate,
           customer: { state: cust.state },
           companyId: inv.companyId || undefined,
@@ -763,7 +769,7 @@ router.post('/:id/liftings/:liftingId/create-invoice', asyncHandler(async (req: 
           customerId: customer.id,
           invoiceDate: lifting.liftingDate,
           dueDate: contract.paymentTermsDays ? new Date(lifting.liftingDate.getTime() + contract.paymentTermsDays * 86400000) : null,
-          productName: contract.contractType === 'JOB_WORK' ? 'Job Work Charges for Ethanol Production' : 'ETHANOL',
+          productName: contract.contractType === 'JOB_WORK' ? JOB_WORK_PRODUCT_NAME : ETHANOL_PRODUCT_NAME,
           quantity: eb.billQty,
           unit: eb.billUnit,
           rate: lifting.rate || 0,
@@ -1073,8 +1079,8 @@ router.post('/:id/liftings/:liftingId/e-invoice', asyncHandler(async (req: AuthR
           transDistance: distanceKm,
           itemList: [{
             itemNo: 1,
-            productName: 'Ethanol',
-            productDesc: 'Ethanol',
+            productName: ETHANOL_PRODUCT_NAME,
+            productDesc: ETHANOL_PRODUCT_NAME,
             hsnCode: 22072000,
             quantity: lifting.quantityBL,
             qtyUnit: 'LTR',
