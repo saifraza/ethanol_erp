@@ -195,10 +195,24 @@ const EthanolContracts: React.FC = () => {
   const [liftingPage, setLiftingPage] = useState(1);
   const LIFTS_PER_PAGE = 15;
 
-  // EWB generation modal
+  // EWB generation modal (legacy compact modal — kept as fallback)
   const [ewbModal, setEwbModal] = useState<{ contractId: string; liftingId: string; vehicleNo: string; destination: string; transporterName: string; distanceKm: number } | null>(null);
   const [ewbForm, setEwbForm] = useState({ distanceKm: '', transporterName: '', transporterGstin: '', vehicleNo: '' });
   const [manualEwb, setManualEwb] = useState<{ liftingId: string; ewbNo: string; file: File | null } | null>(null);
+
+  // Review-and-Generate modal — primary entry point for IRN now that auto-IRN is disabled
+  type ReviewState = {
+    contractId: string; liftingId: string; invoiceId: string;
+    invoiceLabel: string; quantity: number; unit: string; rate: number; amount: number; gstPercent: number; totalAmount: number;
+  };
+  const [reviewModal, setReviewModal] = useState<ReviewState | null>(null);
+  const [reviewForm, setReviewForm] = useState({
+    productName: '',
+    billToName: '', billToGstin: '', billToAddress: '', billToState: '', billToPincode: '',
+    shipToSame: true,
+    shipToName: '', shipToGstin: '', shipToAddress: '', shipToState: '', shipToPincode: '',
+    distanceKm: '', vehicleNo: '', transporterName: '', transporterGstin: '',
+  });
 
   // Truck detail modal (before release)
   const [truckDetail, setTruckDetail] = useState<{ truck: any; contract: Contract } | null>(null);
@@ -385,6 +399,69 @@ const EthanolContracts: React.FC = () => {
     // Otherwise show modal to collect missing distance
     setEwbModal({ contractId, liftingId: lifting.id, vehicleNo: lifting.vehicleNo, destination: lifting.destination || contract?.buyerAddress || '', transporterName: transName, distanceKm: lifting.distanceKm || 0 });
     setEwbForm({ distanceKm: distKm, transporterName: transName, transporterGstin: transGstin, vehicleNo: lifting.vehicleNo });
+  };
+
+  // Open the unified Review & Generate modal — replaces the auto-IRN that used to fire on lifting create.
+  // Pre-fills Bill-To from contract.buyer*, Ship-To defaults to same-as-Bill-To (toggle to enter different).
+  // Operator edits anything → "Save & Generate IRN" persists overrides + fires IRN+EWB.
+  const openReviewModal = (contract: Contract, lifting: Lifting) => {
+    if (!lifting.invoice) return; // safety; should never happen now that invoice auto-creates
+    const last = lastEwbValues[contract.id];
+    setReviewModal({
+      contractId: contract.id,
+      liftingId: lifting.id,
+      invoiceId: lifting.invoice.id,
+      invoiceLabel: lifting.invoice.remarks || `INV-${lifting.invoice.invoiceNo}`,
+      quantity: lifting.invoice.quantity, unit: lifting.invoice.unit, rate: lifting.invoice.rate,
+      amount: lifting.invoice.amount, gstPercent: lifting.invoice.gstPercent, totalAmount: lifting.invoice.totalAmount,
+    });
+    setReviewForm({
+      productName: lifting.invoice.productName || '',
+      billToName: contract.buyerName || '',
+      billToGstin: contract.buyerGst || '',
+      billToAddress: contract.buyerAddress || '',
+      billToState: contract.buyerGst?.startsWith('23') ? 'Madhya Pradesh' : '',
+      billToPincode: '',
+      shipToSame: true,
+      shipToName: '', shipToGstin: '', shipToAddress: '', shipToState: '', shipToPincode: '',
+      distanceKm: String(lifting.distanceKm || last?.distanceKm || ''),
+      vehicleNo: lifting.vehicleNo || '',
+      transporterName: lifting.transporterName || last?.transporterName || '',
+      transporterGstin: last?.transporterGstin || '',
+    });
+  };
+
+  const submitReviewModal = async () => {
+    if (!reviewModal) return;
+    if (!reviewForm.distanceKm) { setError('Distance (km) is required for E-Way Bill'); return; }
+    if (!reviewForm.billToName || !reviewForm.billToAddress) { setError('Bill-To name and address are required'); return; }
+    try {
+      setActionLoading(reviewModal.liftingId);
+      // 1. Persist Bill-To / Ship-To overrides + productName edits on the invoice (pre-IRN only).
+      const f = reviewForm;
+      await api.put(`/invoices/${reviewModal.invoiceId}`, {
+        productName: f.productName,
+        billToName: f.billToName,
+        billToGstin: f.billToGstin,
+        billToAddress: f.billToAddress,
+        billToState: f.billToState,
+        billToPincode: f.billToPincode,
+        // If ship-to same as bill-to, leave ship-to columns NULL (the renderer falls back).
+        shipToName:    f.shipToSame ? '' : f.shipToName,
+        shipToGstin:   f.shipToSame ? '' : f.shipToGstin,
+        shipToAddress: f.shipToSame ? '' : f.shipToAddress,
+        shipToState:   f.shipToSame ? '' : f.shipToState,
+        shipToPincode: f.shipToSame ? '' : f.shipToPincode,
+      });
+      // 2. Fire IRN + EWB (existing endpoint handles both, saves vehicle/distance/transporter on lifting).
+      await handleGenerateEInvoice(reviewModal.contractId, reviewModal.liftingId, {
+        distanceKm: f.distanceKm, transporterName: f.transporterName,
+        transporterGstin: f.transporterGstin, vehicleNo: f.vehicleNo,
+      });
+      setReviewModal(null);
+    } catch (err: any) {
+      setError(err?.response?.data?.error || 'Failed to save + generate');
+    } finally { setActionLoading(null); }
   };
 
   const handleGenerateEInvoice = async (contractId: string, liftingId: string, ewbData?: { distanceKm?: string; transporterName?: string; transporterGstin?: string; vehicleNo?: string }) => {
@@ -845,7 +922,7 @@ const EthanolContracts: React.FC = () => {
                                               className="text-[9px] font-bold uppercase px-1.5 py-0.5 border border-green-300 bg-green-50 text-green-700 hover:bg-green-100 cursor-pointer">IRN</button>
                                           ) : l.invoice ? (
                                             <button
-                                              onClick={(e) => { e.stopPropagation(); openEwbModal(c.id, l); }}
+                                              onClick={(e) => { e.stopPropagation(); openReviewModal(c, l); }}
                                               disabled={actionLoading === l.id}
                                               className="text-[9px] font-bold uppercase px-1.5 py-0.5 border border-amber-300 bg-amber-50 text-amber-700 hover:bg-amber-100 disabled:opacity-50">
                                               {actionLoading === l.id ? '...' : 'Gen'}
@@ -1321,6 +1398,87 @@ const EthanolContracts: React.FC = () => {
           </div>
         </div>
       )}
+      {/* REVIEW & GENERATE MODAL — operator confirms Bill-To / Ship-To / description before IRN fires */}
+      {reviewModal && (
+        <div className="fixed inset-0 bg-black/50 flex items-start justify-center z-50 overflow-y-auto py-6">
+          <div className="bg-white shadow-2xl w-full max-w-4xl mx-4">
+            <div className="bg-slate-800 text-white px-4 py-2.5 flex items-center justify-between">
+              <h2 className="text-sm font-bold tracking-wide uppercase">Review & Generate E-Invoice — {reviewModal.invoiceLabel}</h2>
+              <button onClick={() => setReviewModal(null)} className="text-slate-400 hover:text-white"><X size={18} /></button>
+            </div>
+
+            <div className="p-5 space-y-4">
+              {/* Read-only invoice summary */}
+              <div className="bg-slate-50 border border-slate-200 p-3 grid grid-cols-4 gap-3 text-xs">
+                <div><div className="text-[9px] font-bold text-slate-500 uppercase tracking-widest">Quantity</div><div className="font-mono">{reviewModal.quantity} {reviewModal.unit}</div></div>
+                <div><div className="text-[9px] font-bold text-slate-500 uppercase tracking-widest">Rate</div><div className="font-mono">₹{reviewModal.rate.toFixed(2)}/{reviewModal.unit}</div></div>
+                <div><div className="text-[9px] font-bold text-slate-500 uppercase tracking-widest">GST {reviewModal.gstPercent}%</div><div className="font-mono">on ₹{reviewModal.amount.toFixed(2)}</div></div>
+                <div><div className="text-[9px] font-bold text-slate-500 uppercase tracking-widest">Total</div><div className="font-mono font-bold">₹{reviewModal.totalAmount.toFixed(2)}</div></div>
+              </div>
+
+              {/* Product description */}
+              <div>
+                <label className={labelCls}>Product Description</label>
+                <input type="text" value={reviewForm.productName} onChange={e => setReviewForm(p => ({ ...p, productName: e.target.value }))} className={inputCls} />
+              </div>
+
+              {/* Bill-To */}
+              <div className="border border-slate-200">
+                <div className="bg-slate-100 px-3 py-1.5 text-[10px] font-bold uppercase tracking-widest text-slate-700">Bill To</div>
+                <div className="p-3 grid grid-cols-2 gap-3">
+                  <div className="col-span-2"><label className={labelCls}>Name *</label><input type="text" value={reviewForm.billToName} onChange={e => setReviewForm(p => ({ ...p, billToName: e.target.value }))} className={inputCls} /></div>
+                  <div><label className={labelCls}>GSTIN</label><input type="text" value={reviewForm.billToGstin} onChange={e => setReviewForm(p => ({ ...p, billToGstin: e.target.value.toUpperCase() }))} maxLength={15} className={inputCls} /></div>
+                  <div><label className={labelCls}>Pincode</label><input type="text" value={reviewForm.billToPincode} onChange={e => setReviewForm(p => ({ ...p, billToPincode: e.target.value }))} maxLength={6} className={inputCls} /></div>
+                  <div className="col-span-2"><label className={labelCls}>Address *</label><textarea value={reviewForm.billToAddress} onChange={e => setReviewForm(p => ({ ...p, billToAddress: e.target.value }))} rows={2} className={inputCls} /></div>
+                  <div className="col-span-2"><label className={labelCls}>State</label><input type="text" value={reviewForm.billToState} onChange={e => setReviewForm(p => ({ ...p, billToState: e.target.value }))} className={inputCls} /></div>
+                </div>
+              </div>
+
+              {/* Ship-To */}
+              <div className="border border-slate-200">
+                <div className="bg-slate-100 px-3 py-1.5 flex items-center justify-between">
+                  <span className="text-[10px] font-bold uppercase tracking-widest text-slate-700">Ship To</span>
+                  <label className="flex items-center gap-2 text-[10px] font-medium text-slate-700 cursor-pointer">
+                    <input type="checkbox" checked={reviewForm.shipToSame} onChange={e => setReviewForm(p => ({ ...p, shipToSame: e.target.checked }))} />
+                    Same as Bill-To
+                  </label>
+                </div>
+                {!reviewForm.shipToSame && (
+                  <div className="p-3 grid grid-cols-2 gap-3">
+                    <div className="col-span-2"><label className={labelCls}>Name</label><input type="text" value={reviewForm.shipToName} onChange={e => setReviewForm(p => ({ ...p, shipToName: e.target.value }))} className={inputCls} /></div>
+                    <div><label className={labelCls}>GSTIN</label><input type="text" value={reviewForm.shipToGstin} onChange={e => setReviewForm(p => ({ ...p, shipToGstin: e.target.value.toUpperCase() }))} maxLength={15} className={inputCls} /></div>
+                    <div><label className={labelCls}>Pincode</label><input type="text" value={reviewForm.shipToPincode} onChange={e => setReviewForm(p => ({ ...p, shipToPincode: e.target.value }))} maxLength={6} className={inputCls} /></div>
+                    <div className="col-span-2"><label className={labelCls}>Address</label><textarea value={reviewForm.shipToAddress} onChange={e => setReviewForm(p => ({ ...p, shipToAddress: e.target.value }))} rows={2} className={inputCls} /></div>
+                    <div className="col-span-2"><label className={labelCls}>State</label><input type="text" value={reviewForm.shipToState} onChange={e => setReviewForm(p => ({ ...p, shipToState: e.target.value }))} className={inputCls} /></div>
+                  </div>
+                )}
+              </div>
+
+              {/* E-Way Bill */}
+              <div className="border border-slate-200">
+                <div className="bg-slate-100 px-3 py-1.5 text-[10px] font-bold uppercase tracking-widest text-slate-700">E-Way Bill</div>
+                <div className="p-3 grid grid-cols-4 gap-3">
+                  <div><label className={labelCls}>Distance (km) *</label><input type="number" value={reviewForm.distanceKm} onChange={e => setReviewForm(p => ({ ...p, distanceKm: e.target.value }))} className={inputCls} /></div>
+                  <div><label className={labelCls}>Vehicle No</label><input type="text" value={reviewForm.vehicleNo} onChange={e => setReviewForm(p => ({ ...p, vehicleNo: e.target.value.toUpperCase() }))} className={inputCls} /></div>
+                  <div><label className={labelCls}>Transporter</label><input type="text" value={reviewForm.transporterName} onChange={e => setReviewForm(p => ({ ...p, transporterName: e.target.value }))} className={inputCls} /></div>
+                  <div><label className={labelCls}>Trans. GSTIN</label><input type="text" value={reviewForm.transporterGstin} onChange={e => setReviewForm(p => ({ ...p, transporterGstin: e.target.value.toUpperCase() }))} maxLength={15} className={inputCls} /></div>
+                </div>
+              </div>
+
+              {error && <div className="bg-red-50 border border-red-200 text-red-700 px-3 py-2 text-xs">{error}</div>}
+            </div>
+
+            <div className="flex gap-3 p-4 border-t border-slate-200 justify-end">
+              <button onClick={() => setReviewModal(null)} className="px-6 py-2 bg-slate-200 text-slate-800 text-[11px] font-medium hover:bg-slate-300">Cancel</button>
+              <button onClick={submitReviewModal} disabled={actionLoading === reviewModal.liftingId}
+                className="px-6 py-2 bg-blue-600 text-white text-[11px] font-bold uppercase tracking-wide hover:bg-blue-700 disabled:opacity-50">
+                {actionLoading === reviewModal.liftingId ? 'Saving + Generating...' : 'Save & Generate IRN + EWB'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Truck Detail Modal */}
       {truckDetail && (() => {
         const t = truckDetail.truck;
