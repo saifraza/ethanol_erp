@@ -193,18 +193,22 @@ export function buildIRNPayload(invoice: any, seller?: CompanyConfig): IRNPayloa
       Stcd: stateCode,
       Ph: company.contact.phone || '9425154000',
     },
-    BuyerDtls: {
-      Gstin: invoice.customer?.gstin || undefined,
-      Lglnm: invoice.customer?.name || 'Buyer',
-      Trdnm: invoice.customer?.name || 'Buyer',
-      Pos: buyerStateCode,  // Place of Supply (required)
-      Addr1: invoice.customer?.address || '',
-      Loc: invoice.customer?.city || invoice.customer?.address?.split(',').pop()?.trim() || 'NA',
-      Pin: invoice.customer?.pincode ? parseInt(invoice.customer.pincode) : undefined,
-      Stcd: buyerStateCode,
-      Ph: (invoice.customer?.phone && invoice.customer.phone.length >= 6) ? invoice.customer.phone : '0000000000',
-      Em: (invoice.customer?.email && invoice.customer.email.length >= 6) ? invoice.customer.email : 'na@na.com',
-    },
+    BuyerDtls: (() => {
+      const buyerAddr = splitAddressForNic(invoice.customer?.address);
+      return {
+        Gstin: invoice.customer?.gstin || undefined,
+        Lglnm: invoice.customer?.name || 'Buyer',
+        Trdnm: invoice.customer?.name || 'Buyer',
+        Pos: buyerStateCode,  // Place of Supply (required)
+        Addr1: buyerAddr.Addr1 || 'NA',
+        ...(buyerAddr.Addr2 ? { Addr2: buyerAddr.Addr2 } : {}),
+        Loc: invoice.customer?.city || invoice.customer?.address?.split(',').pop()?.trim() || 'NA',
+        Pin: invoice.customer?.pincode ? parseInt(invoice.customer.pincode) : undefined,
+        Stcd: buyerStateCode,
+        Ph: (invoice.customer?.phone && invoice.customer.phone.length >= 6) ? invoice.customer.phone : '0000000000',
+        Em: (invoice.customer?.email && invoice.customer.email.length >= 6) ? invoice.customer.email : 'na@na.com',
+      };
+    })(),
     // ShipDtls — Ship-To party (only when different from Buyer). Snapshot from invoice.
     ...((invoice.shipToName || invoice.shipto?.name) ? (() => {
       const shipName = invoice.shipToName || invoice.shipto?.name;
@@ -214,12 +218,14 @@ export function buildIRNPayload(invoice: any, seller?: CompanyConfig): IRNPayloa
       const shipState = invoice.shipToState || invoice.shipto?.state;
       // State code priority: GSTIN prefix → state name lookup → buyer state fallback
       const shipStcd = shipGstin?.substring(0, 2) || (shipState ? getStateCode(shipState) : buyerStateCode);
+      const shipAddrSplit = splitAddressForNic(shipAddr);
       return {
         ShipDtls: {
           Gstin: shipGstin || undefined,
           Lglnm: shipName,
           Trdnm: shipName,
-          Addr1: shipAddr || 'NA',
+          Addr1: shipAddrSplit.Addr1 || 'NA',
+          ...(shipAddrSplit.Addr2 ? { Addr2: shipAddrSplit.Addr2 } : {}),
           Loc: shipAddr?.split(',').pop()?.trim() || 'NA',
           Pin: shipPin ? parseInt(shipPin) : undefined,
           Stcd: shipStcd,
@@ -258,6 +264,20 @@ export function buildIRNPayload(invoice: any, seller?: CompanyConfig): IRNPayloa
   };
 
   return payload;
+}
+
+// NIC e-invoice Addr1 / Addr2 are each capped at 100 chars (error 5002 / 5003).
+// Long addresses get split on the nearest comma before the 100-char boundary so
+// each line stays under the cap without truncating real address content.
+function splitAddressForNic(addr?: string | null): { Addr1: string; Addr2?: string } {
+  if (!addr) return { Addr1: '' };
+  const s = String(addr).trim();
+  if (s.length <= 100) return { Addr1: s };
+  const commaIdx = s.lastIndexOf(',', 100);
+  const splitAt = commaIdx > 40 ? commaIdx : 100;
+  const Addr1 = s.slice(0, splitAt).trim();
+  const Addr2 = s.slice(splitAt).replace(/^[,\s]+/, '').slice(0, 100).trim();
+  return { Addr1, Addr2: Addr2 || undefined };
 }
 
 function getHsnCode(productName: string): string {
