@@ -402,6 +402,33 @@ const EthanolContracts: React.FC = () => {
     setEwbForm({ distanceKm: distKm, transporterName: transName, transporterGstin: transGstin, vehicleNo: lifting.vehicleNo });
   };
 
+  // Re-generate an IRN that's already on file. Confirms with the operator (must cancel on NIC first
+  // — the IRN is a primary key at the NIC portal), then clears the local IRN/EWB/snapshot pointers
+  // and opens the Review & Generate modal so a fresh IRN can be issued with the new data.
+  const handleReGenIRN = async (contract: Contract, lifting: Lifting) => {
+    if (!lifting.invoice) return;
+    const ok = confirm(
+      `Re-generate IRN for ${lifting.invoiceNo || `INV-${lifting.invoice.invoiceNo}`}?\n\n` +
+      `BEFORE clicking OK:\n` +
+      `  1. Cancel the existing IRN on einvoice1.gst.gov.in (within 24h)\n` +
+      `  2. Cancel the EWB on ewaybillgst.gov.in (if generated)\n\n` +
+      `Clicking OK will clear the local IRN/EWB so a fresh one can be issued. Snapshot will also be cleared so the PDF reflects any edits.`
+    );
+    if (!ok) return;
+    try {
+      setActionLoading(lifting.id);
+      await api.put(`/invoices/${lifting.invoice.id}/clear-irn`, {});
+      setError('');
+      // Refresh data + open the review modal with current values
+      await loadSupplyDetail(contract.id);
+      // Open modal — fetch fresh lifting from the updated list
+      const fresh = (detailLiftings.find(l => l.id === lifting.id) || lifting);
+      openReviewModal(contract, fresh);
+    } catch (err: any) {
+      setError(err?.response?.data?.error || 'Failed to clear IRN — does the endpoint exist?');
+    } finally { setActionLoading(null); }
+  };
+
   // Open the unified Review & Generate modal — replaces the auto-IRN that used to fire on lifting create.
   // Pre-fills Bill-To from contract.buyer*, Ship-To defaults to same-as-Bill-To (toggle to enter different).
   // Operator edits anything → "Save & Generate IRN" persists overrides + fires IRN+EWB.
@@ -921,8 +948,14 @@ const EthanolContracts: React.FC = () => {
                                         {/* IRN */}
                                         <td className="px-2 py-1.5 border-r border-slate-100 text-center">
                                           {l.invoice?.irnStatus === 'GENERATED' ? (
-                                            <button onClick={(e) => { e.stopPropagation(); setShowIrnDetail(showIrnDetail === l.id ? null : l.id); }}
-                                              className="text-[9px] font-bold uppercase px-1.5 py-0.5 border border-green-300 bg-green-50 text-green-700 hover:bg-green-100 cursor-pointer">IRN</button>
+                                            <div className="flex items-center justify-center gap-0.5">
+                                              <button onClick={(e) => { e.stopPropagation(); setShowIrnDetail(showIrnDetail === l.id ? null : l.id); }}
+                                                className="text-[9px] font-bold uppercase px-1.5 py-0.5 border border-green-300 bg-green-50 text-green-700 hover:bg-green-100 cursor-pointer">IRN</button>
+                                              <button onClick={(e) => { e.stopPropagation(); handleReGenIRN(c, l); }}
+                                                disabled={actionLoading === l.id}
+                                                title="Re-generate IRN — cancel at NIC first, then click this to clear local IRN + open the review modal"
+                                                className="text-[9px] font-bold px-1 py-0.5 border border-amber-300 bg-amber-50 text-amber-700 hover:bg-amber-100 disabled:opacity-50">↻</button>
+                                            </div>
                                           ) : l.invoice ? (
                                             <button
                                               onClick={(e) => { e.stopPropagation(); openReviewModal(c, l); }}
