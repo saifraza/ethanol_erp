@@ -9,6 +9,10 @@ import { recomputeEthanolEntryByDate } from './ethanolProduct';
 import { calcGstSplit } from '../utils/gstSplit';
 import { Prisma } from '@prisma/client';
 
+// Same constant as ethanolContracts.ts / dispatch.ts — DFG feedstock + Brucine Sulphate 4 ppm denaturant.
+const ETHANOL_PRODUCT_NAME = 'DENATURED ETHANOL FROM DFG (DAMAGED FOOD GRAINS) - DENATURED WITH BRUCINE SULPHATE 4 PPM';
+const JOB_WORK_PRODUCT_NAME = 'Job Work Charges for Ethanol Production';
+
 const router = Router();
 
 // Accept either JWT auth or X-WB-Key (for factory server proxy)
@@ -193,7 +197,7 @@ router.post('/:id/release', asyncHandler(async (req: AuthRequest, res: Response)
         customerId: customer.id,
         invoiceDate: businessDate,
         dueDate: contract.paymentTermsDays ? new Date(businessDate.getTime() + contract.paymentTermsDays * 86400000) : null,
-        productName: contract.contractType === 'JOB_WORK' ? 'Job Work Charges for Ethanol Production' : 'ETHANOL',
+        productName: contract.contractType === 'JOB_WORK' ? JOB_WORK_PRODUCT_NAME : ETHANOL_PRODUCT_NAME,
         quantity: truck.quantityBL, unit: 'BL', rate, amount,
         gstPercent, gstAmount: gst.gstAmount, supplyType: gst.supplyType,
         cgstPercent: gst.cgstPercent, cgstAmount: gst.cgstAmount,
