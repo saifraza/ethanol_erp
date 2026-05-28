@@ -56,6 +56,7 @@ export interface IRNPayload {
   };
   ItemList: Array<{
     SlNo: string;
+    PrdDesc?: string;  // NIC e-invoice schema: optional, max 300 chars — product description shown on portal view
     IsServc?: string;
     AssAmt?: number;
     HsnCd?: string;
@@ -228,6 +229,7 @@ export function buildIRNPayload(invoice: any, seller?: CompanyConfig): IRNPayloa
     ItemList: [
       {
         SlNo: '1',
+        PrdDesc: (invoice.productName || '').slice(0, 300),  // NIC schema: optional, max 300 chars — carries the printed line description through to the e-invoice view
         IsServc: ((invoice as any).hsnCode || getHsnCode(invoice.productName || 'DDGS')).startsWith('99') ? 'Y' : 'N',
         HsnCd: (invoice as any).hsnCode || getHsnCode(invoice.productName || 'DDGS'),
         Qty: invoice.quantity || 0,
@@ -260,6 +262,17 @@ export function buildIRNPayload(invoice: any, seller?: CompanyConfig): IRNPayloa
 
 function getHsnCode(productName: string): string {
   const upper = (productName || '').toUpperCase().trim();
+
+  // Service / SAC variants must be checked first since they contain product names
+  // (e.g. "JOB WORK CHARGES FOR ETHANOL PRODUCTION" contains "ETHANOL").
+  if (upper.includes('JOB WORK') || upper.includes('JOBWORK')) {
+    if (upper.includes('ETHANOL')) return '998842';
+    if (upper.includes('DDGS')) return '998817';
+  }
+  // Descriptive goods variants (e.g. "DENATURED ETHANOL FROM DFG (DAMAGED FOOD GRAINS)")
+  if (upper.includes('ETHANOL')) return '22072000';
+  if (upper.includes('DDGS')) return '23033000';
+
   const hsnMap: Record<string, string> = {
     'DDGS': '23033000',         // Ch 23: Residues of starch/distilling — DDGS for animal feed, 5% GST
     'ETHANOL': '22072000',      // Ch 22: Denatured ethyl alcohol (fuel ethanol), 18% GST

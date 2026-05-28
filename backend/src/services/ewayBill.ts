@@ -127,6 +127,10 @@ export function getStateCodeFromGstin(gstin: string): string {
 
 export function getHsnCode(productName: string): string {
   const upper = (productName || '').toUpperCase().trim();
+  // Descriptive variants like "DENATURED ETHANOL FROM DFG (DAMAGED FOOD GRAINS)"
+  // — match by substring so the longer printed name still resolves to the right HSN.
+  if (upper.includes('ETHANOL') || upper.includes('ENA') || upper.includes('RECTIFIED')) return '22072000';
+  if (upper.includes('DDGS')) return '23033000';
   return DEFAULT_HSN[upper] || '99999999';
 }
 

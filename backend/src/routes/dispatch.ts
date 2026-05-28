@@ -10,6 +10,9 @@ import { nextInvoiceNo } from '../utils/invoiceCounter';
 import { invoiceDisplayNo } from '../utils/invoiceDisplay';
 import { mirrorToS3 } from '../shared/s3Storage';
 
+// Same constant as ethanolContracts.ts — MSPIL ethanol is from DFG, denatured with Brucine Sulphate 4 ppm.
+const ETHANOL_PRODUCT_NAME = 'DENATURED ETHANOL FROM DFG (DAMAGED FOOD GRAINS) - DENATURED WITH BRUCINE SULPHATE 4 PPM';
+
 const router = Router();
 
 // Ensure uploads directory exists
@@ -339,7 +342,7 @@ router.post('/', authenticate, upload.single('photo'), mirrorToS3('dispatch'), a
                   const customInvNo = await nextInvoiceNo(tx, 'ETH');
                   const created = await tx.invoice.create({
                     data: {
-                      customerId: cust.id, invoiceDate: dispatchDate, productName: 'ETHANOL',
+                      customerId: cust.id, invoiceDate: dispatchDate, productName: ETHANOL_PRODUCT_NAME,
                       quantity: qtyBL, unit: 'LTR', rate: rate!, amount: amount!,
                       gstPercent: gstPct, gstAmount: gstAmt,
                       supplyType: isInter ? 'INTER_STATE' : 'INTRA_STATE',
@@ -358,7 +361,7 @@ router.post('/', authenticate, upload.single('photo'), mirrorToS3('dispatch'), a
                 if (cust.gstNo && cust.state && cust.pincode && cust.address) {
                   const irnRes = await generateIRN({
                     invoiceNo: invoiceDisplayNo(inv), invoiceDate: inv.invoiceDate,
-                    productName: 'ETHANOL', quantity: inv.quantity, unit: 'LTR', rate: inv.rate, amount: inv.amount, gstPercent: inv.gstPercent,
+                    productName: ETHANOL_PRODUCT_NAME, quantity: inv.quantity, unit: 'LTR', rate: inv.rate, amount: inv.amount, gstPercent: inv.gstPercent,
                     customer: { gstin: cust.gstNo, name: cust.name, address: cust.address, city: cust.city || '', pincode: cust.pincode, state: cust.state, phone: cust.phone || '', email: cust.email || '' },
                   });
                   if (irnRes.success && irnRes.irn) {
