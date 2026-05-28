@@ -877,6 +877,31 @@ router.post('/:id/e-invoice', asyncHandler(async (req: AuthRequest, res: Respons
 }));
 
 // POST /:id/e-invoice/cancel — Cancel IRN
+// PUT /:id/clear-irn — Clear local IRN/EWB/snapshot pointers so a fresh IRN can be issued.
+// Use case: operator has already cancelled the IRN on NIC and wants to re-generate from the ERP
+// (e.g. because address/description was wrong on the first IRN). This does NOT call NIC —
+// the operator is responsible for cancelling at NIC first. Only allowed if the invoice has
+// no recorded payments (status is UNPAID or CANCELLED) so we don't break accounting.
+router.put('/:id/clear-irn', asyncHandler(async (req: AuthRequest, res: Response) => {
+    const invoice = await prisma.invoice.findUnique({ where: { id: req.params.id } });
+    if (!invoice) { res.status(404).json({ error: 'Invoice not found' }); return; }
+    if ((invoice.paidAmount || 0) > 0) {
+      res.status(400).json({ error: 'Cannot clear IRN on a paid invoice. Reverse the payment first.' });
+      return;
+    }
+    const updated = await prisma.invoice.update({
+      where: { id: req.params.id },
+      data: {
+        irn: null, irnDate: null, irnStatus: null, ackNo: null, signedQRCode: null,
+        ewbNo: null, ewbDate: null, ewbStatus: null, ewbValidTill: null,
+        snapshotAt: null, snapshotPdfPath: null, snapshotPdfSha: null,
+        snapshotJsonPath: null, snapshotJsonSha: null,
+      } as any,
+    });
+    console.log(`[Invoice] IRN cleared locally by ${req.user?.id || 'system'} on INV-${invoice.invoiceNo}. Operator must have cancelled at NIC first.`);
+    res.json({ success: true, invoice: updated });
+}));
+
 router.post('/:id/e-invoice/cancel', asyncHandler(async (req: AuthRequest, res: Response) => {
     const invoice = await prisma.invoice.findUnique({
       where: { id: req.params.id },
