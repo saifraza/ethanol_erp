@@ -9,8 +9,8 @@ import { recomputeEthanolEntryByDate } from './ethanolProduct';
 import { calcGstSplit } from '../utils/gstSplit';
 import { Prisma } from '@prisma/client';
 
-// Same constant as ethanolContracts.ts / dispatch.ts — DFG feedstock + Brucine Sulphate 4 ppm denaturant.
-const ETHANOL_PRODUCT_NAME = 'DENATURED ETHANOL FROM DFG (DAMAGED FOOD GRAINS) - DENATURED WITH BRUCINE SULPHATE 4 PPM';
+// Same constant as ethanolContracts.ts / dispatch.ts — DFG feedstock + Brucine Sulphate 40 ppm denaturant.
+const ETHANOL_PRODUCT_NAME = 'DENATURED ETHANOL FROM DFG (DAMAGED FOOD GRAINS) - DENATURED WITH BRUCINE SULPHATE 40 PPM';
 const JOB_WORK_PRODUCT_NAME = 'Job Work Charges for Ethanol Production';
 
 const router = Router();

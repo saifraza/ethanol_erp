@@ -208,6 +208,7 @@ const EthanolContracts: React.FC = () => {
   const [reviewModal, setReviewModal] = useState<ReviewState | null>(null);
   const [reviewForm, setReviewForm] = useState({
     productName: '',
+    buyerPoNo: '',
     billToName: '', billToGstin: '', billToAddress: '', billToState: '', billToPincode: '',
     shipToSame: true,
     shipToName: '', shipToGstin: '', shipToAddress: '', shipToState: '', shipToPincode: '',
@@ -417,6 +418,7 @@ const EthanolContracts: React.FC = () => {
     });
     setReviewForm({
       productName: lifting.invoice.productName || '',
+      buyerPoNo: (contract as any).buyerPoNo || '',
       billToName: contract.buyerName || '',
       billToGstin: contract.buyerGst || '',
       billToAddress: contract.buyerAddress || '',
@@ -441,6 +443,7 @@ const EthanolContracts: React.FC = () => {
       const f = reviewForm;
       await api.put(`/invoices/${reviewModal.invoiceId}`, {
         productName: f.productName,
+        buyerPoNo: f.buyerPoNo,
         billToName: f.billToName,
         billToGstin: f.billToGstin,
         billToAddress: f.billToAddress,
@@ -1416,10 +1419,18 @@ const EthanolContracts: React.FC = () => {
                 <div><div className="text-[9px] font-bold text-slate-500 uppercase tracking-widest">Total</div><div className="font-mono font-bold">₹{reviewModal.totalAmount.toFixed(2)}</div></div>
               </div>
 
-              {/* Product description */}
-              <div>
-                <label className={labelCls}>Product Description</label>
-                <input type="text" value={reviewForm.productName} onChange={e => setReviewForm(p => ({ ...p, productName: e.target.value }))} className={inputCls} />
+              {/* Product description + Buyer PO No. */}
+              <div className="grid grid-cols-3 gap-3">
+                <div className="col-span-2">
+                  <label className={labelCls}>Product Description</label>
+                  <input type="text" value={reviewForm.productName} onChange={e => setReviewForm(p => ({ ...p, productName: e.target.value }))} className={inputCls} />
+                </div>
+                <div>
+                  <label className={labelCls}>Buyer PO No.</label>
+                  <input type="text" value={reviewForm.buyerPoNo} onChange={e => setReviewForm(p => ({ ...p, buyerPoNo: e.target.value }))}
+                    placeholder="e.g. ZK1/241075501" className={inputCls} />
+                  <div className="text-[9px] text-slate-400 mt-0.5">Printed on invoice header next to IRN</div>
+                </div>
               </div>
 
               {/* Bill-To */}

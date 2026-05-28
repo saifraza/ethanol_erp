@@ -154,6 +154,10 @@ const EXPECTED_COLUMNS: ColumnCheck[] = [
   { table: 'Invoice', column: 'billToAddress', sql: `ALTER TABLE "Invoice" ADD COLUMN IF NOT EXISTS "billToAddress" TEXT` },
   { table: 'Invoice', column: 'billToState',   sql: `ALTER TABLE "Invoice" ADD COLUMN IF NOT EXISTS "billToState" TEXT` },
   { table: 'Invoice', column: 'billToPincode', sql: `ALTER TABLE "Invoice" ADD COLUMN IF NOT EXISTS "billToPincode" TEXT` },
+  // 2026-05-28 — Customer's PO number (e.g. Reliance "ZK1/241075501") printed on invoice.
+  // Per-invoice override; defaults from EthanolContract.buyerPoNo at lifting time.
+  { table: 'Invoice',         column: 'buyerPoNo', sql: `ALTER TABLE "Invoice"         ADD COLUMN IF NOT EXISTS "buyerPoNo" TEXT` },
+  { table: 'EthanolContract', column: 'buyerPoNo', sql: `ALTER TABLE "EthanolContract" ADD COLUMN IF NOT EXISTS "buyerPoNo" TEXT` },
 
   // 2026-05-26 — Transport Work Order column heal. The tables were registered in
   // EXPECTED_TABLES, but checkAndCreateTables only fires when a table is wholly

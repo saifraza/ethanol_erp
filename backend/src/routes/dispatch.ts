@@ -10,8 +10,8 @@ import { nextInvoiceNo } from '../utils/invoiceCounter';
 import { invoiceDisplayNo } from '../utils/invoiceDisplay';
 import { mirrorToS3 } from '../shared/s3Storage';
 
-// Same constant as ethanolContracts.ts — MSPIL ethanol is from DFG, denatured with Brucine Sulphate 4 ppm.
-const ETHANOL_PRODUCT_NAME = 'DENATURED ETHANOL FROM DFG (DAMAGED FOOD GRAINS) - DENATURED WITH BRUCINE SULPHATE 4 PPM';
+// Same constant as ethanolContracts.ts — MSPIL ethanol is from DFG, denatured with Brucine Sulphate 40 ppm.
+const ETHANOL_PRODUCT_NAME = 'DENATURED ETHANOL FROM DFG (DAMAGED FOOD GRAINS) - DENATURED WITH BRUCINE SULPHATE 40 PPM';
 
 const router = Router();
 

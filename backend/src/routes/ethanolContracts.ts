@@ -22,9 +22,9 @@ router.use(authenticate);
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 10 * 1024 * 1024 } });
 
 // MSPIL ethanol is manufactured from Damaged Food Grains (DFG) under the GoI EBP scheme
-// and denatured with Brucine Sulphate 4 ppm (the legal denaturant for HSN 22072000).
+// and denatured with Brucine Sulphate 40 ppm (the legal denaturant for HSN 22072000).
 // Print both feedstock + denaturant on the invoice so OMC/buyer reconciles to the right HSN slab.
-const ETHANOL_PRODUCT_NAME = 'DENATURED ETHANOL FROM DFG (DAMAGED FOOD GRAINS) - DENATURED WITH BRUCINE SULPHATE 4 PPM';
+const ETHANOL_PRODUCT_NAME = 'DENATURED ETHANOL FROM DFG (DAMAGED FOOD GRAINS) - DENATURED WITH BRUCINE SULPHATE 40 PPM';
 const JOB_WORK_PRODUCT_NAME = 'Job Work Charges for Ethanol Production';
 
 // Ethanol invoice billing unit by contract type:
