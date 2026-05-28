@@ -2442,6 +2442,12 @@ model Invoice {
   shipmentId              String? // which shipment
   challanNo               String?
   ewayBill                String? // legacy field (manual entry)
+  // Bill-To snapshot (per-invoice override of Customer master; null = use customerId's defaults)
+  billToName              String?
+  billToGstin             String?
+  billToAddress           String?
+  billToState             String?
+  billToPincode           String?
   // Ship-To snapshot (Bill-To = customerId; Ship-To may differ for job work)
   shipToName              String?
   shipToGstin             String?

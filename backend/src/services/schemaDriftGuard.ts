@@ -146,6 +146,15 @@ const EXPECTED_COLUMNS: ColumnCheck[] = [
   { table: 'Invoice', column: 'cancelledBy',  sql: `ALTER TABLE "Invoice" ADD COLUMN IF NOT EXISTS "cancelledBy" TEXT` },
   { table: 'Invoice', column: 'cancelReason', sql: `ALTER TABLE "Invoice" ADD COLUMN IF NOT EXISTS "cancelReason" TEXT` },
 
+  // 2026-05-28 — Per-invoice Bill-To snapshot. Override of Customer master so an
+  // operator can correct just this invoice's billing party without editing the
+  // master row. Null = use the Customer master. Ship-To columns already exist.
+  { table: 'Invoice', column: 'billToName',    sql: `ALTER TABLE "Invoice" ADD COLUMN IF NOT EXISTS "billToName" TEXT` },
+  { table: 'Invoice', column: 'billToGstin',   sql: `ALTER TABLE "Invoice" ADD COLUMN IF NOT EXISTS "billToGstin" TEXT` },
+  { table: 'Invoice', column: 'billToAddress', sql: `ALTER TABLE "Invoice" ADD COLUMN IF NOT EXISTS "billToAddress" TEXT` },
+  { table: 'Invoice', column: 'billToState',   sql: `ALTER TABLE "Invoice" ADD COLUMN IF NOT EXISTS "billToState" TEXT` },
+  { table: 'Invoice', column: 'billToPincode', sql: `ALTER TABLE "Invoice" ADD COLUMN IF NOT EXISTS "billToPincode" TEXT` },
+
   // 2026-05-26 — Transport Work Order column heal. The tables were registered in
   // EXPECTED_TABLES, but checkAndCreateTables only fires when a table is wholly
   // missing — so a partial table from a half-applied `prisma db push` never got

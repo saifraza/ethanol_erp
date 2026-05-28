@@ -311,7 +311,11 @@ router.post('/', authenticate, upload.single('photo'), mirrorToS3('dispatch'), a
             },
           });
 
-          // Auto e-invoice if enabled (fire-and-forget)
+          // Auto e-invoice is now gated to FALSE by default — operator clicks GEN on the
+          // invoice row to open the Invoice Preview modal, edits Bill-To/Ship-To/description,
+          // then fires IRN explicitly. The autoGenerateEInvoice flag on the contract is
+          // still honoured for legacy customers who want zero-touch, but new contracts
+          // should leave it off so the preview flow is the default.
           if (contract.autoGenerateEInvoice && rate && amount && contract.buyerGst) {
             setImmediate(async () => {
               try {

@@ -5,6 +5,16 @@ import { asyncHandler, validate } from '../shared/middleware';
 import { z } from 'zod';
 import { invoiceDisplayNo } from '../utils/invoiceDisplay';
 
+// Bill-to / Ship-to override fields — null = use Customer master / contract default.
+// Each Addr field is gated to ≤ 200 chars; the NIC IRN serializer splits to 100/100 (Addr1/Addr2).
+const partySchema = {
+  Name: z.string().trim().max(120).optional().nullable(),
+  Gstin: z.string().trim().max(15).optional().nullable(),
+  Address: z.string().trim().max(200).optional().nullable(),
+  State: z.string().trim().max(60).optional().nullable(),
+  Pincode: z.string().trim().max(10).optional().nullable(),
+};
+
 const createInvoiceSchema = z.object({
   customerId: z.string().min(1),
   orderId: z.string().optional().nullable(),
@@ -20,6 +30,16 @@ const createInvoiceSchema = z.object({
   challanNo: z.string().optional().nullable(),
   ewayBill: z.string().optional().nullable(),
   remarks: z.string().optional().nullable(),
+  billToName:    partySchema.Name,
+  billToGstin:   partySchema.Gstin,
+  billToAddress: partySchema.Address,
+  billToState:   partySchema.State,
+  billToPincode: partySchema.Pincode,
+  shipToName:    partySchema.Name,
+  shipToGstin:   partySchema.Gstin,
+  shipToAddress: partySchema.Address,
+  shipToState:   partySchema.State,
+  shipToPincode: partySchema.Pincode,
 });
 
 const updateInvoiceSchema = z.object({
@@ -34,6 +54,16 @@ const updateInvoiceSchema = z.object({
   ewayBill: z.string().optional().nullable(),
   invoiceDate: z.string().optional(),
   dueDate: z.string().optional().nullable(),
+  billToName:    partySchema.Name,
+  billToGstin:   partySchema.Gstin,
+  billToAddress: partySchema.Address,
+  billToState:   partySchema.State,
+  billToPincode: partySchema.Pincode,
+  shipToName:    partySchema.Name,
+  shipToGstin:   partySchema.Gstin,
+  shipToAddress: partySchema.Address,
+  shipToState:   partySchema.State,
+  shipToPincode: partySchema.Pincode,
 });
 
 const cancelInvoiceSchema = z.object({
@@ -227,6 +257,17 @@ router.post('/', validate(createInvoiceSchema), asyncHandler(async (req: AuthReq
         igstPercent: gst.igstPercent, igstAmount: gst.igstAmount,
         freightCharge, totalAmount, paidAmount: 0, balanceAmount: totalAmount, status: 'UNPAID',
         challanNo: b.challanNo || null, ewayBill: b.ewayBill || null, remarks: b.remarks || null,
+        // Bill-To / Ship-To overrides (null = use Customer master defaults)
+        billToName:    b.billToName?.trim()    || null,
+        billToGstin:   b.billToGstin?.trim()   || null,
+        billToAddress: b.billToAddress?.trim() || null,
+        billToState:   b.billToState?.trim()   || null,
+        billToPincode: b.billToPincode?.trim() || null,
+        shipToName:    b.shipToName?.trim()    || null,
+        shipToGstin:   b.shipToGstin?.trim()   || null,
+        shipToAddress: b.shipToAddress?.trim() || null,
+        shipToState:   b.shipToState?.trim()   || null,
+        shipToPincode: b.shipToPincode?.trim() || null,
         userId: req.user!.id,
       },
       include: { customer: { select: { id: true, name: true, shortName: true, state: true } }, payments: true },
@@ -380,6 +421,21 @@ router.put('/:id', validate(updateInvoiceSchema), asyncHandler(async (req: AuthR
       if (b[field] !== undefined) updateData[field] = b[field];
     });
 
+    // Bill-To / Ship-To overrides — null/empty string clears the override and falls
+    // back to Customer master / contract default. Only applied pre-IRN.
+    if (invoice.irn) {
+      // Once IRN is generated, address overrides are frozen with the e-invoice.
+      // Block silently rather than partially update — operator must cancel IRN first.
+    } else {
+      ['billToName','billToGstin','billToAddress','billToState','billToPincode',
+       'shipToName','shipToGstin','shipToAddress','shipToState','shipToPincode'].forEach(field => {
+        if (b[field] !== undefined) {
+          const v = (b[field] || '').toString().trim();
+          updateData[field] = v.length > 0 ? v : null;
+        }
+      });
+    }
+
     if (b.invoiceDate !== undefined) updateData.invoiceDate = new Date(b.invoiceDate);
     if (b.dueDate !== undefined) updateData.dueDate = b.dueDate ? new Date(b.dueDate) : null;
 
@@ -508,16 +564,22 @@ router.get('/:id/pdf', asyncHandler(async (req: AuthRequest, res: Response) => {
             || ddgsContract?.paymentMode
             || null),
       supplyType: storedSupplyType || (isIntraState ? 'INTRA_STATE' : 'INTER_STATE'),
-      customer: {
-        name: invoice.customer.name,
-        shortName: invoice.customer.shortName,
-        gstin: invoice.customer.gstNo,
-        address: invoice.customer.address,
-        city: invoice.customer.city,
-        state: invoice.customer.state,
-        stateCode,
-        pincode: invoice.customer.pincode,
-      },
+      customer: (() => {
+        // Bill-To resolution: per-invoice override wins, else Customer master.
+        // City is not a billTo override (snapshot doesn't carry it), so always use master.
+        const inv = invoice as any;
+        const overrideGstin = inv.billToGstin || null;
+        return {
+          name: inv.billToName || invoice.customer.name,
+          shortName: invoice.customer.shortName,
+          gstin: overrideGstin || invoice.customer.gstNo,
+          address: inv.billToAddress || invoice.customer.address,
+          city: invoice.customer.city,
+          state: inv.billToState || invoice.customer.state,
+          stateCode: overrideGstin ? overrideGstin.substring(0, 2) : stateCode,
+          pincode: inv.billToPincode || invoice.customer.pincode,
+        };
+      })(),
       productName: invoice.productName,
       hsnCode: (() => {
         // TODO(deferred): persist hsnCode as a snapshot column on Invoice at
