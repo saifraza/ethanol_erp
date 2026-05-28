@@ -125,6 +125,19 @@ export function getStateCodeFromGstin(gstin: string): string {
   return gstin.substring(0, 2);
 }
 
+// EWB fromAddr1/toAddr1 capped at 120 chars (NIC EWB schema). Split long addresses
+// on the nearest comma so both lines stay under the cap without losing content.
+function splitAddrForEwb(addr?: string | null): { Addr1: string; Addr2?: string } {
+  if (!addr) return { Addr1: '' };
+  const s = String(addr).trim();
+  if (s.length <= 120) return { Addr1: s };
+  const commaIdx = s.lastIndexOf(',', 120);
+  const splitAt = commaIdx > 50 ? commaIdx : 120;
+  const Addr1 = s.slice(0, splitAt).trim();
+  const Addr2 = s.slice(splitAt).replace(/^[,\s]+/, '').slice(0, 120).trim();
+  return { Addr1, Addr2: Addr2 || undefined };
+}
+
 export function getHsnCode(productName: string): string {
   const upper = (productName || '').toUpperCase().trim();
   // Descriptive variants like "DENATURED ETHANOL FROM DFG (DAMAGED FOOD GRAINS)"
@@ -359,16 +372,16 @@ export function buildEwayBillPayload(input: EwayBillInput): any {
     docDate: input.documentDate,
     fromGstin: input.supplierGstin,
     fromTrdName: input.supplierName,
-    fromAddr1: input.supplierAddress.substring(0, 120),
-    fromAddr2: '',
+    fromAddr1: splitAddrForEwb(input.supplierAddress).Addr1,
+    fromAddr2: splitAddrForEwb(input.supplierAddress).Addr2 || '',
     fromPlace: input.supplierCity || input.supplierAddress.split(',').pop()?.trim() || 'Narsinghpur',
     fromPincode: parseInt(input.supplierPincode) || 487001,
     fromStateCode: parseInt(fromStateCode),
     actFromStateCode: parseInt(fromStateCode),
     toGstin: input.recipientGstin || 'URP', // URP = Unregistered Person
     toTrdName: input.recipientName,
-    toAddr1: input.recipientAddress.substring(0, 120),
-    toAddr2: '',
+    toAddr1: splitAddrForEwb(input.recipientAddress).Addr1,
+    toAddr2: splitAddrForEwb(input.recipientAddress).Addr2 || '',
     toPlace: input.recipientAddress.split(',').slice(-2, -1)[0]?.trim() || '',
     toPincode: parseInt(input.recipientPincode) || 0,
     toStateCode: parseInt(toStateCode),
