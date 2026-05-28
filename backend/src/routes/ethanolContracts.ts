@@ -902,7 +902,7 @@ router.get('/:id/liftings/:liftingId/gate-pass-pdf', asyncHandler(async (req: Au
         buyerName: lifting.contract.buyerName,
         buyerAddress: lifting.contract.buyerAddress || '',
         buyerGst: lifting.contract.buyerGst || '',
-        productDescription: isJobWork ? 'Job Work Charges for Ethanol Production' : 'Ethanol',
+        productDescription: isJobWork ? JOB_WORK_PRODUCT_NAME : ETHANOL_PRODUCT_NAME,
         hsnCode: isJobWork ? '998842' : '22072000',
         quantityBL: lifting.quantityBL,
         billQty: gpBillQty,

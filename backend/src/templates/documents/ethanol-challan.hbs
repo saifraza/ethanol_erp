@@ -76,13 +76,13 @@
       <div class="wb-item"><div class="wb-label">Place of Supply</div><div class="wb-val">{{default destination "-"}}</div></div>
     </div>
     <div class="wb-grid" style="border-top: 1px solid #eee;">
-      <div class="wb-item"><div class="wb-label">Purpose</div><div class="wb-val">Delivery of Ethanol Spirit produced on job work basis</div></div>
+      <div class="wb-item"><div class="wb-label">Purpose</div><div class="wb-val">{{#if isJobWork}}Delivery of Ethanol Spirit produced on job work basis{{else}}Sale of Denatured Ethanol from Damaged Food Grains (DFG) - denatured with Brucine Sulphate 4 ppm{{/if}}</div></div>
     </div>
   </div>
 
   <div style="margin-top:20px;font-size:11px">
     <div style="font-weight:bold;margin-bottom:5px">Declaration:</div>
-    <div style="font-style:italic">We hereby declare that the goods mentioned above are being delivered as per the terms of job work and are subject to the conditions agreed upon between Mahakaushal Sugar and Power Industries Limited and {{buyerName}}</div>
+    <div style="font-style:italic">We hereby declare that the goods mentioned above are being delivered {{#if isJobWork}}as per the terms of job work{{else}}as per the terms of the supply contract{{/if}} and are subject to the conditions agreed upon between Mahakaushal Sugar and Power Industries Limited and {{buyerName}}</div>
   </div>
 
   {{> signatures sigCount=3 sigLabels=(list "For MSPIL" "Transporter / Driver" "Consignee") sigNames=(list "" driverName "")}}
