@@ -2448,6 +2448,7 @@ model Invoice {
   billToAddress           String?
   billToState             String?
   billToPincode           String?
+  buyerPoNo               String? // Customer's PO number printed on the invoice — defaults from contract.buyerPoNo
   // Ship-To snapshot (Bill-To = customerId; Ship-To may differ for job work)
   shipToName              String?
   shipToGstin             String?
@@ -3648,6 +3649,7 @@ model EthanolContract {
   buyerContact String?
   buyerPhone   String?
   buyerEmail   String?
+  buyerPoNo    String? // Customer's PO number (e.g. Reliance "ZK1/241075501") — printed on every invoice/EWB from this contract
 
   // OMC-specific
   omcName         String? // IOCL, BPCL, HPCL, JioBP, Nayara

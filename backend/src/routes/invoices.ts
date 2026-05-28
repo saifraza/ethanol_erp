@@ -30,6 +30,7 @@ const createInvoiceSchema = z.object({
   challanNo: z.string().optional().nullable(),
   ewayBill: z.string().optional().nullable(),
   remarks: z.string().optional().nullable(),
+  buyerPoNo: z.string().trim().max(60).optional().nullable(),
   billToName:    partySchema.Name,
   billToGstin:   partySchema.Gstin,
   billToAddress: partySchema.Address,
@@ -54,6 +55,7 @@ const updateInvoiceSchema = z.object({
   ewayBill: z.string().optional().nullable(),
   invoiceDate: z.string().optional(),
   dueDate: z.string().optional().nullable(),
+  buyerPoNo: z.string().trim().max(60).optional().nullable(),
   billToName:    partySchema.Name,
   billToGstin:   partySchema.Gstin,
   billToAddress: partySchema.Address,
@@ -257,6 +259,7 @@ router.post('/', validate(createInvoiceSchema), asyncHandler(async (req: AuthReq
         igstPercent: gst.igstPercent, igstAmount: gst.igstAmount,
         freightCharge, totalAmount, paidAmount: 0, balanceAmount: totalAmount, status: 'UNPAID',
         challanNo: b.challanNo || null, ewayBill: b.ewayBill || null, remarks: b.remarks || null,
+        buyerPoNo: b.buyerPoNo?.trim() || null,
         // Bill-To / Ship-To overrides (null = use Customer master defaults)
         billToName:    b.billToName?.trim()    || null,
         billToGstin:   b.billToGstin?.trim()   || null,
@@ -427,7 +430,8 @@ router.put('/:id', validate(updateInvoiceSchema), asyncHandler(async (req: AuthR
       // Once IRN is generated, address overrides are frozen with the e-invoice.
       // Block silently rather than partially update — operator must cancel IRN first.
     } else {
-      ['billToName','billToGstin','billToAddress','billToState','billToPincode',
+      ['buyerPoNo',
+       'billToName','billToGstin','billToAddress','billToState','billToPincode',
        'shipToName','shipToGstin','shipToAddress','shipToState','shipToPincode'].forEach(field => {
         if (b[field] !== undefined) {
           const v = (b[field] || '').toString().trim();
@@ -665,6 +669,20 @@ router.get('/:id/pdf', asyncHandler(async (req: AuthRequest, res: Response) => {
         }
         return null;
       })(),
+      // Customer's PO No. — per-invoice override falls back to contract default.
+      // Label adapts to the buyer (Reliance → "RIL PO No.", others → generic "PO No.")
+      buyerPoNo: (invoice as any).buyerPoNo || (lifting?.contract as any)?.buyerPoNo || null,
+      poLabel: (() => {
+        const buyer = ((invoice as any).billToName || invoice.customer?.name || '').toUpperCase();
+        if (buyer.includes('RELIANCE')) return 'RIL PO No.';
+        if (buyer.includes('INDIAN OIL') || buyer.includes('IOCL')) return 'IOCL PO No.';
+        if (buyer.includes('HINDUSTAN PETROL') || buyer.includes('HPCL')) return 'HPCL PO No.';
+        if (buyer.includes('BHARAT PETROL') || buyer.includes('BPCL')) return 'BPCL PO No.';
+        if (buyer.includes('NAYARA')) return 'NAYARA PO No.';
+        return 'PO No.';
+      })(),
+      // Authorised signatory — shown beneath the "Digitally signed by" line. Defaults to Devraj Choudhari.
+      authorisedSignatory: 'Devraj Choudhari',
       // E-Invoice / E-Way Bill data
       irn: invoice.irn || null,
       irnDate: invoice.irnDate || null,
