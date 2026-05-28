@@ -454,31 +454,11 @@ router.post('/:id/liftings', asyncHandler(async (req: AuthRequest, res: Response
           companyId: inv.companyId || undefined,
         });
 
-        // 3. IRN + EWB: fire-and-forget (external API, OK to be async)
-        if (cust.gstNo && cust.state && cust.pincode && cust.address) {
-          setImmediate(async () => {
-            try {
-              const irnRes = await generateIRN({
-                invoiceNo: invoiceDisplayNo(inv), invoiceDate: inv.invoiceDate,
-                productName: inv.productName, quantity: inv.quantity, unit: inv.unit, rate: inv.rate, amount: inv.amount, gstPercent: inv.gstPercent,
-                customer: { gstin: cust.gstNo!, name: cust.name, address: cust.address!, city: cust.city || '', pincode: cust.pincode!, state: cust.state!, phone: cust.phone || '', email: cust.email || '' },
-              });
-              if (irnRes.success && irnRes.irn) {
-                await prisma.invoice.update({ where: { id: inv.id }, data: { irn: irnRes.irn, irnDate: new Date(), irnStatus: 'GENERATED', ackNo: irnRes.ackNo ? String(irnRes.ackNo) : null, signedQRCode: irnRes.signedQRCode?.slice(0, 4000) || null } as any });
-                const vehNo = (lifting.vehicleNo || '').replace(/\s/g, '');
-                const autoEwbData: Record<string, any> = { Irn: irnRes.irn, Distance: 100, TransMode: '1', VehNo: vehNo, VehType: 'R' };
-                if (lifting.transporterName && lifting.transporterName.length >= 3) autoEwbData.TransName = lifting.transporterName;
-                const ewbRes = await generateEWBByIRN(irnRes.irn, autoEwbData);
-                if (ewbRes.success && ewbRes.ewayBillNo) {
-                  await prisma.invoice.update({ where: { id: inv.id }, data: { ewbNo: ewbRes.ewayBillNo, ewbDate: new Date(), ewbStatus: 'GENERATED' } as any });
-                }
-              }
-              console.log(`[EthanolContract] Auto e-invoice complete for lifting ${lifting.id}`);
-            } catch (err: unknown) {
-              console.error(`[EthanolContract] Auto IRN/EWB failed for lifting ${lifting.id}:`, (err instanceof Error ? err.message : String(err)));
-            }
-          });
-        }
+        // 3. IRN + EWB: no longer auto-fired here. Operator clicks the GEN button on
+        // the invoice row, which opens the Invoice Preview modal — they can correct
+        // Bill-To / Ship-To / description / qty / rate before committing the IRN.
+        // The GEN action calls the explicit IRN-generate endpoint, which fires
+        // IRN + EWB + freezes the snapshot. (See PR for full flow.)
       } catch (err: unknown) {
         // Invoice creation failed — log but don't block the lifting creation
         console.error(`[EthanolContract] Auto-invoice failed for lifting ${lifting.id}:`, (err instanceof Error ? err.message : String(err)));

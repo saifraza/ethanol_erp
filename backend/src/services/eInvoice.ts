@@ -152,8 +152,16 @@ export function buildIRNPayload(invoice: any, seller?: CompanyConfig): IRNPayloa
   const company = seller || COMPANY;
   const gstin = company.gstin || process.env.EWAY_GSTIN || '23AAECM3666P1Z1';
   const stateCode = company.stateCode || gstin.substring(0, 2);
-  const buyerStateCode = invoice.customer?.gstin
-    ? invoice.customer.gstin.substring(0, 2)
+  // Bill-To resolution: per-invoice override wins, falls back to Customer master.
+  // This lets an operator correct the printed buyer details for one invoice without
+  // mutating the master row.
+  const billToGstin = invoice.billToGstin || invoice.customer?.gstin || '';
+  const billToName    = invoice.billToName    || invoice.customer?.name    || 'Buyer';
+  const billToAddress = invoice.billToAddress || invoice.customer?.address || '';
+  const billToState   = invoice.billToState   || invoice.customer?.state   || '';
+  const billToPincode = invoice.billToPincode || invoice.customer?.pincode || '';
+  const buyerStateCode = billToGstin
+    ? billToGstin.substring(0, 2)
     : '27';
 
   const invDate = new Date(invoice.invoiceDate);
@@ -194,16 +202,16 @@ export function buildIRNPayload(invoice: any, seller?: CompanyConfig): IRNPayloa
       Ph: company.contact.phone || '9425154000',
     },
     BuyerDtls: (() => {
-      const buyerAddr = splitAddressForNic(invoice.customer?.address);
+      const buyerAddr = splitAddressForNic(billToAddress);
       return {
-        Gstin: invoice.customer?.gstin || undefined,
-        Lglnm: invoice.customer?.name || 'Buyer',
-        Trdnm: invoice.customer?.name || 'Buyer',
+        Gstin: billToGstin || undefined,
+        Lglnm: billToName,
+        Trdnm: billToName,
         Pos: buyerStateCode,  // Place of Supply (required)
         Addr1: buyerAddr.Addr1 || 'NA',
         ...(buyerAddr.Addr2 ? { Addr2: buyerAddr.Addr2 } : {}),
-        Loc: invoice.customer?.city || invoice.customer?.address?.split(',').pop()?.trim() || 'NA',
-        Pin: invoice.customer?.pincode ? parseInt(invoice.customer.pincode) : undefined,
+        Loc: invoice.customer?.city || billToAddress.split(',').pop()?.trim() || 'NA',
+        Pin: billToPincode ? parseInt(billToPincode) : undefined,
         Stcd: buyerStateCode,
         Ph: (invoice.customer?.phone && invoice.customer.phone.length >= 6) ? invoice.customer.phone : '0000000000',
         Em: (invoice.customer?.email && invoice.customer.email.length >= 6) ? invoice.customer.email : 'na@na.com',

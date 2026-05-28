@@ -146,20 +146,23 @@ async function buildSnapshotData(invoiceId: string): Promise<Record<string, any>
     // Supplier snapshot (MSPIL or sister company)
     company: supplierCompany || null,
 
-    // Buyer (Bill-To) snapshot
-    customer: {
-      id: invoice.customer.id,
-      name: invoice.customer.name,
-      shortName: invoice.customer.shortName,
-      gstin: invoice.customer.gstNo,
-      address: invoice.customer.address,
-      city: invoice.customer.city,
-      state: invoice.customer.state,
-      stateCode,
-      pincode: invoice.customer.pincode,
-      phone: invoice.customer.phone,
-      email: invoice.customer.email,
-    },
+    // Buyer (Bill-To) snapshot — per-invoice override wins, else Customer master
+    customer: (() => {
+      const overrideGstin = (invoice as any).billToGstin || null;
+      return {
+        id: invoice.customer.id,
+        name: (invoice as any).billToName || invoice.customer.name,
+        shortName: invoice.customer.shortName,
+        gstin: overrideGstin || invoice.customer.gstNo,
+        address: (invoice as any).billToAddress || invoice.customer.address,
+        city: invoice.customer.city,
+        state: (invoice as any).billToState || invoice.customer.state,
+        stateCode: overrideGstin ? overrideGstin.substring(0, 2) : stateCode,
+        pincode: (invoice as any).billToPincode || invoice.customer.pincode,
+        phone: invoice.customer.phone,
+        email: invoice.customer.email,
+      };
+    })(),
 
     // Ship-To (consignee) snapshot
     consignee,
