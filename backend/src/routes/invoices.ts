@@ -71,14 +71,14 @@ const updateInvoiceSchema = z.object({
 const cancelInvoiceSchema = z.object({
   reason: z.string().trim().min(3, 'A cancellation reason is required'),
 });
-import { generateInvoicePdf } from '../utils/pdfGenerator';
 import { renderDocumentPdf } from '../services/documentRenderer';
 import { nextDocNo } from '../utils/docSequence';
 import { getCompanyForPdf } from '../utils/pdfCompanyHelper';
 // RAG indexing removed — only compliance docs go to RAG
 import { sendEmail } from '../services/messaging';
 import { generateIRN, cancelIRN, getIRNDetails } from '../services/eInvoice';
-import { freezeInvoice, auditAllSnapshots } from '../services/invoiceSnapshot';
+import { freezeInvoice, auditAllSnapshots, backfillSnapshots, renderInvoicePdfBuffer } from '../services/invoiceSnapshot';
+import { resolveBuyerPo } from '../utils/buyerPo';
 import { onSaleInvoiceCreated, reverseAutoJournal } from '../services/autoJournal';
 import { calcGstSplit } from '../utils/gstSplit';
 
@@ -112,21 +112,14 @@ router.post('/admin/backfill-snapshots-key', asyncHandler(async (req, res) => {
       return res.status(403).json({ error: 'Invalid backfill key' });
     }
 
-    const limit = Math.min(parseInt(String(req.query.limit || '50')) || 50, 200);
+    // force=true re-freezes invoices that already have a snapshot (e.g. after a
+    // presentation-layer template fix); invoiceNos=382,384 scopes to specific invoices.
+    const force = String(req.query.force || '') === 'true';
+    const invoiceNos = String(req.query.invoiceNos || '')
+      .split(',').map(s => parseInt(s.trim(), 10)).filter(Number.isFinite);
+    const limit = parseInt(String(req.query.limit || '50')) || 50;
 
-    const targets = await prisma.invoice.findMany({
-      where: { irn: { not: null }, snapshotAt: null },
-      select: { id: true, invoiceNo: true },
-      take: limit,
-      orderBy: { invoiceNo: 'asc' },
-    });
-
-    const results = { total: targets.length, frozen: 0, failed: 0, errors: [] as any[] };
-    for (const t of targets) {
-      const r = await freezeInvoice(t.id);
-      if (r.ok) results.frozen++;
-      else { results.failed++; results.errors.push({ invoiceNo: t.invoiceNo, error: r.error }); }
-    }
+    const results = await backfillSnapshots({ force, invoiceNos, limit });
     res.json(results);
 }));
 
@@ -516,7 +509,7 @@ router.get('/:id/pdf', asyncHandler(async (req: AuthRequest, res: Response) => {
       where: { id: req.params.id },
       include: {
         customer: true,
-        ethanolLiftings: { take: 1, include: { contract: { select: { paymentTermsDays: true, paymentMode: true } } } },
+        ethanolLiftings: { take: 1, include: { contract: { select: { paymentTermsDays: true, paymentMode: true, buyerPoNo: true } } } },
         ddgsContractDispatches: {
           take: 1,
           include: {
@@ -671,18 +664,7 @@ router.get('/:id/pdf', asyncHandler(async (req: AuthRequest, res: Response) => {
       })(),
       // Customer's PO No. — per-invoice override falls back to contract default.
       // Label adapts to the buyer (Reliance → "RIL PO No.", others → generic "PO No.")
-      buyerPoNo: (invoice as any).buyerPoNo || (lifting?.contract as any)?.buyerPoNo || null,
-      poLabel: (() => {
-        const buyer = ((invoice as any).billToName || invoice.customer?.name || '').toUpperCase();
-        if (buyer.includes('RELIANCE')) return 'RIL PO No.';
-        if (buyer.includes('INDIAN OIL') || buyer.includes('IOCL')) return 'IOCL PO No.';
-        if (buyer.includes('HINDUSTAN PETROL') || buyer.includes('HPCL')) return 'HPCL PO No.';
-        if (buyer.includes('BHARAT PETROL') || buyer.includes('BPCL')) return 'BPCL PO No.';
-        if (buyer.includes('NAYARA')) return 'NAYARA PO No.';
-        return 'PO No.';
-      })(),
-      // Authorised signatory — shown beneath the "Digitally signed by" line. Defaults to Devraj Choudhari.
-      authorisedSignatory: 'Devraj Choudhari',
+      ...resolveBuyerPo((invoice as any).buyerPoNo, (lifting?.contract as any)?.buyerPoNo, (invoice as any).billToName || invoice.customer?.name),
       // E-Invoice / E-Way Bill data
       irn: invoice.irn || null,
       irnDate: invoice.irnDate || null,
@@ -727,42 +709,21 @@ router.get('/:id/pdf', asyncHandler(async (req: AuthRequest, res: Response) => {
     }
 }));
 
-// POST /admin/backfill-snapshots — One-shot admin endpoint to freeze all IRN-generated invoices
-// that don't yet have a snapshot. Safe to call repeatedly (idempotent — only processes missing).
+// POST /admin/backfill-snapshots — One-shot admin endpoint to freeze IRN-generated invoices.
+// Default: only invoices that don't yet have a snapshot (idempotent — safe to call repeatedly).
+// ?force=true re-freezes invoices that already have a snapshot (use after a presentation-layer
+// template fix). ?invoiceNos=382,384 scopes to specific invoices.
 router.post('/admin/backfill-snapshots', asyncHandler(async (req: AuthRequest, res: Response) => {
     if (req.user?.role !== 'ADMIN' && req.user?.role !== 'SUPER_ADMIN') {
       return res.status(403).json({ error: 'Admin only' });
     }
 
-    const limit = Math.min(parseInt(String(req.query.limit || '50')) || 50, 200);
+    const force = String(req.query.force || '') === 'true';
+    const invoiceNos = String(req.query.invoiceNos || '')
+      .split(',').map(s => parseInt(s.trim(), 10)).filter(Number.isFinite);
+    const limit = parseInt(String(req.query.limit || '50')) || 50;
 
-    const targets = await prisma.invoice.findMany({
-      where: {
-        irn: { not: null },
-        snapshotAt: null,
-      },
-      select: { id: true, invoiceNo: true },
-      take: limit,
-      orderBy: { invoiceNo: 'asc' },
-    });
-
-    const results = {
-      total: targets.length,
-      frozen: 0,
-      failed: 0,
-      errors: [] as { invoiceNo: number; error: string }[],
-    };
-
-    for (const t of targets) {
-      const r = await freezeInvoice(t.id);
-      if (r.ok) {
-        results.frozen++;
-      } else {
-        results.failed++;
-        results.errors.push({ invoiceNo: (t as any).invoiceNo, error: r.error || 'unknown' });
-      }
-    }
-
+    const results = await backfillSnapshots({ force, invoiceNos, limit });
     res.json(results);
 }));
 
@@ -1047,17 +1008,10 @@ router.post('/:id/send-email', asyncHandler(async (req: AuthRequest, res: Respon
     if (!toEmail) { res.status(400).json({ error: 'No email address. Add customer email or provide "to" in request.' }); return; }
 
     const invLabel = `INV-${String(invoice.invoiceNo).padStart(4, '0')}`;
-    const pdfBuffer = await generateInvoicePdf({
-      invoiceNo: invoice.invoiceNo, invoiceDate: invoice.invoiceDate, dueDate: invoice.dueDate,
-      customer: { name: invoice.customer.name, shortName: invoice.customer.shortName,
-        gstin: invoice.customer.gstNo, address: invoice.customer.address,
-        city: invoice.customer.city, state: invoice.customer.state, pincode: invoice.customer.pincode },
-      productName: invoice.productName, quantity: invoice.quantity, unit: invoice.unit,
-      rate: invoice.rate, amount: invoice.amount, gstPercent: invoice.gstPercent,
-      gstAmount: invoice.gstAmount, freightCharge: invoice.freightCharge,
-      totalAmount: invoice.totalAmount, challanNo: invoice.challanNo, ewayBill: invoice.ewayBill,
-      remarks: invoice.remarks, orderId: invoice.orderId, shipmentId: invoice.shipmentId,
-    });
+    // Render the SAME canonical PDF that GET /:id/pdf serves (PO line, IRN bar, Bill-To
+    // overrides, no hardcoded signature) so the emailed copy matches the printed/filed one.
+    const pdfBuffer = await renderInvoicePdfBuffer(invoice.id);
+    if (!pdfBuffer) { res.status(404).json({ error: 'Invoice not found' }); return; }
 
     const subject = req.body.subject || `${invLabel} — Tax Invoice from MSPIL`;
     const body = req.body.body || `Dear ${invoice.customer.name},\n\nPlease find attached Tax Invoice ${invLabel} dated ${new Date(invoice.invoiceDate).toLocaleDateString('en-IN')}.\n\nProduct: ${invoice.productName}\nQuantity: ${invoice.quantity} ${invoice.unit}\nTotal Amount: Rs.${invoice.totalAmount.toLocaleString('en-IN', { minimumFractionDigits: 2 })}\n${invoice.dueDate ? `Due Date: ${new Date(invoice.dueDate).toLocaleDateString('en-IN')}` : ''}\n\nKindly process the payment as per agreed terms.\n\nRegards,\nMahakaushal Sugar & Power Industries Ltd.\nVillage Bachai, Dist. Narsinghpur (M.P.)`;
