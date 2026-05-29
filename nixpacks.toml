@@ -25,7 +25,8 @@ aptPkgs = [
   "libglib2.0-0",
   "libdbus-1-3",
   "fonts-noto",
-  "fonts-noto-cjk"
+  "fonts-noto-cjk",
+  "fonts-liberation"
 ]
 
 [phases.build]

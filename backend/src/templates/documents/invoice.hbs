@@ -307,9 +307,12 @@
         <div style="font-weight:600; font-style:italic;">Declaration</div>
         <div>We declare that this invoice shows the actual price of the goods described and that all particulars are true and correct.</div>
       </td>
-      <td style="text-align:right; vertical-align:bottom; padding-bottom:30px;">
+      <td style="text-align:right; vertical-align:bottom; padding-bottom:4px;">
         <div style="font-weight:600; font-size:10px;">for Mahakaushal Sugar And Power Ind (Ethanol Div)</div>
-        <br><br><br>
+        <!-- Blank gap for the wet signature. Kept compact (was 30px pad + 3×<br>) so the
+             tallest invoices (Reliance: long bill-to/ship-to/consignee) don't push the
+             footer onto a 2nd page on the server's Chromium. -->
+        <div style="height:26px;"></div>
         <div style="font-size:11px;">Authorised Signatory</div>
       </td>
     </tr>
