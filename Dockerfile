@@ -44,6 +44,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     libdbus-1-3 \
     fonts-noto \
     fonts-noto-cjk \
+    fonts-liberation \
     ca-certificates \
     && rm -rf /var/lib/apt/lists/*
 
