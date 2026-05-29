@@ -18,6 +18,7 @@ import path from 'path';
 import prisma from '../config/prisma';
 import { renderDocumentPdf } from './documentRenderer';
 import { getCompanyForPdf } from '../utils/pdfCompanyHelper';
+import { resolveBuyerPo } from '../utils/buyerPo';
 
 // Resolution order:
 //   1. Explicit SNAPSHOT_DIR env var (user override)
@@ -27,7 +28,9 @@ const SNAPSHOT_DIR = process.env.SNAPSHOT_DIR
   || (process.env.RAILWAY_VOLUME_MOUNT_PATH
         ? path.join(process.env.RAILWAY_VOLUME_MOUNT_PATH, 'invoice-snapshots')
         : path.resolve(__dirname, '..', '..', 'public', 'snapshots'));
-const SCHEMA_VERSION = 1;
+// v2 (2026-05-29): snapshot JSON now carries buyerPoNo + poLabel so the customer's
+// PO renders on frozen invoices (previously omitted → PO vanished on served snapshots).
+const SCHEMA_VERSION = 2;
 
 export interface FreezeResult {
   ok: boolean;
@@ -130,6 +133,13 @@ async function buildSnapshotData(invoiceId: string): Promise<Record<string, any>
     invoiceId: invoice.id,
     invoiceNo: invoice.invoiceNo,
     customInvoiceNo: customInvNo,
+    // Customer's PO No. + label — frozen into the snapshot so re-renders keep showing it.
+    // (Omitting this is what made the PO vanish on the served snapshot.)
+    ...resolveBuyerPo(
+      (invoice as any).buyerPoNo,
+      (lifting?.contract as any)?.buyerPoNo,
+      (invoice as any).billToName || invoice.customer.name,
+    ),
     invoiceDate: invoice.invoiceDate,
     dueDate: invoice.dueDate,
     challanNo: lifting?.challanNo || invoice.challanNo || ddgsLink?.challanNo || ddgsLink?.gatePassNo || null,
@@ -324,6 +334,73 @@ export async function freezeInvoice(invoiceId: string): Promise<FreezeResult> {
     console.error(`[InvoiceSnapshot] Freeze FAILED for invoice ${invoiceId}:`, msg);
     return { ok: false, error: msg };
   }
+}
+
+/**
+ * Render the canonical invoice PDF buffer on the fly — same data shape + template as the
+ * frozen snapshot, but WITHOUT persisting anything. Used by delivery surfaces (e.g. emailing
+ * an invoice) so the customer's copy matches exactly what GET /:id/pdf serves: PO line,
+ * IRN bar, Bill-To overrides, no hardcoded signature. Returns null if the invoice is gone.
+ */
+export async function renderInvoicePdfBuffer(invoiceId: string): Promise<Buffer | null> {
+  const data = await buildSnapshotData(invoiceId);
+  if (!data) return null;
+  // Same QR transform as freezeInvoice so the e-invoice QR renders as an image, not raw JWT.
+  if (data.irn) {
+    try {
+      const { generateQRCode } = await import('./templateEngine');
+      const qrContent = data.signedQRCode || `https://einvoice1.gst.gov.in/Others/VSignQRCode?irn=${data.irn}`;
+      data.irnQrDataUrl = await generateQRCode(qrContent);
+      data.signedQRCode = null;
+    } catch (qrErr) {
+      console.warn(`[InvoiceSnapshot] QR generation failed for invoice ${invoiceId}:`, qrErr);
+    }
+  }
+  return renderDocumentPdf({ docType: 'INVOICE', data, verifyId: invoiceId });
+}
+
+export interface BackfillResult {
+  total: number;
+  frozen: number;
+  failed: number;
+  errors: { invoiceNo: number; error: string }[];
+}
+
+/**
+ * Freeze (or re-freeze) snapshots for IRN-generated invoices.
+ *  - Default: only invoices that don't yet have a snapshot (idempotent backfill).
+ *  - force=true: re-freeze even if a snapshot already exists — use after a
+ *    presentation-layer template fix (e.g. PO line added / signature removed).
+ *    NOTE: this overwrites the frozen PDF + SHA. Only do this for presentation
+ *    changes that don't alter the legal e-invoice (the IRN is computed by NIC
+ *    from the e-invoice JSON, not from this PDF).
+ *  - invoiceNos: scope to specific invoice numbers.
+ * Shared by the admin and key-authed backfill endpoints.
+ */
+export async function backfillSnapshots(opts: {
+  force?: boolean;
+  invoiceNos?: number[];
+  limit?: number;
+} = {}): Promise<BackfillResult> {
+  const limit = Math.min(opts.limit ?? 50, 200);
+  const targets = await prisma.invoice.findMany({
+    where: {
+      irn: { not: null },
+      ...(opts.force ? {} : { snapshotAt: null } as any),
+      ...(opts.invoiceNos?.length ? { invoiceNo: { in: opts.invoiceNos } } : {}),
+    },
+    select: { id: true, invoiceNo: true },
+    take: limit,
+    orderBy: { invoiceNo: 'asc' },
+  });
+
+  const results: BackfillResult = { total: targets.length, frozen: 0, failed: 0, errors: [] };
+  for (const t of targets) {
+    const r = await freezeInvoice(t.id);
+    if (r.ok) results.frozen++;
+    else { results.failed++; results.errors.push({ invoiceNo: t.invoiceNo, error: r.error || 'unknown' }); }
+  }
+  return results;
 }
 
 /**
