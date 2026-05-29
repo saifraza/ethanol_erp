@@ -1,7 +1,11 @@
 <style>
   @page { size: A4; margin: 12mm 10mm; }
   * { margin: 0; padding: 0; box-sizing: border-box; }
-  body { font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif; font-size: 9px; color: #222; }
+  /* Liberation Sans (installed on the Linux PDF server via fonts-liberation) leads the stack:
+     it's metric-compatible with Arial/Helvetica and present on the server, so headless Chromium
+     uses it directly instead of falling back to the taller Noto Sans (which pushed tall invoices'
+     footer onto a 2nd page). It's absent on dev Macs, so they keep using Helvetica Neue. */
+  body { font-family: 'Liberation Sans', 'Helvetica Neue', Helvetica, Arial, sans-serif; font-size: 9px; color: #222; }
   @media screen { body { background: #e0e0e0; } .page { width: 210mm; min-height: 297mm; margin: 8mm auto; background: #fff; padding: 8mm 10mm; box-shadow: 0 2px 20px rgba(0,0,0,0.15); } }
   @media print { .page { margin: 0; padding: 0; box-shadow: none; } }
 
