@@ -1,7 +1,7 @@
 # MSPIL Distillery ERP — Claude Code Guide
 
 ## 🚨 STOP — Before ANY bulk SQL, schema change, or `prisma db push` on prod
-Read **[.claude/skills/incident-2026-04-16-db-damage.md](.claude/skills/incident-2026-04-16-db-damage.md)** first. Non-negotiable rules (learned the hard way):
+Read **[docs/postmortems/2026-04-16-db-damage.md](docs/postmortems/2026-04-16-db-damage.md)** first. Non-negotiable rules (learned the hard way):
 1. **`pg_dump` locally BEFORE any destructive op** → `<repo>/db-backups/` (gitignored)
 2. **Never run `prisma db push` on prod from your laptop.** It also doesn't run on Railway — see "Schema changes" below.
 3. **Never use `--accept-data-loss` on prod**
@@ -95,40 +95,68 @@ Same shape now drives biometric: eSSL devices → Biometric Bridge → Factory S
 - **Biometric Bridge** = hardware-facing for fingerprint devices. Stateless Python service that translates HTTP ↔ pyzk. Factory-server is the only client.
 - **Cross-system auth**: `X-WB-Key` header (timing-safe, key in `WB_PUSH_KEY` env var). Same key authenticates both weighbridge sync and biometric-factory sync.
 
-### AI Routing Table
+### AI Routing Table — the single index
 
-| When user mentions... | Look in... |
+Skills in `.claude/skills/<name>/` **auto-trigger** from their frontmatter `description` — you don't have to look them up manually. This table is the human map (which skill owns what) plus where deep docs and code live. There is intentionally **no `SKILLS.md`**; this table is the only index.
+
+**Skills (auto-triggered — `.claude/skills/<name>/SKILL.md`):**
+
+| Topic | Skill |
+|---|---|
+| Factory deploy / safety / incidents — **READ FIRST for any factory work** | `factory-operations` |
+| Weighbridge hardware / serial / add-product / corrections | `weighbridge` |
+| OPC / DCS process-tag bridge | `opc-bridge` |
+| Correct or cancel a weighment (manual `/correct-weighment` only) | `correct-weighment` |
+| 360° ticket lookup ("check ticket N") | `ticket-lookup` |
+| WB truck-vision / anti-cheat / pull training data | `wb-vision` |
+| **Ethanol/DDGS job-work billing, IRN, e-way bill, HSN/SAC/GST** (invoicing hot path) | `ethanol-jobwork-billing` |
+| Payments-out (vendor/contractor/transporter/cash) — **READ FIRST** | `payments-architecture` |
+| Railway deploy / Dockerfile / Procfile / Chromium-puppeteer | `deploy-railway` |
+| Uploads / S3 mirror / Storage Health | `uploads-s3-mirror` |
+| Email SMTP/IMAP / RFQ→PO Gmail threading | `email-pipeline` |
+| ERP UI / SAP Tier-2 tokens / charts / letterhead / PDF | `design-system-kit` |
+
+**Reference docs (`docs/` — read on demand, not trigger-able):**
+
+| Topic | Doc |
+|---|---|
+| Module specs (accounts, inventory, procurement, sales+e-invoice, process, grn-split, …) | `docs/modules/*.md` |
+| Module list / maturity tracker | `docs/modules/module-index.md` |
+| Full Indian tax / compliance rulebase (6-phase plan) | `docs/reference/compliance-tax-system.md` |
+| Backend route + frontend page code templates, IST `nowIST()` pattern | `docs/reference/code-templates.md` |
+| Invoice-snapshot immutability (proposed) · UBI H2H banking | `docs/design/*.md` |
+| Postmortems (2026-04-16 db-damage · 2026-04-11 ethanol-supply) | `docs/postmortems/*.md` |
+| Tech-debt register | `docs/tech-debt-register.md` |
+| Architecture decisions | `docs/adr/*.md` |
+
+**Code-path pointers:**
+
+| Topic | Look in |
 |---|---|
 | Gate entry / weighment UI | `factory-server/frontend/src/pages/` + `factory-server/src/routes/` |
 | Weighment → GRN/inventory | `backend/src/routes/weighbridge/` (handlers/) |
 | Cloud sync / master data cache | `factory-server/src/services/syncWorker.ts`, `masterDataCache.ts` |
 | Live weight from scale | `weighbridge/weight_reader.py` |
-| Factory deploy / safety / incidents | `.claude/skills/factory-operations.md` — **READ FIRST** |
-| Weighbridge hardware / corrections | `.claude/skills/weighbridge.md` |
-| OPC/DCS bridge | `.claude/skills/opc-bridge.md` |
 | Sales / dispatch / invoice | `backend/src/routes/salesOrders.ts`, `shipments.ts`, `invoices.ts` |
 | Procurement PO → GRN → payment | `backend/src/routes/purchaseOrders.ts`, `goodsReceipts.ts`, `vendorPayments.ts` |
-| GRN page (auto vs manual split) | `.claude/skills/grn-split-auto-vs-store.md` |
-| Payments-out / vendor / contractor / cash | `.claude/skills/payments-architecture.md` — **READ FIRST** before touching `unifiedPayments.ts`, `paymentsByPo.ts`, `vendorPayments.ts`, `contractorBills.ts`, or PaymentsOut/StorePayments pages |
-| Email / SMTP / IMAP / RFQ threading | `.claude/skills/email-pipeline.md` (covers `emailService.ts`, `emailReader.ts`, `messaging.ts`, `EmailThread`/`EmailReply`, RFQ→PO Gmail thread continuation) |
 | Accounts / journal / bank | `backend/src/routes/chartOfAccounts.ts`, `journalEntries.ts`, `bankPayments.ts` |
 | Inventory | `backend/src/routes/inventory*.ts` |
 | Fuel | `backend/src/routes/fuel.ts` |
-| Ethanol job-work billing (TWO docs / GST) | `.claude/skills/ethanol-jobwork-billing.md` |
+| E-invoice / e-way bill (code) | `backend/src/services/eInvoice.ts`, `ewayBill.ts` |
 | Telegram auto-collect | `backend/src/services/telegramAutoCollect.ts`, `autoCollectModules/` |
-| Biometric devices / attendance / fingerprint | Cloud admin UI: `frontend/src/pages/hr/BiometricDevices.tsx`. Cloud routes: `backend/src/routes/biometric.ts` (admin) + `biometricFactory.ts` (machine-to-machine). Bridge: `biometric-bridge/bridge.py`. Factory-led pull/sync: `factory-server/src/services/biometricScheduler.ts` + `biometricSync.ts`. Architecture: `biometric-bridge/DEPLOY.md` |
-| E-invoice / e-way bill | `backend/src/services/eInvoice.ts`, `ewayBill.ts` |
-| UBI bank payments | `.claude/skills/ubi-h2h-banking.md` |
-| Uploads / S3 mirror / Storage Health | `.claude/skills/uploads-s3-mirror.md` (covers `mirrorToS3` middleware, `uploadServe.ts`, `uploadBackupJob.ts`, `StorageHealth.tsx`) |
-| Deploy / Dockerfile / Chromium for puppeteer | `.claude/skills/deploy-dockerfile-railway.md` (read before any Dockerfile / Procfile / build-system change) |
-| WB vision / truck-identity verification | `.claude/skills/wb-vision-anti-cheat.md` |
-| Ticket lookup (CLI) | `.claude/skills/ticket-lookup.md` |
-| Module list / maturity | `.claude/skills/module-index.md` |
-| Code templates | `.claude/skills/code-templates.md` |
-| SAP design tokens | `.claude/skills/sap-design-tokens.md` |
-| Tech debt | `.claude/skills/debt-register.md` |
-| All skills index | `.claude/skills/SKILLS.md` |
+| Biometric devices / attendance | `frontend/src/pages/hr/BiometricDevices.tsx` · `backend/src/routes/biometric.ts` + `biometricFactory.ts` · `biometric-bridge/bridge.py` · `factory-server/src/services/biometricScheduler.ts` + `biometricSync.ts` |
 | Any NEW module | `backend/` + `frontend/` (cloud ERP) |
+
+### Skills & docs system — conventions (DRI: Saif)
+
+The `.claude/` config is the primary guardrail keeping AI-generated code on-rails — it only works if it stays legible. Rules (enforced by `scripts/check-skills.sh`):
+
+- **Single-concern, small skills** (`< 300` lines). A skill is `.claude/skills/<name>/SKILL.md` with YAML frontmatter (`name` + a pushy third-person `description`; deep detail goes in sibling files like `reference.md` / `lessons.md`). Grow by **splitting into more files**, never by appending "Part A–H".
+- **One index:** this routing table. Do **not** create a `SKILLS.md`.
+- **Point, don't fork:** skills and CLAUDE.md *link* to the single source (a `docs/` page, a code file) — never restate it. Duplication is how a guide rots.
+- **One location:** skills live only in `.claude/skills/`. Never copy them into `.agents/` or commit worktree copies. Cloud-sync dupes (`* [0-9].*`) are gitignored.
+- **No secrets:** credentials live out-of-git in `~/Desktop/infra/fleet.md`; reference it, never paste keys/passwords into a skill or doc.
+- **Review quarterly**; each milestone/incident becomes a small skill or a `docs/adr/` entry; retire stale skills.
 
 ---
 
@@ -136,16 +164,16 @@ Same shape now drives biometric: eSSL devices → Biometric Bridge → Factory S
 
 **Before ANY change to `factory-server/`, `weighbridge/`, or factory-deployed code:**
 
-1. **Read `.claude/skills/factory-operations.md`** — 7 incidents, every rule is written in blood
+1. **Read the `factory-operations` skill** (`.claude/skills/factory-operations/`) — 7 incidents in `lessons.md`, every rule written in blood
 2. **Never deploy manually** — always use `./factory-server/scripts/deploy.sh`
 3. **Check uncommitted state**: `git status factory-server/` — investigate unknown changes before editing
 4. **Prisma `Unknown argument`/`Unknown field`** = always fix with `prisma generate` (both schemas!), never a code change
-5. **Adding a Prisma field** → grep all systems for cross-system references (see `weighbridge.md` Part B)
+5. **Adding a Prisma field** → grep all systems for cross-system references (see `.claude/skills/weighbridge/add-product.md`)
 6. **When in doubt, ask before touching factory** — no maintenance windows, wrong move = trucks at gate
 
 Factory has TWO Prisma schemas: `prisma/schema.prisma` (local) + `prisma/cloud/schema.prisma` (cloud). Both must be synced and regenerated on deploy.
 
-Connection details: see `.claude/skills/factory-operations.md` Part B or global CLAUDE.md.
+Connection details: see `.claude/skills/factory-operations/reference.md` (credentials out-of-git in `~/Desktop/infra/fleet.md`).
 
 ---
 
@@ -155,21 +183,21 @@ Connection details: see `.claude/skills/factory-operations.md` Part B or global 
 Plant operators submit readings via Telegram, not web UI. Bot runs in-process (long-polling). Services: `telegramBot.ts`, `telegramAutoCollect.ts`, `autoCollectModules/`. Adding a new module: copy `_template.ts`, implement STEPS/buildPrompt/parseReply/saveData, register in index.
 
 ### IST Timezone
-Server runs UTC. Use `nowIST()` pattern from `.claude/skills/code-templates.md`. **NEVER** use `toLocaleTimeString()` on server.
+Server runs UTC. Use `nowIST()` pattern from `docs/reference/code-templates.md`. **NEVER** use `toLocaleTimeString()` on server.
 
 ### Document Vault (Gemini summaries, no RAG)
 LightRAG was removed on 2026-05-08 (PR #77). Compliance / company doc summarisation now goes through `generateVaultNote()` only — Gemini extracts a summary + entities and writes a `VaultNote` row for Obsidian sync. No external RAG service. The `Settings.whatsapp*`, `CompanyDocument.ragTrackId / ragIndexed`, and `VaultNote.ragIndexed` columns are unused but kept (no destructive migration).
 
 ### UI Design System — Two Tiers
 - **Tier 1 (Plant/Process)**: Rounded, colorful, emoji-friendly — for operators on phones
-- **Tier 2 (Enterprise/SAP)**: Dense, square, professional — for ALL new modules. Tokens in `.claude/skills/sap-design-tokens.md`
+- **Tier 2 (Enterprise/SAP)**: Dense, square, professional — for ALL new modules. Tokens + house style in the `design-system-kit` skill (`.claude/skills/design-system-kit/`)
 
 ### Module Build Approach
-1. Create skill file in `.claude/skills/` with full spec
+1. Write the module spec in `docs/modules/` (a reference doc — skills are for recurring how-to procedures, not one-off specs)
 2. Build sequentially (modules interlink)
 3. Consider Telegram integration
-4. Follow code templates from `.claude/skills/code-templates.md`
-5. Use SAP-style UI for non-plant modules
+4. Follow code templates from `docs/reference/code-templates.md`
+5. Use SAP-style UI (the `design-system-kit` skill) for non-plant modules
 
 ---
 
@@ -185,7 +213,7 @@ LightRAG was removed on 2026-05-08 (PR #77). Compliance / company doc summarisat
 - Never use `: any` type
 - Never write `findMany()` without `take` limit (default 50, max 500)
 - Never write `findMany()` for lists without `select`
-- Never use any charting library except Recharts (see `.claude/skills/charts-graphs.md`)
+- Never use any charting library except Recharts (see the `design-system-kit` skill → `reference/charts-recharts.md`)
 - Never create PDFs outside the HBS template + renderDocumentPdf pipeline
 
 ### ALWAYS DO

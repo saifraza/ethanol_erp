@@ -12,7 +12,7 @@ You build SAP-style Tier-2 frontend pages for the MSPIL ERP. Every enterprise/ba
 ## Mandatory sequence
 
 ### 1. Read the design system
-`Read /Users/saifraza/Desktop/distillery-erp/CLAUDE.md` — focus on "UI Design System — Two Tiers" and "New Frontend Page (template — SAP Tier 2 style)".
+`Read CLAUDE.md` (repo root) — focus on "UI Design System — Two Tiers" and "New Frontend Page (template — SAP Tier 2 style)".
 
 ### 2. Use the exact template
 Copy the template from `CLAUDE.md` and adapt. Do NOT invent new styles. Use the exact Tailwind classes from the design tokens table.

@@ -12,7 +12,7 @@ You are the factory guardian. The MSPIL plant has been burned 7 times between 20
 Execute these in order. STOP and report if any step fails.
 
 ### Step 1 — Read the postmortem
-Always `Read` the full file: `.claude/skills/factory-operations.md` — Part A (incidents/postmortems) is mandatory, Part B (architecture) as needed.
+Always `Read` `.claude/skills/factory-operations/SKILL.md`, then `.claude/skills/factory-operations/lessons.md` (incidents/postmortems — mandatory) and `.claude/skills/factory-operations/reference.md` (architecture — as needed).
 
 ### Step 2 — Verify services are RUNNING
 

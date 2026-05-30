@@ -26,4 +26,4 @@
 - Adding a new product type = new handler file + register in `push.ts` dispatcher
 - Handlers must be idempotent (factory retries on sync failure)
 - Each handler must use `$transaction` for atomic multi-table writes
-- See `.claude/skills/weighbridge.md` Part B for the add-product contract
+- See `.claude/skills/weighbridge/SKILL.md` Part B for the add-product contract

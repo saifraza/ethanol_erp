@@ -1,5 +1,13 @@
 #!/usr/bin/env python3
 """
+DEPRECATED / DISABLED 2026-05-31 — superseded by native Claude Code skill
+discovery. Every skill now lives at .claude/skills/<name>/SKILL.md with a
+frontmatter `description`, which Claude auto-loads and matches semantically.
+This hook's UserPromptSubmit registration was removed from settings.json, so
+it no longer runs (and its SKILL_MAP points at the old flat filenames, which
+have moved). Kept one cycle for easy rollback; delete once native
+description-based triggering is confirmed in a fresh session.
+
 UserPromptSubmit hook — keyword-matches the user's prompt against the
 .claude/skills/ index and surfaces the relevant skill paths to Claude as
 additional context. Designed to be silent + fast (no skill content is
