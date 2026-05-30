@@ -1,7 +1,7 @@
 /**
  * Shared GRN detail drawer — used by both AutoGoodsReceipts (readOnly) and
  * StoreReceipts (editable / approvable). See skill:
- * .claude/skills/grn-split-auto-vs-store.md
+ * docs/modules/grn-split-auto-vs-store.md
  */
 
 import React, { useState, useEffect, useCallback } from 'react';

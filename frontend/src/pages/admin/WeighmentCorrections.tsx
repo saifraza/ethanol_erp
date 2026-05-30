@@ -7,7 +7,7 @@
  * which enforces downstream blocker checks, writes audit rows, and pushes
  * corrections back to the factory server.
  *
- * See .claude/skills/weighment-corrections.md for the full spec.
+ * See .claude/skills/weighbridge/corrections-spec.md for the full spec.
  */
 
 import React, { useState, useEffect, useCallback } from 'react';

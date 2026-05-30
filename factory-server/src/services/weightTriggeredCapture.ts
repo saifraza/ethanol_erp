@@ -24,7 +24,7 @@ import { getActiveSession } from './activeScaleSession';
  * Saved by timestamp under data/videos/motion/{date}/. Association to weighmentId
  * is a Phase B job (timestamp matching). Tonight = data collection only.
  *
- * Per design doc `.claude/skills/wb-vision-anti-cheat.md` Section 12.
+ * Per design doc `.claude/skills/wb-vision/reference.md` Section 12.
  */
 
 // Polling cadence

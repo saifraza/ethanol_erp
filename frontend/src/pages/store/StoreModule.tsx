@@ -9,7 +9,7 @@
  * - Tab 'pos'  → Store Purchase Orders (StoreDeals component)
  * - Tab 'grns' → Store Receipts / GRNs (StoreReceipts component)
  *
- * See .claude/skills/grn-split-auto-vs-store.md for the broader split.
+ * See docs/modules/grn-split-auto-vs-store.md for the broader split.
  */
 
 import React, { useEffect, useMemo, useState } from 'react';

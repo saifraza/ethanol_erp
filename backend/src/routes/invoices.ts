@@ -821,7 +821,7 @@ router.post('/:id/e-invoice', asyncHandler(async (req: AuthRequest, res: Respons
 
     // Freeze snapshot (shadow-write Phase 1). Fire-and-forget — never blocks the response.
     // IRN at NIC is already generated above; snapshot failure is logged, not surfaced to caller.
-    // See .claude/skills/invoice-snapshot-immutability.md
+    // See docs/design/invoice-snapshot-immutability.md
     freezeInvoice(invoice.id).catch(err => {
       console.error(`[Invoice] Snapshot freeze failed for INV-${invoice.invoiceNo}:`, err);
     });

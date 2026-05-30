@@ -6,7 +6,7 @@
  *   - downstream blocker checks (GRN/invoice/payment)
  *   - push-back to factory-server for local DB sync
  *
- * See .claude/skills/weighment-corrections.md for the full specification.
+ * See .claude/skills/weighbridge/corrections-spec.md for the full specification.
  *
  * Phase 1 scope: edit material/supplier/PO/vehicle/driver/transporter/remarks
  * on GrainTruck records that have no downstream financial commitments.

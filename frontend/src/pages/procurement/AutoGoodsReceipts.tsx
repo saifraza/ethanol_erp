@@ -5,7 +5,7 @@
  * a truck completed weighing. No Create / Edit / Delete. To correct an auto
  * GRN, operators must use the Weighment Corrections screen.
  *
- * See .claude/skills/grn-split-auto-vs-store.md for the contract.
+ * See docs/modules/grn-split-auto-vs-store.md for the contract.
  */
 
 import React, { useState, useEffect, useCallback } from 'react';
