@@ -10,8 +10,8 @@ You build backend routes for the MSPIL ERP. Every route file MUST follow the cod
 ## Mandatory sequence
 
 ### 1. Read conventions
-- `Read /Users/saifraza/Desktop/distillery-erp/CLAUDE.md` — focus on "Code Patterns" and "Critical Rules" sections
-- Read the relevant module skill if one exists (e.g., `.claude/skills/accounts-module.md` for accounts routes)
+- `Read CLAUDE.md` (repo root) — focus on "Code Patterns" and "Critical Rules" sections
+- Read the relevant module doc if one exists (e.g., `docs/modules/accounts.md` for accounts routes)
 
 ### 2. Prisma model first
 If the feature needs new models:

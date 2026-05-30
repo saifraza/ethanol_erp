@@ -18,7 +18,7 @@ Weighbridge PC uses raw SQLite with Python — no Prisma, but fields must still 
 ## Mandatory sequence for any schema change
 
 ### Step 1 — Read the contract
-`Read .claude/skills/weighbridge.md` — Part B has the full field-mirroring contract for adding products.
+`Read .claude/skills/weighbridge/add-product.md` — the full cross-system field-mirroring contract for adding products.
 
 ### Step 2 — Identify scope
 Which of the 3 schemas is being modified? If it's a model that touches weighments, grain trucks, gate entries, or anything that flows WB → factory → cloud, the field MUST be added to ALL THREE schemas + any handler files.

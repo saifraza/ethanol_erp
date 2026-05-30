@@ -26,7 +26,7 @@ If unsure, ask the user.
 ## Mandatory sequence (if RAG is appropriate)
 
 ### 1. Read the pattern
-- `Read .claude/skills/compliance-tax-system.md` (or compliance master skill) — section on RAG indexing
+- `Read docs/reference/compliance-tax-system.md` — section on RAG/Vault indexing
 - Grep existing routes that already wire RAG: `grep -rn 'lightragUpload' backend/src/routes/`
 
 ### 2. Add the imports

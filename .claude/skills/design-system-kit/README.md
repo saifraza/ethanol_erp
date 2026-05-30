@@ -17,7 +17,7 @@ This isn't a consumer-facing brand. It is an **industrial ERP** for an operating
 
 ## Two design tiers
 
-The ERP deliberately uses **two visual vocabularies**, documented in the repo's `.claude/skills/sap-design-tokens.md` and `DESIGN.md`:
+The ERP deliberately uses **two visual vocabularies**, documented in the repo's `.claude/skills/design-system-kit/reference/sap-tier2-tokens.md` and `DESIGN.md`:
 
 | Tier | Audience | Style | Use for |
 |---|---|---|---|
@@ -41,7 +41,7 @@ Everything here was reverse-engineered from these files in `saifraza/ethanol_erp
 | `frontend/src/config/modules.ts` | Full module inventory & icon usage |
 | `frontend/src/pages/inventory/StockDashboard.tsx` | Canonical Tier 2 page (toolbar + KPI strip + tables) |
 | `frontend/src/pages/Login.tsx` | Login screen |
-| `.claude/skills/sap-design-tokens.md` | Authoritative Tier 2 token reference |
+| `.claude/skills/design-system-kit/reference/sap-tier2-tokens.md` | Authoritative Tier 2 token reference |
 | `assets/MSPIL_logo_transparent.png` | Brand logo |
 
 None of the above are bundled into this design system; they live in the repo. The bits we need are lifted into `colors_and_type.css`, `assets/`, `ui_kits/`, and `preview/`.

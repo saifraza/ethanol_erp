@@ -25,8 +25,8 @@ You are the payment code reviewer. Money-moving code has zero tolerance for bugs
 ## Mandatory checks
 
 ### 1. Read the specs first
-- `Read .claude/skills/accounts-module.md` (Part B has the full double-entry spec)
-- `Read .claude/skills/ubi-h2h-banking.md` (if H2H/SFTP/encryption touched)
+- `Read docs/modules/accounts.md` (full double-entry spec)
+- `Read docs/design/ubi-h2h-banking.md` (if H2H/SFTP/encryption touched)
 
 ### 2. Double-entry integrity
 For any journal-entry-creating code:

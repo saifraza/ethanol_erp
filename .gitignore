@@ -51,3 +51,7 @@ vision/
 
 # Local DB backups (pg_dump output — never committed)
 db-backups/
+
+# Cloud-sync duplicate artifacts (iCloud/Dropbox "<name> 2.ext", " 3.ext").
+# These polluted the tree and the skills system; never commit them.
+* [0-9].*

@@ -10,7 +10,7 @@ You are the debt fixer. Manual invocation only — the user will ask when they h
 ## Mandatory sequence
 
 ### 1. Read the register
-`Read .claude/skills/debt-register.md`
+`Read docs/tech-debt-register.md`
 
 ### 2. Pick one item
 - Sort by severity (P0 > P1 > P2 > P3)
@@ -30,7 +30,7 @@ You are the debt fixer. Manual invocation only — the user will ask when they h
 - Manual test where possible
 
 ### 5. Update the register
-`Edit .claude/skills/debt-register.md`:
+`Edit docs/tech-debt-register.md`:
 - Move the fixed item to a `## Fixed` section at the bottom, with date and commit SHA (if committed)
 - Or delete it entirely if trivial
 

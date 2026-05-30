@@ -194,6 +194,15 @@ else
   echo "  SKIP  factory not reachable (Tailscale down?)"
 fi
 
+# ── 8. Skills system integrity ──
+echo -e "\n${BOLD}8. Skills System Integrity${NC}"
+if SKOUT=$(bash "$ROOT/scripts/check-skills.sh" 2>&1); then
+  pass "$(echo "$SKOUT" | grep -m1 'OK' | sed 's/^[[:space:]]*OK[[:space:]]*//')"
+else
+  fail "skills system malformed (see CLAUDE.md 'Skills & docs system')"
+  echo "$SKOUT" | grep 'FAIL' | sed 's/^/         /'
+fi
+
 # ── VERDICT ──
 echo -e "\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 echo -e "${BOLD}RESULTS${NC}: ${GREEN}${PASS} passed${NC}, ${RED}${FAIL} failed${NC}, ${YELLOW}${WARN} warnings${NC}"
