@@ -120,8 +120,8 @@ WHAT THIS SYSTEM DOES:
 ================================================================================
 
   If you are an AI assistant troubleshooting this system:
-  1. Read .claude/skills/weighbridge-system.md for full technical reference
-  2. Read .claude/skills/factory-linkage.md for remote management guide
+  1. Read .claude/skills/weighbridge/SKILL.md for full technical reference
+  2. Read .claude/skills/factory-operations/reference.md for remote management guide
   3. NEVER stop WtService — see incident note in weighbridge-system.md
   4. NEVER set SERIAL_PROTOCOL=serial — use file mode (default)
   5. The Python service reads weight from D:\WT\new weight.txt (FileReader)
