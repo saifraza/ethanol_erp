@@ -330,14 +330,14 @@ app.use('/api/lab-testing', labTestingRoutes);
 app.use('/api/weighbridge', weighbridgeRoutes);
 // Weighbridge admin corrections (edit/cancel GrainTruck records with audit)
 // NOTE: mounted AFTER the main weighbridge routes so its /admin/* subpaths
-// don't collide with anything existing. See .claude/skills/weighment-corrections.md
+// don't collide with anything existing. See .claude/skills/weighbridge/corrections-spec.md
 app.use('/api/weighbridge/admin', weighbridgeAdminRoutes);
 app.use('/api/admin/integrity', integrityAuditRoutes);
 app.use('/api/admin/backup-uploads', uploadBackupAdminRoutes);
 app.use('/api/admin/email-diagnostic', emailDiagnosticRoutes);
 // Weighbridge audit events (cross-system safety log: scale-zero overrides,
 // delta-confirms, interval/duplicate overrides). Factory pushes via X-WB-Key,
-// admins read via JWT. See .claude/skills/weighbridge.md.
+// admins read via JWT. See .claude/skills/weighbridge/SKILL.md.
 app.use('/api/weighbridge/audit', weighbridgeAuditRoutes);
 // Generic activity log — auto-captures CREATE/UPDATE/DELETE on high-value
 // models via Prisma middleware. Read-only admin viewer.

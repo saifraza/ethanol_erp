@@ -5,7 +5,7 @@
  * Supports GrainTruck, GoodsReceipt, DispatchTruck, DDGSDispatchTruck.
  * Blockers are ordered by severity — first match is the reason.
  *
- * See .claude/skills/weighment-corrections.md for the full specification.
+ * See .claude/skills/weighbridge/corrections-spec.md for the full specification.
  */
 
 import prisma from '../../config/prisma';

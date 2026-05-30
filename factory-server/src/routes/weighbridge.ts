@@ -1497,7 +1497,7 @@ router.post('/heartbeat', requireWbKey, asyncHandler(async (req: Request, res: R
 // POST /api/weighbridge/correction
 // Receive a cloud-initiated correction and apply it to the local Weighment.
 // Cloud is the authoritative source for admin edits — factory mirrors.
-// See .claude/skills/weighment-corrections.md for the full contract.
+// See .claude/skills/weighbridge/corrections-spec.md for the full contract.
 //
 // Idempotent: if any of the correctionIds is already in WeighmentCorrectionLog,
 // the corresponding change is skipped. Returns 200 with per-id status.

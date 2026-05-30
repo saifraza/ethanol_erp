@@ -1163,7 +1163,7 @@ model GrainTruck {
 
 // ═══════════════════════════════════════════════
 // WEIGHMENT CORRECTIONS — Admin audit trail
-// See .claude/skills/weighment-corrections.md for full spec.
+// See .claude/skills/weighbridge/corrections-spec.md for full spec.
 // ═══════════════════════════════════════════════
 model WeighmentCorrection {
   id              String      @id @default(uuid())
@@ -2469,7 +2469,7 @@ model Invoice {
   wgsContractDispatches   WGSContractDispatch[]
   sugarContractDispatches SugarContractDispatch[]
 
-  // Snapshot — frozen at IRN-generation time. See .claude/skills/invoice-snapshot-immutability.md
+  // Snapshot — frozen at IRN-generation time. See docs/design/invoice-snapshot-immutability.md
   // Phase 1 (shadow-write): populated alongside existing flow; read path still goes through live DB.
   snapshotJsonPath String? // e.g. snapshots/2026/04/INV-248.json (relative to SNAPSHOT_DIR)
   snapshotPdfPath  String? // e.g. snapshots/2026/04/INV-248.pdf
@@ -4801,7 +4801,7 @@ model SugarContractDispatch {
 
 // ═══════════════════════════════════════════════
 // COMPLIANCE & TAX — PHASE 1 (Master Data)
-// See .claude/skills/compliance-tax-system.md
+// See docs/reference/compliance-tax-system.md
 // ═══════════════════════════════════════════════
 
 // Company-level tax identity + LUT + regime

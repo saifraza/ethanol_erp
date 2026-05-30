@@ -1,7 +1,7 @@
 /**
  * Invoice Snapshot Service — freeze invoice as JSON + PDF at IRN-generation time.
  *
- * Spec: .claude/skills/invoice-snapshot-immutability.md
+ * Spec: docs/design/invoice-snapshot-immutability.md
  * Phase 1 (this file): shadow-write only. Read path (GET /:id/pdf) still renders
  * from live DB. Snapshots are written in the background after IRN success and never
  * block the request.

@@ -9,7 +9,7 @@
  * refuses to create a new one (preventing the PO-70 phantom-GRN incident from
  * recurring). Admin can force-create with an explicit override.
  *
- * See .claude/skills/grn-split-auto-vs-store.md for the full contract.
+ * See docs/modules/grn-split-auto-vs-store.md for the full contract.
  */
 
 import React, { useState, useEffect, useCallback, useMemo } from 'react';

@@ -11,7 +11,7 @@
  *   INTERVAL_OVERRIDE        — admin overrode the 10-min interval check
  *   DUPLICATE_OVERRIDE       — admin overrode the frozen-digitizer duplicate check
  *
- * See .claude/skills/weighbridge.md (Part D coming) for context.
+ * See .claude/skills/weighbridge/SKILL.md (Part D coming) for context.
  */
 
 import React, { useState, useEffect, useCallback } from 'react';

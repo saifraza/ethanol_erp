@@ -2,7 +2,7 @@
 // chemicals, spares, PPE, lab reagents, packing, consumables.
 //
 // Discriminator: everything that is NOT auto (auto = remarks contains "WB:").
-// See .claude/skills/grn-split-auto-vs-store.md for the contract.
+// See docs/modules/grn-split-auto-vs-store.md for the contract.
 //
 // This route owns CRUD for the manual flow. The duplicate guard on POST is
 // the headline safety feature (see PO-70 incident, 2026-04-08).

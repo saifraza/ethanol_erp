@@ -332,7 +332,7 @@ model WashTotalizer {
 
 // --- WEIGHMENT CORRECTION LOG ---
 // Local mirror of cloud-initiated corrections. Cloud is the master for
-// admin edits (see .claude/skills/weighment-corrections.md). Factory receives
+// admin edits (see .claude/skills/weighbridge/corrections-spec.md). Factory receives
 // corrections via POST /api/weighbridge/correction and records each applied
 // change here. Primary key is the cloud-assigned correctionId, so duplicate
 // deliveries (cloud retries) are idempotent.
