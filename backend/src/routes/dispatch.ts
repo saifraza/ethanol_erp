@@ -10,8 +10,12 @@ import { nextInvoiceNo } from '../utils/invoiceCounter';
 import { invoiceDisplayNo } from '../utils/invoiceDisplay';
 import { mirrorToS3 } from '../shared/s3Storage';
 
-// Same constant as ethanolContracts.ts — MSPIL ethanol is from DFG, denatured with Brucine Sulphate 40 ppm.
+// Same constants as ethanolContracts.ts. MSPIL ethanol is from DFG, denatured with Brucine
+// Sulphate 40 ppm — that descriptive name belongs ONLY on a SALE invoice (goods, HSN 22072000).
+// A JOB_WORK invoice bills the conversion service (SAC 998842) and must read "Job Work Charges…".
+// Always gate productName by contractType — never stamp the ethanol-goods name on a job-work bill.
 const ETHANOL_PRODUCT_NAME = 'DENATURED ETHANOL FROM DFG (DAMAGED FOOD GRAINS) - DENATURED WITH BRUCINE SULPHATE 40 PPM';
+const JOB_WORK_PRODUCT_NAME = 'Job Work Charges for Ethanol Production';
 
 const router = Router();
 
@@ -346,7 +350,7 @@ router.post('/', authenticate, upload.single('photo'), mirrorToS3('dispatch'), a
                   const customInvNo = await nextInvoiceNo(tx, 'ETH');
                   const created = await tx.invoice.create({
                     data: {
-                      customerId: cust.id, invoiceDate: dispatchDate, productName: ETHANOL_PRODUCT_NAME,
+                      customerId: cust.id, invoiceDate: dispatchDate, productName: contract.contractType === 'JOB_WORK' ? JOB_WORK_PRODUCT_NAME : ETHANOL_PRODUCT_NAME,
                       quantity: qtyBL, unit: 'LTR', rate: rate!, amount: amount!,
                       gstPercent: gstPct, gstAmount: gstAmt,
                       supplyType: isInter ? 'INTER_STATE' : 'INTRA_STATE',
@@ -365,7 +369,7 @@ router.post('/', authenticate, upload.single('photo'), mirrorToS3('dispatch'), a
                 if (cust.gstNo && cust.state && cust.pincode && cust.address) {
                   const irnRes = await generateIRN({
                     invoiceNo: invoiceDisplayNo(inv), invoiceDate: inv.invoiceDate,
-                    productName: ETHANOL_PRODUCT_NAME, quantity: inv.quantity, unit: 'LTR', rate: inv.rate, amount: inv.amount, gstPercent: inv.gstPercent,
+                    productName: contract.contractType === 'JOB_WORK' ? JOB_WORK_PRODUCT_NAME : ETHANOL_PRODUCT_NAME, quantity: inv.quantity, unit: 'LTR', rate: inv.rate, amount: inv.amount, gstPercent: inv.gstPercent,
                     customer: { gstin: cust.gstNo, name: cust.name, address: cust.address, city: cust.city || '', pincode: cust.pincode, state: cust.state, phone: cust.phone || '', email: cust.email || '' },
                   });
                   if (irnRes.success && irnRes.irn) {
