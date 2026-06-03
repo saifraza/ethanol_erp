@@ -108,6 +108,7 @@ For a job work contract to bill correctly these fields MUST be set:
 | SAC mapping | `backend/src/services/eInvoice.ts:264-267` | 998842 = ETH, 998817 = DDGS |
 | Invoice creation (auto) | `backend/src/routes/ethanolContracts.ts` | `POST /:id/liftings` — auto-invoice block |
 | Invoice creation (manual) | `backend/src/routes/ethanolContracts.ts` | `POST /:id/liftings/:id/create-invoice` |
+| Invoice creation (legacy dispatch auto) | `backend/src/routes/dispatch.ts` | `setImmediate` block, fires when `contract.autoGenerateEInvoice`. **Every** creation path must gate `productName` by `contractType`: `JOB_WORK ? "Job Work Charges for Ethanol Production" : ETHANOL_PRODUCT_NAME`. dispatch.ts missed this gate after #156 (denaturer name leaked onto job-work bills) — fixed; keep all paths gated. |
 | Challan PDF | `backend/src/routes/ethanolContracts.ts` | `GET /:id/liftings/:id/delivery-challan-pdf` |
 | Gate Pass PDF | `backend/src/routes/ethanolContracts.ts` | `GET /:id/liftings/:id/gate-pass-pdf` |
 | Release flow (weighbridge) | `backend/src/routes/ethanolGatePass.ts` | `POST /:id/release` |
