@@ -17,8 +17,9 @@ Job work ethanol dispatch produces **TWO documents per truck**, with DIFFERENT r
 5. **Tax compliance auto-rate engine must NOT override job work lines** — detect SAC 998842 → 18%
 
 Two more product-name rules that the same bugs keep violating:
-- **Product name on invoice** = `"Job Work Charges for Ethanol Production"` (NOT "ETHANOL", and NOT the literal "GEN INVOICE" placeholder — if you see "GEN INVOICE" on a rendered invoice, the description field never got populated from the contract/lifting).
-- **Product name on challan** = `"Ethanol"` (NOT "Job Work Charges...").
+- **Product name on EVERY job-work doc — invoice, challan, gate pass, EWB** = plain `"Ethanol"` (user ruling 2026-06-04, PR #173 — reversed the earlier "Job Work Charges for Ethanol Production" invoice line). NOT the DFG/Brucine sale description, and NOT the literal "GEN INVOICE" placeholder (that means the description never got populated from the contract/lifting).
+- **The name no longer signals job work.** Classification (SAC 998842, IsServc=Y, printed HSN) is gated on `contractType === 'JOB_WORK'` explicitly: both `generateIRN` call sites pass `hsnCode: '998842'` (ethanolContracts.ts, dispatch.ts), and print-time HSN derivation checks `lifting?.contract?.contractType` BEFORE the productName sniff (invoices.ts, invoiceSnapshot.ts). Never reintroduce name-sniffing for ethanol JW; legacy rows ("Job Work Charges…") and DDGS jobwork still resolve via the sniff fallback.
+- **Sale docs (Reliance / FIXED_PRICE / OMC) are untouched** — DFG+Brucine name on invoice/gate pass, "Denatured Anhydrous Ethanol (DFG Feedstock)" on the challan.
 
 ## The two documents
 
@@ -27,8 +28,8 @@ Two more product-name rules that the same bugs keep violating:
 | Field | Value |
 |-------|-------|
 | What it is | Invoice for job work conversion charges only |
-| Product name | `"Job Work Charges for Ethanol Production"` |
-| HSN/SAC | **998842** (manufacturing services on physical inputs owned by others) |
+| Product name | `"Ethanol"` (since 2026-06-04 / PR #173; rows before that store "Job Work Charges for Ethanol Production") |
+| HSN/SAC | **998842** (manufacturing services on physical inputs owned by others) — gated on contractType, NOT derived from the product name |
 | Rate | `contract.conversionRate` — ₹14.00/BL MASH, ₹2.987/BL SM PRIMAL |
 | GST | **18%** (9% CGST + 9% SGST intra-state, 18% IGST inter-state) |
 | IsServc | `'Y'` (service — SAC starts with 99) |
@@ -108,7 +109,7 @@ For a job work contract to bill correctly these fields MUST be set:
 | SAC mapping | `backend/src/services/eInvoice.ts:264-267` | 998842 = ETH, 998817 = DDGS |
 | Invoice creation (auto) | `backend/src/routes/ethanolContracts.ts` | `POST /:id/liftings` — auto-invoice block |
 | Invoice creation (manual) | `backend/src/routes/ethanolContracts.ts` | `POST /:id/liftings/:id/create-invoice` |
-| Invoice creation (legacy dispatch auto) | `backend/src/routes/dispatch.ts` | `setImmediate` block, fires when `contract.autoGenerateEInvoice`. **Every** creation path must gate `productName` by `contractType`: `JOB_WORK ? "Job Work Charges for Ethanol Production" : ETHANOL_PRODUCT_NAME`. dispatch.ts missed this gate after #156 (denaturer name leaked onto job-work bills) — fixed; keep all paths gated. |
+| Invoice creation (legacy dispatch auto) | `backend/src/routes/dispatch.ts` | `setImmediate` block, fires when `contract.autoGenerateEInvoice`. **Every** creation path must gate `productName` by `contractType`: `JOB_WORK ? JOB_WORK_PRODUCT_NAME ("Ethanol") : ETHANOL_PRODUCT_NAME`, and every JW `generateIRN` call must pass `hsnCode: '998842'` explicitly. dispatch.ts missed the gate after #156 (denaturer name leaked onto job-work bills) — fixed in #172; names switched to plain "Ethanol" in #173; keep all paths gated. |
 | Challan PDF | `backend/src/routes/ethanolContracts.ts` | `GET /:id/liftings/:id/delivery-challan-pdf` |
 | Gate Pass PDF | `backend/src/routes/ethanolContracts.ts` | `GET /:id/liftings/:id/gate-pass-pdf` |
 | Release flow (weighbridge) | `backend/src/routes/ethanolGatePass.ts` | `POST /:id/release` |
