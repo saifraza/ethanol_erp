@@ -25,7 +25,10 @@ const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 10 
 // and denatured with Brucine Sulphate 40 ppm (the legal denaturant for HSN 22072000).
 // Print both feedstock + denaturant on the invoice so OMC/buyer reconciles to the right HSN slab.
 const ETHANOL_PRODUCT_NAME = 'DENATURED ETHANOL FROM DFG (DAMAGED FOOD GRAINS) - DENATURED WITH BRUCINE SULPHATE 40 PPM';
-const JOB_WORK_PRODUCT_NAME = 'Job Work Charges for Ethanol Production';
+// Job-work docs print plain "Ethanol" (user ruling 2026-06-04 — matches DCH/ETH/174 era docs).
+// The SAC 998842 service classification does NOT come from this name: every IRN call and
+// print-time HSN derivation gates on contractType === 'JOB_WORK' explicitly.
+const JOB_WORK_PRODUCT_NAME = 'Ethanol';
 
 // Ethanol invoice billing unit by contract type:
 //   JOB_WORK      → per BL (the conversion charge is quoted per bulk litre)
@@ -949,6 +952,9 @@ router.post('/:id/liftings/:liftingId/e-invoice', asyncHandler(async (req: AuthR
         invoiceNo: lifting.invoiceNo || invoiceDisplayNo(invoice),
         invoiceDate: invoice.invoiceDate,
         productName: invoice.productName,
+        // JW productName is plain "Ethanol" — classification must NOT be sniffed from it.
+        // Explicit SAC keeps the IRN registered as the conversion service (IsServc=Y).
+        hsnCode: isJobWork ? '998842' : undefined,
         quantity: invoice.quantity,
         unit: invoice.unit,
         rate: invoice.rate,
@@ -1059,8 +1065,10 @@ router.post('/:id/liftings/:liftingId/e-invoice', asyncHandler(async (req: AuthR
           transDistance: distanceKm,
           itemList: [{
             itemNo: 1,
-            productName: ETHANOL_PRODUCT_NAME,
-            productDesc: ETHANOL_PRODUCT_NAME,
+            // JW transport EWB moves the goods (ethanol @ product value, goods HSN) —
+            // plain "Ethanol" matches the challan; HSN stays 22072000 (not the 998842 SAC).
+            productName: JOB_WORK_PRODUCT_NAME,
+            productDesc: JOB_WORK_PRODUCT_NAME,
             hsnCode: 22072000,
             quantity: lifting.quantityBL,
             qtyUnit: 'LTR',
@@ -1306,7 +1314,7 @@ router.post('/:id/import-history', asyncHandler(async (req: AuthRequest, res: Re
         data: {
           customerId,
           invoiceDate: new Date(row.date),
-          productName: 'Job Work Charges for Ethanol Production',
+          productName: JOB_WORK_PRODUCT_NAME,
           quantity: row.quantityBL, unit: 'BL', rate: row.rate, amount,
           gstPercent, gstAmount: gst.gstAmount, supplyType: gst.supplyType,
           cgstPercent: gst.cgstPercent, cgstAmount: gst.cgstAmount,
