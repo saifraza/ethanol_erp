@@ -88,6 +88,9 @@ async function buildSnapshotData(invoiceId: string): Promise<Record<string, any>
 
   // HSN derivation (same logic as invoices.ts route for byte-equal rendering)
   const hsnCode = (() => {
+    // Ethanol JW invoices print plain "Ethanol" (2026-06-04) — the name no longer
+    // signals jobwork, so gate on the lifting's contractType FIRST.
+    if (lifting?.contract?.contractType === 'JOB_WORK') return '998842';
     const p = (invoice.productName || '').toUpperCase();
     if (p.includes('JOBWORK') || p.includes('JOB WORK')) {
       if (p.includes('DDGS')) return '998817';

@@ -509,7 +509,7 @@ router.get('/:id/pdf', asyncHandler(async (req: AuthRequest, res: Response) => {
       where: { id: req.params.id },
       include: {
         customer: true,
-        ethanolLiftings: { take: 1, include: { contract: { select: { paymentTermsDays: true, paymentMode: true, buyerPoNo: true } } } },
+        ethanolLiftings: { take: 1, include: { contract: { select: { paymentTermsDays: true, paymentMode: true, buyerPoNo: true, contractType: true } } } },
         ddgsContractDispatches: {
           take: 1,
           include: {
@@ -583,6 +583,9 @@ router.get('/:id/pdf', asyncHandler(async (req: AuthRequest, res: Response) => {
         // write time so this map only handles legacy rows. Until then, derive
         // from productName. Order matters: jobwork checks come BEFORE product
         // checks because "JOBWORK CHARGES FOR DDGS" must yield 998817, not 2303.
+        // Ethanol JW invoices print plain "Ethanol" (2026-06-04) — the name no longer
+        // signals jobwork, so gate on the lifting's contractType FIRST.
+        if (lifting?.contract?.contractType === 'JOB_WORK') return '998842';
         const p = (invoice.productName || '').toUpperCase();
         if (p.includes('JOBWORK') || p.includes('JOB WORK')) {
           if (p.includes('DDGS')) return '998817';
