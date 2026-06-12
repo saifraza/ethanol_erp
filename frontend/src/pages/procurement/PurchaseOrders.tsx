@@ -39,6 +39,10 @@ interface Material {
   gstPercent: number;
 }
 
+// Unit suggestions for PO line items. Free-text input backed by this datalist,
+// so the team can order by bags, pieces, drums etc. — not just weight.
+const PO_LINE_UNITS = ['NOS', 'BAG', 'KG', 'MT', 'QTL', 'LTR', 'MTR', 'SET', 'PCS', 'BOX', 'ROLL', 'PAIR', 'GM', 'DRUM', 'CAN', 'BUNDLE', 'PACKET'];
+
 interface POLine {
   inventoryItemId: string | null; // null allowed for SERVICE / CONTRACTOR / RENT / UTILITY / OTHER POs
   description: string;
@@ -490,7 +494,7 @@ const PurchaseOrders: React.FC = () => {
       description: isGoods ? (material?.name || material?.description || '') : (newLine.description || ''),
       hsnCode: isGoods ? (material?.hsnCode || '') : (newLine.hsnCode || ''),
       quantity: newLine.quantity || (isGoods ? 0 : 1),
-      unit: isGoods ? (material?.unit || 'NOS') : (newLine.unit || 'NOS'),
+      unit: newLine.unit || (isGoods ? (material?.unit || 'NOS') : 'NOS'),
       rate: newLine.rate || 0,
       discountPercent: newLine.discountPercent || 0,
       gstPercent: isGoods ? (material?.gstPercent || 0) : (newLine.gstPercent || 0),
@@ -1078,6 +1082,7 @@ const PurchaseOrders: React.FC = () => {
                             <th className="text-[10px] uppercase tracking-widest font-semibold px-3 py-1.5 text-left border-r border-slate-700">{formData.poType === 'GOODS' ? 'Material' : 'Description'}</th>
                             <th className="text-[10px] uppercase tracking-widest font-semibold px-3 py-1.5 text-left border-r border-slate-700">{formData.poType === 'GOODS' ? 'HSN' : 'SAC / HSN'}</th>
                             <th className="text-[10px] uppercase tracking-widest font-semibold px-3 py-1.5 text-right border-r border-slate-700">Qty</th>
+                            <th className="text-[10px] uppercase tracking-widest font-semibold px-3 py-1.5 text-center border-r border-slate-700">Unit</th>
                             <th className="text-[10px] uppercase tracking-widest font-semibold px-3 py-1.5 text-right border-r border-slate-700">Rate</th>
                             <th className="text-[10px] uppercase tracking-widest font-semibold px-3 py-1.5 text-right border-r border-slate-700">Disc %</th>
                             <th className="text-[10px] uppercase tracking-widest font-semibold px-3 py-1.5 text-right border-r border-slate-700">GST %</th>
@@ -1093,6 +1098,9 @@ const PurchaseOrders: React.FC = () => {
                               <td className="px-3 py-1.5 text-xs border-r border-slate-100 font-mono">{line.hsnCode}</td>
                               <td className="px-2 py-1 border-r border-slate-100">
                                 <input type="number" value={line.quantity || ''} onChange={(e) => handleUpdateLine(idx, 'quantity', e.target.value === '' ? 0 : parseFloat(e.target.value))} className="border border-slate-300 px-1.5 py-1 text-xs w-20 text-right focus:outline-none focus:ring-1 focus:ring-slate-400" />
+                              </td>
+                              <td className="px-2 py-1 border-r border-slate-100">
+                                <input list="po-line-units" value={line.unit || ''} onChange={(e) => handleUpdateLine(idx, 'unit', e.target.value.toUpperCase())} className="border border-slate-300 px-1.5 py-1 text-xs w-16 text-center uppercase focus:outline-none focus:ring-1 focus:ring-slate-400" />
                               </td>
                               <td className="px-2 py-1 border-r border-slate-100">
                                 <input type="number" value={line.rate || ''} onChange={(e) => handleUpdateLine(idx, 'rate', e.target.value === '' ? 0 : parseFloat(e.target.value))} className="border border-slate-300 px-1.5 py-1 text-xs w-20 text-right focus:outline-none focus:ring-1 focus:ring-slate-400" />
@@ -1142,6 +1150,13 @@ const PurchaseOrders: React.FC = () => {
                       <div>
                         <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-0.5 block">Quantity</label>
                         <input type="number" value={newLine.quantity || ''} onChange={(e) => setNewLine({ ...newLine, quantity: e.target.value === '' ? 0 : parseFloat(e.target.value) })} className="border border-slate-300 px-2.5 py-1.5 text-xs w-full focus:outline-none focus:ring-1 focus:ring-slate-400" />
+                      </div>
+                      <div>
+                        <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-0.5 block">Unit</label>
+                        <input list="po-line-units" value={newLine.unit || ''} onChange={(e) => setNewLine({ ...newLine, unit: e.target.value.toUpperCase() })} placeholder="BAG / NOS / KG" className="border border-slate-300 px-2.5 py-1.5 text-xs w-full uppercase focus:outline-none focus:ring-1 focus:ring-slate-400" />
+                        <datalist id="po-line-units">
+                          {PO_LINE_UNITS.map((u) => (<option key={u} value={u} />))}
+                        </datalist>
                       </div>
                       <div>
                         <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-0.5 block">Rate</label>
