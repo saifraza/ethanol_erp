@@ -8,12 +8,10 @@ import { onSaleInvoiceCreated } from '../services/autoJournal';
 import { recomputeEthanolEntryByDate } from './ethanolProduct';
 import { calcGstSplit } from '../utils/gstSplit';
 import { Prisma } from '@prisma/client';
+import { ethanolDocProductName } from '../shared/ethanolProductNames';
 
-// Same constants as ethanolContracts.ts / dispatch.ts — DFG feedstock + Brucine Sulphate 40 ppm
-// denaturant on SALE docs; plain "Ethanol" on JOB_WORK docs (classification is gated on
-// contractType, never sniffed from this name).
-const ETHANOL_PRODUCT_NAME = 'DENATURED ETHANOL FROM DFG (DAMAGED FOOD GRAINS) - DENATURED WITH BRUCINE SULPHATE 40 PPM';
-const JOB_WORK_PRODUCT_NAME = 'Ethanol';
+// Ethanol document product names resolve via ../shared/ethanolProductNames (single source of
+// truth). Classification is gated on contractType, never sniffed from this name.
 
 const router = Router();
 
@@ -199,7 +197,7 @@ router.post('/:id/release', asyncHandler(async (req: AuthRequest, res: Response)
         customerId: customer.id,
         invoiceDate: businessDate,
         dueDate: contract.paymentTermsDays ? new Date(businessDate.getTime() + contract.paymentTermsDays * 86400000) : null,
-        productName: contract.contractType === 'JOB_WORK' ? JOB_WORK_PRODUCT_NAME : ETHANOL_PRODUCT_NAME,
+        productName: ethanolDocProductName(contract),
         quantity: truck.quantityBL, unit: 'BL', rate, amount,
         gstPercent, gstAmount: gst.gstAmount, supplyType: gst.supplyType,
         cgstPercent: gst.cgstPercent, cgstAmount: gst.cgstAmount,
@@ -351,7 +349,7 @@ router.get('/:id/gate-pass-pdf', asyncHandler(async (req: AuthRequest, res: Resp
       buyerName: truck.contract?.buyerName || truck.partyName,
       buyerAddress: truck.contract?.buyerAddress || '',
       buyerGst: truck.contract?.buyerGst || '',
-      productDescription: isJobWork ? JOB_WORK_PRODUCT_NAME : ETHANOL_PRODUCT_NAME,
+      productDescription: ethanolDocProductName(truck.contract),
       hsnCode: isJobWork ? '998842' : '22072000',
       quantityBL: truck.quantityBL,
       rate,

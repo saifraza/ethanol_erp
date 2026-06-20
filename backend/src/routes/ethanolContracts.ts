@@ -15,20 +15,17 @@ import path from 'path';
 import os from 'os';
 
 import { calcGstSplit, stateFromGstin } from '../utils/gstSplit';
+import { ethanolDocProductName, ethanolJobWorkProductName } from '../shared/ethanolProductNames';
 import { Prisma } from '@prisma/client';
 
 const router = Router();
 router.use(authenticate);
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 10 * 1024 * 1024 } });
 
-// MSPIL ethanol is manufactured from Damaged Food Grains (DFG) under the GoI EBP scheme
-// and denatured with Brucine Sulphate 40 ppm (the legal denaturant for HSN 22072000).
-// Print both feedstock + denaturant on the invoice so OMC/buyer reconciles to the right HSN slab.
-const ETHANOL_PRODUCT_NAME = 'DENATURED ETHANOL FROM DFG (DAMAGED FOOD GRAINS) - DENATURED WITH BRUCINE SULPHATE 40 PPM';
-// Job-work docs print plain "Ethanol" (user ruling 2026-06-04 — matches DCH/ETH/174 era docs).
-// The SAC 998842 service classification does NOT come from this name: every IRN call and
-// print-time HSN derivation gates on contractType === 'JOB_WORK' explicitly.
-const JOB_WORK_PRODUCT_NAME = 'Ethanol';
+// Ethanol document product names (invoice / challan / gate pass / EWB) resolve via
+// ../shared/ethanolProductNames — single source of truth. SM PRIMAL job work prints
+// "Job Work Charges for Ethanol Production"; other job work prints "Ethanol"; sale
+// contracts print the DFG+Brucine name. Classification stays explicit by contractType.
 
 // Ethanol invoice billing unit by contract type:
 //   JOB_WORK      → per BL (the conversion charge is quoted per bulk litre)
@@ -431,7 +428,7 @@ router.post('/:id/liftings', asyncHandler(async (req: AuthRequest, res: Response
           const created = await tx.invoice.create({
             data: {
               customerId: cust.id, invoiceDate: lifting.liftingDate,
-              productName: contract.contractType === 'JOB_WORK' ? JOB_WORK_PRODUCT_NAME : ETHANOL_PRODUCT_NAME,
+              productName: ethanolDocProductName(contract),
               quantity: eb.billQty, unit: eb.billUnit, rate: rate!, amount: amount!,
               gstPercent: contract.gstPercent || 18, gstAmount: gst.gstAmount, supplyType: gst.supplyType,
               cgstPercent: gst.cgstPercent, cgstAmount: gst.cgstAmount, sgstPercent: gst.sgstPercent, sgstAmount: gst.sgstAmount,
@@ -451,7 +448,7 @@ router.post('/:id/liftings', asyncHandler(async (req: AuthRequest, res: Response
           amount: amount!, gstAmount: gst.gstAmount, gstPercent: contract.gstPercent || 18,
           cgstAmount: gst.cgstAmount, sgstAmount: gst.sgstAmount, igstAmount: gst.igstAmount,
           supplyType: gst.supplyType,
-          productName: contract.contractType === 'JOB_WORK' ? JOB_WORK_PRODUCT_NAME : ETHANOL_PRODUCT_NAME,
+          productName: ethanolDocProductName(contract),
           customerId: cust.id, userId: 'system', invoiceDate: lifting.liftingDate,
           customer: { state: cust.state },
           companyId: inv.companyId || undefined,
@@ -766,7 +763,7 @@ router.post('/:id/liftings/:liftingId/create-invoice', asyncHandler(async (req: 
           customerId: customer.id,
           invoiceDate: lifting.liftingDate,
           dueDate: contract.paymentTermsDays ? new Date(lifting.liftingDate.getTime() + contract.paymentTermsDays * 86400000) : null,
-          productName: contract.contractType === 'JOB_WORK' ? JOB_WORK_PRODUCT_NAME : ETHANOL_PRODUCT_NAME,
+          productName: ethanolDocProductName(contract),
           quantity: eb.billQty,
           unit: eb.billUnit,
           rate: lifting.rate || 0,
@@ -849,6 +846,7 @@ router.get('/:id/liftings/:liftingId/delivery-challan-pdf', asyncHandler(async (
         buyerName: lifting.contract.buyerName,
         buyerAddress: lifting.contract.buyerAddress || '',
         buyerGst: lifting.contract.buyerGst || '',
+        jobWorkGoods: ethanolJobWorkProductName(lifting.contract),
         quantityBL: lifting.quantityBL,
         billQty,
         billUnit,
@@ -899,7 +897,7 @@ router.get('/:id/liftings/:liftingId/gate-pass-pdf', asyncHandler(async (req: Au
         buyerName: lifting.contract.buyerName,
         buyerAddress: lifting.contract.buyerAddress || '',
         buyerGst: lifting.contract.buyerGst || '',
-        productDescription: isJobWork ? JOB_WORK_PRODUCT_NAME : ETHANOL_PRODUCT_NAME,
+        productDescription: ethanolDocProductName(lifting.contract),
         hsnCode: isJobWork ? '998842' : '22072000',
         quantityBL: lifting.quantityBL,
         billQty: gpBillQty,
@@ -1079,10 +1077,11 @@ router.post('/:id/liftings/:liftingId/e-invoice', asyncHandler(async (req: AuthR
           transDistance: distanceKm,
           itemList: [{
             itemNo: 1,
-            // JW transport EWB moves the goods (ethanol @ product value, goods HSN) —
-            // plain "Ethanol" matches the challan; HSN stays 22072000 (not the 998842 SAC).
-            productName: JOB_WORK_PRODUCT_NAME,
-            productDesc: JOB_WORK_PRODUCT_NAME,
+            // JW transport EWB moves the goods (ethanol @ product value, goods HSN).
+            // SM PRIMAL prints "Job Work Charges for Ethanol Production" (user ruling);
+            // HSN stays goods 22072000 (NOT the 998842 SAC) so the NIC goods line stays valid.
+            productName: ethanolJobWorkProductName({ buyerGst: customer.gstNo, buyerName: customer.name }),
+            productDesc: ethanolJobWorkProductName({ buyerGst: customer.gstNo, buyerName: customer.name }),
             hsnCode: 22072000,
             quantity: lifting.quantityBL,
             qtyUnit: 'LTR',
@@ -1328,7 +1327,7 @@ router.post('/:id/import-history', asyncHandler(async (req: AuthRequest, res: Re
         data: {
           customerId,
           invoiceDate: new Date(row.date),
-          productName: JOB_WORK_PRODUCT_NAME,
+          productName: ethanolDocProductName(contract),
           quantity: row.quantityBL, unit: 'BL', rate: row.rate, amount,
           gstPercent, gstAmount: gst.gstAmount, supplyType: gst.supplyType,
           cgstPercent: gst.cgstPercent, cgstAmount: gst.cgstAmount,
