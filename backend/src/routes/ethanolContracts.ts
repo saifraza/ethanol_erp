@@ -955,6 +955,17 @@ router.post('/:id/liftings/:liftingId/e-invoice', asyncHandler(async (req: AuthR
       });
     }
 
+    // Bills saved before the per-principal naming rule stored the old "Ethanol" line.
+    // Refresh the job-work product name from the principal so the IRN (and the saved
+    // invoice + its snapshot) carry the correct description. Only un-IRN'd job-work bills.
+    if (isJobWork && !irnAlreadyExists) {
+      const jwName = ethanolJobWorkProductName({ buyerGst: customer.gstNo, buyerName: customer.name });
+      if (invoice.productName !== jwName) {
+        await prisma.invoice.update({ where: { id: invoice.id }, data: { productName: jwName } });
+        invoice.productName = jwName;
+      }
+    }
+
     // ── STEP 1: Generate IRN (skip if already exists — EWB retry path) ──
     let irn = invoice.irn;
     let ackNo = invoice.ackNo;
