@@ -48,3 +48,13 @@ export function ethanolDocProductName(
   if (c && c.contractType === 'JOB_WORK') return ethanolJobWorkProductName(c);
   return ETHANOL_SALE_PRODUCT_NAME;
 }
+
+// GOODS / MOVEMENT description for the delivery challan, gate pass and e-way bill.
+// Job work always prints plain "Ethanol" (the physical goods in transit); sale prints the
+// DFG / Brucine name. NEVER carries the invoice job-work-charge wording — that stays on the
+// tax invoice ONLY (user ruling 2026-06-20). Classification stays goods HSN 22072000.
+export function ethanolGoodsProductName(
+  c: (ContractBuyer & { contractType?: string | null }) | null | undefined,
+): string {
+  return c && c.contractType === 'JOB_WORK' ? DEFAULT_JOBWORK_NAME : ETHANOL_SALE_PRODUCT_NAME;
+}
