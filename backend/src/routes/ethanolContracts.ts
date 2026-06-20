@@ -15,7 +15,7 @@ import path from 'path';
 import os from 'os';
 
 import { calcGstSplit, stateFromGstin } from '../utils/gstSplit';
-import { ethanolDocProductName, ethanolJobWorkProductName } from '../shared/ethanolProductNames';
+import { ethanolDocProductName, ethanolJobWorkProductName, ethanolGoodsProductName } from '../shared/ethanolProductNames';
 import { Prisma } from '@prisma/client';
 
 const router = Router();
@@ -846,7 +846,7 @@ router.get('/:id/liftings/:liftingId/delivery-challan-pdf', asyncHandler(async (
         buyerName: lifting.contract.buyerName,
         buyerAddress: lifting.contract.buyerAddress || '',
         buyerGst: lifting.contract.buyerGst || '',
-        jobWorkGoods: ethanolJobWorkProductName(lifting.contract),
+        jobWorkGoods: ethanolGoodsProductName(lifting.contract),
         quantityBL: lifting.quantityBL,
         billQty,
         billUnit,
@@ -897,7 +897,7 @@ router.get('/:id/liftings/:liftingId/gate-pass-pdf', asyncHandler(async (req: Au
         buyerName: lifting.contract.buyerName,
         buyerAddress: lifting.contract.buyerAddress || '',
         buyerGst: lifting.contract.buyerGst || '',
-        productDescription: ethanolDocProductName(lifting.contract),
+        productDescription: ethanolGoodsProductName(lifting.contract),
         hsnCode: isJobWork ? '998842' : '22072000',
         quantityBL: lifting.quantityBL,
         billQty: gpBillQty,
@@ -1088,11 +1088,10 @@ router.post('/:id/liftings/:liftingId/e-invoice', asyncHandler(async (req: AuthR
           transDistance: distanceKm,
           itemList: [{
             itemNo: 1,
-            // JW transport EWB moves the goods (ethanol @ product value, goods HSN).
-            // SM PRIMAL prints "Job Work Charges for Ethanol Production" (user ruling);
-            // HSN stays goods 22072000 (NOT the 998842 SAC) so the NIC goods line stays valid.
-            productName: ethanolJobWorkProductName({ buyerGst: customer.gstNo, buyerName: customer.name }),
-            productDesc: ethanolJobWorkProductName({ buyerGst: customer.gstNo, buyerName: customer.name }),
+            // JW transport EWB moves the GOODS (ethanol @ product value, goods HSN) — always
+            // plain "Ethanol", never the invoice charge wording. HSN stays goods 22072000.
+            productName: ethanolGoodsProductName(contract),
+            productDesc: ethanolGoodsProductName(contract),
             hsnCode: 22072000,
             quantity: lifting.quantityBL,
             qtyUnit: 'LTR',
@@ -1220,7 +1219,9 @@ router.get('/:id/liftings/:liftingId/ewb-pdf', asyncHandler(async (req: AuthRequ
         buyerState: (cust.state || '').toUpperCase(),
         buyerAddress: [cust.address, cust.city].filter(Boolean).join(', '),
         buyerPincode: cust.pincode || '',
-        productName: inv.productName,
+        // EWB is a goods-movement doc — print the goods name ("Ethanol" for job work), never
+        // the invoice charge wording. HSN stays goods (sniffed below; ethanol → 22072000).
+        productName: ethanolGoodsProductName(contract),
         hsnCode: inv.productName?.toUpperCase().includes('ETHANOL') ? '22072000' : inv.productName?.toUpperCase().includes('DDGS') ? '23033000' : '998817',
         quantity: inv.quantity,
         unit: inv.unit,

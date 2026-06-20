@@ -8,7 +8,7 @@ import { onSaleInvoiceCreated } from '../services/autoJournal';
 import { recomputeEthanolEntryByDate } from './ethanolProduct';
 import { calcGstSplit } from '../utils/gstSplit';
 import { Prisma } from '@prisma/client';
-import { ethanolDocProductName } from '../shared/ethanolProductNames';
+import { ethanolDocProductName, ethanolGoodsProductName } from '../shared/ethanolProductNames';
 
 // Ethanol document product names resolve via ../shared/ethanolProductNames (single source of
 // truth). Classification is gated on contractType, never sniffed from this name.
@@ -302,6 +302,7 @@ router.get('/:id/delivery-challan-pdf', asyncHandler(async (req: AuthRequest, re
       buyerName: truck.contract?.buyerName || truck.partyName,
       buyerAddress: truck.contract?.buyerAddress || '',
       buyerGst: truck.contract?.buyerGst || '',
+      jobWorkGoods: ethanolGoodsProductName(truck.contract),
       quantityBL: truck.quantityBL,
       productRate,
       productValue,
@@ -349,7 +350,7 @@ router.get('/:id/gate-pass-pdf', asyncHandler(async (req: AuthRequest, res: Resp
       buyerName: truck.contract?.buyerName || truck.partyName,
       buyerAddress: truck.contract?.buyerAddress || '',
       buyerGst: truck.contract?.buyerGst || '',
-      productDescription: ethanolDocProductName(truck.contract),
+      productDescription: ethanolGoodsProductName(truck.contract),
       hsnCode: isJobWork ? '998842' : '22072000',
       quantityBL: truck.quantityBL,
       rate,
