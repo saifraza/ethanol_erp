@@ -656,20 +656,34 @@ router.get('/:id/supply-summary', asyncHandler(async (req: AuthRequest, res: Res
     // In-progress trucks at site (not yet released = no lifting yet).
     // Factory gate entry often doesn't set contractId (operator doesn't pick one),
     // so ALSO match trucks where contractId is null AND partyName matches this contract's buyer.
-    // Only consider trucks created TODAY (IST) — prevents stale GATE_IN rows from past days
-    // showing up forever. The liftingId guard excludes already-released trucks.
+    // The liftingId guard excludes already-released trucks.
+    //
+    // Date guard applies ONLY to GATE_IN (just-arrived) trucks — stops abandoned gate entries
+    // from lingering forever. TARE_WEIGHED / GROSS_WEIGHED trucks are loaded and MUST be
+    // documented + released, so they stay visible regardless of date: otherwise a truck gated-in
+    // one day and released the next vanishes from Ethanol Supply at midnight (bug 2026-06-20).
     const IST_MS = 5.5 * 60 * 60 * 1000;
     const todayIST = new Date(Date.now() + IST_MS);
     const todayStart = new Date(Date.UTC(todayIST.getUTCFullYear(), todayIST.getUTCMonth(), todayIST.getUTCDate()) - IST_MS);
     const buyerName = contract.buyerName || '';
     const activeTrucks = await prisma.dispatchTruck.findMany({
       where: {
-        status: { in: ['GATE_IN', 'TARE_WEIGHED', 'GROSS_WEIGHED'] },
         liftingId: null,
-        createdAt: { gte: todayStart },
-        OR: [
-          { contractId: contract.id },
-          { contractId: null, partyName: buyerName },
+        AND: [
+          {
+            OR: [
+              { contractId: contract.id },
+              { contractId: null, partyName: buyerName },
+            ],
+          },
+          {
+            OR: [
+              // Loaded/weighed trucks stay until released & documented
+              { status: { in: ['TARE_WEIGHED', 'GROSS_WEIGHED'] } },
+              // Just-arrived trucks only count for today (avoids stale GATE_IN rows lingering)
+              { status: 'GATE_IN', createdAt: { gte: todayStart } },
+            ],
+          },
         ],
       },
       orderBy: { createdAt: 'desc' },
