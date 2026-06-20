@@ -33,9 +33,10 @@ export function isSmPrimal(c: ContractBuyer): boolean {
   return (c.buyerGst || '').toUpperCase() === SM_PRIMAL_GSTIN || SM_PRIMAL_NAME_RE.test(c.buyerName || '');
 }
 
-// Printed product / description for a JOB_WORK ethanol document.
-export function ethanolJobWorkProductName(c: ContractBuyer): string {
-  return isSmPrimal(c) ? SM_PRIMAL_JOBWORK_NAME : DEFAULT_JOBWORK_NAME;
+// Printed product / description for a JOB_WORK ethanol document. Null-tolerant
+// (unknown buyer → default "Ethanol") so it's safe at nullable contract call sites.
+export function ethanolJobWorkProductName(c: ContractBuyer | null | undefined): string {
+  return c && isSmPrimal(c) ? SM_PRIMAL_JOBWORK_NAME : DEFAULT_JOBWORK_NAME;
 }
 
 // Printed product / description for ANY ethanol document, resolved by contract type.

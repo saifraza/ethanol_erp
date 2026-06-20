@@ -4,6 +4,7 @@ import { authenticate, authorize, AuthRequest, getCompanyFilter, getActiveCompan
 import { asyncHandler, validate } from '../shared/middleware';
 import { z } from 'zod';
 import { invoiceDisplayNo } from '../utils/invoiceDisplay';
+import { ethanolJobWorkProductName } from '../shared/ethanolProductNames';
 
 // Bill-to / Ship-to override fields — null = use Customer master / contract default.
 // Each Addr field is gated to ≤ 200 chars; the NIC IRN serializer splits to 100/100 (Addr1/Addr2).
@@ -509,7 +510,7 @@ router.get('/:id/pdf', asyncHandler(async (req: AuthRequest, res: Response) => {
       where: { id: req.params.id },
       include: {
         customer: true,
-        ethanolLiftings: { take: 1, include: { contract: { select: { paymentTermsDays: true, paymentMode: true, buyerPoNo: true, contractType: true } } } },
+        ethanolLiftings: { take: 1, include: { contract: { select: { paymentTermsDays: true, paymentMode: true, buyerPoNo: true, contractType: true, buyerName: true, buyerGst: true } } } },
         ddgsContractDispatches: {
           take: 1,
           include: {
@@ -577,7 +578,12 @@ router.get('/:id/pdf', asyncHandler(async (req: AuthRequest, res: Response) => {
           pincode: inv.billToPincode || invoice.customer.pincode,
         };
       })(),
-      productName: invoice.productName,
+      // Job-work bills saved before the per-principal naming rule stored the old "Ethanol"
+      // line. Re-resolve from the contract for un-IRN'd job-work invoices so the bill prints
+      // the correct description; IRN'd bills keep their frozen value (served from snapshot).
+      productName: (lifting?.contract?.contractType === 'JOB_WORK' && !invoice.irn)
+        ? ethanolJobWorkProductName(lifting?.contract)
+        : invoice.productName,
       hsnCode: (() => {
         // TODO(deferred): persist hsnCode as a snapshot column on Invoice at
         // write time so this map only handles legacy rows. Until then, derive
