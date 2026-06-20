@@ -16,10 +16,13 @@ Job work ethanol dispatch produces **TWO documents per truck**, with DIFFERENT r
 4. **NEVER use ₹71.86/L on invoice** — invoice bills only conversion charge
 5. **Tax compliance auto-rate engine must NOT override job work lines** — detect SAC 998842 → 18%
 
-Two more product-name rules that the same bugs keep violating:
-- **Product name on EVERY job-work doc — invoice, challan, gate pass, EWB** = plain `"Ethanol"` (user ruling 2026-06-04, PR #173 — reversed the earlier "Job Work Charges for Ethanol Production" invoice line). NOT the DFG/Brucine sale description, and NOT the literal "GEN INVOICE" placeholder (that means the description never got populated from the contract/lifting).
-- **The name no longer signals job work.** Classification (SAC 998842, IsServc=Y, printed HSN) is gated on `contractType === 'JOB_WORK'` explicitly: both `generateIRN` call sites pass `hsnCode: '998842'` (ethanolContracts.ts, dispatch.ts), and print-time HSN derivation checks `lifting?.contract?.contractType` BEFORE the productName sniff (invoices.ts, invoiceSnapshot.ts). Never reintroduce name-sniffing for ethanol JW; legacy rows ("Job Work Charges…") and DDGS jobwork still resolve via the sniff fallback.
-- **Sale docs (Reliance / FIXED_PRICE / OMC) are untouched** — DFG+Brucine name on invoice/gate pass, "Denatured Anhydrous Ethanol (DFG Feedstock)" on the challan.
+Product-name rules — **resolve ALL job-work names through one place: `backend/src/shared/ethanolProductNames.ts`** (`ethanolDocProductName` / `ethanolJobWorkProductName`). It used to be a `JOB_WORK_PRODUCT_NAME` const duplicated in 3 route files + hardcoded in the challan template; that drift is exactly why the name kept regressing. Never reintroduce a per-file constant — edit the shared resolver.
+- **Job-work product name is per-principal** (current rulings):
+  - **SM PRIMAL → `"Job Work Charges for Ethanol Production"`** on EVERY job-work doc — invoice, challan, gate pass, EWB (user ruling **2026-06-20, PR #175-follow-up**, reversing #173 *for SM PRIMAL only*). SM PRIMAL is matched by GSTIN `23ABGCS5473D1ZF` (primary) or buyer-name regex (fallback) inside the resolver.
+  - **All other job work (e.g. MASH BIO-FUELS) → plain `"Ethanol"`** (user ruling 2026-06-04, PR #173).
+  - Never the DFG/Brucine sale description, and never the literal "GEN INVOICE" placeholder (means the description never got populated).
+- **The name still does NOT signal job work / drive classification.** SAC 998842, IsServc=Y and printed HSN are gated on `contractType === 'JOB_WORK'` explicitly: both `generateIRN` call sites pass `hsnCode: '998842'`, and print-time HSN derivation checks `contract.contractType` BEFORE any name sniff (invoices.ts, invoiceSnapshot.ts). `getHsnCode()` already maps "JOB WORK CHARGES FOR ETHANOL PRODUCTION" → 998842 (checks "JOB WORK" before the "ETHANOL" sniff), so the descriptive name is classification-safe. The EWB/challan keep goods HSN 22072000 even with the descriptive name.
+- **Sale docs (Reliance / FIXED_PRICE / OMC) are untouched** — DFG+Brucine name on invoice/gate pass, "Denatured Anhydrous Ethanol (DFG Feedstock)" on the challan. (The SM PRIMAL *OMC* contract is a sale, so it keeps the DFG name — only SM PRIMAL *JOB_WORK* gets the new wording.)
 
 ## The two documents
 
@@ -28,7 +31,7 @@ Two more product-name rules that the same bugs keep violating:
 | Field | Value |
 |-------|-------|
 | What it is | Invoice for job work conversion charges only |
-| Product name | `"Ethanol"` (since 2026-06-04 / PR #173; rows before that store "Job Work Charges for Ethanol Production") |
+| Product name | SM PRIMAL → `"Job Work Charges for Ethanol Production"` (2026-06-20); other JW → `"Ethanol"` (#173). Resolved via `shared/ethanolProductNames.ts` |
 | HSN/SAC | **998842** (manufacturing services on physical inputs owned by others) — gated on contractType, NOT derived from the product name |
 | Rate | `contract.conversionRate` — ₹14.00/BL MASH, ₹2.987/BL SM PRIMAL |
 | GST | **18%** (9% CGST + 9% SGST intra-state, 18% IGST inter-state) |
@@ -44,7 +47,7 @@ Two more product-name rules that the same bugs keep violating:
 | Field | Value |
 |-------|-------|
 | What it is | Challan for physical movement of ethanol (owned by the customer/principal, produced on job work) |
-| Product name | `"Ethanol"` |
+| Product name | SM PRIMAL → `"Job Work Charges for Ethanol Production"`; other JW → `"Ethanol"` |
 | HSN | **22072000** (Ethyl alcohol and other spirits, denatured) |
 | Rate | **₹71.86/BL** (fixed company-wide ethanol value for movement/insurance — NOT the contract rate) |
 | GST on challan value | **5%** (on the movement value, NOT on job work charges) |
@@ -109,7 +112,7 @@ For a job work contract to bill correctly these fields MUST be set:
 | SAC mapping | `backend/src/services/eInvoice.ts:264-267` | 998842 = ETH, 998817 = DDGS |
 | Invoice creation (auto) | `backend/src/routes/ethanolContracts.ts` | `POST /:id/liftings` — auto-invoice block |
 | Invoice creation (manual) | `backend/src/routes/ethanolContracts.ts` | `POST /:id/liftings/:id/create-invoice` |
-| Invoice creation (legacy dispatch auto) | `backend/src/routes/dispatch.ts` | `setImmediate` block, fires when `contract.autoGenerateEInvoice`. **Every** creation path must gate `productName` by `contractType`: `JOB_WORK ? JOB_WORK_PRODUCT_NAME ("Ethanol") : ETHANOL_PRODUCT_NAME`, and every JW `generateIRN` call must pass `hsnCode: '998842'` explicitly. dispatch.ts missed the gate after #156 (denaturer name leaked onto job-work bills) — fixed in #172; names switched to plain "Ethanol" in #173; keep all paths gated. |
+| Invoice creation (legacy dispatch auto) | `backend/src/routes/dispatch.ts` | `setImmediate` block, fires when `contract.autoGenerateEInvoice`. **Every** creation path must set `productName: ethanolDocProductName(contract)` (from `shared/ethanolProductNames.ts`), and every JW `generateIRN` call must pass `hsnCode: '998842'` explicitly. dispatch.ts missed the gate after #156 (denaturer name leaked onto job-work bills) — fixed in #172; plain "Ethanol" in #173; SM PRIMAL → descriptive name in 2026-06-20; keep all paths on the shared resolver. |
 | Challan PDF | `backend/src/routes/ethanolContracts.ts` | `GET /:id/liftings/:id/delivery-challan-pdf` |
 | Gate Pass PDF | `backend/src/routes/ethanolContracts.ts` | `GET /:id/liftings/:id/gate-pass-pdf` |
 | Release flow (weighbridge) | `backend/src/routes/ethanolGatePass.ts` | `POST /:id/release` |

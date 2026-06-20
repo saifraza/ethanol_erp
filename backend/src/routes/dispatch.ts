@@ -9,14 +9,10 @@ import { recomputeEthanolEntryByDate } from './ethanolProduct';
 import { nextInvoiceNo } from '../utils/invoiceCounter';
 import { invoiceDisplayNo } from '../utils/invoiceDisplay';
 import { mirrorToS3 } from '../shared/s3Storage';
+import { ethanolDocProductName } from '../shared/ethanolProductNames';
 
-// Same constants as ethanolContracts.ts. MSPIL ethanol is from DFG, denatured with Brucine
-// Sulphate 40 ppm — that descriptive name belongs ONLY on a SALE invoice (goods, HSN 22072000).
-// A JOB_WORK doc prints plain "Ethanol" (user ruling 2026-06-04). The SAC 998842 service
-// classification never comes from the name — every JW IRN call passes hsnCode explicitly.
-// Always gate productName by contractType — never stamp the sale goods name on a job-work doc.
-const ETHANOL_PRODUCT_NAME = 'DENATURED ETHANOL FROM DFG (DAMAGED FOOD GRAINS) - DENATURED WITH BRUCINE SULPHATE 40 PPM';
-const JOB_WORK_PRODUCT_NAME = 'Ethanol';
+// Ethanol invoice product names resolve via ../shared/ethanolProductNames (single source of
+// truth). Always gate by contractType — never stamp the sale goods name on a job-work doc.
 
 const router = Router();
 
@@ -351,7 +347,7 @@ router.post('/', authenticate, upload.single('photo'), mirrorToS3('dispatch'), a
                   const customInvNo = await nextInvoiceNo(tx, 'ETH');
                   const created = await tx.invoice.create({
                     data: {
-                      customerId: cust.id, invoiceDate: dispatchDate, productName: contract.contractType === 'JOB_WORK' ? JOB_WORK_PRODUCT_NAME : ETHANOL_PRODUCT_NAME,
+                      customerId: cust.id, invoiceDate: dispatchDate, productName: ethanolDocProductName(contract),
                       quantity: qtyBL, unit: 'LTR', rate: rate!, amount: amount!,
                       gstPercent: gstPct, gstAmount: gstAmt,
                       supplyType: isInter ? 'INTER_STATE' : 'INTRA_STATE',
@@ -372,7 +368,7 @@ router.post('/', authenticate, upload.single('photo'), mirrorToS3('dispatch'), a
                     invoiceNo: invoiceDisplayNo(inv), invoiceDate: inv.invoiceDate,
                     // JW name is plain "Ethanol" — pass SAC explicitly so the IRN stays a service line
                     hsnCode: contract.contractType === 'JOB_WORK' ? '998842' : undefined,
-                    productName: contract.contractType === 'JOB_WORK' ? JOB_WORK_PRODUCT_NAME : ETHANOL_PRODUCT_NAME, quantity: inv.quantity, unit: 'LTR', rate: inv.rate, amount: inv.amount, gstPercent: inv.gstPercent,
+                    productName: ethanolDocProductName(contract), quantity: inv.quantity, unit: 'LTR', rate: inv.rate, amount: inv.amount, gstPercent: inv.gstPercent,
                     customer: { gstin: cust.gstNo, name: cust.name, address: cust.address, city: cust.city || '', pincode: cust.pincode, state: cust.state, phone: cust.phone || '', email: cust.email || '' },
                   });
                   if (irnRes.success && irnRes.irn) {
