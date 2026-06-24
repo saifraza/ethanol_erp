@@ -21,10 +21,32 @@ Get-CimInstance Win32_Process -Filter "Name='node.exe'" |
         }
     }
 
+# Reliable fallback: WMI/CIM intermittently fails to enumerate node.exe. Seen
+# 2026-06-24 — a stuck 7-day server (PID 5784) survived every CIM-based kill, so
+# deploys and watchdog restarts spawned duplicate nodes that crashed on
+# EADDRINUSE while the old code kept serving the gate. Kill the ACTUAL :5000
+# listener by PID from the TCP stack — but ONLY if it is node.exe, so we never
+# touch a non-factory holder of the port.
+$owners = @((Get-NetTCPConnection -LocalPort 5000 -State Listen -ErrorAction SilentlyContinue).OwningProcess | Select-Object -Unique)
+foreach ($procId in $owners) {
+    $proc = Get-Process -Id $procId -ErrorAction SilentlyContinue
+    if ($proc -and $proc.ProcessName -eq 'node') {
+        try {
+            Stop-Process -Id $procId -Force
+            Write-Host ("Killed :5000 owner node PID " + $procId)
+            $killed++
+        } catch {
+            Write-Host ("Failed to kill :5000 owner PID " + $procId + " :: " + $_.Exception.Message)
+        }
+    } elseif ($proc) {
+        Write-Host (":5000 held by non-node '" + $proc.ProcessName + "' (PID " + $procId + ") - left alone")
+    }
+}
+
 if ($killed -eq 0) {
     Write-Host "No factory node processes found (already stopped)"
 }
 
-# Brief grace so Windows releases the Prisma DLL handle before redeploy
+# Brief grace so Windows releases the Prisma DLL handle + the :5000 socket
 Start-Sleep -Seconds 3
 exit 0

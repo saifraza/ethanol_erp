@@ -608,7 +608,7 @@ export default function GateEntry() {
           {masterLoading && <span className="text-xs text-yellow-400 uppercase tracking-widest animate-pulse">Syncing cloud data...</span>}
           {masterError && <span className="text-xs text-red-400 uppercase tracking-widest">Cloud data unavailable — manual entry enabled</span>}
           {!masterLoading && !masterError && masterStaleMin != null && (
-            <span className="text-xs text-orange-400 uppercase tracking-widest font-bold">⚠ Cloud data stale ({masterStaleMin} min) — verify before submitting</span>
+            <span className="text-xs text-orange-400 uppercase tracking-widest font-bold">⚠ Cloud data stale ({masterStaleMin} min) — new POs/edits may be missing; tell admin if a PO isn't listed</span>
           )}
           {!masterLoading && !masterError && masterStaleMin == null && <span className="text-xs text-green-400 uppercase tracking-widest">Cloud data loaded</span>}
           <span className="text-xs text-slate-500 uppercase tracking-widest">Today: {todayCount} trucks</span>

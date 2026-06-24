@@ -10,7 +10,7 @@
 
 import fs from 'fs';
 import path from 'path';
-import { getCloudPrisma } from '../cloudPrisma';
+import { getCloudPrisma, resetCloudPrisma } from '../cloudPrisma';
 
 const CACHE_FILE = path.join(__dirname, '..', '..', 'data', 'master-cache.json');
 const SYNC_INTERVAL_MS = 5000; // 5 seconds
@@ -61,6 +61,7 @@ const EMPTY_CACHE: MasterCache = {
 
 let cache: MasterCache = { ...EMPTY_CACHE };
 let syncing = false;
+let lastCloudError: string | null = null; // last cloud-ping failure reason (was silently swallowed pre-2026-06-24)
 
 // ── Public API ──
 
@@ -190,7 +191,12 @@ async function getCloudTimestamp(): Promise<string | null> {
     const ts = result[0]?.max?.toISOString() || '';
     const cnt = String(result[0]?.cnt || 0);
     return `${ts}|${cnt}`;
-  } catch {
+  } catch (err) {
+    // Capture the real reason instead of swallowing it — a bare
+    // `catch { return null }` here hid the 2026-06-24 outage for ~2 hours
+    // (Prisma "Can't reach database server" on a stuck client). smartSync
+    // logs this at the alert threshold and uses it to decide on a reconnect.
+    lastCloudError = err instanceof Error ? err.message : String(err);
     return null;
   }
 }
@@ -252,16 +258,15 @@ async function fullSyncFromCloud(cloudTs?: string | null): Promise<boolean> {
       }),
       cloud.purchaseOrder.findMany({
         where: {
+          // Gate visibility is gated by STATUS ONLY (matches the cloud
+          // /weighbridge/master-data endpoint). We deliberately do NOT filter on
+          // deliveryDate: material routinely arrives after the planned date, and a
+          // PARTIAL_RECEIVED PO with pending qty must stay receivable. The old
+          // `deliveryDate >= today` filter silently dropped live POs the day after
+          // their delivery date (2026-06-24: PO 148 invisible at the gate while it
+          // still owed material). Terminal POs are already excluded by status, and
+          // take:200 / orderBy poNo desc keeps the list bounded to the newest.
           status: { in: ['APPROVED', 'SENT', 'PARTIAL_RECEIVED'] },
-          // Compare against start-of-today, not "right now". Otherwise a PO whose
-          // deliveryDate is today (stored as midnight) gets filtered out from the
-          // moment it's past midnight — i.e., the PO disappears from the factory
-          // cache on the very day the truck is supposed to arrive.
-          // (Caught 2026-04-30: PO #105 due today vanished from factory gate UI.)
-          OR: [
-            { deliveryDate: null },
-            { deliveryDate: { gte: (() => { const d = new Date(); d.setHours(0, 0, 0, 0); return d; })() } },
-          ],
         },
         select: {
           id: true, poNo: true, vendorId: true, status: true, dealType: true, companyId: true,
@@ -530,6 +535,7 @@ async function fullSyncFromCloud(cloudTs?: string | null): Promise<boolean> {
 // Track consecutive ping failures so we can alert loud when it's real.
 let consecutiveCheckFailures = 0;
 const ALERT_AFTER_FAILURES = 24; // ~2 min at 5s intervals
+const RECONNECT_EVERY_FAILURES = 12; // ~1 min at 5s intervals — drop the stuck client and redial
 
 async function smartSync() {
   if (syncing) return;
@@ -545,7 +551,16 @@ async function smartSync() {
       // would silently paper over real outages.
       consecutiveCheckFailures++;
       if (consecutiveCheckFailures === ALERT_AFTER_FAILURES) {
-        console.error(`[CACHE] ⚠ CLOUD PING FAILED ${ALERT_AFTER_FAILURES} TIMES IN A ROW (~2 min). Master-data cache is going stale. Check cloud reachability.`);
+        console.error(`[CACHE] ⚠ CLOUD PING FAILED ${ALERT_AFTER_FAILURES} TIMES IN A ROW (~2 min). Master-data cache is going stale. Last error: ${lastCloudError || 'unknown'}`);
+      }
+      // Self-heal a stuck client: Prisma can keep failing on a dead pooled
+      // connection ("Can't reach database server") even when the host is
+      // TCP-reachable. Recreating the client every ~1 min of failure forces a
+      // fresh socket — without this the cache stayed frozen until a human restart
+      // (2026-06-24: 10-day process stuck ~2h, POs 148/149/150 invisible at gate).
+      if (consecutiveCheckFailures % RECONNECT_EVERY_FAILURES === 0) {
+        console.error(`[CACHE] ↻ Recreating cloud DB client after ${consecutiveCheckFailures} consecutive failures (forcing reconnect). Last error: ${lastCloudError || 'unknown'}`);
+        await resetCloudPrisma();
       }
       return;
     }
@@ -555,6 +570,7 @@ async function smartSync() {
     if (consecutiveCheckFailures > 0) {
       console.log(`[CACHE] ✓ Cloud ping recovered after ${consecutiveCheckFailures} failures`);
       consecutiveCheckFailures = 0;
+      lastCloudError = null;
     }
 
     if (cloudTs === cache.cloudTimestamp) {
