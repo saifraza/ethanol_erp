@@ -15,7 +15,7 @@ from functools import wraps
 import requests
 from flask import Flask, render_template, request, jsonify, redirect, url_for, make_response
 
-from config import WEB_HOST, WEB_PORT, WEB_DEBUG
+from config import WEB_HOST, WEB_PORT, WEB_DEBUG, ALLOW_MANUAL_WEIGHT
 import local_db as db
 
 log = logging.getLogger("web_ui")
@@ -248,6 +248,85 @@ def api_vehicles():
 #  ACTION ENDPOINTS (POST)
 # =========================================================================
 
+def _resolve_capture_weight(data: dict, step: str):
+    """Resolve the weight for a capture endpoint. Returns (weight,
+    weight_source, stable, error) — error is (json_dict, http_status) or None.
+
+    Trust rules (the UI listens on 0.0.0.0 — the LAN is NOT trusted):
+    - A client-supplied `weight` is honoured only when ALLOW_MANUAL_WEIGHT
+      is enabled, or when the request carries override=true +
+      override_reason (logged loudly). Otherwise it is IGNORED with a
+      warning and the server-side scale reader is used.
+    - A stale or unstable reader REFUSES the capture (409) instead of
+      silently recording a bogus value — unless explicitly overridden.
+    """
+    override = bool(data.get('override'))
+    override_reason = str(data.get('override_reason') or '').strip()
+    if override and not override_reason:
+        return None, None, None, (
+            {"error": "override requires an override_reason"}, 400)
+
+    client_weight = data.get('weight')
+    if client_weight is not None:
+        try:
+            client_weight = float(client_weight)
+        except (TypeError, ValueError):
+            return None, None, None, ({"error": "Invalid weight value"}, 400)
+
+        if ALLOW_MANUAL_WEIGHT:
+            return client_weight, 'MANUAL', True, None
+        if override:
+            log.warning(
+                "MANUAL WEIGHT OVERRIDE (%s): client-supplied weight %.0f kg "
+                "accepted with reason: %s [from %s]",
+                step, client_weight, override_reason, request.remote_addr)
+            return client_weight, 'MANUAL', True, None
+        log.warning(
+            "Ignoring client-supplied weight %s for %s capture from %s "
+            "(ALLOW_MANUAL_WEIGHT is off, no override) — using scale reader.",
+            client_weight, step, request.remote_addr)
+
+    if not _weight_reader:
+        return None, None, None, (
+            {"error": "No weight available. Scale reader not running."}, 400)
+
+    status = _weight_reader.get_status()
+    weight = status.get("weight") or 0.0
+    stable = bool(status.get("stable"))
+    connected = bool(status.get("connected"))
+    stale = bool(status.get("stale"))
+
+    if stale or not connected:
+        if override:
+            log.warning(
+                "STALE/DISCONNECTED SCALE OVERRIDE (%s): capturing %.0f kg "
+                "(stale=%s connected=%s) with reason: %s [from %s]",
+                step, weight, stale, connected, override_reason, request.remote_addr)
+            return weight, 'SERIAL', stable, None
+        return None, None, None, ({
+            "error": "Scale reading is not live (no fresh data from the "
+                     "indicator). Check the scale cable / indicator power, "
+                     "or use manual entry with a reason.",
+            "stale": stale, "connected": connected,
+        }, 409)
+
+    if not stable:
+        if override:
+            log.warning(
+                "UNSTABLE SCALE OVERRIDE (%s): capturing %.0f kg with "
+                "reason: %s [from %s]",
+                step, weight, override_reason, request.remote_addr)
+            return weight, 'SERIAL', False, None
+        return None, None, None, ({
+            "error": "Scale reading is UNSTABLE — the truck may still be "
+                     "moving. Wait for the reading to settle, or confirm "
+                     "the override.",
+            "stale": False, "connected": True,
+        }, 409)
+
+    return weight, 'SERIAL', True, None
+
+
 # --- Step 1: Gate Entry (no weight) ---
 @app.route('/api/gate-entry', methods=['POST'])
 def api_gate_entry():
@@ -294,18 +373,10 @@ def api_capture_gross(weighment_id):
     """Capture gross weight (truck + load). Scan QR to get weighment_id."""
     data = request.json or {}
 
-    weight = data.get('weight')
-    weight_source = 'MANUAL'
-    stable = True  # Manual weights are considered stable
-
-    if weight is None and _weight_reader:
-        w, stable, connected = _weight_reader.get_weight()
-        if connected:
-            weight = w
-            weight_source = 'SERIAL'
-
-    if weight is None:
-        return jsonify({"error": "No weight available. Enter manually or check scale connection."}), 400
+    weight, weight_source, stable, error = _resolve_capture_weight(data, 'gross')
+    if error:
+        body, code = error
+        return jsonify(body), code
 
     try:
         result = db.capture_gross(weighment_id, weight, weight_source)
@@ -327,18 +398,10 @@ def api_capture_tare(weighment_id):
     """Capture tare weight (empty truck). Calculate product weight."""
     data = request.json or {}
 
-    weight = data.get('weight')
-    weight_source = 'MANUAL'
-    stable = True
-
-    if weight is None and _weight_reader:
-        w, stable, connected = _weight_reader.get_weight()
-        if connected:
-            weight = w
-            weight_source = 'SERIAL'
-
-    if weight is None:
-        return jsonify({"error": "No weight available. Enter manually or check scale connection."}), 400
+    weight, weight_source, stable, error = _resolve_capture_weight(data, 'tare')
+    if error:
+        body, code = error
+        return jsonify(body), code
 
     try:
         result = db.capture_tare(weighment_id, weight, weight_source)
@@ -383,14 +446,11 @@ def api_first_weight():
     if not vehicle_no:
         return jsonify({"error": "Vehicle number is required"}), 400
 
-    weight = data.get('weight')
-    weight_source = 'MANUAL'
-    if weight is None and _weight_reader:
-        w, stable, connected = _weight_reader.get_weight()
-        if connected and w > 0:
-            weight = w
-            weight_source = 'SERIAL'
-    if weight is None or weight <= 0:
+    weight, weight_source, stable, error = _resolve_capture_weight(data, 'first')
+    if error:
+        body, code = error
+        return jsonify(body), code
+    if weight <= 0:
         return jsonify({"error": "No weight available."}), 400
 
     try:
@@ -410,14 +470,11 @@ def api_first_weight():
 def api_second_weight(weighment_id):
     """Legacy: capture tare weight."""
     data = request.json or {}
-    weight = data.get('weight')
-    weight_source = 'MANUAL'
-    if weight is None and _weight_reader:
-        w, stable, connected = _weight_reader.get_weight()
-        if connected and w > 0:
-            weight = w
-            weight_source = 'SERIAL'
-    if weight is None or weight <= 0:
+    weight, weight_source, stable, error = _resolve_capture_weight(data, 'second')
+    if error:
+        body, code = error
+        return jsonify(body), code
+    if weight <= 0:
         return jsonify({"error": "No weight available."}), 400
 
     try:

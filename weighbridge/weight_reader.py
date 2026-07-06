@@ -179,6 +179,7 @@ class SerialReader(WeightReader):
     AUTO_DISCOVER_AFTER_S = 6.0        # after this long, try other ports too
     PROBE_TIMEOUT_S = 1.0              # per-port probe window
     RECONNECT_BACKOFF_S = 0.5          # wait between failed opens (short = fast recovery)
+    MAX_FRAMES_PER_DRAIN = 64          # cap per pass so the silent-port checks still run
 
     def __init__(self):
         super().__init__()
@@ -314,14 +315,13 @@ class SerialReader(WeightReader):
                             shutdown_event.wait(self.RECONNECT_BACKOFF_S)
                             continue
 
-                # Read one line (short timeout in self._open_port = 500ms)
-                line = self._serial.readline()
-                if line:
-                    decoded = line.decode('ascii', errors='ignore').strip()
-                    weight = self._parse_weight(decoded)
-                    if weight is not None and weight >= 0:
-                        self._update_weight(weight)
-                        self._last_successful_read_at = _t.monotonic()
+                # Drain EVERYTHING buffered on the port this pass, keeping
+                # the newest valid frame. The MSPIL indicator emits ~21
+                # frames/s; reading one line per pass consumed only ~10/s,
+                # so the OS buffer built an unbounded backlog and the
+                # displayed weight drifted minutes stale (and staleness
+                # never fired, because old frames kept arriving).
+                self._drain_frames()
 
                 now = _t.monotonic()
                 silent_for = now - self._last_successful_read_at
@@ -362,7 +362,27 @@ class SerialReader(WeightReader):
 
             shutdown_event.wait(WEIGHT_POLL_INTERVAL)
 
-            shutdown_event.wait(WEIGHT_POLL_INTERVAL)
+    def _drain_frames(self) -> bool:
+        """Read every line buffered on the port, recording each valid frame
+        (so the LAST recorded value is the newest one the indicator sent).
+        Capped at MAX_FRAMES_PER_DRAIN per call to guarantee the caller's
+        silent-port / auto-discovery checks keep running. Returns True if at
+        least one valid frame was consumed."""
+        import time as _t
+        got_frame = False
+        for _ in range(self.MAX_FRAMES_PER_DRAIN):
+            line = self._serial.readline()
+            if not line:
+                break
+            decoded = line.decode('ascii', errors='ignore').strip()
+            weight = self._parse_weight(decoded)
+            if weight is not None and weight >= 0:
+                self._update_weight(weight)
+                self._last_successful_read_at = _t.monotonic()
+                got_frame = True
+            if self._serial.in_waiting <= 0:
+                break
+        return got_frame
 
     def cleanup(self):
         if self._serial and self._serial.is_open:

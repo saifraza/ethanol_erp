@@ -34,6 +34,36 @@ from config import (
 PID_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "data", "weighbridge.pid")
 
 
+def _pid_alive(pid: int) -> bool:
+    """Probe whether a PID is alive with NO ability to terminate it.
+
+    NEVER use os.kill(pid, 0) here on Windows: CPython implements os.kill
+    with any non-Ctrl signal (including 0) as TerminateProcess — the probe
+    would KILL the running instance it was checking for.
+    """
+    if sys.platform == "win32":
+        import ctypes
+        PROCESS_QUERY_LIMITED_INFORMATION = 0x1000
+        STILL_ACTIVE = 259
+        kernel32 = ctypes.windll.kernel32
+        handle = kernel32.OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, False, pid)
+        if not handle:
+            return False  # no such process (or no access — treat as not ours)
+        try:
+            exit_code = ctypes.c_ulong(0)
+            if kernel32.GetExitCodeProcess(handle, ctypes.byref(exit_code)):
+                return exit_code.value == STILL_ACTIVE
+            return True  # handle opened but query failed — assume alive
+        finally:
+            kernel32.CloseHandle(handle)
+    else:
+        try:
+            os.kill(pid, 0)  # signal 0 = pure existence check on POSIX
+            return True
+        except OSError:
+            return False
+
+
 def check_and_write_pid():
     """Write PID file. Warn if another instance may be running."""
     os.makedirs(os.path.dirname(PID_FILE), exist_ok=True)
@@ -41,14 +71,11 @@ def check_and_write_pid():
         try:
             with open(PID_FILE) as f:
                 old_pid = int(f.read().strip())
-            try:
-                os.kill(old_pid, 0)
+            if _pid_alive(old_pid):
                 print(f"WARNING: Another instance may be running (PID {old_pid})")
                 print("If not, delete data/weighbridge.pid and retry.")
-            except Exception:
-                pass  # Old process is dead or check failed, safe to continue
         except Exception:
-            pass
+            pass  # Old process is dead or check failed, safe to continue
 
     with open(PID_FILE, "w") as f:
         f.write(str(os.getpid()))

@@ -14,8 +14,12 @@ Config via environment variables:
     WB_PC_ID=WB-1            (default: WB-1)
 
 Endpoints:
-    GET /weight  → {"weight": 4250, "stable": true, "connected": true, "pc_id": "WB-1"}
+    GET /weight  → {"weight": 4250, "stable": true, "connected": true, "stale": false, "pc_id": "WB-1"}
     GET /health  → {"status": "ok", "pc_id": "WB-1", "uptime": 123.4}
+
+Staleness: if no valid frame has arrived for STALE_THRESHOLD_S seconds
+(dead cable, silent indicator), /weight reports weight=0.0, stable=false,
+stale=true — it NEVER serves a ghost value from a dead scale.
 """
 
 import os
@@ -35,6 +39,11 @@ PC_ID = os.environ.get('WB_PC_ID', 'WB-1')
 
 STABLE_COUNT = 3
 STABLE_TOLERANCE = 20  # KG
+# No valid frame for this long → the reading is STALE: serve weight=0.0,
+# stable=false, stale=true instead of a ghost value from a dead scale.
+# (On cable pull, serial readline() returns b'' forever without raising,
+# so without this check the last real weight would be served indefinitely.)
+STALE_THRESHOLD_S = 3.0
 
 # --- Shared state ---
 _lock = threading.Lock()
@@ -42,27 +51,50 @@ _weight = 0.0
 _stable = False
 _connected = False
 _readings = []
+_last_frame_at = 0.0   # time.monotonic() of last valid frame (0 = never)
 _start_time = time.time()
 
 
-def parse_weight(raw: str) -> float:
-    """Extract weight in KG from various indicator formats."""
+def parse_weight(raw: str):
+    """Extract weight in KG from various indicator formats.
+    Returns a signed float, or None if the line contains no parseable weight
+    (None means "no frame" — distinct from a legitimate 0 reading)."""
     raw = raw.strip()
     if not raw:
-        return 0.0
-    # Format: STX + space + digits + ETX (MSPIL indicator)
-    m = re.search(r'[\x02]?\s*(\d+\.?\d*)', raw)
+        return None
+    # Format: STX + space + [sign] digits + ETX (MSPIL indicator)
+    m = re.search(r'[\x02]?\s*([+-]?)\s*(\d+\.?\d*)', raw)
     if m:
-        return float(m.group(1))
+        return float(m.group(1) + m.group(2))
     # Format: ST,GS,+ 24850 kg
-    m = re.search(r'[+-]?\s*(\d+\.?\d*)\s*kg', raw, re.IGNORECASE)
+    m = re.search(r'([+-]?)\s*(\d+\.?\d*)\s*kg', raw, re.IGNORECASE)
     if m:
-        return float(m.group(1))
+        return float(m.group(1) + m.group(2))
     # Plain number
-    m = re.search(r'(\d+\.?\d*)', raw)
+    m = re.search(r'([+-]?)(\d+\.?\d*)', raw)
     if m:
-        return float(m.group(1))
-    return 0.0
+        return float(m.group(1) + m.group(2))
+    return None
+
+
+def _record_reading(w: float):
+    """Record a fresh valid frame (call while NOT holding _lock)."""
+    global _weight, _stable, _readings, _last_frame_at
+    with _lock:
+        _weight = w
+        _last_frame_at = time.monotonic()
+        _readings.append(w)
+        if len(_readings) > 10:
+            _readings = _readings[-10:]
+        _stable = check_stable(_readings)
+
+
+def _is_stale() -> bool:
+    """True if we have received at least one frame and none for STALE_THRESHOLD_S.
+    Call while holding _lock."""
+    if _last_frame_at == 0.0:
+        return False  # never received a frame yet — still warming up
+    return (time.monotonic() - _last_frame_at) > STALE_THRESHOLD_S
 
 
 def check_stable(readings: list, tolerance: float = STABLE_TOLERANCE) -> bool:
@@ -75,7 +107,7 @@ def check_stable(readings: list, tolerance: float = STABLE_TOLERANCE) -> bool:
 
 # --- Serial reader thread ---
 def serial_reader_loop():
-    global _weight, _stable, _connected, _readings
+    global _connected
     try:
         import serial
     except ImportError:
@@ -92,13 +124,12 @@ def serial_reader_loop():
                 while True:
                     line = ser.readline().decode('ascii', errors='ignore')
                     w = parse_weight(line)
-                    if w > 0:
-                        with _lock:
-                            _weight = w
-                            _readings.append(w)
-                            if len(_readings) > 10:
-                                _readings = _readings[-10:]
-                            _stable = check_stable(_readings)
+                    # None = no frame (empty/garbage line) — do NOT record.
+                    # 0 is a legitimate reading (empty bridge); negative
+                    # values (faulty cell / zero drift) are dropped rather
+                    # than being mis-parsed as positive ghosts.
+                    if w is not None and w >= 0:
+                        _record_reading(w)
         except Exception as e:
             print(f"[SERIAL] Error: {e} — reconnecting in 2s")
             with _lock:
@@ -108,7 +139,7 @@ def serial_reader_loop():
 
 # --- File reader thread ---
 def file_reader_loop():
-    global _weight, _stable, _connected, _readings
+    global _connected
     print(f"[FILE] Reading from {WEIGHT_FILE}")
     with _lock:
         _connected = True
@@ -118,13 +149,10 @@ def file_reader_loop():
             with open(WEIGHT_FILE, 'r') as f:
                 raw = f.read()
             w = parse_weight(raw)
+            if w is not None and w >= 0:
+                _record_reading(w)
             with _lock:
-                _weight = w
                 _connected = True
-                _readings.append(w)
-                if len(_readings) > 10:
-                    _readings = _readings[-10:]
-                _stable = check_stable(_readings)
         except FileNotFoundError:
             with _lock:
                 _connected = False
@@ -135,19 +163,13 @@ def file_reader_loop():
 
 # --- Simulated reader thread ---
 def simulated_reader_loop():
-    global _weight, _stable, _connected, _readings
+    global _connected
     import random
     base = random.randint(15000, 25000)
     with _lock:
         _connected = True
     while True:
-        w = base + random.randint(-5, 5)
-        with _lock:
-            _weight = float(w)
-            _readings.append(float(w))
-            if len(_readings) > 10:
-                _readings = _readings[-10:]
-            _stable = check_stable(_readings)
+        _record_reading(float(base + random.randint(-5, 5)))
         time.sleep(0.2)
 
 
@@ -156,10 +178,14 @@ class WeightHandler(BaseHTTPRequestHandler):
     def do_GET(self):
         if self.path == '/weight':
             with _lock:
+                stale = _is_stale()
                 data = {
-                    'weight': _weight,
-                    'stable': _stable,
+                    # Stale scale (dead cable / silent indicator) → never
+                    # serve the last real value as if it were live.
+                    'weight': 0.0 if stale else _weight,
+                    'stable': False if stale else _stable,
                     'connected': _connected,
+                    'stale': stale,
                     'pc_id': PC_ID,
                 }
             self.send_response(200)
