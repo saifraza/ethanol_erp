@@ -4,6 +4,7 @@
  * Rules are cached in memory and refreshed on update.
  */
 
+import crypto from 'crypto';
 import prisma from '../prisma';
 import { getAllPCStatus, fetchLiveWeight, getLastScaleZeroAt } from './pcMonitor';
 
@@ -458,11 +459,17 @@ export async function checkWeighmentRules(
 // OVERRIDE VERIFICATION
 // ============================================================
 
-/** Verify admin override PIN. Returns true if valid. */
+/** Verify admin override PIN. Returns true if valid.
+ *  No default fallback: an unset/disabled PIN means overrides are DISABLED —
+ *  a guessable hardcoded default ('1234') was a brute-force jackpot.
+ *  Timing-safe compare so response time doesn't leak how many digits matched. */
 export async function verifyOverridePin(pin: string): Promise<boolean> {
   const storedPin = await getRuleValue('ADMIN_OVERRIDE_PIN');
-  if (!storedPin) return pin === '1234'; // Default PIN
-  return pin === storedPin;
+  if (!storedPin) return false; // unset PIN = override disabled
+  const supplied = Buffer.from(String(pin), 'utf8');
+  const expected = Buffer.from(storedPin, 'utf8');
+  if (supplied.length !== expected.length) return false;
+  return crypto.timingSafeEqual(supplied, expected);
 }
 
 /** Log an override to the audit trail (legacy local table — kept for backward compat). */

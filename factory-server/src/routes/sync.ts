@@ -1,9 +1,15 @@
 import { Router, Request, Response } from 'express';
 import prisma from '../prisma';
-import { asyncHandler } from '../middleware';
+import { asyncHandler, requireWbKeyOrAuth } from '../middleware';
 import { pushToCloud, pullMasterData, getSyncWorkerStatus } from '../services/syncWorker';
 
 const router = Router();
+
+// All sync endpoints require auth. The factory UI (AdminDashboard) sends a JWT;
+// emergency scripts / WB PCs may send X-WB-Key — accept either. The mutating
+// routes (to-cloud, resync, resync-lab) flip cloudSynced flags and must never
+// be open to anyone who can reach :5000 on the LAN.
+router.use(requireWbKeyOrAuth);
 
 // POST /api/sync/to-cloud — manual trigger: push completed weighments to cloud ERP
 router.post('/to-cloud', asyncHandler(async (_req: Request, res: Response) => {

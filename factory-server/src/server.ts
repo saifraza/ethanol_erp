@@ -3,6 +3,7 @@ import cors from 'cors';
 import path from 'path';
 import os from 'os';
 import { config } from './config';
+import prisma from './prisma';
 import weighbridgeRoutes from './routes/weighbridge';
 import gateEntryRoutes from './routes/gateEntry';
 import heartbeatRoutes from './routes/heartbeat';
@@ -21,6 +22,7 @@ import { startWeightTriggeredCapture } from './services/weightTriggeredCapture';
 import { startBiometricScheduler, getBiometricSchedulerStatus } from './services/biometricScheduler';
 import { startBiometricJobRunner, getBiometricJobRunnerStatus } from './services/biometricJobRunner';
 import { startFingerprintReplicator, getFingerprintReplicatorStatus } from './services/fingerprintReplicator';
+import { startBackupWorker, getBackupWorkerStatus } from './services/backupWorker';
 
 const app = express();
 
@@ -53,6 +55,7 @@ app.get('/api/health', async (_req, res) => {
     biometric,
     biometricJobs,
     fingerprintReplicator,
+    backup: getBackupWorkerStatus(),
   });
 });
 
@@ -106,12 +109,20 @@ app.get('*', (_req, res) => {
 //   3. Classify Prisma errors specifically. These are the #1 cause of factory
 //      outages (gate entry 2026-04-08, ethanol sync 2026-04-07) and every
 //      minute of operator confusion costs trucks at the gate.
-app.use((err: Error, req: express.Request, res: express.Response, _next: express.NextFunction) => {
+app.use((err: Error, req: express.Request, res: express.Response, next: express.NextFunction) => {
   const route = `${req.method} ${req.path}`;
 
   // ALWAYS log the full error — this is what makes incidents debuggable later.
   console.error(`[ERROR] ${route}:`, err.message);
   if (err.stack) console.error(err.stack);
+
+  // Response already started (streamed file, partial write) — can't send JSON
+  // on top of it. Delegate to Express's default handler, which closes the
+  // connection instead of crashing on "Cannot set headers after they are sent".
+  if (res.headersSent) {
+    next(err);
+    return;
+  }
 
   // Try to classify the error and give the operator something useful.
   const errName = err.constructor?.name || '';
@@ -281,7 +292,21 @@ async function sendHeartbeatToCloud() {
   }
 }
 
-app.listen(config.port, '0.0.0.0', () => {
+// ── Process-level safety net ────────────────────────────────────────────────
+// This box runs a 24/7 plant. A stray promise rejection or a throw inside a
+// fire-and-forget callback must NEVER kill the gate — log everything, keep
+// serving. Deliberately no process.exit() here: crashing on an unknown error
+// costs trucks at the gate; a logged error costs a grep.
+process.on('unhandledRejection', (reason) => {
+  console.error('[FATAL-GUARD] Unhandled promise rejection (server continues):',
+    reason instanceof Error ? (reason.stack || reason.message) : reason);
+});
+process.on('uncaughtException', (err) => {
+  console.error('[FATAL-GUARD] Uncaught exception (server continues):',
+    err.stack || err.message);
+});
+
+const server = app.listen(config.port, '0.0.0.0', () => {
   console.log(`Factory Hub running on http://0.0.0.0:${config.port}`);
   console.log(`Cloud ERP: ${config.cloudErpUrl}`);
 
@@ -309,6 +334,11 @@ app.listen(config.port, '0.0.0.0', () => {
   // has it. The "magic": enroll once on any device, all devices get it.
   startFingerprintReplicator();
 
+  // Hourly local DB backup (pg_dump → gzip → BACKUP_DIR, optional S3 offsite).
+  // Primary backup mechanism — scripts/backup-local-db.bat is belt-and-braces.
+  // Gated on BACKUP_ENABLED env (default true). Status in /api/health.
+  startBackupWorker();
+
   // Weight-triggered video/photo capture for ML training corpus.
   // PAUSED 2026-05-03 — corpus is sufficient (38.6 GB / 51k clips on factory disk).
   // Operational gross/tare snapshots in routes/weighbridge.ts are unaffected.
@@ -320,3 +350,29 @@ app.listen(config.port, '0.0.0.0', () => {
   sendHeartbeatToCloud();
   setInterval(sendHeartbeatToCloud, 15000);
 });
+
+// ── Graceful shutdown ───────────────────────────────────────────────────────
+// SIGTERM/SIGINT (scheduled-task restart, deploy.sh kill): stop accepting new
+// connections, flush in-flight requests, disconnect Prisma. Hard 10s cap so a
+// stuck connection can never wedge a restart.
+let _shuttingDown = false;
+function shutdown(signal: string): void {
+  if (_shuttingDown) return;
+  _shuttingDown = true;
+  console.log(`[SHUTDOWN] ${signal} received — closing HTTP server + DB connection (10s cap)`);
+  const hardCap = setTimeout(() => {
+    console.error('[SHUTDOWN] 10s cap reached — forcing exit');
+    process.exit(1);
+  }, 10_000);
+  hardCap.unref();
+  server.close(() => {
+    prisma.$disconnect()
+      .catch(err => console.error('[SHUTDOWN] Prisma disconnect failed:', err instanceof Error ? err.message : err))
+      .finally(() => {
+        console.log('[SHUTDOWN] Clean exit');
+        process.exit(0);
+      });
+  });
+}
+process.on('SIGTERM', () => shutdown('SIGTERM'));
+process.on('SIGINT', () => shutdown('SIGINT'));

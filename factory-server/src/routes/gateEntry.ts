@@ -1,8 +1,13 @@
 import { Router, Request, Response } from 'express';
 import prisma from '../prisma';
-import { asyncHandler } from '../middleware';
+import { asyncHandler, requireWbKeyOrAuth } from '../middleware';
 
 const router = Router();
+
+// All gate-entry endpoints require auth — a UI JWT or a PC's X-WB-Key.
+// (The factory frontend's gate-entry flow uses /api/weighbridge/gate-entry,
+// which has its own requireAuth; this legacy router was mounted bare.)
+router.use(requireWbKeyOrAuth);
 
 // POST /api/gate-entry — create new gate entry
 router.post('/', asyncHandler(async (req: Request, res: Response) => {
@@ -30,12 +35,33 @@ router.post('/', asyncHandler(async (req: Request, res: Response) => {
 
 // PATCH /api/gate-entry/:id/exit — mark vehicle exit
 router.patch('/:id/exit', asyncHandler(async (req: Request, res: Response) => {
-  const entry = await prisma.gateEntry.update({
-    where: { id: req.params.id as string },
+  const id = req.params.id as string;
+
+  // Guarded update: only an INSIDE vehicle can exit. A repeated call must not
+  // silently overwrite the original exitTime.
+  const result = await prisma.gateEntry.updateMany({
+    where: { id, status: 'INSIDE' },
     data: { exitTime: new Date(), status: 'EXITED' },
   });
+  if (result.count === 0) {
+    const existing = await prisma.gateEntry.findUnique({
+      where: { id },
+      select: { status: true, exitTime: true, vehicleNo: true },
+    });
+    if (!existing) {
+      res.status(404).json({ error: 'Gate entry not found' });
+      return;
+    }
+    res.status(409).json({
+      error: `Vehicle is ${existing.status}, not INSIDE — exit already recorded`,
+      status: existing.status,
+      exitTime: existing.exitTime,
+    });
+    return;
+  }
 
-  console.log(`[GATE] EXIT ${entry.vehicleNo}`);
+  const entry = await prisma.gateEntry.findUnique({ where: { id } });
+  console.log(`[GATE] EXIT ${entry?.vehicleNo}`);
   res.json(entry);
 }));
 
