@@ -42,11 +42,11 @@ class TestFailureClassification(unittest.TestCase):
         self.assertFalse(is_permanent_rejection(OSError("network unreachable")))
 
     def test_5xx_and_retryable_4xx_are_transient(self):
-        for code in (500, 502, 503, 504, 408, 429):
+        for code in (500, 502, 503, 504, 408, 429, 401, 403):
             self.assertFalse(is_permanent_rejection(_http_error(code)), code)
 
     def test_deterministic_4xx_is_permanent(self):
-        for code in (400, 401, 403, 404, 409, 422):
+        for code in (400, 404, 409, 422):
             self.assertTrue(is_permanent_rejection(_http_error(code)), code)
 
 
