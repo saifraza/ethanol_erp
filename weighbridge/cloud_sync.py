@@ -42,7 +42,10 @@ def is_permanent_rejection(exc: Exception) -> bool:
                         moment the network returns.
     """
     if isinstance(exc, urllib.error.HTTPError):
-        return 400 <= exc.code < 500 and exc.code not in (408, 429)
+        # 401/403 are also transient: a WB key rotation must never consume
+        # attempts and dead-letter good weighments (contract rule shared with
+        # the sugar edge agent). Fix the key, rows drain untouched.
+        return 400 <= exc.code < 500 and exc.code not in (401, 403, 408, 429)
     return False
 
 
