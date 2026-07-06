@@ -141,12 +141,56 @@ router.post('/push', requireWbKey, asyncHandler(async (req: Request, res: Respon
 
   const existing = await prisma.weighment.findUnique({
     where: { localId },
-    select: { id: true, status: true },
+    select: { id: true, status: true, grossWeight: true, tareWeight: true, netWeight: true },
   });
 
-  if (existing) {
+  if (!existing) {
+    const weighment = await prisma.weighment.create({
+      data: {
+        localId, pcId, pcName: pcName || pcId, vehicleNo, direction: direction || 'INBOUND',
+        purchaseType, poNumber, supplierName, supplierId,
+        materialName, materialId,
+        grossWeight: grossWeight ? parseFloat(grossWeight) : null,
+        tareWeight: tareWeight ? parseFloat(tareWeight) : null,
+        netWeight: netWeight ? parseFloat(netWeight) : null,
+        grossTime: grossTime ? new Date(grossTime) : null,
+        tareTime: tareTime ? new Date(tareTime) : null,
+        status: newStatus,
+        gateEntryNo, driverName, driverPhone, remarks,
+      },
+    });
+    res.json({ success: true, id: weighment.id });
+    return;
+  }
+
+  if (newStatus === existing.status) {
+    // Same-status re-push. Legitimate replays (retry after a dropped ack) carry
+    // identical weights — acknowledge them idempotently. But a COMPLETE /
+    // CANCELLED record is finalized: a re-push that CHANGES weights would be a
+    // silent, unaudited rewrite — reject and point at the audited path.
+    // Mirror the write path's truthiness (`grossWeight ? parseFloat : undefined`):
+    // falsy values (absent, '', 0) mean "field not being changed by this push".
+    const num = (v: unknown): number | null => (v ? parseFloat(String(v)) : null);
+    const sameWeights =
+      (num(grossWeight) == null || num(grossWeight) === existing.grossWeight) &&
+      (num(tareWeight) == null || num(tareWeight) === existing.tareWeight) &&
+      (num(netWeight) == null || num(netWeight) === existing.netWeight);
+
+    if (existing.status === 'COMPLETE' || existing.status === 'CANCELLED') {
+      if (!sameWeights) {
+        res.status(409).json({
+          error: `Weighment is ${existing.status} — weights can only be changed via the audited correction endpoint (POST /api/weighbridge/correction)`,
+          currentStatus: existing.status,
+        });
+        return;
+      }
+      // Byte-identical replay of a finalized record — idempotent ack, no write.
+      res.json({ success: true, id: existing.id, replay: true });
+      return;
+    }
+  } else {
     const allowedNext = VALID_TRANSITIONS[existing.status] || [];
-    if (newStatus !== existing.status && !allowedNext.includes(newStatus)) {
+    if (!allowedNext.includes(newStatus)) {
       res.status(409).json({
         error: `Invalid transition: ${existing.status} -> ${newStatus}`,
         currentStatus: existing.status,
@@ -155,21 +199,13 @@ router.post('/push', requireWbKey, asyncHandler(async (req: Request, res: Respon
     }
   }
 
-  const weighment = await prisma.weighment.upsert({
-    where: { localId },
-    create: {
-      localId, pcId, pcName: pcName || pcId, vehicleNo, direction: direction || 'INBOUND',
-      purchaseType, poNumber, supplierName, supplierId,
-      materialName, materialId,
-      grossWeight: grossWeight ? parseFloat(grossWeight) : null,
-      tareWeight: tareWeight ? parseFloat(tareWeight) : null,
-      netWeight: netWeight ? parseFloat(netWeight) : null,
-      grossTime: grossTime ? new Date(grossTime) : null,
-      tareTime: tareTime ? new Date(tareTime) : null,
-      status: newStatus,
-      gateEntryNo, driverName, driverPhone, remarks,
-    },
-    update: {
+  // Guarded write: only lands if the row is still in the status we validated
+  // against. A concurrent push that moved the row first makes this match 0
+  // rows → 409 (prevents check-then-write races like COMPLETE -> CANCELLED
+  // committing after a competing COMPLETE).
+  const result = await prisma.weighment.updateMany({
+    where: { localId, status: existing.status },
+    data: {
       grossWeight: grossWeight ? parseFloat(grossWeight) : undefined,
       tareWeight: tareWeight ? parseFloat(tareWeight) : undefined,
       netWeight: netWeight ? parseFloat(netWeight) : undefined,
@@ -180,8 +216,15 @@ router.post('/push', requireWbKey, asyncHandler(async (req: Request, res: Respon
       updatedAt: new Date(),
     },
   });
+  if (result.count === 0) {
+    res.status(409).json({
+      error: 'Weighment status changed concurrently — re-fetch and retry',
+      currentStatus: existing.status,
+    });
+    return;
+  }
 
-  res.json({ success: true, id: weighment.id });
+  res.json({ success: true, id: existing.id });
 }));
 
 // GET /api/weighbridge/lookup/:identifier — QR scan lookup
@@ -636,10 +679,23 @@ router.post('/:id/gross', requireAuth, requireRole('GROSS_WB', 'ADMIN'), asyncHa
   if (!peek) { res.status(404).json({ error: 'Weighment not found' }); return; }
 
   const now = new Date();
-  const isFirst = peek.status === 'GATE_ENTRY';
-  const isSecond = peek.status === 'FIRST_DONE';
+  // Direction-aware leg detection. Gross is the 1st weighment for INBOUND and
+  // the 2nd for OUTBOUND — status alone is ambiguous: an INBOUND ticket already
+  // FIRST_DONE (gross captured) must NOT fall into the outbound "2nd weighment"
+  // branch, where tareWeight=0 would COMPLETE the ticket with net=gross.
+  const isInbound = peek.direction === 'INBOUND';
+  const isFirst = peek.status === 'GATE_ENTRY' && isInbound;
+  const isSecond = peek.status === 'FIRST_DONE' && !isInbound;
 
   if (!isFirst && !isSecond) {
+    if (isInbound && peek.status === 'FIRST_DONE') {
+      res.status(409).json({ error: 'Gross already captured for this inbound ticket — capture TARE (empty truck) to complete it' });
+      return;
+    }
+    if (!isInbound && peek.status === 'GATE_ENTRY') {
+      res.status(409).json({ error: 'Outbound ticket needs TARE (empty truck) first — gross is the 2nd weighment' });
+      return;
+    }
     res.status(409).json({ error: `Cannot capture gross — weighment is ${peek.status}` });
     return;
   }
@@ -772,10 +828,23 @@ router.post('/:id/tare', requireAuth, requireRole('TARE_WB', 'ADMIN'), asyncHand
   if (!peek) { res.status(404).json({ error: 'Weighment not found' }); return; }
 
   const now = new Date();
-  const isFirst = peek.status === 'GATE_ENTRY';
-  const isSecond = peek.status === 'FIRST_DONE';
+  // Direction-aware leg detection (mirror of the gross handler). Tare is the
+  // 1st weighment for OUTBOUND and the 2nd for INBOUND — an OUTBOUND ticket
+  // already FIRST_DONE (tare captured) must NOT fall into the inbound "2nd
+  // weighment" branch, where grossWeight=0 used to fail only by accident.
+  const isOutbound = peek.direction === 'OUTBOUND';
+  const isFirst = peek.status === 'GATE_ENTRY' && isOutbound;
+  const isSecond = peek.status === 'FIRST_DONE' && !isOutbound;
 
   if (!isFirst && !isSecond) {
+    if (isOutbound && peek.status === 'FIRST_DONE') {
+      res.status(409).json({ error: 'Tare already captured for this outbound ticket — capture GROSS (loaded truck) to complete it' });
+      return;
+    }
+    if (!isOutbound && peek.status === 'GATE_ENTRY') {
+      res.status(409).json({ error: 'Inbound ticket needs GROSS (loaded truck) first — tare is the 2nd weighment' });
+      return;
+    }
     res.status(409).json({ error: `Cannot capture tare — weighment is ${peek.status}` });
     return;
   }

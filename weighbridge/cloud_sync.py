@@ -1,7 +1,10 @@
 """
 MSPIL Weighbridge — Cloud Sync Module
 Pushes completed weighments to cloud ERP, pulls master data.
-Uses exponential backoff on failure. Never loses data.
+Uses exponential backoff on failure. Never loses data:
+transient failures (network down, timeouts, 5xx) retry forever without
+consuming attempts; only deterministic 4xx rejections count towards the
+dead-letter cap, and even those are requeued on every service restart.
 """
 
 import json
@@ -26,6 +29,26 @@ import local_db as db
 log = logging.getLogger("cloud_sync")
 
 
+def is_permanent_rejection(exc: Exception) -> bool:
+    """Classify a request failure.
+
+    PERMANENT (True)  → deterministic HTTP 4xx rejection (bad payload, auth
+                        error…). Retrying the same payload will fail the same
+                        way, so it should consume a retry attempt.
+    TRANSIENT (False) → everything else: connection refused, DNS failure,
+                        timeouts, 5xx server errors, and 408/429 (the server
+                        asked us to retry). These must NOT consume attempts —
+                        an overnight outage retries forever and syncs the
+                        moment the network returns.
+    """
+    if isinstance(exc, urllib.error.HTTPError):
+        # 401/403 are also transient: a WB key rotation must never consume
+        # attempts and dead-letter good weighments (contract rule shared with
+        # the sugar edge agent). Fix the key, rows drain untouched.
+        return 400 <= exc.code < 500 and exc.code not in (401, 403, 408, 429)
+    return False
+
+
 class CloudSync:
     """Handles all cloud communication. Tries factory server (LAN) first, falls back to cloud."""
 
@@ -36,6 +59,7 @@ class CloudSync:
         self._cloud_reachable = False
         self._factory_reachable = False
         self._last_target = ""  # "factory" or "cloud" — which one last succeeded
+        self._last_failure_transient = True  # classification of the last _post/_get failure
         self._start_time = time.time()
 
     @property
@@ -101,6 +125,7 @@ class CloudSync:
             return data
         except Exception as e:
             self._cloud_reachable = False
+            self._last_failure_transient = not is_permanent_rejection(e)
             log.warning("POST %s failed (both factory and cloud): %s", path, e)
             return None
 
@@ -164,7 +189,13 @@ class CloudSync:
                 success_count += 1
                 consecutive_failures = 0  # Reset on success
             else:
-                db.mark_sync_failed(entry["id"])
+                # Only DETERMINISTIC rejections consume a retry attempt:
+                # either the server answered 200 with an error body, or the
+                # request raised a permanent 4xx (see is_permanent_rejection).
+                # Network failures / timeouts / 5xx retry forever — a long
+                # outage must never dead-letter a weighment.
+                permanent = bool(result) or not self._last_failure_transient
+                db.mark_sync_failed(entry["id"], count_attempt=permanent)
                 consecutive_failures += 1
                 if consecutive_failures >= MAX_CONSECUTIVE_FAILURES:
                     remaining = len(pending) - (success_count + consecutive_failures)

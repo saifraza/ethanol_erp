@@ -769,12 +769,14 @@
     }
 
     // === CAPTURE GROSS ===
-    function captureGross(id, manualWt) {
+    function captureGross(id, manualWt, manualReason) {
+        let payload = {};
         // Warn if scale is unstable and not manual entry
         if (manualWt === undefined && !isStable && isConnected) {
             if (!confirm('WARNING: Scale reading is UNSTABLE. The truck may still be moving.\n\nCapture weight anyway?')) return;
+            payload = { override: true, override_reason: 'Operator confirmed capture with unstable scale reading' };
         }
-        const payload = manualWt !== undefined ? { weight: manualWt } : {};
+        if (manualWt !== undefined) payload = { weight: manualWt, override: true, override_reason: manualReason || 'Manual weight entry by operator' };
         fetch(`/api/weighments/${id}/gross`, { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(payload) })
         .then(r => r.json()).then(data => {
             if (data.error) { alert(data.error); return; }
@@ -786,12 +788,14 @@
     }
 
     // === CAPTURE TARE ===
-    function captureTare(id, manualWt) {
+    function captureTare(id, manualWt, manualReason) {
+        let payload = {};
         // Warn if scale is unstable and not manual entry
         if (manualWt === undefined && !isStable && isConnected) {
             if (!confirm('WARNING: Scale reading is UNSTABLE. The truck may still be moving.\n\nCapture weight anyway?')) return;
+            payload = { override: true, override_reason: 'Operator confirmed capture with unstable scale reading' };
         }
-        const payload = manualWt !== undefined ? { weight: manualWt } : {};
+        if (manualWt !== undefined) payload = { weight: manualWt, override: true, override_reason: manualReason || 'Manual weight entry by operator' };
         fetch(`/api/weighments/${id}/tare`, { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(payload) })
         .then(r => r.json()).then(data => {
             if (data.error) { alert(data.error); return; }
@@ -814,10 +818,13 @@
     function submitManualWeight() {
         const w = parseFloat(document.getElementById('manualWeight').value);
         if (!w || w <= 0) { alert('Enter valid weight'); return; }
+        // Manual weights bypass the scale — the server logs the reason loudly.
+        const reason = prompt('Manual weight entry — reason (required):', '');
+        if (!reason || !reason.trim()) { alert('A reason is required for manual weight entry.'); return; }
         const action = document.getElementById('manualAction').value;
         const id = document.getElementById('manualWeighmentId').value;
-        if (action === 'gross') captureGross(id, w);
-        else if (action === 'tare') captureTare(id, w);
+        if (action === 'gross') captureGross(id, w, reason.trim());
+        else if (action === 'tare') captureTare(id, w, reason.trim());
         closeManualModal();
     }
 

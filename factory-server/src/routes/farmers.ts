@@ -12,8 +12,14 @@
  */
 import { Router, Request, Response } from 'express';
 import { getCloudPrisma } from '../cloudPrisma';
+import { requireAuth } from '../middleware';
 
 const router = Router();
+
+// Farmer master data is PII (phone, aadhaar, village). Only the factory UI
+// calls these routes (GateEntry.tsx, JWT via axios Authorization header) —
+// never expose them unauthenticated on the LAN.
+router.use(requireAuth);
 
 const cleanPhone = (p?: string | null) =>
   (p || '').replace(/\D/g, '').slice(-10);

@@ -21,8 +21,24 @@ const MAX_BACKOFF_MS = 5 * 60_000; // 5 min max backoff on failures
 const MASTER_DATA_INTERVAL_MS = 30_000; // pull master data every 30s (fast-poll until webhook push is set up)
 let _lastMasterPull = 0;
 
+// In-flight guard for pushToCloud itself — the interval worker has _running,
+// but routes/sync.ts calls pushToCloud() directly (manual "Push to Cloud"
+// button) and can race a mid-cycle worker push into double-sending the same
+// batch. Second caller gets a no-op result instead.
+let _pushInFlight = false;
+
 /** Push unsynced weighments to cloud ERP. Returns { synced, failed }. */
-export async function pushToCloud(): Promise<{ synced: number; failed: number }> {
+export async function pushToCloud(): Promise<{ synced: number; failed: number; skipped?: string }> {
+  if (_pushInFlight) return { synced: 0, failed: 0, skipped: 'already_running' };
+  _pushInFlight = true;
+  try {
+    return await pushToCloudInner();
+  } finally {
+    _pushInFlight = false;
+  }
+}
+
+async function pushToCloudInner(): Promise<{ synced: number; failed: number }> {
   // Sync GATE_ENTRY (cloud creates truck record), COMPLETE (final weights),
   // FIRST_DONE inbound with lab results (so cloud lab page updates immediately),
   // and FIRST_DONE OUTBOUND **for DDGS only** — the cloud pre-phase has a stub
@@ -31,6 +47,11 @@ export async function pushToCloud(): Promise<{ synced: number; failed: number }>
   // sync queue with `Not in cloud response` failures because push.ts hits the
   // `status !== COMPLETE` skip and never acks them. Add new product categories
   // to this OR clause once their cloud handler grows a pre-phase stub.
+  // Guard (in the WHERE, not a post-filter): don't push COMPLETE PO-type
+  // inbound without po_id — the cloud handler would misroute it to fallback.
+  // Hold back until operator assigns PO. This MUST be part of the query:
+  // filtering AFTER `take: 20` meant 20 such held-back rows at the head of
+  // the queue would starve every other unsynced weighment forever.
   const unsynced = await prisma.weighment.findMany({
     where: {
       cloudSynced: false,
@@ -40,23 +61,13 @@ export async function pushToCloud(): Promise<{ synced: number; failed: number }>
         // Push ALL FIRST_DONE outbound (ethanol, DDGS, scrap, fuel, etc.)
         { status: 'FIRST_DONE', direction: 'OUTBOUND' },
       ],
+      NOT: { status: 'COMPLETE', direction: 'INBOUND', purchaseType: 'PO', poId: null },
     },
     take: 20,
     orderBy: { createdAt: 'asc' },
   });
 
   if (unsynced.length === 0) return { synced: 0, failed: 0 };
-
-  // Guard: Don't push COMPLETE PO-type inbound without po_id — the cloud
-  // handler will misroute it to fallback. Hold back until operator assigns PO.
-  const filtered = unsynced.filter(w => {
-    if (w.status === 'COMPLETE' && w.direction === 'INBOUND'
-        && w.purchaseType === 'PO' && !w.poId) {
-      return false;
-    }
-    return true;
-  });
-  if (filtered.length === 0) return { synced: 0, failed: 0 };
 
   let synced = 0;
   let failed = 0;
@@ -67,7 +78,7 @@ export async function pushToCloud(): Promise<{ synced: number; failed: number }>
   const masterMaterials = getMasterData().materials;
   const materialMap = new Map(masterMaterials.map(m => [m.id, m]));
 
-  const cloudPayload = filtered.map(w => {
+  const cloudPayload = unsynced.map(w => {
     const mat = w.materialId ? materialMap.get(w.materialId) : undefined;
     return {
     id: w.localId,
@@ -163,7 +174,7 @@ export async function pushToCloud(): Promise<{ synced: number; failed: number }>
         // Ghost-row incident 2026-04-09: empty-array → legacy path marked
         // 155 of 173 weighments as synced even though cloud dropped them.
         const useLegacyBatchAck = result.processedWbIds === undefined;
-        for (const w of filtered) {
+        for (const w of unsynced) {
           // Cloud payload sends id=localId, so processedWbIds contains localIds
           if (useLegacyBatchAck || processedIds.has(w.localId) || processedIds.has(w.id)) {
             // CRITICAL: conditional update. Only mark synced if the row hasn't
@@ -173,12 +184,17 @@ export async function pushToCloud(): Promise<{ synced: number; failed: number }>
             // false → next sync cycle re-pushes the now-COMPLETE state.
             // Incident 2026-04-16: tickets 529, 531 stuck at FIRST_DONE in cloud
             // because this was an unconditional update.
+            // 2026-07-06: guard extended from {status, gross, tare} to the row's
+            // updatedAt captured at SELECT time — the old triple missed edits
+            // that change OTHER fields (e.g. a lab result landing mid-push sets
+            // cloudSynced=false but not status/weights, and the ack clobbered it
+            // back to synced so the lab data never reached the cloud). ANY edit
+            // bumps updatedAt, so count 0 = row changed mid-flight = leave
+            // unsynced for the next cycle.
             const res = await prisma.weighment.updateMany({
               where: {
                 id: w.id,
-                status: w.status,
-                grossWeight: w.grossWeight,
-                tareWeight: w.tareWeight,
+                updatedAt: w.updatedAt,
               },
               data: { cloudSynced: true, cloudSyncedAt: new Date(), syncAttempts: w.syncAttempts + 1, cloudError: null },
             });
@@ -192,40 +208,40 @@ export async function pushToCloud(): Promise<{ synced: number; failed: number }>
           } else {
             await prisma.weighment.update({
               where: { id: w.id },
-              data: { cloudError: `Not in cloud response (${result.count}/${filtered.length} processed)`, syncAttempts: w.syncAttempts + 1 },
+              data: { cloudError: `Not in cloud response (${result.count}/${unsynced.length} processed)`, syncAttempts: w.syncAttempts + 1 },
             });
             failed++;
           }
         }
       } else {
         // Cloud returned ok but processed nothing — mark for retry
-        for (const w of filtered) {
+        for (const w of unsynced) {
           await prisma.weighment.update({
             where: { id: w.id },
-            data: { cloudError: `Cloud processed 0/${filtered.length}`, syncAttempts: w.syncAttempts + 1 },
+            data: { cloudError: `Cloud processed 0/${unsynced.length}`, syncAttempts: w.syncAttempts + 1 },
           });
           failed++;
         }
       }
     } else {
       const errText = await response.text();
-      for (const w of filtered) {
+      for (const w of unsynced) {
         await prisma.weighment.update({
           where: { id: w.id },
           data: { cloudError: errText, syncAttempts: w.syncAttempts + 1 },
         });
       }
-      failed = filtered.length;
+      failed = unsynced.length;
     }
   } catch (err) {
     const errMsg = err instanceof Error ? err.message : 'Unknown error';
-    for (const w of filtered) {
+    for (const w of unsynced) {
       await prisma.weighment.update({
         where: { id: w.id },
         data: { cloudError: errMsg, syncAttempts: w.syncAttempts + 1 },
       });
     }
-    failed = filtered.length;
+    failed = unsynced.length;
   }
 
   return { synced, failed };
@@ -317,14 +333,32 @@ export async function pushRawToCloud(): Promise<{ synced: number; failed: number
       // the `@updatedAt` decorator and bump `updatedAt` to NOW, which would
       // immediately make `mirrorPushedAt < updatedAt` true again → infinite
       // resync loop. Raw UPDATE preserves updatedAt and only sets the flag.
-      // Set mirrorPushedAt = updatedAt (not NOW) so any genuine future edit
-      // bumps updatedAt past mirrorPushedAt and re-triggers a sync.
-      const successIds = result.processedLocalIds;
-      if (successIds.length > 0) {
+      // Set mirrorPushedAt to the updatedAt value we READ at select time (not
+      // the row's CURRENT updatedAt, and not NOW): stamping the current value
+      // absorbed any edit that landed during the HTTP push window — the edited
+      // row read as mirrorPushedAt >= updatedAt and never re-mirrored. With the
+      // read-time stamp, a mid-push edit leaves mirrorPushedAt < updatedAt and
+      // re-triggers a sync next cycle.
+      const readUpdatedAtByLocalId = new Map(
+        rows.map(r => [String(r.localId), r.updatedAt instanceof Date ? r.updatedAt : null]),
+      );
+      const stamped = result.processedLocalIds
+        .map(lid => ({ lid, at: readUpdatedAtByLocalId.get(lid) }))
+        .filter((s): s is { lid: string; at: Date } => s.at instanceof Date);
+      if (stamped.length > 0) {
+        // VALUES-list join via unnest. ISO strings → timestamptz → AT TIME ZONE
+        // 'UTC' gives a deterministic UTC wall-time timestamp(3) regardless of
+        // the Postgres session timezone (the factory PC runs IST).
+        const lids = stamped.map(s => s.lid);
+        const ats = stamped.map(s => s.at.toISOString());
         await prisma.$executeRaw`
-          UPDATE "Weighment"
-          SET "mirrorPushedAt" = "updatedAt"
-          WHERE "localId" = ANY(${successIds}::text[])
+          UPDATE "Weighment" w
+          SET "mirrorPushedAt" = (v."readAt" AT TIME ZONE 'UTC')
+          FROM (
+            SELECT unnest(${lids}::text[]) AS "localId",
+                   unnest(${ats}::timestamptz[]) AS "readAt"
+          ) v
+          WHERE w."localId" = v."localId"
         `;
       }
     }

@@ -39,6 +39,13 @@ WEB_HOST = "0.0.0.0"         # Accessible from any local network device
 WEB_PORT = 8098              # One below OPC's 8099
 WEB_DEBUG = False            # Never True in production
 
+# Trust client-supplied weights on capture endpoints? The web UI listens on
+# 0.0.0.0, so anyone on the plant LAN can POST — by default a client-sent
+# `weight` is IGNORED and the server-side scale reader is the only source
+# of truth. Manual entry still works via override:true + override_reason
+# (logged loudly). Set WB_ALLOW_MANUAL_WEIGHT=true to restore blind trust.
+ALLOW_MANUAL_WEIGHT = os.environ.get("WB_ALLOW_MANUAL_WEIGHT", "false").lower() == "true"
+
 # =============================================================================
 #  CLOUD SYNC
 # =============================================================================

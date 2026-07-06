@@ -15,6 +15,12 @@ from config import DB_PATH, DB_RETENTION_DAYS
 
 log = logging.getLogger("db")
 
+# Retry cap for the sync queue. Only DETERMINISTIC rejections (4xx from the
+# server) count towards this — network failures retry forever (see
+# cloud_sync.push_weighments + mark_sync_failed). Rows at the cap are healed
+# on every startup by requeue_stuck() so a deploy/restart un-strands them.
+SYNC_MAX_ATTEMPTS = 10
+
 _local = threading.local()
 
 
@@ -164,6 +170,11 @@ def init_db():
     """)
     conn.commit()
     log.info("Database initialized at %s", DB_PATH)
+
+    # Startup recovery: heal any rows stranded at the retry cap by an old
+    # version that burned attempts on network failures. Weighments must
+    # NEVER be silently lost — give them a fresh set of retries every boot.
+    requeue_stuck()
 
 
 def _next_ticket_no() -> int:
@@ -503,26 +514,30 @@ def get_pending_lab() -> list[dict]:
 def get_pending_sync() -> list[dict]:
     """Get queued weighments to push to cloud.
     Also logs a warning for items that have exhausted retries (dead-lettered).
+    Only deterministic server rejections consume attempts (see
+    mark_sync_failed), so rows above the cap were REJECTED by the server —
+    call requeue_stuck() (or restart the service) to retry them.
     """
     conn = _get_conn()
 
-    # Check for dead-lettered items (>= 10 attempts) and alert
+    # Check for dead-lettered items (>= SYNC_MAX_ATTEMPTS attempts) and alert
     dead = conn.execute("""
         SELECT COUNT(*) as cnt FROM sync_queue
-        WHERE status = 'pending' AND attempts >= 10
-    """).fetchone()
+        WHERE status = 'pending' AND attempts >= ?
+    """, (SYNC_MAX_ATTEMPTS,)).fetchone()
     if dead and dead["cnt"] > 0:
         log.error(
-            "ALERT: %d weighment(s) stuck in sync queue (>= 10 failed attempts). "
-            "These will NOT sync without manual intervention.",
-            dead["cnt"]
+            "ALERT: %d weighment(s) stuck in sync queue (>= %d rejected attempts). "
+            "These will NOT sync until requeued — restart the service or call "
+            "requeue_stuck() to retry them.",
+            dead["cnt"], SYNC_MAX_ATTEMPTS
         )
 
     rows = conn.execute("""
         SELECT * FROM sync_queue
-        WHERE status = 'pending' AND attempts < 10
+        WHERE status = 'pending' AND attempts < ?
         ORDER BY created_at ASC LIMIT 50
-    """).fetchall()
+    """, (SYNC_MAX_ATTEMPTS,)).fetchall()
     return [dict(r) for r in rows]
 
 
@@ -544,14 +559,48 @@ def mark_synced(queue_id: int, cloud_id: str = ""):
     conn.commit()
 
 
-def mark_sync_failed(queue_id: int):
-    """Increment attempt count on failed sync."""
+def mark_sync_failed(queue_id: int, count_attempt: bool = True):
+    """Record a failed sync attempt.
+
+    count_attempt=True  → deterministic server rejection (4xx): increments
+                          attempts, so the row dead-letters after
+                          SYNC_MAX_ATTEMPTS tries.
+    count_attempt=False → TRANSIENT failure (network down, timeout, 5xx,
+                          408/429): only stamps last_attempt. Attempts are
+                          NOT burned, so an overnight outage can never
+                          dead-letter a weighment — it retries forever.
+    """
     conn = _get_conn()
     now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-    conn.execute("""
-        UPDATE sync_queue SET attempts = attempts + 1, last_attempt = ? WHERE id = ?
-    """, (now, queue_id))
+    if count_attempt:
+        conn.execute("""
+            UPDATE sync_queue SET attempts = attempts + 1, last_attempt = ? WHERE id = ?
+        """, (now, queue_id))
+    else:
+        conn.execute("""
+            UPDATE sync_queue SET last_attempt = ? WHERE id = ?
+        """, (now, queue_id))
     conn.commit()
+
+
+def requeue_stuck() -> int:
+    """Reset attempts on pending rows that hit the retry cap so they sync
+    again. Called automatically at startup (init_db) to heal rows stranded
+    by transient failures; safe to call manually any time. Returns the
+    number of rows requeued."""
+    conn = _get_conn()
+    cur = conn.execute("""
+        UPDATE sync_queue SET attempts = 0
+        WHERE status = 'pending' AND attempts >= ?
+    """, (SYNC_MAX_ATTEMPTS,))
+    conn.commit()
+    if cur.rowcount > 0:
+        log.warning(
+            "Requeued %d stuck sync entry(ies) that had exhausted retries — "
+            "they will be pushed again.",
+            cur.rowcount
+        )
+    return cur.rowcount
 
 
 def get_sync_stats() -> dict:
@@ -559,7 +608,8 @@ def get_sync_stats() -> dict:
     conn = _get_conn()
     pending = conn.execute("SELECT COUNT(*) FROM sync_queue WHERE status='pending'").fetchone()[0]
     sent = conn.execute("SELECT COUNT(*) FROM sync_queue WHERE status='sent'").fetchone()[0]
-    failed = conn.execute("SELECT COUNT(*) FROM sync_queue WHERE status='pending' AND attempts >= 10").fetchone()[0]
+    failed = conn.execute("SELECT COUNT(*) FROM sync_queue WHERE status='pending' AND attempts >= ?",
+                          (SYNC_MAX_ATTEMPTS,)).fetchone()[0]
     return {"pending": pending, "sent": sent, "failed": failed}
 
 

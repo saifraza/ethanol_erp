@@ -1,7 +1,7 @@
 import { Router, Response } from 'express';
 import prisma from '../prisma';
-import { asyncHandler, requireAuth, requireRole, AuthRequest } from '../middleware';
-import { invalidateRuleCache, verifyOverridePin, logOverride } from '../services/ruleEngine';
+import { asyncHandler, requireAuth, requireRole, requireWbKeyOrAuth, AuthRequest } from '../middleware';
+import { invalidateRuleCache, verifyOverridePin, logOverride, getRuleValue } from '../services/ruleEngine';
 
 const router = Router();
 
@@ -179,14 +179,53 @@ router.put('/rules/:key', requireAuth, requireRole('ADMIN'), asyncHandler(async 
   res.json(updated);
 }));
 
+// ── verify-pin rate limit ───────────────────────────────────────────────────
+// The override PIN is 4 digits — an unauthenticated, unthrottled endpoint is a
+// brute-force oracle (10k guesses). In-memory 5/min per IP; resets on restart,
+// which is fine (an attacker restarting the factory server has bigger access).
+const _pinAttempts = new Map<string, { count: number; windowStart: number }>();
+const PIN_MAX_ATTEMPTS = 5;
+const PIN_WINDOW_MS = 60_000;
+
+function pinRateLimited(ip: string): boolean {
+  const now = Date.now();
+  // Opportunistic prune so the map can't grow unbounded
+  if (_pinAttempts.size > 1000) {
+    for (const [k, v] of _pinAttempts) {
+      if (now - v.windowStart > PIN_WINDOW_MS) _pinAttempts.delete(k);
+    }
+  }
+  const entry = _pinAttempts.get(ip);
+  if (!entry || now - entry.windowStart > PIN_WINDOW_MS) {
+    _pinAttempts.set(ip, { count: 1, windowStart: now });
+    return false;
+  }
+  entry.count++;
+  return entry.count > PIN_MAX_ATTEMPTS;
+}
+
 // POST /api/settings/verify-pin — verify admin override PIN
-router.post('/verify-pin', asyncHandler(async (req: AuthRequest, res: Response) => {
+// Auth: UI JWT or a PC's X-WB-Key (same callers as the gross/tare capture flow
+// the PIN belongs to). Rate-limited + timing-safe compare in verifyOverridePin.
+router.post('/verify-pin', requireWbKeyOrAuth, asyncHandler(async (req: AuthRequest, res: Response) => {
   const { pin } = req.body;
   if (!pin) {
     res.status(400).json({ error: 'PIN required' });
     return;
   }
-  const valid = await verifyOverridePin(pin);
+  const ip = req.ip || req.socket.remoteAddress || 'unknown';
+  if (pinRateLimited(ip)) {
+    res.status(429).json({ error: 'Too many PIN attempts — wait a minute and try again' });
+    return;
+  }
+  const configured = await getRuleValue('ADMIN_OVERRIDE_PIN');
+  if (!configured) {
+    res.status(503).json({
+      error: 'Override PIN not configured — overrides are disabled. Set ADMIN_OVERRIDE_PIN in Settings → Rules.',
+    });
+    return;
+  }
+  const valid = await verifyOverridePin(String(pin));
   res.json({ valid });
 }));
 
