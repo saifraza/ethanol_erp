@@ -50,6 +50,7 @@ interface POLine {
   quantity: number;
   unit: string;
   rate: number;
+  isRateInclusive: boolean; // true = rate already contains GST (vendor quoted all-in)
   discountPercent: number;
   gstPercent: number;
   isRCM: boolean;
@@ -326,6 +327,7 @@ const PurchaseOrders: React.FC = () => {
       quantity: 0,
       unit: vi.unit,
       rate: vi.rate,
+      isRateInclusive: false,
       discountPercent: 0,
       gstPercent: vi.gstPercent,
       isRCM: false,
@@ -340,6 +342,7 @@ const PurchaseOrders: React.FC = () => {
     quantity: 0,
     unit: '',
     rate: 0,
+    isRateInclusive: false,
     discountPercent: 0,
     gstPercent: 0,
     isRCM: false,
@@ -396,8 +399,10 @@ const PurchaseOrders: React.FC = () => {
             quantity: l.quantity || 0,
             unit: l.unit || 'KG',
             rate: l.rate || 0,
-            discountPercent: l.discountPercent || 0,
-            gstPercent: l.gstPercent || 18,
+            isRateInclusive: !!l.isRateInclusive,
+            // ?? not || — a legitimately saved 0% line must not silently reload as 18%
+            discountPercent: l.discountPercent ?? 0,
+            gstPercent: l.gstPercent ?? 18,
             isRCM: l.isRCM || false,
           })),
           termsAccepted: po.termsAccepted || [],
@@ -441,26 +446,31 @@ const PurchaseOrders: React.FC = () => {
     }
   };
 
-  const calculateLineTotal = (line: POLine): number => {
-    const amount = line.quantity * line.rate;
-    const discountAmount = amount * (line.discountPercent / 100);
-    const taxableAmount = amount - discountAmount;
-    const tax = taxableAmount * (line.gstPercent / 100);
-    return taxableAmount + tax;
+  // Mirrors computeGstSplit() in backend/src/services/taxRateLookup.ts. This
+  // preview MUST agree with the server, otherwise the buyer approves one number
+  // and the PO stores another.
+  //   exclusive → GST goes on top of the rate
+  //   inclusive → the rate IS the total; back-solve the taxable base
+  const splitLine = (line: POLine): { taxableAmount: number; gstAmount: number; lineTotal: number } => {
+    const amount = (line.quantity || 0) * (line.rate || 0);
+    const preSplit = amount - amount * ((line.discountPercent || 0) / 100);
+    const r = (line.gstPercent || 0) / 100;
+    const inclusive = line.isRateInclusive && r > 0;
+    const taxableAmount = inclusive ? preSplit / (1 + r) : preSplit;
+    const lineTotal = inclusive ? preSplit : preSplit * (1 + r);
+    return { taxableAmount, gstAmount: lineTotal - taxableAmount, lineTotal };
   };
+
+  const calculateLineTotal = (line: POLine): number => splitLine(line).lineTotal;
 
   const calculateTotals = (): { subtotal: number; totalGst: number; grandTotal: number } => {
     let subtotal = 0;
     let totalGst = 0;
 
     formData.lines.forEach((line) => {
-      const amount = line.quantity * line.rate;
-      const discountAmount = amount * (line.discountPercent / 100);
-      const taxableAmount = amount - discountAmount;
-      const tax = taxableAmount * (line.gstPercent / 100);
-
-      subtotal += amount;
-      totalGst += tax;
+      const { taxableAmount, gstAmount } = splitLine(line);
+      subtotal += taxableAmount;
+      totalGst += gstAmount;
     });
 
     const afterGst = subtotal + totalGst;
@@ -496,8 +506,11 @@ const PurchaseOrders: React.FC = () => {
       quantity: newLine.quantity || (isGoods ? 0 : 1),
       unit: newLine.unit || (isGoods ? (material?.unit || 'NOS') : 'NOS'),
       rate: newLine.rate || 0,
+      isRateInclusive: newLine.isRateInclusive || false,
       discountPercent: newLine.discountPercent || 0,
-      gstPercent: isGoods ? (material?.gstPercent || 0) : (newLine.gstPercent || 0),
+      // Take what's in the GST box — handleMaterialSelect prefills it from the
+      // item master, so an edit there is the buyer's deliberate override.
+      gstPercent: newLine.gstPercent ?? (isGoods ? (material?.gstPercent || 0) : 0),
       isRCM: newLine.isRCM || false,
     };
 
@@ -525,6 +538,7 @@ const PurchaseOrders: React.FC = () => {
       quantity: 0,
       unit: '',
       rate: 0,
+      isRateInclusive: false,
       discountPercent: 0,
       gstPercent: 0,
       isRCM: false,
@@ -1084,6 +1098,7 @@ const PurchaseOrders: React.FC = () => {
                             <th className="text-[10px] uppercase tracking-widest font-semibold px-3 py-1.5 text-right border-r border-slate-700">Qty</th>
                             <th className="text-[10px] uppercase tracking-widest font-semibold px-3 py-1.5 text-center border-r border-slate-700">Unit</th>
                             <th className="text-[10px] uppercase tracking-widest font-semibold px-3 py-1.5 text-right border-r border-slate-700">Rate</th>
+                            <th className="text-[10px] uppercase tracking-widest font-semibold px-3 py-1.5 text-center border-r border-slate-700" title="Tick if the rate already includes GST">Incl. GST</th>
                             <th className="text-[10px] uppercase tracking-widest font-semibold px-3 py-1.5 text-right border-r border-slate-700">Disc %</th>
                             <th className="text-[10px] uppercase tracking-widest font-semibold px-3 py-1.5 text-right border-r border-slate-700">GST %</th>
                             <th className="text-[10px] uppercase tracking-widest font-semibold px-3 py-1.5 text-right border-r border-slate-700">GST Amt</th>
@@ -1105,6 +1120,9 @@ const PurchaseOrders: React.FC = () => {
                               <td className="px-2 py-1 border-r border-slate-100">
                                 <input type="number" value={line.rate || ''} onChange={(e) => handleUpdateLine(idx, 'rate', e.target.value === '' ? 0 : parseFloat(e.target.value))} className="border border-slate-300 px-1.5 py-1 text-xs w-20 text-right focus:outline-none focus:ring-1 focus:ring-slate-400" />
                               </td>
+                              <td className="px-2 py-1 border-r border-slate-100 text-center">
+                                <input type="checkbox" checked={!!line.isRateInclusive} onChange={(e) => handleUpdateLine(idx, 'isRateInclusive', e.target.checked)} className="accent-slate-700" title="Rate already includes GST — tax is backed out, not added" />
+                              </td>
                               <td className="px-2 py-1 border-r border-slate-100">
                                 <input type="number" value={line.discountPercent || ''} onChange={(e) => handleUpdateLine(idx, 'discountPercent', e.target.value === '' ? 0 : parseFloat(e.target.value))} className="border border-slate-300 px-1.5 py-1 text-xs w-16 text-right focus:outline-none focus:ring-1 focus:ring-slate-400" />
                               </td>
@@ -1112,7 +1130,7 @@ const PurchaseOrders: React.FC = () => {
                                 <input type="number" value={line.gstPercent || ''} onChange={(e) => handleUpdateLine(idx, 'gstPercent', e.target.value === '' ? 0 : parseFloat(e.target.value))} className="border border-slate-300 px-1.5 py-1 text-xs w-16 text-right focus:outline-none focus:ring-1 focus:ring-slate-400" />
                               </td>
                               <td className="px-3 py-1.5 text-xs border-r border-slate-100 text-right font-mono tabular-nums text-slate-500">
-                                {(() => { const a = line.quantity * line.rate; const d = a * (line.discountPercent / 100); return ((a - d) * line.gstPercent / 100).toLocaleString('en-IN', { maximumFractionDigits: 2 }); })()}
+                                {splitLine(line).gstAmount.toLocaleString('en-IN', { maximumFractionDigits: 2 })}
                               </td>
                               <td className="px-3 py-1.5 text-xs border-r border-slate-100 text-right font-mono tabular-nums font-semibold">
                                 {calculateLineTotal(line).toLocaleString('en-IN', { maximumFractionDigits: 2 })}
@@ -1161,6 +1179,10 @@ const PurchaseOrders: React.FC = () => {
                       <div>
                         <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-0.5 block">Rate</label>
                         <input type="number" value={newLine.rate || ''} onChange={(e) => setNewLine({ ...newLine, rate: e.target.value === '' ? 0 : parseFloat(e.target.value) })} className="border border-slate-300 px-2.5 py-1.5 text-xs w-full focus:outline-none focus:ring-1 focus:ring-slate-400" />
+                        <label className="flex items-center gap-1.5 mt-1 text-[10px] text-slate-600 cursor-pointer">
+                          <input type="checkbox" checked={!!newLine.isRateInclusive} onChange={(e) => setNewLine({ ...newLine, isRateInclusive: e.target.checked })} className="accent-slate-700" />
+                          Rate includes GST
+                        </label>
                       </div>
                       <div>
                         <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-0.5 block">Discount %</label>

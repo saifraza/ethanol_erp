@@ -88,6 +88,23 @@ import { writeAudit, auditDiff } from '../utils/auditLog';
 const router = Router();
 router.use(authenticate);
 
+// Split a gross line amount into taxable + GST, honouring POLine.isRateInclusive.
+// Anything that re-derives money from `qty × rate` (received value, PDF totals,
+// payment ceilings) must go through this — an inclusive rate ALREADY contains
+// the tax, so adding gstPercent on top inflates the figure by the GST %.
+// Exclusive lines return exactly what the old inline math returned.
+function splitStoredAmount(
+  amount: number,
+  gstPercent: number | null | undefined,
+  isRateInclusive: boolean | null | undefined,
+): { taxable: number; gstAmount: number; total: number } {
+  const r = (gstPercent || 0) / 100;
+  const inclusive = !!isRateInclusive && r > 0;
+  const taxable = inclusive ? amount / (1 + r) : amount;
+  const total = inclusive ? amount : amount * (1 + r);
+  return { taxable, gstAmount: total - taxable, total };
+}
+
 // Normalise free-text PO terms: trim, drop rows with an empty title, and return a
 // DB-ready value — the cleaned array, or Prisma.JsonNull when there are none.
 function cleanPoTerms(terms: { title: string; body?: string }[] | null | undefined): Prisma.InputJsonValue | typeof Prisma.JsonNull {
@@ -101,16 +118,23 @@ function cleanPoTerms(terms: { title: string; body?: string }[] | null | undefin
 // ──────────────────────────────────────────────────────────────────────────
 // Shared tax line processing — single source of truth for PO GST.
 //
-// Rate resolution precedence (per line) — ITEM MASTER IS THE KEY (Saif 2026-04-30):
+// Rate resolution precedence (per line):
 //   1. inventoryItem.gstOverridePercent (with reason) → override (rare)
-//   2. inventoryItem.gstPercent (item master scalar — what procurement edits)
-//   3. HSN master via line.hsnCodeId or item.hsnCodeId → statutory fallback
-//   4. line.gstPercent (client-supplied, last resort)
+//   2. line.gstPercent (what the buyer typed on THIS PO line)
+//   3. inventoryItem.gstPercent (item master scalar — prefills the line)
+//   4. HSN master via line.hsnCodeId or item.hsnCodeId → statutory fallback
 //
-// HSN linkage is preserved for compliance reporting + e-invoice JSON, but the
-// effective rate on the PO comes from the item master scalar — that's the field
-// the procurement team edits, and it's what gets applied. See taxRateLookup.ts
-// for the actual resolver.
+// Why the line beats the item master (2026-07-22): the PO form has always shown
+// an editable GST % box, but the master used to win unconditionally — so an
+// InventoryItem sitting on the schema default of 18 forced 18% onto every line
+// and the buyer's edit was silently discarded on save. Vendors quoting an all-in
+// rate (e.g. Rs255 incl. GST) had no way to book the PO correctly. The master
+// still supplies the DEFAULT (frontend prefills the box from it); an explicit
+// value on the line is the buyer's deliberate override for this PO only and is
+// never written back to the master.
+//
+// HSN linkage is preserved for compliance reporting + e-invoice JSON. See
+// taxRateLookup.ts for the actual resolver.
 //
 // Supports inclusive/exclusive math via POLine.isRateInclusive.
 // ──────────────────────────────────────────────────────────────────────────
@@ -187,8 +211,13 @@ async function processPOLines(params: {
     // Legacy code string: prefer line's string, then item's
     const hsnCode = (line.hsnCode as string | undefined) || mat?.hsnCode || '';
 
-    // Resolve authoritative GST rate
-    const legacyGst = mat?.gstPercent ?? (line.gstPercent != null ? Number(line.gstPercent) : null);
+    // Resolve authoritative GST rate. An explicit rate on the line is the
+    // buyer's override for this PO; otherwise fall back to the item master.
+    const lineGst =
+      line.gstPercent != null && Number.isFinite(Number(line.gstPercent))
+        ? Number(line.gstPercent)
+        : null;
+    const legacyGst = lineGst ?? mat?.gstPercent ?? null;
     const resolved = await getEffectiveGstRate({
       hsnCodeId,
       on: poDate,
@@ -234,7 +263,7 @@ async function processPOLines(params: {
       discountPercent,
       discountAmount,
       gstPercent,
-      rateSnapshotGst: gstPercent, // audit: what was master at booking time
+      rateSnapshotGst: gstPercent, // audit: the rate actually applied at booking time
       amount,
       taxableAmount: split.taxableAmount,
       cgstPercent,
@@ -326,7 +355,7 @@ router.get('/', asyncHandler(async (req: AuthRequest, res: Response) => {
       const receivedValue = Math.round(
         (po.lines || []).reduce((s: number, l: any) => {
           const base = (l.receivedQty || 0) * (l.rate || 0);
-          return s + base + (base * (l.gstPercent || 0)) / 100;
+          return s + splitStoredAmount(base, l.gstPercent, l.isRateInclusive).total;
         }, 0) * 100,
       ) / 100;
       return {
@@ -409,7 +438,7 @@ router.get('/:id', asyncHandler(async (req: AuthRequest, res: Response) => {
     // PO amount is ALWAYS based on received weight — not ordered qty
     const receivedValue = Math.round(po.lines.reduce((s: number, l: any) => {
       const base = (l.receivedQty || 0) * (l.rate || 0);
-      return s + base + base * (l.gstPercent || 0) / 100;
+      return s + splitStoredAmount(base, l.gstPercent, l.isRateInclusive).total;
     }, 0) * 100) / 100;
     const orderedAmount = po.grandTotal || 0; // keep for reference only
 
@@ -788,8 +817,8 @@ router.get('/:id/pdf', asyncHandler(async (req: AuthRequest, res: Response) => {
         const displayQty = hasReceipts ? receivedQty : (l.quantity >= 900000 ? 0 : l.quantity);
         // Amounts: always from received qty when receipts exist
         const lineAmount = hasReceipts ? (receivedQty * l.rate) : (l.quantity < 900000 ? l.quantity * l.rate : 0);
-        const taxable = lineAmount * (1 - (l.discountPercent || 0) / 100);
-        const gstAmt = taxable * (l.gstPercent || 0) / 100;
+        const afterDiscount = lineAmount * (1 - (l.discountPercent || 0) / 100);
+        const { taxable, gstAmount: gstAmt } = splitStoredAmount(afterDiscount, l.gstPercent, l.isRateInclusive);
         const isIntra = po.supplyType !== 'INTER_STATE';
         const orderedQty = l.quantity >= 900000 ? 0 : l.quantity;
         const overDelivered = agg.received > orderedQty && orderedQty > 0;
@@ -820,7 +849,7 @@ router.get('/:id/pdf', asyncHandler(async (req: AuthRequest, res: Response) => {
         const calc = Math.round(po.lines.reduce((s: number, l: any) => {
           const hasReceipts = (l.receivedQty || 0) > 0;
           const qty = hasReceipts ? (l.receivedQty || 0) : (l.quantity >= 900000 ? 0 : l.quantity);
-          return s + qty * l.rate;
+          return s + splitStoredAmount(qty * l.rate, l.gstPercent, l.isRateInclusive).taxable;
         }, 0) * 100) / 100;
         return calc > 0 ? calc : (po.subtotal || 0);
       })(),
@@ -828,7 +857,7 @@ router.get('/:id/pdf', asyncHandler(async (req: AuthRequest, res: Response) => {
         return Math.round(po.lines.reduce((s: number, l: any) => {
           const hasReceipts = (l.receivedQty || 0) > 0;
           const qty = hasReceipts ? (l.receivedQty || 0) : (l.quantity >= 900000 ? 0 : l.quantity);
-          return s + qty * l.rate * (l.gstPercent || 0) / 100;
+          return s + splitStoredAmount(qty * l.rate, l.gstPercent, l.isRateInclusive).gstAmount;
         }, 0) * 100) / 100;
       })(),
       freightCharge: po.freightCharge,
@@ -838,8 +867,7 @@ router.get('/:id/pdf', asyncHandler(async (req: AuthRequest, res: Response) => {
         const linesSum = Math.round(po.lines.reduce((s: number, l: any) => {
           const hasReceipts = (l.receivedQty || 0) > 0;
           const qty = hasReceipts ? (l.receivedQty || 0) : (l.quantity >= 900000 ? 0 : l.quantity);
-          const base = qty * l.rate;
-          return s + base + base * (l.gstPercent || 0) / 100;
+          return s + splitStoredAmount(qty * l.rate, l.gstPercent, l.isRateInclusive).total;
         }, 0) * 100) / 100;
         // Header charges (freight/other/round-off) are not derivable from lines —
         // must be added back or PDF Grand Total under-states by that amount.
@@ -1001,7 +1029,7 @@ router.post('/:id/send-email', asyncHandler(async (req: AuthRequest, res: Respon
 router.get('/:id/payments', asyncHandler(async (req: AuthRequest, res: Response) => {
   const po = await prisma.purchaseOrder.findUnique({
     where: { id: req.params.id },
-    select: { id: true, poNo: true, grandTotal: true, lines: { select: { quantity: true, receivedQty: true, rate: true, gstPercent: true } } },
+    select: { id: true, poNo: true, grandTotal: true, lines: { select: { quantity: true, receivedQty: true, rate: true, gstPercent: true, isRateInclusive: true } } },
   });
   if (!po) return res.status(404).json({ error: 'PO not found' });
 
@@ -1009,7 +1037,7 @@ router.get('/:id/payments', asyncHandler(async (req: AuthRequest, res: Response)
   // ledger's `remaining` consistent with what Pay actually allows.
   const receivedValue = Math.round(po.lines.reduce((s, l) => {
     const base = (l.receivedQty || 0) * l.rate;
-    return s + base + base * (l.gstPercent || 0) / 100;
+    return s + splitStoredAmount(base, l.gstPercent, l.isRateInclusive).total;
   }, 0) * 100) / 100;
   const poTotal = po.grandTotal > 0 ? po.grandTotal : receivedValue;
   const invoicedAggLedger = await prisma.vendorInvoice.aggregate({
@@ -1066,7 +1094,7 @@ router.post('/:id/pay', asyncHandler(async (req: AuthRequest, res: Response) => 
 
   const po = await prisma.purchaseOrder.findUnique({
     where: { id: req.params.id },
-    select: { id: true, poNo: true, vendorId: true, grandTotal: true, status: true, lines: { select: { quantity: true, receivedQty: true, rate: true, gstPercent: true, description: true, inventoryItem: { select: { category: true } } } } },
+    select: { id: true, poNo: true, vendorId: true, grandTotal: true, status: true, lines: { select: { quantity: true, receivedQty: true, rate: true, gstPercent: true, isRateInclusive: true, description: true, inventoryItem: { select: { category: true } } } } },
   });
   if (!po) return res.status(404).json({ error: 'PO not found' });
 
@@ -1084,12 +1112,11 @@ router.post('/:id/pay', asyncHandler(async (req: AuthRequest, res: Response) => 
   // is 0. Surfaced on PO-112 (3 invoices, no GRNs).
   const receivedValue = Math.round(po.lines.reduce((s, l) => {
     const base = (l.receivedQty || 0) * l.rate;
-    return s + base + base * (l.gstPercent || 0) / 100;
+    return s + splitStoredAmount(base, l.gstPercent, l.isRateInclusive).total;
   }, 0) * 100) / 100;
   const poTotal = po.grandTotal > 0 ? po.grandTotal : Math.round(po.lines.reduce((s, l) => {
     const qty = l.quantity >= 900000 ? (l.receivedQty || 0) : l.quantity;
-    const base = qty * l.rate;
-    return s + base + base * (l.gstPercent || 0) / 100;
+    return s + splitStoredAmount(qty * l.rate, l.gstPercent, l.isRateInclusive).total;
   }, 0) * 100) / 100;
   const invoicedAgg = await prisma.vendorInvoice.aggregate({
     where: { poId: po.id },
@@ -1262,12 +1289,12 @@ router.post('/payments/:paymentId/confirm', asyncHandler(async (req: AuthRequest
     const poNo = parseInt(poMatch[1]);
     const po = await prisma.purchaseOrder.findFirst({
       where: { poNo },
-      select: { id: true, status: true, grandTotal: true, vendorId: true, lines: { select: { receivedQty: true, rate: true, gstPercent: true, quantity: true } } },
+      select: { id: true, status: true, grandTotal: true, vendorId: true, lines: { select: { receivedQty: true, rate: true, gstPercent: true, isRateInclusive: true, quantity: true } } },
     });
     if (po && po.status !== 'CLOSED') {
       const receivable = Math.round(po.lines.reduce((s, l) => {
         const base = (l.receivedQty || 0) * l.rate;
-        return s + base + base * (l.gstPercent || 0) / 100;
+        return s + splitStoredAmount(base, l.gstPercent, l.isRateInclusive).total;
       }, 0) * 100) / 100;
       const allPayments = await prisma.vendorPayment.findMany({
         where: { vendorId: po.vendorId, paymentStatus: 'CONFIRMED', invoiceId: null, OR: [{ remarks: { contains: `PO-${poNo} ` } }, { remarks: { endsWith: `PO-${poNo}` } }] },

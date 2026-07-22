@@ -219,6 +219,12 @@ const EXPECTED_COLUMNS: ColumnCheck[] = [
   // 2026-05-27 — Free-text editable terms & conditions on a PO ([{title, body}] JSON),
   // alongside the existing preset termsAccepted keys.
   { table: 'PurchaseOrder', column: 'termsAndConditions', sql: `ALTER TABLE "PurchaseOrder" ADD COLUMN IF NOT EXISTS "termsAndConditions" JSONB` },
+
+  // 2026-07-22 — GST-inclusive PO rates. The column has existed in schema.prisma
+  // for a while (processPOLines already writes it), but it was never registered
+  // here. Now that the payment/PDF queries `select` it explicitly, a missing
+  // column would be a hard P2022 instead of an undefined — so pin it down.
+  { table: 'POLine', column: 'isRateInclusive', sql: `ALTER TABLE "POLine" ADD COLUMN IF NOT EXISTS "isRateInclusive" BOOLEAN NOT NULL DEFAULT false` },
 ];
 
 const EXPECTED_TABLES: TableCheck[] = [
